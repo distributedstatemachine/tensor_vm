@@ -309,6 +309,7 @@ impl Chain {
                             .saturating_mul(self.params.epoch_length.max(1)),
                     ),
                     voided_by_challenge: false,
+                    requires_useful_successor: false,
                 });
         }
         self.state

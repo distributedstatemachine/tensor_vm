@@ -283,7 +283,13 @@ fn matured_proposer_reward_releases_after_challenge_window() {
     };
     let mut chain = Chain::with_params(params, beacon);
     let proposer = address(b"pending-proposer");
+    let miner = address(b"pending-proposer-miner");
+    chain.register_miner(miner, 100).unwrap();
     chain.register_validator(proposer, 10_000).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
 
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)

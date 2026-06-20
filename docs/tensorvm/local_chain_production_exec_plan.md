@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 39 is complete.
-- Current status: Iteration 39 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: none; Iteration 40 validation is complete and commit/push evidence is pending.
+- Current status: Iteration 40 implemented reduced delayed fallback proposer rewards on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -22,7 +22,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 39: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 40: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -33,7 +33,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job graph bodies in state/storage/P2P | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Add broader admitted-registry vectors, generic interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; Iteration 39 anchors admitted receipt assignment/validation seeds to persisted receipt-time beacon state | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial | Delayed proposer, receipt, challenge, and credit rewards; full reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
+| Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; full reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
@@ -41,6 +41,54 @@ feature-sized iterations are summarized after validation and push, and older det
 None.
 
 ## Recent Iterations
+
+### Iteration 40: Reduced Delayed Fallback Proposer Rewards
+
+Feature capability: empty `PowSkipFallback` blocks can now carry a reduced proposer reward claim instead
+of relying on a runtime workaround that skipped rewards entirely. The fallback claim is state-rooted and
+delayed like other proposer rewards, but it is additionally blocked until a later useful block includes
+settled receipt blockspace.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` owns fallback reward delay and release.
+- Adapter callers: validator role now submits a reduced rewarded fallback block command instead of
+  bypassing reward creation for empty blockspace.
+- Old shortcut removed: runtime no longer treats fallback production as automatically unrewarded.
+- Regression test: `fallback_proposer_reward_waits_for_useful_successor`.
+- Synthetic production disabled: unchanged; fallback reward release still requires later useful blockspace.
+- Producer/non-producer roles: both recompute the pending fallback claim through block state roots and
+  node-store snapshots.
+- Structured evidence source: `PendingProposerReward::requires_useful_successor`, reward root, storage
+  roundtrip, focused chain tests.
+- Finality source: unchanged stake-weighted block votes.
+- Wire-size and codec boundary: no new p2p payloads; node-store chain-state snapshot encoding extended.
+
+Implemented locally:
+- Added `requires_useful_successor` to pending proposer rewards and included it in reward roots and
+  node-store snapshot encoding.
+- Block application now unlocks blocked fallback proposer rewards only when selected useful receipts are
+  included by a later block.
+- Reward release skips blocked fallback claims while still pruning voided claims without credit.
+- Validator role fallback proposals now use a reduced proposer reward instead of bypassing reward creation.
+- Updated readiness/status docs to describe reduced delayed fallback reward behavior while keeping the full
+  stake-weighted fallback rotation policy gap open.
+
+Validation completed locally:
+- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused tests passed:
+  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`
+  - `cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`
+  - `cargo test -p tensor_vm --lib chain::tests -- --nocapture`
+  - `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
+- Feature commit: pending.
+- Push result: pending.
+
+Out of scope: full stake-weighted fallback proposer rotation/timeout policy, multi-validator fork-choice,
+full reward-claim object unification, and full Docker rerun while `/health` remains blocked.
 
 ### Iteration 39: Receipt-Bound Validation Randomness Anchors
 
@@ -178,7 +226,8 @@ error: no such command: `tarpaulin`
 - Iteration 31, `9216461 Propagate block check challenges`: added bounded block-check challenge p2p
   payloads, pending retry, chain-command application, and delayed challenge reward evidence.
 - Iteration 30, `5664acb Delay validator proposer rewards`: useful proposals create delayed proposer
-  reward claims; fallback proposals remain unrewarded.
+  reward claims; later work changed fallback proposals from unrewarded to reduced delayed claims that
+  require a useful successor before release.
 - Iteration 29, `4e8b0c6 Propagate validator audit reports`: validator roles gossip/apply signed audit
   reports through bounded p2p/node payloads.
 - Iteration 28, `99d819c Add validator audit reward slashing`: added audit assignments/results/slashes and

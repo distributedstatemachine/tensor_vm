@@ -296,6 +296,7 @@ fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
         .pending_proposer_rewards
         .iter()
         .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .filter(|(_, reward)| reward.voided_by_challenge || !reward.requires_useful_successor)
         .map(|(height, reward)| {
             (
                 *height,

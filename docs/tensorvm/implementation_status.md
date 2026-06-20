@@ -68,8 +68,9 @@ blocker clears. See
   pending challenge reward claims, delayed generic/faucet credits through a state-rooted pending credit
   reward ledger, a block `reward_root` that binds spendable rewards plus pending proposer, receipt,
   challenge, and credit ledgers, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
-  Validator-owned useful proposals now create delayed proposer reward claims while empty fallback proposals
-  stay unrewarded. Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
+  Validator-owned useful proposals now create delayed proposer reward claims, and empty fallback proposals
+  create reduced delayed proposer claims that remain blocked until later useful blockspace is included.
+  Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
   released only after maturity. Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,

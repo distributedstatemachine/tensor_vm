@@ -934,6 +934,7 @@ fn encode_pending_proposer_rewards(
         write_u64(out, reward.amount);
         write_u64(out, reward.claimable_at_height);
         out.push(u8::from(reward.voided_by_challenge));
+        out.push(u8::from(reward.requires_useful_successor));
     }
 }
 
@@ -952,6 +953,11 @@ fn decode_pending_proposer_rewards(
             1 => true,
             _ => return Err(TvmError::Storage("invalid pending reward boolean")),
         };
+        let requires_useful_successor = match reader.read_u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(TvmError::Storage("invalid pending reward boolean")),
+        };
         rewards.insert(
             height,
             PendingProposerReward {
@@ -960,6 +966,7 @@ fn decode_pending_proposer_rewards(
                 amount,
                 claimable_at_height,
                 voided_by_challenge,
+                requires_useful_successor,
             },
         );
     }

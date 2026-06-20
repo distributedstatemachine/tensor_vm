@@ -59,6 +59,19 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
     receipt.receipt_id
 }
 
+fn add_settled_receipt_for_blockspace(chain: &mut Chain, beacon: &Hash) -> Hash {
+    let miner = address(b"reward-blockspace-miner");
+    if !chain.state().miners().contains_key(&miner) {
+        chain.register_miner(miner, 100).unwrap();
+    }
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt));
+    chain.mark_receipt_settled_for_testing(receipt_id);
+    receipt_id
+}
+
 #[test]
 fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -110,6 +123,18 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
         1_000
     );
     assert_eq!(chain.state().rewards().treasury(), 500);
+    assert!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block.height)
+            .unwrap()
+            .requires_useful_successor
+    );
+
+    add_settled_receipt_for_blockspace(&mut chain, &beacon);
+    chain.produce_block(proposer, 1_006).unwrap();
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
     chain.set_position_for_testing(101, 1);
     chain.release_matured_proposer_rewards().unwrap();
     assert_eq!(chain.state().rewards().balance(&proposer), 1_000);
@@ -270,6 +295,8 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(peer.state().pending_proposer_rewards().contains_key(&0));
 
+    add_settled_receipt_for_blockspace(&mut producer, &beacon);
+    add_settled_receipt_for_blockspace(&mut peer, &beacon);
     let block1 = producer
         .produce_block_with_rewards(proposer, 1_001, 80, 20)
         .unwrap();
@@ -321,6 +348,51 @@ fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
     assert!(!chain.state().pending_proposer_rewards().contains_key(&0));
+}
+
+#[test]
+fn fallback_proposer_reward_waits_for_useful_successor() {
+    let beacon = hash_bytes(b"test", &[b"fallback-reward-delay"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        challenge_window_epochs: 1,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"fallback-delay-proposer");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+
+    let fallback = chain
+        .produce_block_with_rewards(proposer, 1_000, 40, 10)
+        .unwrap();
+    let fallback_reward = chain
+        .state()
+        .pending_proposer_rewards()
+        .get(&fallback.height)
+        .unwrap();
+    assert_eq!(fallback_reward.amount, 50);
+    assert!(fallback_reward.requires_useful_successor);
+
+    assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&fallback.height)
+    );
+
+    add_settled_receipt_for_blockspace(&mut chain, &beacon);
+    chain.produce_block(proposer, 1_006).unwrap();
+    assert_eq!(chain.state().rewards().balance(&proposer), 50);
+    assert!(
+        !chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&fallback.height)
+    );
 }
 
 #[test]

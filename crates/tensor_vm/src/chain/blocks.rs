@@ -688,6 +688,9 @@ fn apply_block_to_parent_state(
         reward_context.validator_audit_sample_denominator,
         reward_context.validator_audit_window_blocks,
     );
+    if !selected_receipts.is_empty() {
+        unlock_fallback_proposer_rewards(&mut child_state);
+    }
     super::commands::release_all_matured_rewards(&mut child_state);
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
@@ -708,10 +711,17 @@ fn apply_block_to_parent_state(
                 amount: reward_context.proposer_reward,
                 claimable_at_height: block_height.saturating_add(challenge_window_blocks),
                 voided_by_challenge: false,
+                requires_useful_successor: selected_receipts.is_empty(),
             },
         );
     }
     child_state
+}
+
+fn unlock_fallback_proposer_rewards(child_state: &mut ChainState) {
+    for reward in child_state.pending_proposer_rewards.values_mut() {
+        reward.requires_useful_successor = false;
+    }
 }
 
 fn apply_missed_validator_audit_slashes(

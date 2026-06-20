@@ -182,11 +182,16 @@ pub fn submit_validator_role_block_proposal(
         .params()
         .reward_allocation(10_000)
         .proposer_reward;
-    let command = if settled_receipts > 0 && proposer_reward > 0 {
+    let block_reward = if settled_receipts > 0 {
+        proposer_reward
+    } else {
+        reduced_fallback_proposer_reward(proposer_reward)
+    };
+    let command = if block_reward > 0 {
         ChainCommand::ProduceRewardedBlock {
             proposer: validator,
             timestamp,
-            fixed_block_reward: proposer_reward,
+            fixed_block_reward: block_reward,
             fee_share: 0,
         }
     } else {
@@ -211,6 +216,10 @@ pub fn submit_validator_role_block_proposal(
         fallback_blocks_proposed: usize::from(!block.production_kind.requires_pow()),
         selected_receipts,
     }))
+}
+
+fn reduced_fallback_proposer_reward(useful_proposer_reward: u64) -> u64 {
+    useful_proposer_reward / 10
 }
 
 pub fn submit_validator_role_attestation(
