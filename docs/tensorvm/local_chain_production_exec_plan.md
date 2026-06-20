@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 70, chain-owned validator auditor selection, in progress.
+- Active feature: Iteration 70, chain-owned validator auditor selection, pushed.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
@@ -77,6 +77,7 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `79b4d12` (`Assign validator audit auditors in chain`) is pushed to `main`.
 
 ## Recent Iterations
 
