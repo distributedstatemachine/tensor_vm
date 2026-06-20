@@ -1500,6 +1500,15 @@ fn encode_field_slice(values: &[Elem], out: &mut Vec<u8>) {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::frozen_op_registry;
+
+    fn consensus_admitted_ops() -> BTreeSet<&'static str> {
+        frozen_op_registry()
+            .iter()
+            .filter(|spec| spec.consensus_admitted)
+            .map(|spec| spec.name)
+            .collect()
+    }
 
     #[test]
     fn conformance_vectors_are_stable_and_cover_current_ops() {
@@ -1547,6 +1556,22 @@ mod tests {
     }
 
     #[test]
+    fn conformance_vectors_cover_every_consensus_admitted_op() {
+        let op_names = conformance_vectors()
+            .iter()
+            .map(|vector| vector.op_name)
+            .collect::<BTreeSet<_>>();
+        let missing = consensus_admitted_ops()
+            .difference(&op_names)
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "missing conformance vectors for admitted ops: {missing:?}"
+        );
+    }
+
+    #[test]
     fn cpu_reference_passes_all_vectors() {
         let profile = cpu_reference_conformance_profile().unwrap();
         assert_eq!(profile.suite_hash, conformance_suite_hash());
@@ -1587,6 +1612,19 @@ mod tests {
         ] {
             assert!(profile.passes(op), "missing conformance pass for {op}");
         }
+    }
+
+    #[test]
+    fn cpu_reference_passes_all_admitted_ops() {
+        let profile = cpu_reference_conformance_profile().unwrap();
+        let missing = consensus_admitted_ops()
+            .into_iter()
+            .filter(|op| !profile.passes(op))
+            .collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "CPU reference profile missing admitted ops: {missing:?}"
+        );
     }
 
     #[test]

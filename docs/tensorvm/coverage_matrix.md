@@ -98,12 +98,16 @@ admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`,
 `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`, plus
 scale-aware fixed-point `cast`/`round` vectors using per-input and expected output dtype/scale metadata,
 multi-output expected tensors for exact quantize scale output, field-order comparison and selection
-vectors, and byte-exact packed payload vectors. The suite has a stable hash, the CPU reference backend must pass it through
-`runtime::backend_conformance_profile`, and `verify_tensor_op` / `verify_linear_training_step` reject
-otherwise-valid receipts when their required conformance profile is unavailable or missing an op.
+vectors, and byte-exact packed payload vectors. The suite has a stable hash, derives its admitted-op guard
+from `ir::frozen_op_registry()`, requires every consensus-admitted op spelling to have vector and CPU
+profile evidence, the CPU reference backend must pass it through `runtime::backend_conformance_profile`,
+and `verify_tensor_op` / `verify_linear_training_step` reject otherwise-valid receipts when their required
+conformance profile is unavailable or missing an op.
 Focused evidence:
 `conformance::tests::conformance_vectors_are_stable_and_cover_current_ops`,
+`conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`,
 `conformance::tests::cpu_reference_passes_all_vectors`,
+`conformance::tests::cpu_reference_passes_all_admitted_ops`,
 `conformance::tests::required_conformance_gates_current_jobs`,
 `verify::tests::graph_verifier_accepts_fixed_point_rescale_receipt`,
 `verify::tests::graph_verifier_accepts_quantize_dequantize_receipt`,

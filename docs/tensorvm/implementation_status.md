@@ -78,9 +78,10 @@ blocker clears. See
   including per-input and expected output dtype/scale metadata for fixed-point rescale vectors,
   multi-output expected tensors for exact quantize scale output, field-order comparison and selection
   vectors, and byte-exact packed payload vectors, with a stable suite hash, CPU reference backend pass reporting,
-  default-build CUDA non-admission, and receipt verification gates that reject otherwise-valid TensorOp,
-  LinearTrainingStep, or GraphExecution receipts when the required conformance profile is unavailable or
-  missing an admitted op.
+  default-build CUDA non-admission, a registry-derived guard that requires every consensus-admitted frozen
+  op spelling to have vector and CPU profile evidence, and receipt verification gates that reject
+  otherwise-valid TensorOp, LinearTrainingStep, or GraphExecution receipts when the required conformance
+  profile is unavailable or missing an admitted op.
 - Tensor descriptors, Merkle commitments, chunk openings, and row access
 - Synthetic matmul jobs, TensorOp receipts, and trace commitments
 - Full-output Freivalds verification and row-sampled audit checks
