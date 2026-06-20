@@ -258,9 +258,12 @@ mod tests {
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
         let miner = address(b"miner");
         let challenger = address(b"challenger");
-        let (_honest_receipt, a, b, mut c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        let (mut receipt, a, b, mut c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
         c.set2(0, 0, field::add(c.get2(0, 0).unwrap(), 1)).unwrap();
-        let receipt = TensorOpReceipt::from_output(&job, miner, 1, 5, &a, &b, &c).unwrap();
+        receipt.output_roots = vec![c.commitment_root()];
+        receipt.trace_root = hash_bytes(b"test", &[b"fraud-challenge-invalid-trace"]);
+        receipt.receipt_id = receipt.recompute_receipt_id();
+        receipt.signature = sign(&receipt.miner, &receipt.receipt_id);
         let seed = hash_bytes(b"test", &[b"validation"]);
         let challenge = FraudChallenge::tensor_op(TensorOpChallengeInput {
             challenger,

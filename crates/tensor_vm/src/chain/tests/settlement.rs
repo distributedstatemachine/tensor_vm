@@ -351,7 +351,11 @@ fn conflicting_linear_training_roots_do_not_settle() {
         .weight_after
         .set2(0, 0, output.weight_after.get2(0, 0).unwrap() + 1)
         .unwrap();
-    let conflicting = LinearTrainingStepReceipt::from_output(&job, miner, &output, 1, 5);
+    let mut conflicting = receipt.clone();
+    conflicting.weight_root_after = output.weight_after.commitment_root();
+    conflicting.trace_root = hash_bytes(b"test", &[b"settlement-conflict-trace"]);
+    conflicting.receipt_id = conflicting.recompute_receipt_id(&job.program_hash());
+    conflicting.signature = sign(&conflicting.miner, &conflicting.receipt_id);
     chain.submit_job(JobState::LinearTrainingStep(job));
     chain.submit_job(JobState::TensorOp(tensor_job));
     chain

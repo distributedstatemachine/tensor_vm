@@ -272,17 +272,6 @@ pub fn verify_tensor_op_with_conformance_profile(
     if receipt.output_roots != vec![c.commitment_root()] {
         return Err(TvmError::InvalidReceipt("output root mismatch"));
     }
-    let expected_trace_root = hash_bytes(
-        b"tensor-vm-tensorop-trace-v1",
-        &[
-            &a.commitment_root(),
-            &b.commitment_root(),
-            &c.commitment_root(),
-        ],
-    );
-    if receipt.trace_root != expected_trace_root {
-        return Err(TvmError::InvalidReceipt("trace root mismatch"));
-    }
     if a.shape() != [job.m, job.k] || b.shape() != [job.k, job.n] {
         return Err(TvmError::InvalidReceipt("input shape mismatch"));
     }
@@ -298,6 +287,12 @@ pub fn verify_tensor_op_with_conformance_profile(
     } else {
         VerificationResult::Invalid
     };
+    if result == VerificationResult::Valid {
+        let execution = job.exact_ir_execution(a, b)?;
+        if execution.outputs.get("c") != Some(c) || receipt.trace_root != execution.trace_root {
+            return Err(TvmError::InvalidReceipt("trace root mismatch"));
+        }
+    }
     let checks_root = hash_bytes(
         b"tensor-vm-tensorop-checks-v1",
         &[
@@ -389,21 +384,6 @@ pub fn verify_linear_training_step_with_conformance_profile(
     if receipt.batch_root != expected_batch_root {
         return Err(TvmError::InvalidReceipt("batch root mismatch"));
     }
-    let expected_trace_root = hash_bytes(
-        b"tensor-vm-linear-trace-v1",
-        &[
-            &job.weight_root_before,
-            &expected_batch_root,
-            &output.y.commitment_root(),
-            &output.dy.commitment_root(),
-            &output.grad_w.commitment_root(),
-            &output.weight_after.commitment_root(),
-        ],
-    );
-    if receipt.trace_root != expected_trace_root {
-        return Err(TvmError::InvalidReceipt("trace root mismatch"));
-    }
-
     let forward_passed = full_freivalds(
         &output.x,
         weights_before,
@@ -444,6 +424,17 @@ pub fn verify_linear_training_step_with_conformance_profile(
     } else {
         VerificationResult::Invalid
     };
+    if result == VerificationResult::Valid {
+        let execution = job.exact_ir_execution(weights_before, output)?;
+        if execution.outputs.get("y") != Some(&output.y)
+            || execution.outputs.get("dy") != Some(&output.dy)
+            || execution.outputs.get("grad_w") != Some(&output.grad_w)
+            || execution.outputs.get("weight_after") != Some(&output.weight_after)
+            || receipt.trace_root != execution.trace_root
+        {
+            return Err(TvmError::InvalidReceipt("trace root mismatch"));
+        }
+    }
     let checks_root = hash_bytes(
         b"tensor-vm-linear-checks-v1",
         &[
@@ -576,7 +567,11 @@ mod tests {
         .unwrap();
         assert_eq!(report.result, VerificationResult::Valid);
         c.set2(0, 0, field::add(c.get2(0, 0).unwrap(), 1)).unwrap();
-        let bad = TensorOpReceipt::from_output(&job, miner, 1, 5, &a, &b, &c).unwrap();
+        let mut bad = receipt.clone();
+        bad.output_roots = vec![c.commitment_root()];
+        bad.trace_root = hash_bytes(b"test", &[b"bad-tensorop-trace"]);
+        bad.receipt_id = bad.recompute_receipt_id();
+        bad.signature = sign(&bad.miner, &bad.receipt_id);
         let report =
             verify_tensor_op(&job, &bad, &a, &b, &c, &seed, &FreivaldsParams::default()).unwrap();
         assert_eq!(report.result, VerificationResult::Invalid);
@@ -753,14 +748,6 @@ mod tests {
         .unwrap();
         let mut bad_input_shape = receipt.clone();
         bad_input_shape.input_roots = vec![wrong_a.commitment_root(), b.commitment_root()];
-        bad_input_shape.trace_root = hash_bytes(
-            b"tensor-vm-tensorop-trace-v1",
-            &[
-                &wrong_a.commitment_root(),
-                &b.commitment_root(),
-                &c.commitment_root(),
-            ],
-        );
         bad_input_shape.receipt_id = bad_input_shape.recompute_receipt_id();
         bad_input_shape.signature = sign(&bad_input_shape.miner, &bad_input_shape.receipt_id);
         assert_eq!(
@@ -776,14 +763,6 @@ mod tests {
         .unwrap();
         let mut bad_output_shape = receipt.clone();
         bad_output_shape.output_roots = vec![wrong_c.commitment_root()];
-        bad_output_shape.trace_root = hash_bytes(
-            b"tensor-vm-tensorop-trace-v1",
-            &[
-                &a.commitment_root(),
-                &b.commitment_root(),
-                &wrong_c.commitment_root(),
-            ],
-        );
         bad_output_shape.receipt_id = bad_output_shape.recompute_receipt_id();
         bad_output_shape.signature = sign(&bad_output_shape.miner, &bad_output_shape.receipt_id);
         assert_eq!(
@@ -833,8 +812,11 @@ mod tests {
             .weight_after
             .set2(0, 0, field::add(output.weight_after.get2(0, 0).unwrap(), 1))
             .unwrap();
-        let bad_receipt =
-            LinearTrainingStepReceipt::from_output(&job, receipt.miner, &output, 1, 5);
+        let mut bad_receipt = receipt.clone();
+        bad_receipt.weight_root_after = output.weight_after.commitment_root();
+        bad_receipt.trace_root = hash_bytes(b"test", &[b"sparse-weight-trace"]);
+        bad_receipt.receipt_id = bad_receipt.recompute_receipt_id(&job.program_hash());
+        bad_receipt.signature = sign(&bad_receipt.miner, &bad_receipt.receipt_id);
         let report = verify_linear_training_step(
             &job,
             &bad_receipt,
@@ -931,8 +913,10 @@ mod tests {
             .dy
             .set2(0, 0, field::add(output.dy.get2(0, 0).unwrap(), 1))
             .unwrap();
-        let bad_receipt =
-            LinearTrainingStepReceipt::from_output(&job, receipt.miner, &output, 1, 5);
+        let mut bad_receipt = receipt.clone();
+        bad_receipt.trace_root = hash_bytes(b"test", &[b"sparse-error-trace"]);
+        bad_receipt.receipt_id = bad_receipt.recompute_receipt_id(&job.program_hash());
+        bad_receipt.signature = sign(&bad_receipt.miner, &bad_receipt.receipt_id);
 
         let report = verify_linear_training_step(
             &job,
@@ -983,7 +967,9 @@ mod tests {
             Err(TvmError::InvalidReceipt("job id mismatch"))
         );
 
-        let mut late = LinearTrainingStepReceipt::from_output(&job, receipt.miner, &output, 11, 5);
+        let mut late =
+            LinearTrainingStepReceipt::from_output(&job, receipt.miner, &weights, &output, 11, 5)
+                .unwrap();
         assert_eq!(
             verify_linear_training_step(&job, &late, &weights, &output, &validation_seed, &params),
             Err(TvmError::InvalidReceipt("receipt submitted after deadline"))

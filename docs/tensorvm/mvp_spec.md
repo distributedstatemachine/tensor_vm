@@ -710,6 +710,10 @@ receipt
 The receipt becomes blockspace only after validator attestations settle it. Blocks contain hashes and roots
 for settled receipts, not raw job requests.
 
+Current local-reference status: canonical TensorOp receipts bind `program_hash` to the validated
+single-matmul TensorGraph `graph_id`, and their `trace_root` is derived from exact execution of that
+canonical graph's op trace rather than from a receipt-specific shortcut hash.
+
 ---
 
 ### 9.3 TensorOp Receipt
@@ -1271,6 +1275,11 @@ trace_root = MerkleRoot([
 ```
 
 Trace roots prepare the system for later interactive fraud proofs.
+
+Current local-reference status: fixed canonical TensorOp and LinearTrainingStep receipt constructors derive
+this root from `TensorGraph::execute_exact` for their canonical graph bodies, and verifiers require the
+same canonical trace root for otherwise-valid receipts. Arbitrary user-submitted graph-backed receipt
+records remain a separate open item.
 
 ---
 

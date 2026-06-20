@@ -1,6 +1,11 @@
+use std::collections::BTreeMap;
+
 use crate::error::{Result, TvmError};
 use crate::field::Elem;
-use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
+use crate::ir::{
+    IrExecution, IrExecutionInputs, TensorGraph, canonical_linear_training_step_graph,
+    canonical_matmul_graph,
+};
 use crate::tensor::{DType, Tensor};
 use crate::types::{Address, Hash, Signature, hash_bytes, sign};
 use crate::vm;
@@ -91,6 +96,13 @@ impl MatmulJob {
     pub fn tensor_ir_graph(&self) -> TensorGraph {
         canonical_matmul_graph(self.m, self.k, self.n, self.dtype)
     }
+
+    pub fn exact_ir_execution(&self, a: &Tensor, b: &Tensor) -> Result<IrExecution> {
+        self.tensor_ir_graph().execute_exact(&IrExecutionInputs {
+            tensors: BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]),
+            field_params: BTreeMap::new(),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -139,10 +151,11 @@ impl TensorOpReceipt {
     ) -> Result<Self> {
         let input_roots = vec![a.commitment_root(), b.commitment_root()];
         let output_roots = vec![c.commitment_root()];
-        let trace_root = hash_bytes(
-            b"tensor-vm-tensorop-trace-v1",
-            &[&input_roots[0], &input_roots[1], &output_roots[0]],
-        );
+        let execution = job.exact_ir_execution(a, b)?;
+        if execution.outputs.get("c") != Some(c) {
+            return Err(TvmError::InvalidReceipt("tensor ir output mismatch"));
+        }
+        let trace_root = execution.trace_root;
         let unsigned = receipt_digest(ReceiptDigestInput {
             domain: b"tensor-vm-tensorop-receipt-v1",
             job_id: &job.job_id,
@@ -303,6 +316,21 @@ impl LinearTrainingStepJob {
             self.dtype,
         )
     }
+
+    pub fn exact_ir_execution(
+        &self,
+        weights: &Tensor,
+        output: &LinearTrainingStepOutput,
+    ) -> Result<IrExecution> {
+        self.tensor_ir_graph().execute_exact(&IrExecutionInputs {
+            tensors: BTreeMap::from([
+                ("x".to_owned(), output.x.clone()),
+                ("w".to_owned(), weights.clone()),
+                ("target".to_owned(), output.target.clone()),
+            ]),
+            field_params: BTreeMap::from([("lr".to_owned(), self.lr)]),
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -345,17 +373,25 @@ impl LinearTrainingStepReceipt {
         execution_time_ms: u64,
     ) -> Result<(Self, LinearTrainingStepOutput)> {
         let output = job.execute(weights)?;
-        let receipt = Self::from_output(job, miner, &output, submitted_at_block, execution_time_ms);
+        let receipt = Self::from_output(
+            job,
+            miner,
+            weights,
+            &output,
+            submitted_at_block,
+            execution_time_ms,
+        )?;
         Ok((receipt, output))
     }
 
     pub fn from_output(
         job: &LinearTrainingStepJob,
         miner: Address,
+        weights_before: &Tensor,
         output: &LinearTrainingStepOutput,
         submitted_at_block: u64,
         execution_time_ms: u64,
-    ) -> Self {
+    ) -> Result<Self> {
         let batch_root = hash_bytes(
             b"tensor-vm-linear-batch-root-v1",
             &[
@@ -363,17 +399,15 @@ impl LinearTrainingStepReceipt {
                 &output.target.commitment_root(),
             ],
         );
-        let trace_root = hash_bytes(
-            b"tensor-vm-linear-trace-v1",
-            &[
-                &job.weight_root_before,
-                &batch_root,
-                &output.y.commitment_root(),
-                &output.dy.commitment_root(),
-                &output.grad_w.commitment_root(),
-                &output.weight_after.commitment_root(),
-            ],
-        );
+        let execution = job.exact_ir_execution(weights_before, output)?;
+        if execution.outputs.get("y") != Some(&output.y)
+            || execution.outputs.get("dy") != Some(&output.dy)
+            || execution.outputs.get("grad_w") != Some(&output.grad_w)
+            || execution.outputs.get("weight_after") != Some(&output.weight_after)
+        {
+            return Err(TvmError::InvalidReceipt("tensor ir output mismatch"));
+        }
+        let trace_root = execution.trace_root;
         let unsigned = receipt_digest(ReceiptDigestInput {
             domain: b"tensor-vm-linear-receipt-v1",
             job_id: &job.job_id,
@@ -390,7 +424,7 @@ impl LinearTrainingStepReceipt {
             execution_time_ms,
             submitted_at_block,
         });
-        Self {
+        Ok(Self {
             receipt_id: unsigned,
             job_id: job.job_id,
             miner,
@@ -407,7 +441,7 @@ impl LinearTrainingStepReceipt {
             execution_time_ms,
             submitted_at_block,
             signature: sign(&miner, &unsigned),
-        }
+        })
     }
 
     pub fn recompute_receipt_id(&self, program_hash: &Hash) -> Hash {
@@ -482,8 +516,12 @@ mod tests {
             job.tensor_ir_graph().validate_for_consensus().unwrap()
         );
         let miner = address(b"miner");
-        let (receipt, _a, _b, c) = TensorOpReceipt::from_job(&job, miner, 1, 7).unwrap();
+        let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 7).unwrap();
         assert_eq!(receipt.output_roots, vec![c.commitment_root()]);
+        assert_eq!(
+            receipt.trace_root,
+            job.exact_ir_execution(&a, &b).unwrap().trace_root
+        );
         assert_eq!(receipt.tensor_work_units, 48);
         assert_eq!(receipt.program_hash, job.tensor_ir_graph().graph_id());
     }
@@ -515,6 +553,12 @@ mod tests {
         assert_eq!(
             receipt.weight_root_after,
             output.weight_after.commitment_root()
+        );
+        assert_eq!(
+            receipt.trace_root,
+            job.exact_ir_execution(&weights, &output)
+                .unwrap()
+                .trace_root
         );
         assert_eq!(
             receipt.receipt_id,

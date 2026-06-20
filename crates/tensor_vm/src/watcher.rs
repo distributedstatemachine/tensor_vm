@@ -264,7 +264,7 @@ mod tests {
         PrimitiveType, TensorOpReceipt,
     };
     use crate::tensor::{DType, Tensor};
-    use crate::types::{address, hash_bytes};
+    use crate::types::{address, hash_bytes, sign};
     use crate::verify::{AttestationStatement, FreivaldsParams, ValidatorAttestation};
 
     #[test]
@@ -545,8 +545,13 @@ mod tests {
             .weight_after
             .set2(0, 0, field::add(output.weight_after.get2(0, 0).unwrap(), 1))
             .unwrap();
-        let mut no_quorum_linear =
-            LinearTrainingStepReceipt::from_output(&linear_job, miner, &output, 1, 6);
+        let mut no_quorum_linear = quorum_linear.clone();
+        no_quorum_linear.weight_root_after = output.weight_after.commitment_root();
+        no_quorum_linear.trace_root = hash_bytes(b"test", &[b"no-quorum-linear-trace"]);
+        no_quorum_linear.execution_time_ms = 6;
+        no_quorum_linear.receipt_id =
+            no_quorum_linear.recompute_receipt_id(&linear_job.program_hash());
+        no_quorum_linear.signature = sign(&no_quorum_linear.miner, &no_quorum_linear.receipt_id);
         no_quorum_linear.receipt_id = [3; 32];
 
         let tensor_job = MatmulJob::synthetic(0, 2, 2, 2, 2, &beacon, 10);
@@ -634,7 +639,12 @@ mod tests {
             .weight_after
             .set2(0, 0, field::add(output.weight_after.get2(0, 0).unwrap(), 1))
             .unwrap();
-        let conflicting = LinearTrainingStepReceipt::from_output(&job, miner, &output, 1, 6);
+        let mut conflicting = receipt.clone();
+        conflicting.weight_root_after = output.weight_after.commitment_root();
+        conflicting.trace_root = hash_bytes(b"test", &[b"conflicting-linear-trace"]);
+        conflicting.execution_time_ms = 6;
+        conflicting.receipt_id = conflicting.recompute_receipt_id(&job.program_hash());
+        conflicting.signature = sign(&conflicting.miner, &conflicting.receipt_id);
         chain.submit_job(JobState::LinearTrainingStep(job.clone()));
         chain.submit_linear_receipt(receipt.clone()).unwrap();
         chain.submit_linear_receipt(conflicting.clone()).unwrap();

@@ -22,6 +22,10 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
 
     let job = MatmulJob::synthetic(0, 0, 2, 2, 2, beacon, 10);
     let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let validator = JobScheduler::default()
+        .assign_validators(chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
     let report = verify_tensor_op(
         &job,
         &receipt,
@@ -49,13 +53,17 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
         ))
         .unwrap();
     chain.settle_epoch(1_000, 500);
-    assert!(
-        chain
-            .state()
-            .pending_receipt_rewards()
-            .values()
-            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    let pending_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .expect("settled receipt should enqueue a delayed reward");
+    assert_eq!(
+        pending_reward.claimable_at_height,
+        chain.state().height() + chain.params().tensor_retention_window_blocks()
     );
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
     receipt.receipt_id
 }
 

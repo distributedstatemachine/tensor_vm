@@ -5,8 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 45 is complete.
-- Current status: Iteration 45 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 46, canonical current-job IR trace roots.
+- Current status: Iteration 46 implemented and validated on June 20, 2026; commit and push evidence
+  pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,10 +15,10 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action after Iteration 45: move to arbitrary graph-backed jobs/receipts, full VRF/drand
-  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, remaining exact
-  signed/fixed-point unary or quantization replay, or the Docker `/health` blocker if the environment
-  changes.
+- Next action: commit and push Iteration 46 evidence, then move to arbitrary graph-backed jobs/receipts,
+  full VRF/drand commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy,
+  remaining exact signed/fixed-point unary or quantization replay, or the Docker `/health` blocker if the
+  environment changes.
 
 ## Readiness Matrix
 
@@ -36,6 +37,58 @@ feature-sized iterations are summarized after validation and push, and older det
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
+
+## Active Feature Iteration
+
+### Iteration 46: Canonical Current-Job IR Trace Roots
+
+Feature capability: current canonical TensorOp and LinearTrainingStep receipts derive and verify
+`trace_root` from their canonical `TensorGraph::execute_exact` op traces instead of parallel handcrafted
+trace-hash shortcuts.
+
+Implementation checkpoint:
+- Canonical owner: `ir::TensorGraph::execute_exact` remains the owner of exact graph execution and trace
+  root construction.
+- Adapter callers: `jobs` and `verify` consume canonical graph execution results for current fixed job
+  records only; role/runtime/p2p adapters stay unchanged.
+- Old shortcut being removed: current receipt constructors and verifiers no longer build separate
+  receipt-specific trace roots that can diverge from the canonical IR DAG trace.
+- Regression tests: current job receipt tests assert trace roots equal exact graph execution roots; verifier
+  mismatch tests continue rejecting altered trace commitments.
+- Synthetic production disabled: unchanged; current canonical job execution semantics only.
+- Producer/non-producer roles: unchanged; arbitrary graph-backed role execution remains later work.
+- Structured evidence source: receipt `trace_root`, `IrExecution.trace_root`, focused jobs/verify tests,
+  docs matrix/status entries.
+- Finality source: unchanged stake-weighted block votes.
+- Wire-size and codec boundary: no wire codec changes.
+
+Validation target:
+- Focused: `cargo test -p tensor_vm --lib jobs::tests verify::tests -- --nocapture` if accepted by the
+  test harness, otherwise separate `jobs::tests` and `verify::tests` runs.
+- Broad: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`,
+  final `cargo test -p tensor_vm local_testnet --release`, and the expected tarpaulin blocked check.
+
+Current validation evidence:
+- Required first gate: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused jobs tests: `cargo test -p tensor_vm --lib jobs::tests -- --nocapture` passed 2 tests.
+- Focused verifier tests: `cargo test -p tensor_vm --lib verify::tests -- --nocapture` passed 13 tests.
+- Focused challenge/settlement/watcher/reward regressions passed:
+  `challenge::tests::fraud_challenge_proves_invalid_tensorop_and_resolves_slash`,
+  `chain::tests::settlement::conflicting_linear_training_roots_do_not_settle`, `watcher::tests`, and
+  `chain::tests::rewards::reward_root_commits_to_all_pending_reward_ledgers`.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm` passed 361 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final local-testnet gate: `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet
+  library tests plus the filtered service-gateway integration test.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+Out of scope: arbitrary graph-backed job/receipt record types, chain/runtime receipt production for
+arbitrary registered graphs, p2p/codec changes, generic graph verifier economics, const-blob fetching,
+signed/fixed-point unary semantics, exact quantization, and Docker `/health`.
 
 ## Recent Iterations
 

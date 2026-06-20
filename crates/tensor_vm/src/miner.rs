@@ -63,10 +63,11 @@ impl<B: ExecutionBackend> MinerNode<B> {
         let receipt = LinearTrainingStepReceipt::from_output(
             job,
             self.address,
+            weights,
             &output,
             submitted_at_block,
             execution_time_ms,
-        );
+        )?;
         Ok((receipt, output))
     }
 }

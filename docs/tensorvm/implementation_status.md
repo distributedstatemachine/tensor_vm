@@ -29,8 +29,10 @@ blocker clears. See
   class: full Freivalds, random-linear, exact deterministic replay, canonical-reference-required, or
   index-consistency-required. `gather`, `scatter`, and `embedding` are present only as non-admitted
   index-consistency-gated vocabulary. Current TensorOp and LinearTrainingStep receipts bind their
-  `program_hash` to the validated IR `graph_id`. Current job admission stores the canonical graph body
-  bytes in chain state keyed by graph ID. Arbitrary user-submitted canonical graph bodies can also be
+  `program_hash` to the validated IR `graph_id`, and fixed canonical receipt production now derives
+  TensorOp and LinearTrainingStep `trace_root` values from exact execution of those canonical graph op
+  traces. Current job admission stores the canonical graph body bytes in chain state keyed by graph ID.
+  Arbitrary user-submitted canonical graph bodies can also be
   registered directly through `ChainCommand::RegisterProgramBody`, which parses the JSON IR, validates it
   for consensus admission, checks that the submitted graph ID matches the validated graph, rejects
   noncanonical byte encodings, and treats matching duplicate submissions as idempotent. Registered graph
@@ -44,9 +46,9 @@ blocker clears. See
   and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
   output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Arbitrary graph-backed job/receipt
-  admission, chain/runtime receipt production through this interpreter, const-blob fetching, mixed-dtype
-  conformance vectors, exact replay for the remaining admitted registry (exact signed/fixed-point unary ops
-  and exact quantization), and CUDA generic graph execution remain open.
+  admission, role/runtime receipt production for arbitrary registered graphs, const-blob fetching,
+  mixed-dtype conformance vectors, exact replay for the remaining admitted registry (exact
+  signed/fixed-point unary ops and exact quantization), and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only shaping/generator coverage (`add`, `sub`, `mul`, `scalar_mul`,
   `transpose`, `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`,

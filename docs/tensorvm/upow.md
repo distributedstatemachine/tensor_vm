@@ -158,7 +158,8 @@ Graph {
 > Status: current TensorOp and LinearTrainingStep jobs store their validated canonical graph bodies in
 > chain state keyed by `graph_id`, persist those bodies through node-store snapshots, commit them in the
 > state root, and can serve them through the existing `RequestProgram`/`ProgramResponse` libp2p path.
-> Generic arbitrary-IR job admission and execution remain TODO.
+> Current canonical TensorOp and LinearTrainingStep receipts derive `trace_root` from exact execution of
+> their canonical TensorGraph op traces. Generic arbitrary-IR job admission and role execution remain TODO.
 
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):
@@ -326,6 +327,10 @@ Attestation {
 ```
 
 Every record's signed body is canonical JSON / SSZ; `*_id = SHA256(canonical(body))`.
+
+> Status: the local reference computes current canonical TensorOp and LinearTrainingStep receipt
+> `trace_root` values from the exact TensorGraph execution trace for the corresponding graph ID. This does
+> not yet imply arbitrary graph-backed job admission or a generic cheap verifier for every admitted op.
 
 > **Crypto is asymmetric, full stop.** No HMAC/shared-secret signing anywhere in the consensus path. Identities are on-chain accounts.
 
