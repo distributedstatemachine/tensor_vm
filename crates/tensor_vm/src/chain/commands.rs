@@ -120,6 +120,7 @@ impl ChainEngine for Chain {
                     validator: outcome.validator,
                     resolution,
                     receipt_reward_reinstated: outcome.receipt_reward_reinstated,
+                    stake_refunded_amount: outcome.stake_refunded_amount,
                 }])
             }
             ChainCommand::SubmitBlock(block) => match self.admit_block(block)? {

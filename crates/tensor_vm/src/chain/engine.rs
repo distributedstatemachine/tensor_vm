@@ -145,6 +145,7 @@ pub enum ChainEvent {
         validator: Address,
         resolution: ValidatorAuditAppealResolution,
         receipt_reward_reinstated: bool,
+        stake_refunded_amount: u64,
     },
     BlockVoteAccepted {
         block_hash: Hash,

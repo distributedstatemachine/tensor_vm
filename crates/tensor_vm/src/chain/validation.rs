@@ -276,6 +276,7 @@ pub fn submit_validator_audit_appeal(
         signature: appeal.signature,
         resolved_at_height: None,
         resolution: None,
+        stake_refunded_amount: 0,
     };
     chain
         .state
@@ -288,6 +289,7 @@ pub fn submit_validator_audit_appeal(
 pub(super) struct ValidatorAuditAppealResolutionOutcome {
     pub validator: crate::types::Address,
     pub receipt_reward_reinstated: bool,
+    pub stake_refunded_amount: u64,
 }
 
 pub fn resolve_validator_audit_appeal(
@@ -310,6 +312,7 @@ pub fn resolve_validator_audit_appeal(
         .state
         .validator_audit_slashes
         .get(&audit_id)
+        .cloned()
         .ok_or(TvmError::InvalidReceipt("unknown validator audit slash"))?;
     if slash.validator != appeal.validator || slash.receipt_id != appeal.receipt_id {
         return Err(TvmError::InvalidReceipt("validator audit appeal mismatch"));
@@ -335,14 +338,25 @@ pub fn resolve_validator_audit_appeal(
             "validator audit appeal reward claim missing",
         ));
     }
+    let stake_refunded_amount = if resolution == ValidatorAuditAppealResolution::ReverseRewardVoid {
+        let refunded = chain.state.rewards.debit_treasury(slash.amount);
+        if let Some(validator) = chain.state.validators.get_mut(&appeal.validator) {
+            validator.stake = validator.stake.saturating_add(refunded);
+        }
+        refunded
+    } else {
+        0
+    };
     if let Some(record) = chain.state.validator_audit_appeals.get_mut(&audit_id) {
         record.resolved_at_height = Some(chain.state.height);
         record.resolution = Some(resolution);
+        record.stake_refunded_amount = stake_refunded_amount;
     }
 
     Ok(ValidatorAuditAppealResolutionOutcome {
         validator: appeal.validator,
         receipt_reward_reinstated,
+        stake_refunded_amount,
     })
 }
 

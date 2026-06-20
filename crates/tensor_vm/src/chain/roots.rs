@@ -242,6 +242,7 @@ pub(super) fn validator_audit_appeal_root(
             Some(ValidatorAuditAppealResolution::ReverseRewardVoid) => 2,
             None => 0,
         });
+        encoded.extend_from_slice(&appeal.stake_refunded_amount.to_le_bytes());
     }
     hash_bytes(b"tensor-vm-validator-audit-appeal-root-v1", &[&encoded])
 }

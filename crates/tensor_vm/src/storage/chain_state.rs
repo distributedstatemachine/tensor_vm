@@ -868,6 +868,7 @@ fn encode_validator_audit_appeals(
             Some(ValidatorAuditAppealResolution::ReverseRewardVoid) => 2,
             None => 0,
         });
+        write_u64(out, appeal.stake_refunded_amount);
     }
 }
 
@@ -908,6 +909,7 @@ fn decode_validator_audit_appeals(
                 ));
             }
         };
+        let stake_refunded_amount = reader.read_u64()?;
         appeals.insert(
             audit_id,
             ValidatorAuditAppealRecord {
@@ -922,6 +924,7 @@ fn decode_validator_audit_appeals(
                 signature,
                 resolved_at_height,
                 resolution,
+                stake_refunded_amount,
             },
         );
     }
@@ -1522,6 +1525,7 @@ mod tests {
             loaded_appeal.resolved_at_height,
             Some(chain.state().height())
         );
+        assert_eq!(loaded_appeal.stake_refunded_amount, 17);
         assert_eq!(
             loaded.state().program_bodies(),
             chain.state().program_bodies()
@@ -1591,7 +1595,6 @@ mod tests {
         assert_eq!(
             loaded.state().rewards().treasury(),
             11 + chain.params().data_unavailability_miner_slash_amount
-                + chain.params().validator_audit_slash_amount
         );
         assert!(
             loaded

@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 83 complete and pushed.
+- Active feature: Iteration 84 in progress: Validator Audit Stake-Slash Reversal.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,8 +31,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with the next non-Docker consensus gap or rerun the full Docker scenario after the
-  `/health` blocker clears.
+- Next action: implement governed stake refund on reversed validator-audit appeals, then continue with the
+  next non-Docker consensus gap or rerun the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -49,70 +49,67 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness, assignment seed, and validation seed commitment; attestations require the anchor | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 81 in progress | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Enforce receipt reward release only after blockspace inclusion, then add broader bond calibration and governed stake-slash reversal |
+| Economics and slashing invariant | Partial; Iteration 84 in progress | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add governed validator-audit stake-slash reversal, then broader bond calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 83: Receipt-Bound Validation Challenge Seed
+### Iteration 84: Validator Audit Stake-Slash Reversal
 
-Feature capability: admitted receipts carry a state-rooted validation challenge seed commitment derived at
-receipt admission from the receipt id and finalized beacon, and validator challenge-vector seeds are derived
-from that committed receipt-time seed rather than mutable current chain randomness.
+Feature capability: reversed validator-audit appeals refund the recorded stake slash from treasury back to
+the slashed validator exactly once, while upheld appeals remain unchanged and reward reinstatement still
+uses the delayed pending-claim path.
 
-Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` AC6 validation randomness binding.
+Readiness requirements covered: `upow.md` §12 economics/slashing and the local readiness economics gap for
+governed stake-slash reversal.
 
-Canonical owner: `chain::receipts` creates `ReceiptRandomnessAnchor` at admission, `chain::validation`
-derives assignment/audit seeds, and `Chain::validation_seed` derives verifier challenge vectors from the
-anchor.
-Adapter callers: miner/validator roles, p2p/RPC receipt ingestion, scheduler assignment, verifier calls,
-status/explorer/storage observe or use the same chain state.
-Old shortcut being removed: fallback challenge-vector derivation from current finalized randomness for an
-already-admitted receipt, which lets later beacon advancement change validation seeds if anchor state is
-missing.
-Regression test that proves the shortcut is gone: focused proposer/randomness tests prove admitted receipts
-persist a challenge seed commitment, validation seeds equal derivation from that commitment after later
-blocks, and attestation submission rejects a stored receipt missing its anchor.
-Behavior with local synthetic block production disabled: inbound receipts anchor their validation seed at
-admission; later inbound blocks cannot rewrite validator challenge vectors for that receipt.
-Behavior for producer and non-producer roles: producers and non-producers both require the same receipt
-anchor before accepting attestations and derive identical validation seeds from persisted state.
-Structured evidence source: `ReceiptRandomnessAnchor::{beacon_round, finalized_randomness,
-assignment_seed, validation_seed_commitment}`, state root, storage roundtrip, and typed
-`InvalidReceipt("receipt randomness anchor missing")`.
-Finality source: finalized beacon at receipt admission; block admission/finality remains separate.
-Wire-size and codec boundary: state codec changes for `ReceiptRandomnessAnchor`; no p2p payload tag or
-bounded wire format change.
+Canonical owner: `chain::validation::resolve_validator_audit_appeal` mutates validator stake, treasury, and
+the state-rooted appeal record.
+Adapter callers: CLI/RPC/runtime callers use `ChainCommand::ResolveValidatorAuditAppeal`; storage/status
+observe the same chain state.
+Old shortcut being removed: reversed appeals previously cleared only the delayed reward void flag and left
+the stake slash permanently applied.
+Regression test that proves the shortcut is gone: focused audit appeal tests assert reversed appeals refund
+validator stake, debit treasury, persist the refunded amount, and reject duplicate resolution; upheld
+appeals do not refund.
+Behavior with local synthetic block production disabled: audit appeal resolution is a chain command over
+existing audit/slash records and does not depend on local job or block production.
+Behavior for producer and non-producer roles: producers and non-producers replay the same chain command and
+state-rooted appeal record; no adapter branch owns the refund.
+Structured evidence source: `ValidatorAuditAppealRecord::stake_refunded_amount`, validator stake,
+treasury balance, state root, command event, and storage roundtrip.
+Finality source: the appeal resolution command records resolved height in canonical state; block
+admission/finality remains separate.
+Wire-size and codec boundary: chain-state storage/root encoding changes for audit appeal records; no p2p
+payload tag or bounded wire format change.
 
-Files/modules likely touched: `chain/state.rs`, `chain/receipts.rs`, `chain/validation.rs`, `chain.rs`,
-`chain/roots.rs`, `storage/chain_state.rs`, focused chain/storage tests, status docs, and this plan.
+Files/modules likely touched: `chain/state.rs`, `chain/validation.rs`, `chain/commands.rs`,
+`chain/roots.rs`, `storage/chain_state.rs`, focused audit/storage tests, status docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
 Parallelizable implementation workstreams: read-only discovery and validation only.
-Tests/checkers/docs to add or update: focused randomness/attestation/storage tests plus docs status for
-§10 progress.
-Narrow validation commands: `cargo test -p tensor_vm randomness --quiet`, `cargo test -p tensor_vm
-proposer --quiet`, `cargo test -p tensor_vm storage::chain_state --quiet`.
+Tests/checkers/docs to add or update: focused audit appeal/storage tests plus docs status for §12 progress.
+Narrow validation commands: `cargo test -p tensor_vm validator_audit --quiet`, `cargo test -p tensor_vm
+storage::chain_state --quiet`, `cargo test -p tensor_vm reward --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt.
-Expected observable evidence: admitted receipt challenge seeds remain stable after beacon advancement and
-attestations cannot be accepted for receipt state missing the required randomness anchor.
-Out of scope: external drand/VRF networking, public commit-reveal service, and fork-choice policy.
-Split trigger: if state codec compatibility or migration for old snapshots becomes required, split that
-from the consensus seed derivation change.
+Expected observable evidence: reversed audit appeals restore the slashed validator stake and reduce treasury
+by the refunded amount without immediately crediting delayed validator rewards.
+Out of scope: broader fraud-path bond calibration, external governance process, and fork-choice policy.
+Split trigger: if appeal records need a broader governance identity/signature format, split that from the
+canonical refund state transition.
 
 Implementation summary:
-- Added `validation_seed_commitment` to `ReceiptRandomnessAnchor`, state roots, and chain-state storage.
-- Receipt admission now records the commitment, and `Chain::validation_seed` derives admitted-receipt
-  challenge vectors from that commitment instead of mutable current chain randomness.
-- Attestation admission now rejects stored receipts missing their randomness anchor; direct test fixtures
-  must explicitly install matching anchor state.
-- Updated AC6/status/Tarpaulin docs for the stronger receipt-bound randomness evidence.
+- Added `stake_refunded_amount` to `ValidatorAuditAppealRecord`, state roots, and chain-state storage.
+- Reversed validator-audit appeals now debit treasury and restore the recorded slash to validator stake
+  through `resolve_validator_audit_appeal`; upheld appeals keep the slash applied.
+- `ValidatorAuditAppealResolved` events now expose the stake refund amount, while delayed validator reward
+  release still uses the pending receipt reward sweeper.
+- Updated §12/status/coverage docs for governed stake-slash reversal progress.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm randomness --quiet`, `cargo test -p tensor_vm proposer --quiet`,
-  `cargo test -p tensor_vm storage::chain_state --quiet`, and
-  `cargo test -p tensor_vm watcher_skips_settled_receipts_and_non_quorum_linear_conflict_candidates --quiet` passed.
+- Focused: `cargo test -p tensor_vm validator_audit --quiet`, `cargo test -p tensor_vm
+  storage::chain_state --quiet`, and `cargo test -p tensor_vm reward --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 413 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -120,9 +117,16 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `e08f7c9` (`Bind validation seeds to receipt anchors`) is pushed to `origin/main`.
 
 ## Recent Iterations
+
+### Iteration 83: Receipt-Bound Validation Challenge Seed
+
+Admitted receipts now persist receipt-time finalized beacon randomness, assignment seed, and validation
+seed commitment. `Chain::validation_seed` derives admitted-receipt challenge vectors from that commitment,
+and attestation admission rejects stored receipts missing their anchor. Focused randomness/proposer/storage
+tests, full crate, clippy, workspace release, first/final Gate 0 passed; tarpaulin remained blocked.
+Feature commit `e08f7c9` and evidence commit `22641f7` are pushed.
 
 ### Iteration 82: Chain-Owned Delayed Receipt Reward Release
 
@@ -180,14 +184,13 @@ and first/final Gate 0, with tarpaulin still blocked.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 83 on June 20, 2026:
+Latest full validation is Iteration 84 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm randomness --quiet
-cargo test -p tensor_vm proposer --quiet
+cargo test -p tensor_vm validator_audit --quiet
 cargo test -p tensor_vm storage::chain_state --quiet
-cargo test -p tensor_vm watcher_skips_settled_receipts_and_non_quorum_linear_conflict_candidates --quiet
+cargo test -p tensor_vm reward --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

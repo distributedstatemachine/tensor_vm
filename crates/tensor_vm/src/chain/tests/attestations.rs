@@ -630,8 +630,22 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
             validator: event_validator,
             resolution: ValidatorAuditAppealResolution::UpholdSlash,
             receipt_reward_reinstated: false,
+            stake_refunded_amount: 0,
         } if *event_audit_id == audit_id && *event_validator == audited
     )));
+    assert_eq!(
+        upheld_chain
+            .state()
+            .validators()
+            .get(&audited)
+            .unwrap()
+            .stake,
+        starting_stake - 55
+    );
+    assert_eq!(
+        upheld_chain.state().rewards().treasury(),
+        starting_treasury + 55
+    );
     assert!(
         upheld_chain
             .state()
@@ -674,8 +688,20 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
             validator: event_validator,
             resolution: ValidatorAuditAppealResolution::ReverseRewardVoid,
             receipt_reward_reinstated: true,
+            stake_refunded_amount: 55,
         } if *event_audit_id == audit_id && *event_validator == audited
     )));
+    let reversed_appeal = chain
+        .state()
+        .validator_audit_appeals()
+        .get(&audit_id)
+        .unwrap();
+    assert_eq!(reversed_appeal.stake_refunded_amount, 55);
+    assert_eq!(
+        chain.state().validators().get(&audited).unwrap().stake,
+        starting_stake
+    );
+    assert_eq!(chain.state().rewards().treasury(), starting_treasury);
     let reinstated_validator_claim = chain
         .state()
         .pending_receipt_rewards()

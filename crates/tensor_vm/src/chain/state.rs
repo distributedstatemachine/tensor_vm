@@ -526,6 +526,7 @@ pub struct ValidatorAuditAppealRecord {
     pub signature: Signature,
     pub resolved_at_height: Option<u64>,
     pub resolution: Option<ValidatorAuditAppealResolution>,
+    pub stake_refunded_amount: u64,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -614,6 +615,12 @@ impl RewardState {
 
     pub(in crate::chain) fn credit_treasury(&mut self, amount: u64) {
         self.treasury = self.treasury.saturating_add(amount);
+    }
+
+    pub(in crate::chain) fn debit_treasury(&mut self, amount: u64) -> u64 {
+        let debited = self.treasury.min(amount);
+        self.treasury = self.treasury.saturating_sub(debited);
+        debited
     }
 
     pub fn balance(&self, address: &Address) -> u64 {
