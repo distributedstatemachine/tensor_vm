@@ -5,12 +5,16 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest completed feature: Iteration 18, UVPoW retargeting and explicit zero-receipt fallback mode, is
-  implemented and validated as `af33fe1` (`Add UVPoW retarget fallback mode`). Blocks
-  now carry an explicit production kind, validators derive the expected difficulty target from parent block
-  history and consensus parameters, zero selected receipts produce a PoW-skip fallback block instead of
-  masquerading as useful PoW, and `tvmd node block` exposes block kind, expected target, retarget params,
-  and fallback evidence fields.
+- Latest completed feature: Iteration 19, canonical child-state block roots and block-opening evidence, is
+  implemented and validated as `232256d` (`Add canonical block apply openings`). Useful-verification blocks
+  now commit to the child state root, use Merkle-openable selected-receipt and checks roots, expose parent
+  snapshot plus child apply outcome evidence, and reject the old parent-root-as-block-state shortcut.
+- Previous completed feature: Iteration 18, UVPoW retargeting and explicit zero-receipt fallback mode, is
+  implemented and validated as `af33fe1` (`Add UVPoW retarget fallback mode`). Blocks now carry an explicit
+  production kind, validators derive the expected difficulty target from parent block history and consensus
+  parameters, zero selected receipts produce a PoW-skip fallback block instead of masquerading as useful
+  PoW, and `tvmd node block` exposes block kind, expected target, retarget params, and fallback evidence
+  fields.
 - Previous completed feature: Iteration 17, role-owned live counter checker hardening, is implemented,
   validated, and pushed as `d4a6182d19bb1e1ea1f63174d8df7eb657cd6dd4`
   (`Harden role-owned local checker evidence`) on `origin/main`. The local Docker checker now requires
@@ -63,12 +67,76 @@ feature-sized iterations are summarized after validation and push, and older det
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
 | Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
 | Role-owned live work before proposal | Implemented/pushed | `e18d5b3`; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Rerun full Docker checker after `/health` blocker clears |
-| Canonical useful-verification block validity | Retarget/fallback implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce plus explicit production kind; strict vote validation checks state root, beacon, parent-derived target, useful-PoW or fallback mode, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, timeout rotation, and full fallback reward economics |
+| Canonical useful-verification block validity | Child apply/opening evidence implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce plus explicit production kind; strict vote validation checks child state root, beacon, parent-derived target, useful-PoW or fallback mode, proposer, selected receipts, Merkle-openable checks, attestation, and child reward roots; `232256d` exposes parent snapshot and child apply outcome evidence | Add persisted historical parent snapshots, challenge transaction/dispute flow, timeout rotation, and full fallback reward economics |
 | Checker evidence | Updated/pushed | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; `d4a6182` adds exact role-owned miner/validator live counter gates | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
 ## Recent Iterations
+
+### Iteration 19: Canonical Child-State Block Roots and Block-Opening Evidence
+
+Feature capability:
+Move useful-verification block validity from parent-root and aggregate-check shortcuts toward replayable
+parent-basis validation. Blocks now commit to the child state root after applying the canonical selected
+receipt set, and status exposes parent snapshot, child roots, selected receipt openings, and checks-root
+openings.
+
+Checkpoint before edits:
+- Canonical owner: `chain::blocks`, `chain::roots`, `ChainParams`, and `TensorBlock` own parent-basis
+  validation, selected receipt commitments, checks-root commitments, child apply, block admission, and
+  finality preconditions.
+- Adapter callers: validator runtime, P2P, storage, and status continue to pass through canonical blocks;
+  `tvmd node block` observes parent/child/opening evidence without deciding validity.
+- Old shortcut removed: useful-verification block `state_root` can no longer be the parent state root, and
+  `checks_root` is no longer a non-openable aggregate over selected receipt ids.
+- Regression tests: block apply outcome exposes parent/child roots and verifies selected receipt plus check
+  Merkle proofs; block validation rejects a useful block whose `state_root` is reset to the parent root.
+- Local synthetic disabled behavior: unchanged; profiles without synthetic jobs still do not synthesize
+  local work.
+- Producer/non-producer behavior: producers and non-producers both validate through the same
+  `chain::blocks` path and derive expected roots from the current parent basis.
+- Structured evidence source: `tvmd node block` reports parent snapshot roots, child state/reward roots,
+  recomputation booleans, opening counts, selected receipt leaf ids, selected receipt leaf roots, and checks
+  leaf roots.
+- Finality source: signed validator `BlockVote`s through `SubmitBlockVote`, unchanged.
+- Wire-size and codec boundary: no block wire/body codec change in this slice; evidence is reconstructed
+  from canonical chain state and status paths.
+
+Implementation summary:
+- Added `BlockApplyOutcome`, `BlockParentSnapshot`, and `SelectedReceiptOpening` to expose the canonical
+  parent snapshot, selected receipt commitment, checks-root commitment, child apply result, and Merkle proof
+  metadata.
+- Replaced block-level selected receipt and checks commitments with Merkle roots over receipt/check leaves
+  that include receipt metadata and canonical receipt checks.
+- Block production and admission now compute the block `state_root` from the child state after applying
+  selected receipts, and validation rejects parent-root-as-child-state blocks.
+- Block status now reports parent snapshot roots, child roots, recomputation flags, opening counts, and leaf
+  roots for independent local inspection.
+
+Validation:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `cargo fmt && cargo test -p tensor_vm --lib block -- --nocapture`: 36 filtered block/codec/storage/P2P
+  tests passed.
+- `cargo test -p tensor_vm --lib`: 314 library tests passed.
+- `cargo fmt && cargo test -p tensor_vm --test tvmd_cli`: 8 integration tests passed.
+- `cargo test -p tensor_vm`: 314 library tests, 1 local CPU Compose test, 8 `tvmd_cli` integration tests,
+  28 `tvmd_runtime` integration tests, and doctests passed.
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `git diff --check`
+
+Push evidence:
+- Feature commit `232256d` (`Add canonical block apply openings`) is recorded for push with this evidence
+  update.
+
+Out of scope:
+- Persisted historical parent snapshot storage for replaying arbitrary old blocks from disk.
+- Cross-validator challenge transaction flow, dispute networking, reward clawback, and slashing.
+- Timeout-based stake rotation after withheld useful-PoW proposals and full fallback reward economics.
+- Full Docker checker rerun while the standing gateway `/health` timeout blocker remains unresolved.
 
 ### Iteration 18: UVPoW Retargeting and Zero-Receipt Fallback Mode
 
