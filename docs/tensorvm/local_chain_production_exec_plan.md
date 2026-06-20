@@ -6,8 +6,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Current State
 
 - Active feature: Iteration 49, fixed-point scale metadata and round-half-even rescale foundation.
-- Current status: Iteration 49 implementation and validation complete locally on June 20, 2026; read-only
-  subagents complete.
+- Current status: Iteration 49 implementation, validation, and feature push complete on June 20, 2026;
+  read-only subagents complete.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -122,6 +122,10 @@ Validation evidence:
 - Final `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet library tests plus
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
+
+Commit evidence:
+- Feature commit: `a14ba9b` (`Add fixed point scale rescale foundation`), pushed to `main` on June 20,
+  2026 (`d8295ab..a14ba9b`).
 
 Expected observable evidence: a fixed-point graph with nonzero scale can exact-execute with deterministic
 round-half-even scale changes, graph verification rejects missing conformance, and tensor commitments bind
