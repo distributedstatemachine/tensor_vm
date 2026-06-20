@@ -488,6 +488,7 @@ fn encode_receipt_randomness_anchors(
         write_u64(out, anchor.beacon_round);
         write_hash(out, &anchor.finalized_randomness);
         write_hash(out, &anchor.assignment_seed);
+        write_hash(out, &anchor.validation_seed_commitment);
     }
 }
 
@@ -504,6 +505,7 @@ fn decode_receipt_randomness_anchors(
                 beacon_round: reader.read_u64()?,
                 finalized_randomness: reader.read_hash()?,
                 assignment_seed: reader.read_hash()?,
+                validation_seed_commitment: reader.read_hash()?,
             },
         );
     }
@@ -1534,6 +1536,13 @@ mod tests {
                 .receipt_randomness_anchors()
                 .contains_key(receipt_id)
         }));
+        assert!(
+            loaded
+                .state()
+                .receipt_randomness_anchors()
+                .values()
+                .all(|anchor| anchor.validation_seed_commitment != [0; 32])
+        );
         assert!(
             loaded
                 .state()

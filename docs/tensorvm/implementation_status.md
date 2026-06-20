@@ -198,10 +198,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
 - Profile-neutral `ChainEngine`, file-backed `ChainStore`, and shared `ChainProfile`/`NodeConfig`
   boundaries so local CPU, public testnet, and future mainnet profiles build the same transition engine
 - Receipt-bound validation randomness anchors: receipt admission persists the finalized beacon round,
-  finalized randomness, and derived validator-assignment seed for each admitted receipt; validator
-  assignment and `Chain::validation_seed` use the persisted anchor so later finalized-beacon advancement
-  cannot change an admitted receipt's assigned validators or challenge-vector seed. Full VRF/drand and
-  external commit-reveal lifecycle wiring remain open.
+  finalized randomness, derived validator-assignment seed, and validation seed commitment for each admitted
+  receipt; validator assignment and `Chain::validation_seed` use the persisted anchor so later
+  finalized-beacon advancement cannot change an admitted receipt's assigned validators or challenge-vector
+  seed. Attestation admission rejects stored receipts missing that anchor instead of falling back to mutable
+  current chain randomness. Full VRF/drand and external commit-reveal lifecycle wiring remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

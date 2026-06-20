@@ -24,11 +24,6 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
     if !attestation.verify_signature() {
         return Err(TvmError::InvalidReceipt("bad attestation signature"));
     }
-    if !is_assigned_validator(chain, attestation.validator, attestation.receipt_id) {
-        return Err(TvmError::InvalidReceipt(
-            "validator not assigned to receipt",
-        ));
-    }
     let (receipt_job_id, receipt_primitive_type, receipt_miner) = {
         let receipt = chain
             .state
@@ -37,6 +32,20 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
             .ok_or(TvmError::UnknownReceipt)?;
         (receipt.job_id(), receipt.primitive_type(), receipt.miner())
     };
+    if !chain
+        .state
+        .receipt_randomness_anchors
+        .contains_key(&attestation.receipt_id)
+    {
+        return Err(TvmError::InvalidReceipt(
+            "receipt randomness anchor missing",
+        ));
+    }
+    if !is_assigned_validator(chain, attestation.validator, attestation.receipt_id) {
+        return Err(TvmError::InvalidReceipt(
+            "validator not assigned to receipt",
+        ));
+    }
     if attestation.job_id != receipt_job_id || attestation.primitive_type != receipt_primitive_type
     {
         if let Some(validator) = chain.state.validators.get_mut(&attestation.validator) {
@@ -544,6 +553,47 @@ pub fn assignment_seed(beacon_round: u64, finalized_randomness: &Hash, receipt_i
             finalized_randomness,
             receipt_id,
         ],
+    )
+}
+
+pub fn validation_seed_commitment(
+    beacon_round: u64,
+    finalized_randomness: &Hash,
+    receipt_id: &Hash,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-validation-seed-commitment-v1",
+        &[
+            &beacon_round.to_le_bytes(),
+            finalized_randomness,
+            receipt_id,
+        ],
+    )
+}
+
+pub fn committed_seed(
+    validation_seed_commitment: &Hash,
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    validation_round: u64,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-committed-validation-seed-v1",
+        &[
+            validation_seed_commitment,
+            receipt_id,
+            job_id,
+            validator,
+            &validation_round.to_le_bytes(),
+        ],
+    )
+}
+
+pub fn missing_anchor_seed(receipt_id: &Hash, validator: &Address) -> Hash {
+    hash_bytes(
+        b"tensor-vm-missing-receipt-randomness-anchor-v1",
+        &[receipt_id, validator],
     )
 }
 

@@ -104,6 +104,7 @@ pub(super) fn receipt_randomness_anchor_root(
         encoded.extend_from_slice(&anchor.beacon_round.to_le_bytes());
         encoded.extend_from_slice(&anchor.finalized_randomness);
         encoded.extend_from_slice(&anchor.assignment_seed);
+        encoded.extend_from_slice(&anchor.validation_seed_commitment);
     }
     hash_bytes(b"tensor-vm-receipt-randomness-anchor-root-v1", &[&encoded])
 }

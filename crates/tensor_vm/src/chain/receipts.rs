@@ -174,6 +174,8 @@ fn anchor_receipt_randomness(chain: &mut Chain, receipt_id: Hash) {
     let finalized_randomness = chain.state.finalized_randomness;
     let assignment_seed =
         validation::assignment_seed(beacon_round, &finalized_randomness, &receipt_id);
+    let validation_seed_commitment =
+        validation::validation_seed_commitment(beacon_round, &finalized_randomness, &receipt_id);
     chain.state.receipt_randomness_anchors.insert(
         receipt_id,
         ReceiptRandomnessAnchor {
@@ -181,6 +183,7 @@ fn anchor_receipt_randomness(chain: &mut Chain, receipt_id: Hash) {
             beacon_round,
             finalized_randomness,
             assignment_seed,
+            validation_seed_commitment,
         },
     );
 }

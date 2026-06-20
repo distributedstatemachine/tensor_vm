@@ -349,6 +349,7 @@ pub struct ReceiptRandomnessAnchor {
     pub beacon_round: u64,
     pub finalized_randomness: Hash,
     pub assignment_seed: Hash,
+    pub validation_seed_commitment: Hash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

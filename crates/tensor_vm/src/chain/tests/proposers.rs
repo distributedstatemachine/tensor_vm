@@ -52,6 +52,7 @@ fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
     chain.register_validator(validator_a, 10_000).unwrap();
     chain.register_validator(validator_b, 10_000).unwrap();
     let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
+    let job_id = job.job_id;
     let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
     let receipt_id = receipt.receipt_id;
     chain.submit_job(JobState::TensorOp(job));
@@ -69,6 +70,10 @@ fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
         anchor.assignment_seed,
         chain.validator_assignment_seed(&receipt_id)
     );
+    assert_eq!(
+        anchor.validation_seed_commitment,
+        validation::validation_seed_commitment(0, &beacon, &receipt_id)
+    );
     let assigned_before = JobScheduler::default()
         .assign_validators(
             &chain,
@@ -77,6 +82,16 @@ fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
         )
         .validators;
     let seed_before = chain.validation_seed(&receipt_id, &validator_a);
+    assert_eq!(
+        seed_before,
+        validation::committed_seed(
+            &anchor.validation_seed_commitment,
+            &receipt_id,
+            &job_id,
+            &validator_a,
+            0
+        )
+    );
 
     chain.produce_block(validator_a, 1_000).unwrap();
     assert_eq!(chain.state().finalized_beacon_round(), 1);
@@ -113,6 +128,46 @@ fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
     assert_ne!(
         chain.validator_assignment_seed(&receipt_id),
         chain.validator_assignment_seed(&later_receipt_id)
+    );
+}
+
+#[test]
+fn admitted_receipt_attestation_requires_randomness_anchor() {
+    let beacon = hash_bytes(b"test", &[b"missing-anchor-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"missing-anchor-miner");
+    let validator = address(b"missing-anchor-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    let job_id = receipt.job_id;
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+    let anchored_seed = chain.validation_seed(&receipt_id, &validator);
+    chain.remove_receipt_randomness_anchor_for_testing(&receipt_id);
+
+    assert_ne!(
+        chain.validation_seed(&receipt_id, &validator),
+        anchored_seed
+    );
+    assert_eq!(
+        chain.submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id,
+                job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"missing-anchor-checks"]),
+                data_availability_passed: true,
+            },
+        )),
+        Err(TvmError::InvalidReceipt(
+            "receipt randomness anchor missing"
+        ))
     );
 }
 

@@ -290,25 +290,33 @@ impl Chain {
             .get(receipt_id)
             .map(ReceiptState::job_id)
             .unwrap_or([0; 32]);
-        let (beacon_round, finalized_randomness) = self
-            .state
+        self.state
             .receipt_randomness_anchors
             .get(receipt_id)
-            .map_or(
-                (
-                    self.state.finalized_beacon_round,
-                    self.state.finalized_randomness,
-                ),
-                |anchor| (anchor.beacon_round, anchor.finalized_randomness),
-            );
-        validation::seed(
-            beacon_round,
-            &finalized_randomness,
-            receipt_id,
-            &job_id,
-            validator,
-            0,
-        )
+            .map_or_else(
+                || {
+                    if self.state.receipts.contains_key(receipt_id) {
+                        return validation::missing_anchor_seed(receipt_id, validator);
+                    }
+                    validation::seed(
+                        self.state.finalized_beacon_round,
+                        &self.state.finalized_randomness,
+                        receipt_id,
+                        &job_id,
+                        validator,
+                        0,
+                    )
+                },
+                |anchor| {
+                    validation::committed_seed(
+                        &anchor.validation_seed_commitment,
+                        receipt_id,
+                        &job_id,
+                        validator,
+                        0,
+                    )
+                },
+            )
     }
 
     pub fn settle_epoch(&mut self, miner_reward_pool: u64, validator_reward_pool: u64) {

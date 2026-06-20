@@ -1,6 +1,6 @@
 use super::{
-    BlockVote, Chain, PendingChallengeReward, PendingReceiptReward, ReceiptState, RewardState,
-    TensorBlock,
+    BlockVote, Chain, PendingChallengeReward, PendingReceiptReward, ReceiptRandomnessAnchor,
+    ReceiptState, RewardState, TensorBlock, validation,
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash};
@@ -88,6 +88,32 @@ impl Chain {
 
     pub(crate) fn insert_receipt_for_testing(&mut self, receipt: ReceiptState) {
         self.state.receipts.insert(receipt.receipt_id(), receipt);
+    }
+
+    pub(crate) fn remove_receipt_randomness_anchor_for_testing(&mut self, receipt_id: &Hash) {
+        self.state.receipt_randomness_anchors.remove(receipt_id);
+    }
+
+    pub(crate) fn anchor_receipt_randomness_for_testing(&mut self, receipt_id: Hash) {
+        let beacon_round = self.state.finalized_beacon_round;
+        let finalized_randomness = self.state.finalized_randomness;
+        let assignment_seed =
+            validation::assignment_seed(beacon_round, &finalized_randomness, &receipt_id);
+        let validation_seed_commitment = validation::validation_seed_commitment(
+            beacon_round,
+            &finalized_randomness,
+            &receipt_id,
+        );
+        self.state.receipt_randomness_anchors.insert(
+            receipt_id,
+            ReceiptRandomnessAnchor {
+                receipt_id,
+                beacon_round,
+                finalized_randomness,
+                assignment_seed,
+                validation_seed_commitment,
+            },
+        );
     }
 
     pub(crate) fn insert_block_votes_for_testing(
