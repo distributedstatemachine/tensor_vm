@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 51, exact per-channel int8 quantize/dequantize admission, implemented and
-  validated; commit/push pending.
+- Active feature: Iteration 51, exact per-channel int8 quantize/dequantize admission, implemented,
+  validated, and pushed.
 - Current status: Iteration 51 admits exact deterministic `quantize_int8_per_channel` and
   `dequantize_int8_per_channel` execution/conformance for fixed-point inputs and int8 tensors.
   `quantize_pack_int8` and `unpack_dequantize_int8` remain non-consensus-admitted until byte-packed
@@ -691,7 +691,8 @@ passed; tarpaulin remained blocked by missing `cargo-tarpaulin`. Feature commit 
 - Latest broad gates: `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
   passed after `cargo fmt --check --all`.
-- Latest feature commit: pending for Iteration 51.
+- Latest feature commit: `c04af93` (`Admit exact int8 quantize dequantize`) pushed
+  `8c1323a..c04af93 main -> main`.
 - Current tarpaulin blocker:
 
 ```text
