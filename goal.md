@@ -1,6 +1,65 @@
 # Goal Operating Contract
 
-Read `docs/tensorvm/codex_5_5_local_chain_workflow.md`, `docs/tensorvm/mvp_spec.md`, and `docs/tensorvm/local_chain_production_readiness.md` fully before editing. Maintain `docs/tensorvm/local_chain_production_exec_plan.md` as the source of truth for progress, decisions, validation commands, and blockers.
+Read `docs/tensorvm/upow.md`, `docs/tensorvm/codex_5_5_local_chain_workflow.md`, `docs/tensorvm/mvp_spec.md`, and `docs/tensorvm/local_chain_production_readiness.md` fully before editing. Maintain `docs/tensorvm/local_chain_production_exec_plan.md` as the source of truth for progress, decisions, validation commands, and blockers.
+
+## Primary Objective
+
+Implement `docs/tensorvm/upow.md` to a **full v0 MVP**: a standalone useful-work chain whose proof-of-work is the verification of useful tensor computation. `upow.md` is the canonical specification for the chain's design. Drive every feature iteration toward closing the gap between current code and the v0 scope below until the v0 Definition Of Done is met.
+
+Spec precedence when documents conflict:
+
+- `docs/tensorvm/upow.md` is canonical for chain design, the workload IR, the verification ladder, consensus, randomness, records, economics, and what is in v0 vs roadmap.
+- `docs/tensorvm/mvp_spec.md` wins over older readiness/exec text where `upow.md` is silent.
+- Update stale readiness/exec text as part of the feature instead of following it.
+
+Keep every existing guardrail in this file in force while implementing `upow.md`. The Architecture overrides, shortcut ban, parallelization rules, slice-size rule, commit/push rule, and compaction rule all still apply.
+
+## Useful-Work Chain v0 MVP Scope (upow.md)
+
+v0 admits **only** ops and mechanisms whose canonical `F_p` semantics are fully specified and exactly (or committee-) verifiable (`upow.md` §4.9, §13). The MVP is "done" when every in-scope capability below is implemented end to end with tests and checker/docs evidence, and every roadmap item is explicitly carried but gated out of consensus.
+
+### In scope for v0 (must be implemented)
+
+| upow.md ref | Capability | Notes |
+|---|---|---|
+| §3, §3.1–3.3 | Determinism contract: `F_p` arithmetic, fixed-point scale discipline, round-half-to-even, fixed ascending reduction order, canonical dtype/layout | Bit-exact reproducibility is the load-bearing constraint; everything else depends on it |
+| §3.3, §16 | Per-op `F_p` conformance test-vector suite any runtime (CPU reference, CUDA) must pass before receipts are accepted | Marked blocking-for-safety in the spec |
+| §4 | Content-addressed Tensor IR: value model, refs, `Op`, `Graph`, canonical JSON encoding, `graph_id`, structural validity rules | Replaces fixed job-type plumbing with a real IR graph language |
+| §4.7–4.9 | Frozen op registry with v0-admitted exact ops only (Tier A `matmul`/contraction `einsum`, exact Tier B elementwise/shaping/`sum`/`mean`/comparison/`relu`/exact quantization) plus the minimal set `LinearTrainingStep` needs | Tier-C ops carried in the registry as vocabulary but **gated out of consensus** |
+| §4.9 | Canonical v0 jobs: `TensorOp` (single `matmul`) and `LinearTrainingStep` | Both must settle live after startup |
+| §5 | Commitments and records: tensor Merkle commitments, `trace_root`, `Job`/`Receipt`/`Attestation` canonical bodies, `*_id = SHA256(canonical(body))`, asymmetric (sr25519/ed25519) signatures only | No shared-secret signing in the consensus path |
+| §6 | Verification L1: full-output Freivalds for block-eligible Tier-A receipts; row-sampled only for telemetry/triage | Full-output is mandatory for block eligibility |
+| §7 | Verification L2: sound random-linear checks for affine/elementwise Tier-B ops; enumerate which Tier-B ops are sound vs deferred | `gather`/`scatter`/`embedding` need index-consistency, not just linear checks |
+| §8.1 | Verification L3a: redundancy + honest-majority committee agreement for Tier-C receipts, with delayed settlement on disagreement | v0 baseline; weaker than L1/L2 by design |
+| §9 | Data availability for verification: miners serve tensor/trace chunks, validators do availability sampling, unserved chunks make a receipt non-finalizable and put bond at risk | Durable/erasure-coded DA is roadmap |
+| §10 | Unbiasable randomness: VRF/beacon-seeded challenge vectors and audit/committee selection, commit→reveal binding `r` to `(receipt_id, beacon_round)`, block-hash-derived randomness banned | Pin exact beacon construction as part of the feature |
+| §11 | Consensus: deterministic settled-receipt blockspace, UVPoW puzzle bound to a valid `checks_root`, difficulty retargeting, zero-receipt skip fallback, stake-weighted BFT finality separate from admission | Block proposal is validator-owned; TensorWork never selects proposers |
+| §11.4 | `TensorBlock` structure: height/prev/beacon, settled receipts, `checks_root`, PoW nonce/target, reward allocations, proposer sig, finality votes | Canonical names only |
+| §12 | Economics: miner/validator/challenger rewards, slashable miner bonds, lazy-validator mandatory-audit slashing, data-withholding timeout slashing, parameter table, the bond ≥ gain-from-fraud invariant | State and re-verify the economic invariant whenever a parameter changes |
+| §14 | Honest soundness framing recorded in docs/status (Tier-A strong, Tier-C committee-trust until 3b) | Do not over-claim base-layer economic security |
+
+### Roadmap, carried but gated out of v0 consensus
+
+Do not chase these as v0 work; do not let them block v0 completion. Keep the hooks (e.g. the `trace_root` field) so they remain non-breaking additions.
+
+- §8.2 interactive fraud proofs over `trace_root` (3b) — the priority post-v0 upgrade; `trace_root` ships in v0 to keep it non-breaking.
+- §8.3 / L4 ZK proofs of op/segment execution.
+- §9 durable erasure-coded DA and light-client guarantees.
+- §4.8 transcendental and order-dependent Tier-C op **consensus admission** (needs published canonical fixed-point references + verifiers + soundness bounds).
+- Externally-useful (non-synthetic) workloads and the §1.2 non-goals (arbitrary float consensus state, full Transformer training as one step, Turing-complete VM consensus, on-chain full tensors, ZKML for the whole workload, subjective usefulness scoring).
+
+### Known v0 gaps to drive iterations (current code → upow.md v0)
+
+These are the concrete deltas between the implemented reference core and full `upow.md` v0. Convert each into a feature-sized iteration using the checkpoint format below, and track status in the exec plan readiness matrix.
+
+- Full content-addressed Tensor IR graph language, frozen op registry, canonical encoding, `graph_id`, and structural validity (today only fixed `TensorOp`/`LinearTrainingStep` job types exist).
+- Per-op `F_p` conformance test-vector suite gating receipt acceptance (§3.3).
+- Difficulty retargeting and zero-receipt skip fallback for UVPoW block production (§11.2).
+- Exact parent-state snapshots, child-state apply semantics, selected-receipt lifecycle/opening metadata, and `checks_root` challenge openings (§11).
+- VRF/beacon randomness binding with commit→reveal ordering and an enforced ban on block-hash-derived consensus randomness (§10).
+- L2 random-linear soundness coverage enumerated per Tier-B op, with index-consistency handling for `gather`/`scatter`/`embedding` (§7).
+- Slashable miner bonds, mandatory randomized validator audits with slashing, and data-withholding timeout slashing wired to the economic invariant (§12).
+- Network-visible validator proposer/block-assembly tick that replaces the remaining service-owned synthetic round helper (carryover from the local readiness plan, required by §2 and §11).
 
 ## Canonical Architecture Override
 
@@ -274,6 +333,20 @@ Use this structure:
 When compacting, preserve facts, commands, evidence, blockers, and commit hashes. Do not delete unresolved blockers or decisions that still constrain the implementation. If unsure whether to delete something, summarize it in the archive instead of keeping the full text.
 
 ## Definition Of Done
+
+### upow.md v0 MVP
+
+- Every in-scope `upow.md` v0 capability in the scope table above is implemented end to end with tests and checker/docs evidence, or explicitly reclassified with rationale recorded in the exec plan.
+- The determinism contract (§3) holds: consensus-critical compute is bit-exact `F_p` fixed-point, and a per-op conformance test-vector suite gates receipt acceptance for both the CPU reference runtime and the CUDA path (§3.3).
+- Workloads are expressed as the content-addressed Tensor IR (§4): graphs are addressed by `graph_id`, structurally validated before execution, and built only from v0-admitted ops; Tier-C ops are carried in the registry but gated out of consensus.
+- The verification ladder is live for v0: full-output Freivalds for Tier-A block eligibility (§6), sound random-linear checks for the enumerated Tier-B ops (§7), and redundancy + committee agreement with delayed settlement for Tier-C (§8.1).
+- Records (`Job`/`Receipt`/`Attestation`/`TensorBlock`) use canonical bodies, `SHA256(canonical(body))` ids, asymmetric signatures only, and reserve `trace_root` so §8.2 fraud proofs remain a non-breaking addition (§5, §13).
+- Randomness for challenge vectors, audits, and committee selection is beacon/VRF-sourced with commit→reveal binding; block-hash-derived consensus randomness is banned and that ban is enforced, not just documented (§10).
+- Consensus is deterministic settled-receipt blockspace + UVPoW bound to a valid `checks_root` with difficulty retargeting and zero-receipt fallback, admission separate from stake-weighted BFT finality (§11).
+- Economics are wired: rewards, slashable bonds, mandatory validator audits, and data-withholding timeout slashing satisfy the bond ≥ gain-from-fraud invariant, which is re-verified on every parameter change (§12).
+- Docs/status record the §14 honest soundness framing (Tier-A strong; Tier-C committee-trust until 3b) without over-claiming base-layer security.
+
+### Local chain readiness (carryover guardrails)
 
 - Every readiness gap in `docs/tensorvm/local_chain_production_readiness.md` is implemented or explicitly reclassified with rationale.
 - v1 consensus assumptions are removed or rewritten wherever they affect active code, tests, checkers, or current docs.
