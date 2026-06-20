@@ -510,6 +510,10 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
             let [lhs, rhs] = two_tensor_values(&args)?;
             binary_elementwise_tensor(lhs, rhs, field::mul)?
         }
+        "div" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            field_div_tensor(lhs, rhs)?
+        }
         "scalar_mul" => {
             let (tensor, scalar) = tensor_and_scalar_values(&args)?;
             tensor.scalar_mul(scalar)?
@@ -840,6 +844,25 @@ fn binary_elementwise_tensor(
         ));
     }
     Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
+}
+
+fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+    if lhs.dtype() != DType::FieldElement
+        || rhs.dtype() != DType::FieldElement
+        || lhs.scale() != 0
+        || rhs.scale() != 0
+    {
+        return Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"));
+    }
+    let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
+    let len = checked_usize_product(&shape)?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        let numerator = broadcast_value(lhs, &shape, index)?;
+        let divisor = broadcast_value(rhs, &shape, index)?;
+        data.push(field::mul(numerator, field_inverse(divisor)?));
+    }
+    Tensor::from_vec_with_scale(shape, DType::FieldElement, 0, data)
 }
 
 fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
@@ -1904,6 +1927,21 @@ fn infer_outputs(
                 shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
                 dtype: lhs.dtype,
                 scale: lhs.scale,
+            }
+        }
+        "div" => {
+            let [lhs, rhs] = two_args(args)?;
+            if lhs.dtype != DType::FieldElement
+                || rhs.dtype != DType::FieldElement
+                || lhs.scale != 0
+                || rhs.scale != 0
+            {
+                return Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"));
+            }
+            ValueShape {
+                shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
+                dtype: DType::FieldElement,
+                scale: 0,
             }
         }
         "scalar_mul" => {
@@ -3083,8 +3121,8 @@ const FROZEN_OP_REGISTRY: [OpSpec; 49] = [
         output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
-        verification: IrVerificationClass::CanonicalReferenceRequired,
-        consensus_admitted: false,
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
     },
     OpSpec {
         name: "scalar_mul",
@@ -3854,6 +3892,87 @@ mod tests {
                 })
                 .unwrap()
                 .trace_root
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_field_div() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::FieldElement, 0),
+                tensor_spec("rhs", vec![2], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "div".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("quotient", vec![2, 2], DType::FieldElement, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "quotient".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        let lhs = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![2, 8, 4, 12]).unwrap();
+        let rhs = Tensor::from_vec(vec![2], DType::FieldElement, vec![2, 4]).unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("lhs".to_owned(), lhs), ("rhs".to_owned(), rhs)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["quotient"],
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 2, 3]).unwrap()
+        );
+
+        let zero_rhs = Tensor::from_vec(vec![2], DType::FieldElement, vec![2, 0]).unwrap();
+        assert_eq!(
+            graph.execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![2, 8, 4, 12])
+                            .unwrap()
+                    ),
+                    ("rhs".to_owned(), zero_rhs),
+                ]),
+                field_params: BTreeMap::new(),
+            }),
+            Err(TvmError::InvalidReceipt("tensor ir division by zero"))
+        );
+    }
+
+    #[test]
+    fn graph_validation_rejects_unsupported_div() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::Fixed32, 0),
+                tensor_spec("rhs", vec![2, 2], DType::Fixed32, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "div".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("quotient", vec![2, 2], DType::Fixed32, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "quotient".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+
+        assert_eq!(
+            graph.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"))
         );
     }
 

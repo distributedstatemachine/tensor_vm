@@ -5,13 +5,13 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 63, exact Tier-A contraction `einsum` admission, implemented, validated,
-  committed, and pushed.
-- Current status: the frozen IR registry now admits exact Tier-A rank-2 matrix-contraction `einsum` plus
-  dynamic-output exact Tier-B `split`. `TensorGraph` consensus validation enforces the admitted `einsum`
-  equation subset, exact replay executes it through canonical field matmul/transpose paths, conformance
-  vectors include `einsum` evidence, and graph verification rejects otherwise-valid receipts when profile
-  evidence is absent.
+- Active feature: Iteration 64, exact field `div` admission, implemented and validated; commit/push
+  pending.
+- Current status: the frozen IR registry now admits exact field-only modular-inverse `div` alongside
+  exact Tier-A rank-2 matrix-contraction `einsum`, dynamic-output exact Tier-B `split`, and the current
+  exact replay surface. `TensorGraph` consensus validation enforces field dtype and scale `0`, exact
+  replay rejects zero divisors, conformance vectors include `div` evidence, and graph verification rejects
+  otherwise-valid receipts when profile evidence is absent.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -19,7 +19,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 64 feature/evidence, then select the next goal-aligned slice.
 
 ## Readiness Matrix
 
@@ -33,13 +33,96 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; Iteration 63 `einsum` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
-| Per-op `F_p` conformance vectors | Partial; Iteration 63 `einsum` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
+| Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
+| Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; executable `study::economic_invariant_study` | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, live parameter calibration, and broader invariant enforcement |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 64: Exact Field `div` Admission
+
+Feature capability: admit the exact field-only `div` subset from `upow.md` §4.7-§4.9. The admitted
+subset is conservative: both inputs must be `field` tensors with scale `0`, standard broadcast rules apply,
+and every divisor element must be nonzero. Fixed-point reciprocal division remains deferred.
+
+Readiness requirements covered:
+- `upow.md` §4.7: `div` over field dtype is exact modular inverse; fixed-point reciprocal remains Tier C.
+- `upow.md` §4.9: v0 admits exact Tier-B elementwise arithmetic with canonical `F_p` semantics.
+- `upow.md` §3.3 and §16: every admitted op spelling needs deterministic conformance vectors and CPU
+  profile evidence before receipts are accepted.
+
+Canonical owner: `ir::frozen_op_registry`, `TensorGraph::validate`, and `TensorGraph::execute_exact` own
+admitted vocabulary, dtype/scale restrictions, shape inference, and exact replay.
+Adapter callers: receipt verifiers, role runtimes, RPC/status surfaces, and checkers only observe graph
+validation/execution outcomes.
+Old shortcut being removed: `div` existed in exact Tier-B vocabulary but was non-admitted because
+fixed-point reciprocal semantics were not specified.
+Regression test that proves the shortcut is gone: focused IR, conformance, and graph verifier tests for
+field `div`, plus rejection tests for zero divisors and fixed-point `div`.
+Behavior with local synthetic block production disabled: unchanged; this is deterministic IR execution and
+receipt-admission metadata only.
+Behavior for producer and non-producer roles: unchanged; all roles consume the same conformance-gated graph
+verification path.
+Structured evidence source: IR tests, conformance vector/profile tests, graph verifier tests, status docs,
+and coverage docs.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_field_div`
+- `cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_div`
+- `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+- `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
+- `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_field_div_receipt`
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+Expected observable evidence: a consensus-admitted graph with broadcast field `div` validates and
+exact-executes using modular inverses, fixed-point `div` and division by zero reject, conformance profile
+gating rejects receipts when `div` evidence is absent, and the registry-derived admitted-op guard remains
+green.
+Out of scope: fixed-point reciprocal division, `pow`, `sqrt`, transcendental references, CUDA conformance
+evidence, and role-runtime arbitrary graph production.
+Split trigger: split smaller only if field `div` requires changing tensor dtype semantics, canonical JSON,
+graph refs, or shared-codec formats.
+
+Implementation summary:
+- Admitted `div` in the frozen registry only for exact field tensors.
+- Added consensus validation and shape inference that require field dtype and scale `0`.
+- Added exact broadcast replay through modular inverse multiplication, with zero divisors rejected.
+- Added deterministic conformance vector/profile coverage for the admitted `div` spelling.
+- Added graph verifier profile-gating coverage for a `div` receipt.
+- Updated implementation status, coverage matrix, tarpaulin status, and this execution plan.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_field_div` passed.
+- Focused IR rejection: `cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_div`
+  passed.
+- Focused conformance guard:
+  `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+  passed.
+- Focused CPU profile: `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
+  passed.
+- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_field_div_receipt`
+  passed.
+- TensorVM crate: `cargo test -p tensor_vm` passed 398 library tests plus integration tests.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 63: Exact Tier-A Matrix-Contraction `einsum` Admission
 
@@ -110,78 +193,13 @@ Validation evidence:
 - Feature commit: `0efedcc` (`Admit exact einsum contractions`) pushed `1019527..0efedcc main -> main`
   to `github.com:distributedstatemachine/tensor_vm.git`.
 
-## Recent Iterations
-
 ### Iteration 62: Dynamic-Output Exact `split` Admission
 
-Feature capability: admit the exact Tier-B structural `split` op from `upow.md` §4.7 into consensus graph
-validation and exact replay. `split` is the first dynamic-output admitted op: its output count is
-`len(sizes)`, each output preserves dtype/scale, and output refs use the existing `{kind:"op", id, idx}`
-multi-output addressing.
-
-Readiness requirements covered:
-- `upow.md` §4.3 and §4.7: multi-output ops declare multiple `out` specs and `split` has
-  `outputs = len(sizes)`.
-- `upow.md` §4.6: structural validation enforces output count, ref indices, and op typing rules.
-- `upow.md` §3.3 and §16: every admitted exact op has deterministic conformance vectors and CPU profile
-  evidence before receipts are accepted.
-
-Canonical owner: `ir::frozen_op_registry`, `TensorGraph::validate`, and `TensorGraph::execute_exact` own
-admitted vocabulary, dynamic output count validation, shape inference, and exact replay.
-Adapter callers: receipt verifiers, role runtimes, RPC/status surfaces, and checkers only observe graph
-validation/execution outcomes.
-Old shortcut being removed: `split` existed in `upow.md` as exact Tier-B vocabulary but could not be used
-by consensus-admitted graph replay because output counts were fixed.
-Regression test that proves the shortcut is gone:
-`ir::tests::exact_interpreter_executes_split_multi_output_structural_op`,
-`ir::tests::graph_validation_rejects_split_size_mismatch`, and
-`verify::tests::graph_verifier_accepts_split_receipt`.
-Behavior with local synthetic block production disabled: unchanged; this is deterministic IR execution and
-receipt-admission metadata only.
-Behavior for producer and non-producer roles: unchanged; all roles consume the same conformance-gated graph
-verification path.
-Structured evidence source: IR tests, conformance vector/profile tests, graph verifier tests, status docs,
-and coverage docs.
-Finality source: unchanged stake-weighted block votes.
-Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
-
-Implementation summary:
-- Added `IrOutputCount::{Exact, KwargListLen}` so registry metadata can represent dynamic output counts.
-- Added consensus-admitted `split` with required `sizes` and `dim` kwargs.
-- Added `split` shape inference and exact row-major replay that returns one tensor per segment.
-- Added deterministic multi-output conformance vector/profile evidence for `split`.
-- Added graph verifier profile-gating coverage for receipts that reference both split outputs.
-- Updated implementation status, coverage matrix, tarpaulin status, and this execution plan.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_split_multi_output_structural_op`
-  passed.
-- Focused IR rejection: `cargo test -p tensor_vm ir::tests::graph_validation_rejects_split_size_mismatch`
-  passed.
-- Focused conformance guard:
-  `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
-  passed.
-- Focused CPU profile: `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
-  passed.
-- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_split_receipt` passed.
-- TensorVM crate: `cargo test -p tensor_vm` passed 392 library tests plus integration tests.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
-  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `903cf9b` (`Admit dynamic split IR replay`) pushed `8c297d9..903cf9b main -> main` to
-  `github.com:distributedstatemachine/tensor_vm.git`.
-
-Expected observable evidence: a consensus-admitted graph with `split(sizes, dim)` validates, exact execution
-returns one tensor per split segment, graph receipts can reference both output indices, conformance profile
-gating rejects receipts when `split` evidence is absent, and the registry-derived admitted-op guard remains
-green.
-Out of scope: arbitrary graph production by role runtimes, CUDA conformance evidence, Tier-C dynamic-output
-ops such as `topk`/`qr`, and checker/Docker `/health` blockers.
+Admitted exact Tier-B `split` with `outputs = len(sizes)`, shape inference, exact row-major replay,
+multi-output conformance vectors, and graph verifier profile gating. Validation passed focused
+IR/conformance/verifier tests, `cargo test -p tensor_vm`, formatting/whitespace, clippy, workspace release,
+and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and evidence commit
+`1019527` are pushed.
 
 ### Iteration 61: Canonical Receipt Reward Maturity Delay
 
@@ -212,15 +230,15 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 63 on June 20, 2026:
+Latest full validation is Iteration 64 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm ir::tests::exact_interpreter_executes_einsum_matrix_contraction
-cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_einsum_equations
+cargo test -p tensor_vm ir::tests::exact_interpreter_executes_field_div
+cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_div
 cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op
 cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors
-cargo test -p tensor_vm verify::tests::graph_verifier_accepts_einsum_receipt
+cargo test -p tensor_vm verify::tests::graph_verifier_accepts_field_div_receipt
 cargo test -p tensor_vm
 cargo fmt --check --all
 git diff --check

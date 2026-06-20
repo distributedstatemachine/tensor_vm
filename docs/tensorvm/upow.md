@@ -90,9 +90,9 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > Status: the local reference now publishes a conformance vector suite for the current executable exact
 > `F_p` ops used by TensorOp and LinearTrainingStep, and receipt verification gates those current jobs on
 > the matching suite profile. The suite now carries per-input and expected output dtype/scale metadata for
-> fixed-point `cast`/`round` half-even rescale vectors, exact Tier-A matrix-contraction `einsum`, plus
-> multi-output expected tensors for exact per-channel int8 quantize scale output. `int8`, `uint8`, and
-> `bool` dtype tags are implemented, exact
+> fixed-point `cast`/`round` half-even rescale vectors, exact field-only modular-inverse `div`, exact
+> Tier-A matrix-contraction `einsum`, plus multi-output expected tensors for exact per-channel int8
+> quantize scale output. `int8`, `uint8`, and `bool` dtype tags are implemented, exact
 > `quantize_int8_per_channel`/`dequantize_int8_per_channel` vectors are CPU-conformance covered, and
 > `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Broader
 > admitted-registry vectors, CUDA pass evidence, and Tier-C/transcendental vector references remain TODO
@@ -377,9 +377,10 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > metadata, exact replay enforces `TensorSpec.scale`, fixed-point `cast`/`round` use canonical
 > round-half-even rescale, and exact per-channel int8 quantize/dequantize replay is conformance covered.
 > Byte-packed int8 quantization now uses a canonical flat `uint8` payload with explicit magic/version,
-> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Fixed-point arithmetic
-> scale policy beyond `cast`/`round`, low-level packed tensor storage/chunking APIs, and full verifier
-> coverage for every exact Tier-B op remain TODO.
+> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Field-only `div` is
+> admitted as exact modular-inverse replay, while fixed-point reciprocal division remains deferred.
+> Fixed-point arithmetic scale policy beyond `cast`/`round`, low-level packed tensor storage/chunking APIs,
+> and full verifier coverage for every exact Tier-B op remain TODO.
 
 ---
 

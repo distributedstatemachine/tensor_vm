@@ -91,6 +91,20 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[0, p - 1, p - 2, 6, 42, 143],
             &[2, 3],
         ),
+        scaled_vector(
+            "field-div-broadcast-v1",
+            "div",
+            "B",
+            &[&[2, 2], &[2]],
+            &[DType::FieldElement, DType::FieldElement],
+            &[0, 0],
+            &[],
+            &[&[2, 8, 4, 12], &[2, 4]],
+            DType::FieldElement,
+            0,
+            &[1, 2, 2, 3],
+            &[2, 2],
+        ),
         vector(
             "field-scalar-mul-wraparound-v1",
             "scalar_mul",
@@ -668,6 +682,7 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "add" => tensors[0].add(&tensors[1]),
         "sub" => tensors[0].sub(&tensors[1]),
         "mul" => tensors[0].mul(&tensors[1]),
+        "div" => field_div_tensor(&tensors[0], &tensors[1]),
         "scalar_mul" => tensors[0].scalar_mul(param(vector, "scalar")?),
         "identity" => Ok(tensors[0].clone()),
         "neg" => unary_tensor(&tensors[0], |value| field::sub(0, value)),
@@ -857,6 +872,29 @@ fn compare_tensors(
         );
     }
     Tensor::from_vec(shape, DType::Int32, data)
+}
+
+fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+    if lhs.dtype() != DType::FieldElement
+        || rhs.dtype() != DType::FieldElement
+        || lhs.scale() != 0
+        || rhs.scale() != 0
+    {
+        return Err(TvmError::InvalidReceipt("invalid conformance div"));
+    }
+    let shape = broadcast_shape(&[lhs.shape(), rhs.shape()])?;
+    let len = shape.iter().try_fold(1usize, |product, dim| {
+        product
+            .checked_mul(*dim)
+            .ok_or(TvmError::InvalidReceipt("invalid conformance div"))
+    })?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        let numerator = broadcast_value(lhs, &shape, index)?;
+        let divisor = broadcast_value(rhs, &shape, index)?;
+        data.push(field::mul(numerator, field_inverse(divisor)?));
+    }
+    Tensor::from_vec(shape, DType::FieldElement, data)
 }
 
 fn where_tensor(cond: &Tensor, when_true: &Tensor, when_false: &Tensor) -> Result<Tensor> {
@@ -1781,6 +1819,7 @@ mod tests {
             .collect::<BTreeSet<_>>();
         assert!(op_names.contains("matmul"));
         assert!(op_names.contains("sub"));
+        assert!(op_names.contains("div"));
         assert!(op_names.contains("scalar_mul"));
         assert!(op_names.contains("identity"));
         assert!(op_names.contains("neg"));
@@ -1849,6 +1888,7 @@ mod tests {
             "add",
             "sub",
             "mul",
+            "div",
             "scalar_mul",
             "identity",
             "neg",

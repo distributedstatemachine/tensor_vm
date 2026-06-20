@@ -1058,6 +1058,97 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_field_div_receipt() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                TensorSpec {
+                    name: "lhs".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+                TensorSpec {
+                    name: "rhs".to_owned(),
+                    shape: vec![2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "div".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "lhs".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "rhs".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "quotient".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "quotient".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let lhs = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![2, 8, 4, 12]).unwrap();
+        let rhs = Tensor::from_vec(vec![2], DType::FieldElement, vec![2, 4]).unwrap();
+        let inputs = BTreeMap::from([
+            ("lhs".to_owned(), lhs.clone()),
+            ("rhs".to_owned(), rhs.clone()),
+        ]);
+        let input_roots = BTreeMap::from([
+            ("lhs".to_owned(), lhs.commitment_root()),
+            ("rhs".to_owned(), rhs.commitment_root()),
+        ]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+        let (receipt, outputs) =
+            GraphReceipt::from_execution(&job, &graph, address(b"graph-div-miner"), &inputs, 1, 2)
+                .unwrap();
+
+        assert_eq!(
+            outputs["quotient"],
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 2, 3]).unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-div-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        let mut missing_div = cpu_reference_conformance_profile().unwrap();
+        missing_div.passed_ops.remove("div");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-div-validation"]),
+                conformance_profile: &missing_div,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn graph_verifier_accepts_quantize_dequantize_receipt() {
         let p = field::MODULUS;
         let graph = TensorGraph {

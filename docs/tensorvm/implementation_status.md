@@ -40,7 +40,8 @@ blocker clears. See
   runtime program server at startup, and served by the existing libp2p
   `RequestProgram`/`ProgramResponse` path. `TensorGraph::execute_exact` now provides a deterministic
   interpreter foundation for validated, consensus-admitted graphs over the currently implemented exact
-  tensor ops: `matmul`, exact Tier-A matrix-contraction `einsum`, broadcast-aware `add`/`sub`/`mul`, `scalar_mul`, `transpose`, explicit-dim
+  tensor ops: `matmul`, exact Tier-A matrix-contraction `einsum`, broadcast-aware `add`/`sub`/`mul`,
+  exact field-only modular-inverse `div`, `scalar_mul`, `transpose`, explicit-dim
   `sum`/`reduce_sum`, `identity`, `neg`, signed-residue `abs`/`sign`/`relu`, fixed-point scale-aware
   half-even `round`, `reshape`, `broadcast`, structural `squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`,
   comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, field-order `clamp`, `mean`, scale-aware `cast`,
@@ -71,15 +72,15 @@ blocker clears. See
   arithmetic scale policy beyond `cast`/`round`, low-level packed tensor storage/chunking APIs, and CUDA
   generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
-  and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`,
+  and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
   `sum`, `reduce_sum`, `mean`, `clamp`, `squeeze`, `unsqueeze`, `slice`, `split`, `tril`, `triu`, `cast`,
   `concat`, `stack`, `matmul`, `einsum`, `full`, `arange`,
   `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
   `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`),
   including per-input and expected output dtype/scale metadata for fixed-point rescale vectors,
-  multi-output expected tensors for exact quantize scale output and dynamic-output `split`, Tier-A
-  matrix-contraction `einsum`, field-order comparison/selection/clamp
+  multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
+  field-only modular-inverse `div`, Tier-A matrix-contraction `einsum`, field-order comparison/selection/clamp
   vectors, row-major structural vectors, and byte-exact packed payload vectors, with a stable suite hash,
   CPU reference backend pass reporting,
   default-build CUDA non-admission, a registry-derived guard that requires every consensus-admitted frozen
