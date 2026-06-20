@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 45, remaining exact Tier-B shape/reduction IR replay.
-- Current status: Iteration 45 implemented and validated on June 20, 2026; commit/push evidence pending.
+- Active feature: none; Iteration 45 is complete.
+- Current status: Iteration 45 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,9 +14,10 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 45 evidence, then move to arbitrary graph-backed jobs/receipts,
-  full VRF/drand commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, or the
-  Docker `/health` blocker if the environment changes.
+- Next action after Iteration 45: move to arbitrary graph-backed jobs/receipts, full VRF/drand
+  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, remaining exact
+  signed/fixed-point unary or quantization replay, or the Docker `/health` blocker if the environment
+  changes.
 
 ## Readiness Matrix
 
@@ -36,7 +37,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
-## Active Feature Iteration
+## Recent Iterations
 
 ### Iteration 45: Remaining Exact Tier-B Shape/Reduction IR Replay
 
@@ -78,14 +79,12 @@ Current validation evidence:
   library tests plus the filtered service-gateway integration test.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: pending.
-- Push evidence: pending.
+- Feature commit: `7154f6a` (`Complete exact Tier-B IR replay`).
+- Push evidence: pushed to `main` on June 20, 2026 (`da008c3..7154f6a`).
 
 Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt production through
 `TensorGraph::execute_exact`, const-blob fetching, signed/fixed-point unary op semantics, exact
 quantization, mixed-dtype conformance-vector schema, and CUDA generic graph execution.
-
-## Recent Iterations
 
 ### Iteration 44: Wider Exact Tier-B IR Interpreter Coverage
 
