@@ -26,6 +26,7 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
         .filter_map(|receipt_id| chain.state().receipts().get(receipt_id))
         .map(|receipt| receipt.estimated_block_bytes())
         .sum::<u64>();
+    let block_apply_outcome = chain.block_apply_outcome(block).ok();
     let block_valid = chain.validate_block(block).is_ok();
     let expected_difficulty_target = chain.expected_difficulty_target(block.height);
     let fallback_valid = !block.production_kind.requires_pow()
@@ -94,6 +95,29 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("pow_skip_fallback", !block.production_kind.requires_pow());
     report.field("fallback_valid", fallback_valid);
     report.field("parent_hash", hex(&block.parent_hash));
+    if let Some(outcome) = &block_apply_outcome {
+        report.field(
+            "parent_snapshot_root",
+            hex(&outcome.parent_snapshot.state_root),
+        );
+        report.field(
+            "parent_settled_receipt_pool_root",
+            hex(&outcome.parent_snapshot.settled_receipt_pool_root),
+        );
+        report.field(
+            "parent_included_receipt_root",
+            hex(&outcome.parent_snapshot.included_receipt_root),
+        );
+        report.field(
+            "parent_data_unavailable_receipt_root",
+            hex(&outcome.parent_snapshot.data_unavailable_receipt_root),
+        );
+        report.field("child_state_root", hex(&outcome.child_state_root));
+        report.field("child_reward_root", hex(&outcome.child_reward_root));
+        report.field("child_height", outcome.child_height);
+        report.field("child_epoch", outcome.child_epoch);
+        report.field("child_beacon", hex(&outcome.child_beacon));
+    }
     report.field("proposer", hex(&block.proposer));
     report.field("proposer_role", "validator");
     report.field("proposer_registered", proposer_registered);
@@ -108,6 +132,62 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     );
     report.field("selected_receipt_ids", hex_hash_list(&selected_receipt_ids));
     report.field("selected_receipt_count", selected_receipt_ids.len());
+    if let Some(outcome) = &block_apply_outcome {
+        report.field(
+            "selected_receipt_root_recomputed",
+            block.settled_receipt_set_root == outcome.selected_receipt_root,
+        );
+        report.field(
+            "selected_receipt_opening_count",
+            outcome.selected_openings.len(),
+        );
+        report.field(
+            "selected_receipt_leaf_ids",
+            hex_hash_list(
+                &outcome
+                    .selected_openings
+                    .iter()
+                    .map(|opening| opening.receipt_id)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        report.field(
+            "selected_receipt_leaf_roots",
+            hex_hash_list(
+                &outcome
+                    .selected_openings
+                    .iter()
+                    .map(|opening| opening.receipt_leaf)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        report.field(
+            "checks_opening_count",
+            outcome
+                .selected_openings
+                .iter()
+                .filter(|opening| opening.check_leaf_proof.is_some())
+                .count(),
+        );
+        report.field(
+            "checks_leaf_roots",
+            hex_hash_list(
+                &outcome
+                    .selected_openings
+                    .iter()
+                    .map(|opening| opening.check_leaf)
+                    .collect::<Vec<_>>(),
+            ),
+        );
+        report.field(
+            "child_state_root_recomputed",
+            block.state_root == outcome.child_state_root,
+        );
+        report.field(
+            "child_reward_root_recomputed",
+            block.reward_root == outcome.child_reward_root,
+        );
+    }
     report.field("selected_receipt_twu", selected_receipt_twu);
     report.field("selected_receipt_bytes", selected_receipt_bytes);
     report.field("block_twu_cap", blockspace_caps.max_tensor_work_units);
@@ -116,6 +196,12 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("checks_root", hex(&block.checks_root));
     report.field("check_leaf_count", selected_receipt_ids.len());
     report.field("checks_root_recomputed", block_valid);
+    if let Some(outcome) = &block_apply_outcome {
+        report.field(
+            "checks_root_openable",
+            block.checks_root == outcome.checks_root,
+        );
+    }
     report.field("difficulty_target", hex(&block.difficulty_target));
     report.field(
         "expected_difficulty_target",

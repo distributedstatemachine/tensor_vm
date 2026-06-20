@@ -1,12 +1,13 @@
 use super::roots::{
     attestation_root, block_checks_root, miner_root, receipt_root, reward_root,
-    selected_receipt_root,
+    selected_receipt_commitment_root, selected_receipt_root,
 };
 use super::*;
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
     TensorOpReceipt,
 };
+use crate::merkle::verify_proof;
 use crate::scheduler::JobScheduler;
 use crate::tensor::{DType, Tensor};
 use crate::types::{address, hash_bytes, sign};

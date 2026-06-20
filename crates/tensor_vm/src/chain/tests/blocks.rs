@@ -328,21 +328,23 @@ fn block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values
     let expected_selection =
         chain.canonical_blockspace(&parent_hash, &chain.state().finalized_randomness());
     let expected_settled_receipt_set_root =
-        selected_receipt_root(&expected_selection.receipt_set());
+        selected_receipt_commitment_root(&expected_selection.receipt_ids, chain.state().receipts());
     let expected_checks_root = block_checks_root(
         &expected_selection.receipt_ids,
+        chain.state().receipts(),
         chain.state().attestations(),
     );
     let expected_attestation_root = attestation_root(chain.state().attestations());
-    let expected_state_root = chain.state_root();
     let block = chain.produce_block(validator, 1_000).unwrap();
+    let outcome = chain.block_apply_outcome(&block).unwrap();
     assert_eq!(
         block.settled_receipt_set_root,
         expected_settled_receipt_set_root
     );
     assert_eq!(block.checks_root, expected_checks_root);
     assert_eq!(block.attestation_root, expected_attestation_root);
-    assert_eq!(block.state_root, expected_state_root);
+    assert_eq!(block.state_root, outcome.child_state_root);
+    assert_eq!(block.state_root, chain.state_root());
     assert!(block.pow_valid());
 
     let mut altered_miners = chain.state().miners().clone();
@@ -360,5 +362,104 @@ fn block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values
     assert_ne!(
         receipt_root(chain.state().receipts()),
         receipt_root(&altered_receipts)
+    );
+}
+
+#[test]
+fn block_apply_outcome_exposes_parent_child_and_check_openings() {
+    let beacon = hash_bytes(b"test", &[b"opening-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"opening-miner");
+    let validator = address(b"opening-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 3, 3, 3, &beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"opening-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job.clone()));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+    let parent_root = chain.state_root();
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    let outcome = chain.block_apply_outcome(&block).unwrap();
+
+    assert_eq!(outcome.parent_snapshot.state_root, parent_root);
+    assert_eq!(outcome.child_state_root, block.state_root);
+    assert_eq!(outcome.child_state_root, chain.state_root());
+    assert_eq!(outcome.selected_receipt_ids, vec![receipt.receipt_id]);
+    assert_eq!(outcome.selected_openings.len(), 1);
+    let opening = &outcome.selected_openings[0];
+    assert_eq!(opening.receipt_id, receipt.receipt_id);
+    assert!(opening.settled);
+    assert!(!opening.included_before_parent);
+    assert!(opening.data_available);
+    assert_eq!(opening.primitive_type, Some(PrimitiveType::TensorOp));
+    assert_eq!(opening.tensor_work_units, receipt.tensor_work_units);
+    assert!(
+        opening
+            .receipt_leaf_proof
+            .as_ref()
+            .is_some_and(|proof| verify_proof(
+                &outcome.selected_receipt_root,
+                opening.receipt_leaf,
+                proof
+            ))
+    );
+    assert!(
+        opening
+            .check_leaf_proof
+            .as_ref()
+            .is_some_and(|proof| verify_proof(&outcome.checks_root, opening.check_leaf, proof))
+    );
+}
+
+#[test]
+fn block_validation_rejects_parent_root_disguised_as_child_state_root() {
+    let beacon = hash_bytes(b"test", &[b"child-root-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"child-root-miner");
+    let validator = address(b"child-root-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+    let parent_root = chain.state_root();
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    let mut bad_block = block.clone();
+    bad_block.state_root = parent_root;
+    mine_test_block(&mut bad_block);
+
+    assert_eq!(
+        chain.validate_block(&bad_block),
+        Err(TvmError::InvalidReceipt("block state root mismatch"))
     );
 }

@@ -3,6 +3,7 @@ use super::{
     RewardState, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
+use crate::merkle::merkle_root;
 use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::{BTreeMap, BTreeSet};
@@ -219,19 +220,89 @@ pub(super) fn selected_receipt_root(receipts: &BTreeSet<Hash>) -> Hash {
     hash_set_root(b"tensor-vm-selected-receipt-root", receipts)
 }
 
+pub(super) fn selected_receipt_commitment_root(
+    selected_receipts: &[Hash],
+    receipts: &BTreeMap<Hash, ReceiptState>,
+) -> Hash {
+    if selected_receipts.is_empty() {
+        return selected_receipt_root(&BTreeSet::new());
+    }
+    let leaves = selected_receipt_leaves(selected_receipts, receipts);
+    merkle_root(&leaves)
+}
+
+pub(super) fn selected_receipt_leaves(
+    selected_receipts: &[Hash],
+    receipts: &BTreeMap<Hash, ReceiptState>,
+) -> Vec<Hash> {
+    selected_receipts
+        .iter()
+        .map(|receipt_id| {
+            let receipt = receipts.get(receipt_id);
+            selected_receipt_leaf(receipt_id, receipt)
+        })
+        .collect()
+}
+
+pub(super) fn selected_receipt_leaf(receipt_id: &Hash, receipt: Option<&ReceiptState>) -> Hash {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(receipt_id);
+    match receipt {
+        Some(receipt) => {
+            encoded.push(1);
+            encoded.push(primitive_type_tag(receipt.primitive_type()));
+            encoded.extend_from_slice(&receipt.receipt_id());
+            encoded.extend_from_slice(&receipt.job_id());
+            encoded.extend_from_slice(&receipt.miner());
+            encoded.extend_from_slice(&receipt.tensor_work_units().to_le_bytes());
+            encoded.extend_from_slice(&receipt.estimated_block_bytes().to_le_bytes());
+            encoded.extend_from_slice(&receipt.submitted_at_block().to_le_bytes());
+        }
+        None => encoded.push(0),
+    }
+    hash_bytes(b"tensor-vm-selected-receipt-leaf-v1", &[&encoded])
+}
+
 pub(super) fn block_checks_root(
     selected_receipts: &[Hash],
+    receipts: &BTreeMap<Hash, ReceiptState>,
     attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
 ) -> Hash {
+    merkle_root(&block_check_leaves(
+        selected_receipts,
+        receipts,
+        attestations,
+    ))
+}
+
+pub(super) fn block_check_leaves(
+    selected_receipts: &[Hash],
+    receipts: &BTreeMap<Hash, ReceiptState>,
+    attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+) -> Vec<Hash> {
+    selected_receipts
+        .iter()
+        .map(|receipt_id| block_check_leaf(receipt_id, receipts.get(receipt_id), attestations))
+        .collect()
+}
+
+pub(super) fn block_check_leaf(
+    receipt_id: &Hash,
+    receipt: Option<&ReceiptState>,
+    attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+) -> Hash {
+    let receipt_checks_root =
+        canonical_receipt_checks_root(receipt_id, attestations.get(receipt_id));
     let mut encoded = Vec::new();
-    for receipt_id in selected_receipts {
-        encoded.extend_from_slice(receipt_id);
-        encoded.extend_from_slice(&canonical_receipt_checks_root(
-            receipt_id,
-            attestations.get(receipt_id),
-        ));
+    encoded.extend_from_slice(receipt_id);
+    encoded.extend_from_slice(&selected_receipt_leaf(receipt_id, receipt));
+    encoded.extend_from_slice(&receipt_checks_root);
+    if let Some(receipt) = receipt {
+        encoded.push(primitive_type_tag(receipt.primitive_type()));
+        encoded.extend_from_slice(&receipt.tensor_work_units().to_le_bytes());
+        encoded.extend_from_slice(&receipt.estimated_block_bytes().to_le_bytes());
     }
-    hash_bytes(b"tensor-vm-block-checks-root", &[&encoded])
+    hash_bytes(b"tensor-vm-block-check-leaf-v1", &[&encoded])
 }
 
 fn canonical_receipt_checks_root(

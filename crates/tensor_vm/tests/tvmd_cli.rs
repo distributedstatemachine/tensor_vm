@@ -518,7 +518,23 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     );
     stdout_hex_hash(&block, "settled_receipt_set_root");
     stdout_hex_hash(&block, "checks_root");
+    stdout_hex_hash(&block, "parent_snapshot_root");
+    stdout_hex_hash(&block, "parent_settled_receipt_pool_root");
+    stdout_hex_hash(&block, "parent_included_receipt_root");
+    stdout_hex_hash(&block, "parent_data_unavailable_receipt_root");
+    stdout_hex_hash(&block, "child_state_root");
+    stdout_hex_hash(&block, "child_reward_root");
+    stdout_u64(&block, "child_height");
+    stdout_u64(&block, "child_epoch");
+    stdout_hex_hash(&block, "child_beacon");
     assert_eq!(stdout_value(&block, "checks_root_recomputed"), "true");
+    assert_eq!(
+        stdout_value(&block, "selected_receipt_root_recomputed"),
+        "true"
+    );
+    assert_eq!(stdout_value(&block, "checks_root_openable"), "true");
+    assert_eq!(stdout_value(&block, "child_state_root_recomputed"), "true");
+    assert_eq!(stdout_value(&block, "child_reward_root_recomputed"), "true");
     stdout_hex_hash(&block, "difficulty_target");
     stdout_u64(&block, "nonce");
     stdout_hex_hash(&block, "pow_header_hash");
@@ -542,6 +558,18 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     let receipt_count = stdout_u64(&block, "receipt_count");
     assert!(receipt_count > 0);
     assert_ne!(stdout_value(&block, "receipt_ids"), "none");
+    let selected_receipt_count = stdout_u64(&block, "selected_receipt_count");
+    assert_eq!(
+        stdout_u64(&block, "selected_receipt_opening_count"),
+        selected_receipt_count
+    );
+    assert_eq!(
+        stdout_u64(&block, "checks_opening_count"),
+        selected_receipt_count
+    );
+    assert_ne!(stdout_value(&block, "selected_receipt_leaf_ids"), "none");
+    assert_ne!(stdout_value(&block, "selected_receipt_leaf_roots"), "none");
+    assert_ne!(stdout_value(&block, "checks_leaf_roots"), "none");
     assert!(stdout_u64(&block, "settled_receipt_count") > 0);
     assert_eq!(
         stdout_u64(&block, "tensor_op_receipt_count")
@@ -655,6 +683,12 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
         stdout_value(&block, "tensorwork_proposer_selection"),
         "false"
     );
+    stdout_hex_hash(&block, "parent_snapshot_root");
+    stdout_hex_hash(&block, "child_state_root");
+    stdout_hex_hash(&block, "child_reward_root");
+    stdout_hex_hash(&block, "child_beacon");
+    stdout_u64(&block, "selected_receipt_opening_count");
+    stdout_u64(&block, "checks_opening_count");
     if stdout_value(&block, "pow_required") == "true" {
         assert_eq!(stdout_value(&block, "pow_valid"), "true");
         assert_eq!(

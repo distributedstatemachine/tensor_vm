@@ -1,6 +1,7 @@
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
+use crate::merkle::MerkleProof;
 use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
 use crate::verify::{FreivaldsParams, ValidatorAttestation};
 use std::collections::{BTreeMap, BTreeSet};
@@ -135,6 +136,53 @@ impl BlockspaceSelection {
     pub fn receipt_set(&self) -> BTreeSet<Hash> {
         self.receipt_ids.iter().copied().collect()
     }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockParentSnapshot {
+    pub parent_hash: Hash,
+    pub height: u64,
+    pub epoch: u64,
+    pub state_root: Hash,
+    pub beacon: Hash,
+    pub attestation_root: Hash,
+    pub reward_root: Hash,
+    pub settled_receipt_pool_root: Hash,
+    pub included_receipt_root: Hash,
+    pub data_unavailable_receipt_root: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SelectedReceiptOpening {
+    pub receipt_id: Hash,
+    pub receipt_leaf: Hash,
+    pub receipt_leaf_index: u64,
+    pub receipt_leaf_proof: Option<MerkleProof>,
+    pub check_leaf: Hash,
+    pub check_leaf_index: u64,
+    pub check_leaf_proof: Option<MerkleProof>,
+    pub primitive_type: Option<PrimitiveType>,
+    pub tensor_work_units: u64,
+    pub estimated_block_bytes: u64,
+    pub submitted_at_block: u64,
+    pub settled: bool,
+    pub included_before_parent: bool,
+    pub data_available: bool,
+    pub expires_at_block: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockApplyOutcome {
+    pub parent_snapshot: BlockParentSnapshot,
+    pub selected_receipt_ids: Vec<Hash>,
+    pub selected_receipt_root: Hash,
+    pub checks_root: Hash,
+    pub selected_openings: Vec<SelectedReceiptOpening>,
+    pub child_state_root: Hash,
+    pub child_reward_root: Hash,
+    pub child_height: u64,
+    pub child_epoch: u64,
+    pub child_beacon: Hash,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

@@ -1,11 +1,14 @@
 use super::roots::{
-    attestation_root, block_checks_root, reward_root, selected_receipt_root, state_root,
+    attestation_root, block_check_leaves, block_checks_root, hash_set_root, reward_root,
+    selected_receipt_commitment_root, selected_receipt_leaves, selected_receipt_root, state_root,
 };
 use super::{
-    BlockAdmission, BlockInvalidReason, BlockspaceCaps, BlockspaceSelection, Chain, ChainCommand,
-    ChainEngine, ChainState, ReceiptState, TensorBlock,
+    BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
+    BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState, ReceiptState,
+    SelectedReceiptOpening, TensorBlock,
 };
 use crate::error::{Result, TvmError};
+use crate::merkle::{build_proof, merkle_root, verify_proof};
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use num_bigint::BigUint;
 use std::collections::BTreeSet;
@@ -22,18 +25,30 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         .unwrap_or([0; 32]);
     let beacon = chain.state.finalized_randomness;
     let selection = canonical_blockspace(&chain.state, &parent_hash, &beacon, blockspace_caps());
-    let selected_set = selection.receipt_set();
-    let settled_receipt_set_root = selected_receipt_root(&selected_set);
-    let checks_root = block_checks_root(&selection.receipt_ids, &chain.state.attestations);
+    let settled_receipt_set_root =
+        selected_receipt_commitment_root(&selection.receipt_ids, &chain.state.receipts);
+    let checks_root = block_checks_root(
+        &selection.receipt_ids,
+        &chain.state.receipts,
+        &chain.state.attestations,
+    );
     let attestation_root = attestation_root(&chain.state.attestations);
-    let chain_state_root = state_root(&chain.state);
-    let reward_root = reward_root(&chain.state.rewards);
     let production_kind = if selection.receipt_ids.is_empty() {
         super::BlockProductionKind::PowSkipFallback
     } else {
         super::BlockProductionKind::UsefulVerificationPow
     };
     let difficulty_target = expected_difficulty_target(chain, chain.state.height);
+    let child_state = apply_block_to_parent_state(
+        &chain.state,
+        chain.params.epoch_length,
+        &parent_hash,
+        &beacon,
+        chain.state.height,
+        &selection.receipt_ids,
+    );
+    let chain_state_root = state_root(&child_state);
+    let reward_root = reward_root(&child_state.rewards);
     let mut block = TensorBlock {
         height: chain.state.height,
         parent_hash,
@@ -62,17 +77,11 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
     validate(chain, &block, true)?;
 
     chain.blocks.push(block.clone());
+    chain.state = child_state;
     chain
         .state
         .block_selected_receipts
         .insert(block_hash, selection.receipt_ids.clone());
-    for receipt_id in &selection.receipt_ids {
-        chain.state.included_receipts.insert(*receipt_id);
-    }
-    chain.state.height += 1;
-    chain.state.epoch = chain.state.height / chain.params.epoch_length.max(1);
-    chain.state.finalized_randomness =
-        next_finalized_randomness(&beacon, &block_hash, chain.state.height);
     if block.production_kind.requires_pow() && !block.pow_valid() {
         return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
@@ -172,21 +181,20 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     }
 
     validate(chain, &block, true)?;
-    let beacon = block.beacon;
-    let selection =
-        canonical_blockspace(&chain.state, &block.parent_hash, &beacon, blockspace_caps());
-    chain.blocks.push(block);
+    let outcome = apply_outcome(chain, &block)?;
+    chain.blocks.push(block.clone());
     chain
         .state
         .block_selected_receipts
-        .insert(block_hash, selection.receipt_ids.clone());
-    for receipt_id in &selection.receipt_ids {
-        chain.state.included_receipts.insert(*receipt_id);
-    }
-    chain.state.height += 1;
-    chain.state.epoch = chain.state.height / chain.params.epoch_length.max(1);
-    chain.state.finalized_randomness =
-        next_finalized_randomness(&beacon, &block_hash, chain.state.height);
+        .insert(block_hash, outcome.selected_receipt_ids.clone());
+    chain.state = apply_block_to_parent_state(
+        &chain.state,
+        chain.params.epoch_length,
+        &block.parent_hash,
+        &block.beacon,
+        height,
+        &outcome.selected_receipt_ids,
+    );
     Ok(BlockAdmission::Applied {
         height,
         hash: block_hash,
@@ -372,27 +380,12 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
         ));
     }
 
+    let outcome = apply_outcome(chain, block)?;
     let parent_state = parent_state_for_validation(chain, block);
-    if block.beacon != parent_state.finalized_randomness {
+    if block.beacon != outcome.parent_snapshot.beacon {
         return Err(TvmError::InvalidReceipt("block beacon mismatch"));
     }
-    let selection = canonical_blockspace(
-        &parent_state,
-        &block.parent_hash,
-        &block.beacon,
-        blockspace_caps(),
-    );
-    let selected_receipts = match chain.state.block_selected_receipts.get(&block_hash) {
-        Some(receipts) => {
-            if *receipts != selection.receipt_ids {
-                return Err(TvmError::InvalidReceipt(
-                    "noncanonical block receipt selection",
-                ));
-            }
-            receipts.clone()
-        }
-        None => selection.receipt_ids,
-    };
+    let selected_receipts = outcome.selected_receipt_ids.clone();
     match block.production_kind {
         super::BlockProductionKind::UsefulVerificationPow => {
             if selected_receipts.is_empty() {
@@ -409,23 +402,77 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
             }
         }
     }
-    let selected_set: BTreeSet<Hash> = selected_receipts.iter().copied().collect();
-    if block.settled_receipt_set_root != selected_receipt_root(&selected_set) {
+    if block.settled_receipt_set_root != outcome.selected_receipt_root {
         return Err(TvmError::InvalidReceipt("noncanonical settled receipt set"));
     }
-    if block.checks_root != block_checks_root(&selected_receipts, &parent_state.attestations) {
+    if block.checks_root != outcome.checks_root {
         return Err(TvmError::InvalidReceipt("block checks root mismatch"));
     }
     if block.attestation_root != attestation_root(&parent_state.attestations) {
         return Err(TvmError::InvalidReceipt("block attestation root mismatch"));
     }
-    if block.reward_root != reward_root(&parent_state.rewards) {
+    if block.reward_root != outcome.child_reward_root {
         return Err(TvmError::InvalidReceipt("block reward root mismatch"));
     }
-    if strict_state_root && block.state_root != state_root(&parent_state) {
+    if strict_state_root && block.state_root != outcome.child_state_root {
         return Err(TvmError::InvalidReceipt("block state root mismatch"));
     }
     Ok(())
+}
+
+pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockApplyOutcome> {
+    let parent_state = parent_state_for_validation(chain, block);
+    let parent_snapshot = parent_snapshot(block, &parent_state);
+    let selection = canonical_blockspace(
+        &parent_state,
+        &block.parent_hash,
+        &block.beacon,
+        blockspace_caps(),
+    );
+    let block_hash = block.hash();
+    let selected_receipts = match chain.state.block_selected_receipts.get(&block_hash) {
+        Some(receipts) => {
+            if *receipts != selection.receipt_ids {
+                return Err(TvmError::InvalidReceipt(
+                    "noncanonical block receipt selection",
+                ));
+            }
+            receipts.clone()
+        }
+        None => selection.receipt_ids,
+    };
+    let selected_receipt_root =
+        selected_receipt_commitment_root(&selected_receipts, &parent_state.receipts);
+    let checks_root = block_checks_root(
+        &selected_receipts,
+        &parent_state.receipts,
+        &parent_state.attestations,
+    );
+    let child_state = apply_block_to_parent_state(
+        &parent_state,
+        chain.params.epoch_length,
+        &block.parent_hash,
+        &block.beacon,
+        block.height,
+        &selected_receipts,
+    );
+    let selected_openings = selected_receipt_openings(
+        &parent_state,
+        chain.params.tensor_retention_window_blocks(),
+        &selected_receipts,
+    );
+    Ok(BlockApplyOutcome {
+        parent_snapshot,
+        selected_receipt_ids: selected_receipts,
+        selected_receipt_root,
+        checks_root,
+        selected_openings,
+        child_state_root: state_root(&child_state),
+        child_reward_root: reward_root(&child_state.rewards),
+        child_height: child_state.height,
+        child_epoch: child_state.epoch,
+        child_beacon: child_state.finalized_randomness,
+    })
 }
 
 pub(super) fn selected_receipts(chain: &Chain, block: &TensorBlock) -> Vec<Hash> {
@@ -475,6 +522,115 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
     parent_state
 }
 
+fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParentSnapshot {
+    BlockParentSnapshot {
+        parent_hash: block.parent_hash,
+        height: parent_state.height,
+        epoch: parent_state.epoch,
+        state_root: state_root(parent_state),
+        beacon: parent_state.finalized_randomness,
+        attestation_root: attestation_root(&parent_state.attestations),
+        reward_root: reward_root(&parent_state.rewards),
+        settled_receipt_pool_root: selected_receipt_commitment_root(
+            &parent_state
+                .settled_receipts
+                .iter()
+                .copied()
+                .collect::<Vec<_>>(),
+            &parent_state.receipts,
+        ),
+        included_receipt_root: hash_set_root(
+            b"tensor-vm-included-receipt-root-v1",
+            &parent_state.included_receipts,
+        ),
+        data_unavailable_receipt_root: hash_set_root(
+            b"tensor-vm-data-unavailable-root-v1",
+            &parent_state.data_unavailable_receipts,
+        ),
+    }
+}
+
+fn apply_block_to_parent_state(
+    parent_state: &ChainState,
+    epoch_length: u64,
+    parent_hash: &Hash,
+    beacon: &Hash,
+    block_height: u64,
+    selected_receipts: &[Hash],
+) -> ChainState {
+    let mut child_state = parent_state.clone();
+    for receipt_id in selected_receipts {
+        child_state.included_receipts.insert(*receipt_id);
+    }
+    child_state.height = block_height.saturating_add(1);
+    child_state.epoch = child_state.height / epoch_length.max(1);
+    child_state.finalized_randomness =
+        next_finalized_randomness(beacon, parent_hash, child_state.height);
+    child_state
+}
+
+fn selected_receipt_openings(
+    parent_state: &ChainState,
+    retention_window_blocks: u64,
+    selected_receipts: &[Hash],
+) -> Vec<SelectedReceiptOpening> {
+    let receipt_leaves = selected_receipt_leaves(selected_receipts, &parent_state.receipts);
+    let receipt_root = if selected_receipts.is_empty() {
+        selected_receipt_root(&BTreeSet::new())
+    } else {
+        merkle_root(&receipt_leaves)
+    };
+    let check_leaves = block_check_leaves(
+        selected_receipts,
+        &parent_state.receipts,
+        &parent_state.attestations,
+    );
+    let checks_root = merkle_root(&check_leaves);
+    selected_receipts
+        .iter()
+        .enumerate()
+        .map(|(index, receipt_id)| {
+            let receipt = parent_state.receipts.get(receipt_id);
+            let receipt_leaf = receipt_leaves[index];
+            let receipt_leaf_proof = build_proof(&receipt_leaves, index as u64).ok();
+            let check_leaf = check_leaves[index];
+            let check_leaf_proof = build_proof(&check_leaves, index as u64).ok();
+            let receipt_opening_valid = receipt_leaf_proof
+                .as_ref()
+                .is_some_and(|proof| verify_proof(&receipt_root, receipt_leaf, proof));
+            let check_opening_valid = check_leaf_proof
+                .as_ref()
+                .is_some_and(|proof| verify_proof(&checks_root, check_leaf, proof));
+            debug_assert!(receipt_opening_valid);
+            debug_assert!(check_opening_valid);
+            SelectedReceiptOpening {
+                receipt_id: *receipt_id,
+                receipt_leaf,
+                receipt_leaf_index: index as u64,
+                receipt_leaf_proof,
+                check_leaf,
+                check_leaf_index: index as u64,
+                check_leaf_proof,
+                primitive_type: receipt.map(ReceiptState::primitive_type),
+                tensor_work_units: receipt.map_or(0, ReceiptState::tensor_work_units),
+                estimated_block_bytes: receipt.map_or(0, ReceiptState::estimated_block_bytes),
+                submitted_at_block: receipt.map_or(0, ReceiptState::submitted_at_block),
+                settled: parent_state.settled_receipts.contains(receipt_id),
+                included_before_parent: parent_state.included_receipts.contains(receipt_id),
+                data_available: !parent_state.data_unavailable_receipts.contains(receipt_id),
+                expires_at_block: receipt
+                    .map(|receipt| {
+                        parent_state
+                            .height
+                            .max(receipt.submitted_at_block())
+                            .saturating_add(retention_window_blocks)
+                    })
+                    .unwrap_or(parent_state.height),
+            }
+        })
+        .collect()
+}
+
 fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> Hash {
     if block.height == 0 {
         return chain.state.genesis_randomness;
@@ -483,7 +639,7 @@ fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> Hash {
         .blocks
         .iter()
         .find(|candidate| candidate.height + 1 == block.height)
-        .map(|parent| next_finalized_randomness(&parent.beacon, &parent.hash(), block.height))
+        .map(|parent| next_finalized_randomness(&parent.beacon, &parent.parent_hash, block.height))
         .unwrap_or(chain.state.finalized_randomness)
 }
 
