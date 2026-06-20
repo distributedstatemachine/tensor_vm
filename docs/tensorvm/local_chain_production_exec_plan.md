@@ -5,12 +5,13 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 62, dynamic-output exact `split` admission, implemented, validated, committed,
-  and pushed.
-- Current status: the frozen IR registry admits exact Tier-B `split` with dynamic output count
-  `len(sizes)`. `TensorGraph` consensus validation enforces that count, exact replay copies row-major
-  segments into one output tensor per split size, conformance vectors include multi-output `split`
-  evidence, and graph verification rejects otherwise-valid split receipts when profile evidence is absent.
+- Active feature: Iteration 63, exact Tier-A contraction `einsum` admission, implemented and validated;
+  commit/push pending.
+- Current status: the frozen IR registry now admits exact Tier-A rank-2 matrix-contraction `einsum` plus
+  dynamic-output exact Tier-B `split`. `TensorGraph` consensus validation enforces the admitted `einsum`
+  equation subset, exact replay executes it through canonical field matmul/transpose paths, conformance
+  vectors include `einsum` evidence, and graph verification rejects otherwise-valid receipts when profile
+  evidence is absent.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -18,7 +19,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 63 evidence.
 
 ## Readiness Matrix
 
@@ -32,13 +33,82 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; Iteration 62 dynamic split implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, and dynamic-output `split` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
-| Per-op `F_p` conformance vectors | Partial; Iteration 62 split vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization and `split`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
+| Tensor IR graph language | Partial; Iteration 63 `einsum` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
+| Per-op `F_p` conformance vectors | Partial; Iteration 63 `einsum` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; executable `study::economic_invariant_study` | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, live parameter calibration, and broader invariant enforcement |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 63: Exact Tier-A Matrix-Contraction `einsum` Admission
+
+Feature capability: admit the Tier-A `einsum` subset required by `upow.md` §4.7 and §4.9 for exact
+two-input matrix contractions. The admitted subset is conservative: two rank-2 inputs, one shared
+contracted label, two free output labels, no repeated labels in an operand, and output labels equal to the
+two free labels. Unsupported equations remain vocabulary-only and fail consensus graph validation.
+
+Readiness requirements covered:
+- `upow.md` §4.7: `einsum` is Tier A only for contraction/permutation equations.
+- `upow.md` §4.9: v0 admits Tier A `matmul` and contraction `einsum` when exact semantics are specified.
+- `upow.md` §3.3 and §16: every admitted op spelling needs deterministic conformance vectors and CPU
+  profile evidence before receipts are accepted.
+
+Canonical owner: `ir::frozen_op_registry`, `TensorGraph::validate`, and `TensorGraph::execute_exact` own
+admitted vocabulary, equation validation, shape inference, and exact replay.
+Adapter callers: receipt verifiers, role runtimes, RPC/status surfaces, and checkers only observe graph
+validation/execution outcomes.
+Old shortcut being removed: `einsum` existed in Tier-A registry vocabulary but was not consensus-admitted
+or executable, leaving a v0 Tier-A gap.
+Regression test that proves the shortcut is gone: focused IR, conformance, and graph verifier tests for a
+valid contraction equation plus a rejection test for unsupported equations.
+Behavior with local synthetic block production disabled: unchanged; this is deterministic IR execution and
+receipt-admission metadata only.
+Behavior for producer and non-producer roles: unchanged; all roles consume the same conformance-gated graph
+verification path.
+Structured evidence source: IR tests, conformance vector/profile tests, graph verifier tests, status docs,
+and coverage docs.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
+
+Expected observable evidence: a consensus-admitted graph with a supported matrix-contraction `einsum`
+validates and exact-executes to the same field result as canonical matmul, unsupported equations reject,
+conformance profile gating rejects receipts when `einsum` evidence is absent, and the registry-derived
+admitted-op guard remains green.
+Out of scope: arbitrary-rank Einstein notation, diagonal/repeated-label equations, Tier-B/C lowering for
+non-contraction equations, CUDA conformance evidence, and role-runtime arbitrary graph production.
+Split trigger: split smaller only if exact equation parsing requires changing canonical JSON, graph refs,
+or shared-codec formats.
+
+Implementation summary:
+- Admitted `einsum` in the frozen registry for the conservative rank-2 matrix-contraction subset.
+- Added equation parsing, shape inference, and exact replay through canonical matmul/transpose paths.
+- Added deterministic conformance vector/profile coverage for the admitted `einsum` spelling.
+- Added graph verifier profile-gating coverage for an `einsum` receipt.
+- Updated implementation status, coverage matrix, tarpaulin status, and this execution plan.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_einsum_matrix_contraction`
+  passed.
+- Focused IR rejection:
+  `cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_einsum_equations` passed.
+- Focused conformance guard:
+  `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+  passed.
+- Focused CPU profile: `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
+  passed.
+- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_einsum_receipt` passed.
+- TensorVM crate: `cargo test -p tensor_vm` passed 395 library tests plus integration tests.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 62: Dynamic-Output Exact `split` Admission
 
@@ -111,8 +181,6 @@ green.
 Out of scope: arbitrary graph production by role runtimes, CUDA conformance evidence, Tier-C dynamic-output
 ops such as `topk`/`qr`, and checker/Docker `/health` blockers.
 
-## Recent Iterations
-
 ### Iteration 61: Canonical Receipt Reward Maturity Delay
 
 Receipt rewards now use the explicit reward maturity delay rather than the tensor-retention window proxy.
@@ -142,15 +210,15 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 62 on June 20, 2026:
+Latest full validation is Iteration 63 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm ir::tests::exact_interpreter_executes_split_multi_output_structural_op
-cargo test -p tensor_vm ir::tests::graph_validation_rejects_split_size_mismatch
+cargo test -p tensor_vm ir::tests::exact_interpreter_executes_einsum_matrix_contraction
+cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_einsum_equations
 cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op
 cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors
-cargo test -p tensor_vm verify::tests::graph_verifier_accepts_split_receipt
+cargo test -p tensor_vm verify::tests::graph_verifier_accepts_einsum_receipt
 cargo test -p tensor_vm
 cargo fmt --check --all
 git diff --check

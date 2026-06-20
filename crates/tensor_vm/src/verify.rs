@@ -1770,6 +1770,107 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_einsum_receipt() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                TensorSpec {
+                    name: "lhs".to_owned(),
+                    shape: vec![2, 3],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+                TensorSpec {
+                    name: "rhs".to_owned(),
+                    shape: vec![3, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "einsum".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "lhs".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "rhs".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::from([(
+                    "equation".to_owned(),
+                    IrValue::Literal(IrLiteral::String("ik,kj->ij".to_owned())),
+                )]),
+                out: vec![TensorSpec {
+                    name: "contracted".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "contracted".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let lhs =
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let rhs =
+            Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![7, 8, 9, 10, 11, 12]).unwrap();
+        let inputs = BTreeMap::from([
+            ("lhs".to_owned(), lhs.clone()),
+            ("rhs".to_owned(), rhs.clone()),
+        ]);
+        let input_roots = BTreeMap::from([
+            ("lhs".to_owned(), lhs.commitment_root()),
+            ("rhs".to_owned(), rhs.commitment_root()),
+        ]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 12);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-einsum-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["contracted"],
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![58, 64, 139, 154]).unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-einsum-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+
+        let mut missing_einsum = cpu_reference_conformance_profile().unwrap();
+        missing_einsum.passed_ops.remove("einsum");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-einsum-validation"]),
+                conformance_profile: &missing_einsum,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn tensor_op_verifier_rejects_metadata_and_shape_mismatches() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);

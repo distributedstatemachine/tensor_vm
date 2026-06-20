@@ -546,6 +546,16 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2, 2],
         ),
         vector(
+            "field-einsum-matrix-contraction-v1",
+            "einsum",
+            "A",
+            &[&[2, 3], &[3, 2]],
+            &[("equation", 0)],
+            &[&[1, 2, 3, 4, 5, 6], &[7, 8, 9, 10, 11, 12]],
+            &[58, 64, 139, 154],
+            &[2, 2],
+        ),
+        vector(
             "field-mse-loss-wraparound-v1",
             "mse_loss",
             "B",
@@ -724,6 +734,10 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "tril" => triangular_tensor(&tensors[0], param(vector, "diagonal")? as i64, true),
         "triu" => triangular_tensor(&tensors[0], param(vector, "diagonal")? as i64, false),
         "matmul" => tensors[0].matmul(&tensors[1]),
+        "einsum" => match param(vector, "equation")? {
+            0 => tensors[0].matmul(&tensors[1]),
+            _ => Err(TvmError::InvalidReceipt("invalid conformance einsum")),
+        },
         "mse_loss" => {
             let loss = vm::mse_loss(&tensors[0], &tensors[1])?;
             Tensor::from_vec(
@@ -1785,6 +1799,7 @@ mod tests {
         assert!(op_names.contains("split"));
         assert!(op_names.contains("full"));
         assert!(op_names.contains("arange"));
+        assert!(op_names.contains("einsum"));
         assert!(op_names.contains("quantize_int8_per_channel"));
         assert!(op_names.contains("dequantize_int8_per_channel"));
         assert!(op_names.contains("mse_loss"));
@@ -1852,6 +1867,7 @@ mod tests {
             "stack",
             "split",
             "matmul",
+            "einsum",
             "full",
             "arange",
             "quantize_int8_per_channel",

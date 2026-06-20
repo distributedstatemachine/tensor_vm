@@ -494,6 +494,10 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
             let [lhs, rhs] = two_tensor_values(&args)?;
             lhs.matmul(rhs)?
         }
+        "einsum" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            einsum_tensor(lhs, rhs, &op.kwargs)?
+        }
         "add" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
             binary_elementwise_tensor(lhs, rhs, field::add)?
@@ -599,6 +603,36 @@ fn reduce_tensor(
         }
     }
     Tensor::from_vec_with_scale(output_shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn einsum_tensor(lhs: &Tensor, rhs: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let equation = matrix_contraction_einsum_equation(kwargs)?;
+    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    if lhs.shape().len() != 2 || rhs.shape().len() != 2 {
+        return Err(TvmError::InvalidReceipt("tensor ir einsum rank mismatch"));
+    }
+    if lhs.shape()[equation.lhs_shared_axis] != rhs.shape()[equation.rhs_shared_axis] {
+        return Err(TvmError::InvalidReceipt("tensor ir einsum shape mismatch"));
+    }
+
+    let lhs_matrix = if equation.lhs_shared_axis == 0 {
+        lhs.transpose()?
+    } else {
+        lhs.clone()
+    };
+    let rhs_matrix = if equation.rhs_shared_axis == 1 {
+        rhs.transpose()?
+    } else {
+        rhs.clone()
+    };
+    let product = lhs_matrix.matmul(&rhs_matrix)?;
+    if equation.output_reversed {
+        product.transpose()
+    } else {
+        Ok(product)
+    }
 }
 
 fn reduction_output_index(
@@ -1862,6 +1896,7 @@ fn infer_outputs(
                 scale: lhs.scale,
             }
         }
+        "einsum" => infer_einsum(args, kwargs)?,
         "add" | "sub" | "mul" => {
             let [lhs, rhs] = two_args(args)?;
             same_dtype(lhs, rhs)?;
@@ -2270,6 +2305,30 @@ fn infer_slice(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Resul
     Ok(output)
 }
 
+fn infer_einsum(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Result<ValueShape> {
+    let [lhs, rhs] = two_args(args)?;
+    same_dtype(lhs, rhs)?;
+    if lhs.shape.len() != 2 || rhs.shape.len() != 2 {
+        return Err(TvmError::InvalidReceipt("tensor ir einsum rank mismatch"));
+    }
+    let equation = matrix_contraction_einsum_equation(kwargs)?;
+    if lhs.shape[equation.lhs_shared_axis] != rhs.shape[equation.rhs_shared_axis] {
+        return Err(TvmError::InvalidReceipt("tensor ir einsum shape mismatch"));
+    }
+    let lhs_free = lhs.shape[1 - equation.lhs_shared_axis];
+    let rhs_free = rhs.shape[1 - equation.rhs_shared_axis];
+    let shape = if equation.output_reversed {
+        vec![rhs_free, lhs_free]
+    } else {
+        vec![lhs_free, rhs_free]
+    };
+    Ok(ValueShape {
+        shape,
+        dtype: lhs.dtype,
+        scale: lhs.scale,
+    })
+}
+
 fn infer_split_shapes(
     args: &[ValueShape],
     kwargs: &BTreeMap<String, IrValue>,
@@ -2329,6 +2388,95 @@ fn same_tensor(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
     Ok(())
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct MatrixContractionEinsum {
+    lhs_shared_axis: usize,
+    rhs_shared_axis: usize,
+    output_reversed: bool,
+}
+
+fn matrix_contraction_einsum_equation(
+    kwargs: &BTreeMap<String, IrValue>,
+) -> Result<MatrixContractionEinsum> {
+    let equation = string_kwarg(kwargs, "equation")?;
+    parse_matrix_contraction_einsum(equation)
+}
+
+fn parse_matrix_contraction_einsum(equation: &str) -> Result<MatrixContractionEinsum> {
+    let (inputs, output) = equation.split_once("->").ok_or(TvmError::InvalidReceipt(
+        "tensor ir einsum equation mismatch",
+    ))?;
+    let (lhs, rhs) = inputs.split_once(',').ok_or(TvmError::InvalidReceipt(
+        "tensor ir einsum equation mismatch",
+    ))?;
+    let lhs = einsum_labels(lhs)?;
+    let rhs = einsum_labels(rhs)?;
+    let output = einsum_labels(output)?;
+    if lhs.len() != 2 || rhs.len() != 2 || output.len() != 2 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir einsum equation mismatch",
+        ));
+    }
+    if lhs[0] == lhs[1] || rhs[0] == rhs[1] || output[0] == output[1] {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir einsum equation mismatch",
+        ));
+    }
+    let shared = lhs
+        .iter()
+        .copied()
+        .find(|label| rhs.contains(label))
+        .ok_or(TvmError::InvalidReceipt(
+            "tensor ir einsum equation mismatch",
+        ))?;
+    let lhs_shared_axis =
+        lhs.iter()
+            .position(|label| *label == shared)
+            .ok_or(TvmError::InvalidReceipt(
+                "tensor ir einsum equation mismatch",
+            ))?;
+    let rhs_shared_axis =
+        rhs.iter()
+            .position(|label| *label == shared)
+            .ok_or(TvmError::InvalidReceipt(
+                "tensor ir einsum equation mismatch",
+            ))?;
+    let lhs_free = lhs[1 - lhs_shared_axis];
+    let rhs_free = rhs[1 - rhs_shared_axis];
+    if output == [lhs_free, rhs_free] {
+        Ok(MatrixContractionEinsum {
+            lhs_shared_axis,
+            rhs_shared_axis,
+            output_reversed: false,
+        })
+    } else if output == [rhs_free, lhs_free] {
+        Ok(MatrixContractionEinsum {
+            lhs_shared_axis,
+            rhs_shared_axis,
+            output_reversed: true,
+        })
+    } else {
+        Err(TvmError::InvalidReceipt(
+            "tensor ir einsum equation mismatch",
+        ))
+    }
+}
+
+fn einsum_labels(value: &str) -> Result<Vec<char>> {
+    value
+        .chars()
+        .map(|label| {
+            if label.is_ascii_alphabetic() {
+                Ok(label)
+            } else {
+                Err(TvmError::InvalidReceipt(
+                    "tensor ir einsum equation mismatch",
+                ))
+            }
+        })
+        .collect()
+}
+
 fn shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<i64>> {
     match kwargs.get(key) {
         Some(IrValue::Literal(IrLiteral::List(values))) => values
@@ -2340,6 +2488,13 @@ fn shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<i64>
             })
             .collect(),
         _ => Err(TvmError::InvalidReceipt("missing tensor ir shape kwarg")),
+    }
+}
+
+fn string_kwarg<'a>(kwargs: &'a BTreeMap<String, IrValue>, key: &str) -> Result<&'a str> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::String(value))) => Ok(value),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir string kwarg")),
     }
 }
 
@@ -2889,7 +3044,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 49] = [
         allowed_kwargs: &["equation"],
         required_kwargs: &["equation"],
         verification: IrVerificationClass::FullFreivalds,
-        consensus_admitted: false,
+        consensus_admitted: true,
     },
     OpSpec {
         name: "add",
@@ -3700,6 +3855,150 @@ mod tests {
                 .unwrap()
                 .trace_root
         );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_einsum_matrix_contraction() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 3], DType::FieldElement, 0),
+                tensor_spec("rhs", vec![3, 2], DType::FieldElement, 0),
+                tensor_spec("lhs_t", vec![3, 2], DType::FieldElement, 0),
+                tensor_spec("rhs_t", vec![2, 3], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "einsum".to_owned(),
+                    args: vec![input_ref("lhs"), input_ref("rhs")],
+                    kwargs: BTreeMap::from([(
+                        "equation".to_owned(),
+                        IrValue::Literal(IrLiteral::String("ik,kj->ij".to_owned())),
+                    )]),
+                    out: vec![tensor_spec(
+                        "contracted",
+                        vec![2, 2],
+                        DType::FieldElement,
+                        0,
+                    )],
+                },
+                OpNode {
+                    id: 1,
+                    op: "einsum".to_owned(),
+                    args: vec![input_ref("lhs"), input_ref("rhs")],
+                    kwargs: BTreeMap::from([(
+                        "equation".to_owned(),
+                        IrValue::Literal(IrLiteral::String("ik,kj->ji".to_owned())),
+                    )]),
+                    out: vec![tensor_spec("reversed", vec![2, 2], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 2,
+                    op: "einsum".to_owned(),
+                    args: vec![input_ref("lhs_t"), input_ref("rhs_t")],
+                    kwargs: BTreeMap::from([(
+                        "equation".to_owned(),
+                        IrValue::Literal(IrLiteral::String("ki,jk->ij".to_owned())),
+                    )]),
+                    out: vec![tensor_spec(
+                        "transposed_inputs",
+                        vec![2, 2],
+                        DType::FieldElement,
+                        0,
+                    )],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "contracted".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "reversed".to_owned(),
+                    value: op_ref(1),
+                },
+                GraphOutput {
+                    name: "transposed_inputs".to_owned(),
+                    value: op_ref(2),
+                },
+            ],
+        };
+        let lhs =
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let rhs =
+            Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![7, 8, 9, 10, 11, 12]).unwrap();
+        let expected = lhs.matmul(&rhs).unwrap();
+        let lhs_t = lhs.transpose().unwrap();
+        let rhs_t = rhs.transpose().unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    ("lhs".to_owned(), lhs),
+                    ("rhs".to_owned(), rhs),
+                    ("lhs_t".to_owned(), lhs_t),
+                    ("rhs_t".to_owned(), rhs_t),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(execution.outputs["contracted"], expected);
+        assert_eq!(execution.outputs["reversed"], expected.transpose().unwrap());
+        assert_eq!(execution.outputs["transposed_inputs"], expected);
+        assert_eq!(execution.op_traces.len(), 3);
+    }
+
+    #[test]
+    fn graph_validation_rejects_unsupported_einsum_equations() {
+        let mut graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 3], DType::FieldElement, 0),
+                tensor_spec("rhs", vec![3, 2], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "einsum".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::from([(
+                    "equation".to_owned(),
+                    IrValue::Literal(IrLiteral::String("ik,kj->ij".to_owned())),
+                )]),
+                out: vec![tensor_spec(
+                    "contracted",
+                    vec![2, 2],
+                    DType::FieldElement,
+                    0,
+                )],
+            }],
+            outputs: vec![GraphOutput {
+                name: "contracted".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        assert!(graph.validate_for_consensus().is_ok());
+
+        for equation in ["ii,jk->ik", "ik,kj->ik", "ik,kj->ijk", "ik,kj"] {
+            graph.ops[0].kwargs.insert(
+                "equation".to_owned(),
+                IrValue::Literal(IrLiteral::String(equation.to_owned())),
+            );
+            assert!(
+                graph.validate_for_consensus().is_err(),
+                "unsupported equation should reject: {equation}"
+            );
+        }
+
+        graph.ops[0].kwargs.insert(
+            "equation".to_owned(),
+            IrValue::Literal(IrLiteral::String("ik,kj->ij".to_owned())),
+        );
+        graph.ops[0].out[0].shape = vec![2, 3];
+        assert!(graph.validate_for_consensus().is_err());
     }
 
     #[test]

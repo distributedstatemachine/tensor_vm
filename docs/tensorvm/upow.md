@@ -90,8 +90,9 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > Status: the local reference now publishes a conformance vector suite for the current executable exact
 > `F_p` ops used by TensorOp and LinearTrainingStep, and receipt verification gates those current jobs on
 > the matching suite profile. The suite now carries per-input and expected output dtype/scale metadata for
-> fixed-point `cast`/`round` half-even rescale vectors plus multi-output expected tensors for exact
-> per-channel int8 quantize scale output. `int8`, `uint8`, and `bool` dtype tags are implemented, exact
+> fixed-point `cast`/`round` half-even rescale vectors, exact Tier-A matrix-contraction `einsum`, plus
+> multi-output expected tensors for exact per-channel int8 quantize scale output. `int8`, `uint8`, and
+> `bool` dtype tags are implemented, exact
 > `quantize_int8_per_channel`/`dequantize_int8_per_channel` vectors are CPU-conformance covered, and
 > `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Broader
 > admitted-registry vectors, CUDA pass evidence, and Tier-C/transcendental vector references remain TODO
@@ -367,7 +368,8 @@ draw r; check  <r, Y - f(X)>  == 0   over F_p
 This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used for Tier B ops that are not bilinear.
 
 > Status: the frozen IR registry now carries an executable verifier classification for every current op.
-> Tier-A `matmul` uses full Freivalds; affine/reduction Tier-B relations used by the current
+> Tier-A `matmul` and the admitted rank-2 matrix-contraction `einsum` subset use full Freivalds;
+> affine/reduction Tier-B relations used by the current
 > LinearTrainingStep verifier (`add`/`sub`, scalar multiplication, `sum`/`mean`) are classified as
 > random-linear-checkable; exact but non-affine structural/pointwise Tier-B ops require deterministic
 > replay through the graph verifier and conformance profile; and `gather`/`scatter`/`embedding` are
