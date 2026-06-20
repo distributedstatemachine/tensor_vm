@@ -463,6 +463,7 @@ LIVE_ATTESTATION_COUNT=0
 LIVE_RECEIPT_COUNT=0
 LIVE_SETTLED_RECEIPT_COUNT=0
 LIVE_PENDING_RECEIPT_REWARD_COUNT=0
+LIVE_PENDING_CHALLENGE_REWARD_COUNT=0
 LIVE_TOTAL_REWARD_BALANCE=0
 LIVE_RECEIPTS=""
 LIVE_ATTESTED_RECEIPT_COUNT=0
@@ -471,6 +472,7 @@ LIVE_LINEAR_TRAINING_RECEIPT_COUNT=0
 LIVE_PENDING_PROPOSER_REWARD_COUNT=0
 LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=0
 LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=0
+LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_CHAIN_HEAD=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/chain/head")
@@ -484,9 +486,11 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_SETTLED_RECEIPT_COUNT=$(json_number settled_receipt_count "$LIVE_OVERVIEW")
   LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_number pending_proposer_reward_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_number pending_challenge_reward_count "$LIVE_OVERVIEW")
   LIVE_TOTAL_REWARD_BALANCE=$(json_number total_reward_balance "$LIVE_OVERVIEW")
   LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=$(json_future_pending_reward_count receipt "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=$(json_future_pending_reward_count proposer "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
+  LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=$(json_future_pending_reward_count challenge "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
   LIVE_TENSOR_OP_RECEIPT_COUNT=$(json_string_field_count primitive_type tensor_op "$LIVE_RECEIPTS")
@@ -525,6 +529,10 @@ done
 [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
 [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live synthetic jobs did not expose future-maturity pending receipt reward claims"
 [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims"
+if [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] \
+  && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -le 0 ]; then
+  fail "live challenge rewards were present but did not expose future-maturity pending challenge reward claims"
+fi
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -729,6 +737,8 @@ LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
 LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
 LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
+LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
+LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   CONVERGED_OPERATOR_COUNT=0
@@ -742,6 +752,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
   LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
   LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
+  LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
+  LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
   STATUS_MISMATCH=false
   for service in $EXPECTED_SERVICES; do
     if STATUS_RAW=$(read_service_status "$service"); then
@@ -910,6 +922,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" || { STATUS_MISMATCH=true; continue; }
+    LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=$((LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES + SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES))
+    LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=$((LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED + SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED))
     [ -n "$SERVICE_ROLE_NETWORK_JOB_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" ] || { STATUS_MISMATCH=true; continue; }
@@ -1217,6 +1231,10 @@ done
 [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
+if [ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] \
+  && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -le 0 ]; then
+  fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
+fi
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1255,6 +1273,8 @@ live_rewards=true
 live_pending_proposer_rewards=${LIVE_PENDING_PROPOSER_REWARD_COUNT}
 live_delayed_receipt_reward_claims=${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS}
 live_delayed_proposer_reward_claims=${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS}
+live_pending_challenge_rewards=${LIVE_PENDING_CHALLENGE_REWARD_COUNT}
+live_delayed_challenge_reward_claims=${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS}
 all_operator_status_count=${EXPECTED_SERVICE_COUNT}
 all_operator_min_height=${ALL_OPERATOR_MIN_HEIGHT}
 all_operator_first_live_block_hash=${ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH}
@@ -1288,6 +1308,8 @@ live_role_validator_attestation_operators=${LIVE_ROLE_VALIDATOR_ATTESTATION_OPER
 live_role_validator_attestations_submitted=${LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED}
 live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED}
 live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}
+live_role_network_block_check_challenges=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES}
+live_role_network_block_check_challenges_applied=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED}
 live_role_owned_miner_receipts=true
 live_role_owned_validator_attestations=true
 single_local_producer=true
@@ -1301,6 +1323,7 @@ tensorwork_proposer_selection_removed=true
 finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}
 block_vote_finality_evidence=${BLOCK_FINALITY_VOTE_EVIDENCE}
 live_validator_proposer_networking=false
+live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_block_vote_networking=true
 all_non_producer_network_applied_blocks=true
 all_non_producer_network_block_payload_ingestion=true

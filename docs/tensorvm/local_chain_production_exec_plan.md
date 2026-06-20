@@ -5,10 +5,11 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 67, chain-owned reward claim view, pushed.
+- Active feature: Iteration 68, local checker challenge-reward evidence, validated; commit/push pending.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer now consume the chain-owned
-  pending reward-claim view instead of rebuilding ledger-specific projections.
+  pending reward-claim view, but local live evidence still does not explicitly tie observed block-check
+  challenge payloads to future-maturity challenger reward claims.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -16,7 +17,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with auditor-selection policy, appeal paths, live calibration, or Docker `/health`.
+- Next action: commit and push the validated local checker challenge-reward evidence gate.
 
 ## Readiness Matrix
 
@@ -37,6 +38,47 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 68: Local Checker Challenge-Reward Evidence
+
+Feature capability: when the local run observes block-check challenge payload ingestion/application, require
+future-maturity, non-voided pending challenge reward claim evidence from the chain-owned reward view.
+
+Readiness requirements covered:
+- `mvp_spec.md` §20.7 and §25.5: successful checks-root challengers receive delayed pending claims.
+- `local_chain_production_readiness.md` checker gap: pending challenger rewards must be observable instead
+  of inferred from challenge counters.
+
+Canonical owner: chain state and `ChainState::pending_reward_claims()`.
+Adapter caller: local CPU checker reads explorer overview `pending_rewards`.
+Old shortcut being removed: challenge-payload counters no longer stand alone as reward evidence when present.
+Out of scope: deterministic live bad-block generation, appeal policy, and Docker `/health` resolution.
+Validation plan: shell syntax, compose artifact test, focused status/RPC tests, formatting/whitespace,
+`cargo test -p tensor_vm --quiet`, clippy, workspace release, final Gate 0, tarpaulin attempt.
+
+Implementation summary:
+- Added checker parsing for pending challenge reward count and future-maturity challenge claims.
+- Added a conditional failure when pending challenge rewards or applied live block-check challenges exist
+  without future-maturity pending challenge reward evidence.
+- Added output fields for challenge reward claims and block-check challenge counters.
+- Updated local compose artifact coverage and status/coverage/readiness docs.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Shell syntax: `bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh` passed.
+- Focused compose artifact:
+  `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`
+  passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 400 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 67: Chain-Owned Reward Claim View
 
@@ -109,8 +151,6 @@ Validation evidence:
   tarpaulin`.
 - Feature commit: `cf886d4` (`Add chain reward claim view`) is pushed to `main`.
 
-## Recent Iterations
-
 ### Iteration 66: Local Checker Delayed-Reward Claim Gate
 
 The local CPU checker now requires future-maturity, non-voided receipt/proposer pending reward claims
@@ -180,13 +220,12 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 67 on June 20, 2026:
+Latest full validation is Iteration 68 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm chain::tests::rewards::pending_reward_claim_view_covers_all_ledgers
-cargo test -p tensor_vm app::status::tests::service_status_exports_pending_reward_claim_maturity_details
-cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes
+cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape
+bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

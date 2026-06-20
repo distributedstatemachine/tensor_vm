@@ -136,7 +136,8 @@ blocker clears. See
   reward delay from structured state instead of adapter-rebuilt count-only workarounds. The local CPU
   checker now fails unless live explorer overview evidence includes non-voided pending receipt and
   proposer reward claims whose
-  `claimable_at_height` is greater than the observed live height.
+  `claimable_at_height` is greater than the observed live height, and it also requires future-maturity
+  pending challenge reward claims whenever live block-check challenge payloads are applied.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
