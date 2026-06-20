@@ -68,7 +68,7 @@ pub fn validator_role_audit_observation(
         return observation;
     }
     for (audit_id, assignment) in node.chain.state().validator_audit_assignments() {
-        if assignment.validator == auditor {
+        if assignment.auditor != auditor {
             continue;
         }
         observation.assigned_audits.insert(*audit_id);

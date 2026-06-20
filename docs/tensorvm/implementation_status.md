@@ -205,9 +205,11 @@ blocker clears. See
   validator votes, and exposes ingested/applied block-vote counters for service and role runtimes.
 - Network validator-audit catch-up now accepts bounded signed validator audit report payloads through
   `ChainCommand::SubmitValidatorAuditReport`, queues reports whose assignments or dependencies are not yet
-  available, rejects conflicting duplicate reports, publishes locally submitted reports over p2p gossip,
-  and exposes validator-submitted plus network-ingested/applied audit-report counters for service and role
-  runtimes.
+  available, rejects reports from non-assigned auditors plus conflicting duplicate reports, publishes
+  locally submitted reports over p2p gossip, and exposes validator-submitted plus network-ingested/applied
+  audit-report counters for service and role runtimes. Mandatory audit assignments now persist the
+  deterministic selected auditor, exclude the audited validator, and are committed in the audit assignment
+  root.
 - Validator proposer role status now distinguishes useful settled-receipt block proposals from empty
   fallback blocks. The scheduled local producer publishes deterministic jobs only; the validator role tick
   observes settled receipts with local tensor artifacts and validator attestations before submitting useful

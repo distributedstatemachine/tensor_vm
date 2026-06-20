@@ -354,6 +354,7 @@ pub struct ValidatorAuditAssignment {
     pub audit_id: Hash,
     pub receipt_id: Hash,
     pub validator: Address,
+    pub auditor: Address,
     pub assigned_at_height: u64,
     pub deadline_height: u64,
     pub seed: Hash,

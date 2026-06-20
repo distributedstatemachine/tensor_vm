@@ -206,13 +206,14 @@ The local bundle is useful and should remain the first operational target:
 - Chain state now records data-unavailability miner bond slashes: an unavailable-data attestation marks the
   receipt non-finalizable, and canonical block application slashes the receipt miner once, credits treasury,
   commits the slash record in the state root, and persists/exposes slashing counts. Mandatory validator audit
-  records now also exist in the local reference when audit sampling is configured: assignment delays the
-  audited validator's pending receipt reward through the audit deadline, and a missed or contradicted audit
-  slashes that validator once, voids the delayed validator reward, credits treasury, and persists/exposes
-  audit counts. Registered validator roles now observe local audit assignments, submit signed audit
-  reports through the shared chain command path, gossip bounded audit-report payloads, let non-producers
-  apply or retry those payloads through node ingest, and expose submitted plus network-applied audit-report
-  counters. Full auditor-selection policy, appeal paths, and bond calibration remain open economics work.
+  records now also exist in the local reference when audit sampling is configured: assignment names a
+  deterministic registered auditor distinct from the audited validator, delays the audited validator's
+  pending receipt reward through the audit deadline, and a missed or contradicted audit slashes that
+  validator once, voids the delayed validator reward, credits treasury, and persists/exposes audit counts.
+  Registered validator roles now observe only their assigned local audit work, submit signed audit reports
+  through the shared chain command path, gossip bounded audit-report payloads, let non-producers apply or
+  retry those payloads through node ingest, and expose submitted plus network-applied audit-report
+  counters. Appeal paths and bond calibration remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

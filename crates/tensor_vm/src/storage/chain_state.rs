@@ -670,6 +670,7 @@ fn encode_validator_audit_assignments(
         write_hash(out, &assignment.audit_id);
         write_hash(out, &assignment.receipt_id);
         write_hash(out, &assignment.validator);
+        write_hash(out, &assignment.auditor);
         write_u64(out, assignment.assigned_at_height);
         write_u64(out, assignment.deadline_height);
         write_hash(out, &assignment.seed);
@@ -688,6 +689,7 @@ fn decode_validator_audit_assignments(
                 audit_id: reader.read_hash()?,
                 receipt_id: reader.read_hash()?,
                 validator: reader.read_hash()?,
+                auditor: reader.read_hash()?,
                 assigned_at_height: reader.read_u64()?,
                 deadline_height: reader.read_u64()?,
                 seed: reader.read_hash()?,
@@ -1170,6 +1172,7 @@ mod tests {
         let mut chain = Chain::with_params(params, beacon);
         let miner = address(b"durable-miner");
         let validator = address(b"durable-validator");
+        let auditor = address(b"durable-auditor");
         let arbitrary_graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
         chain
             .apply_command(ChainCommand::RegisterProgramBody {
@@ -1187,6 +1190,7 @@ mod tests {
             )
             .unwrap();
         register_validator(&mut chain, validator);
+        register_validator(&mut chain, auditor);
         chain.credit_account(miner, 1_000);
         transfer(&mut chain, miner, validator, 125);
 

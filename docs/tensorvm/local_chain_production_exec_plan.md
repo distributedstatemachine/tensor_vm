@@ -5,11 +5,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 69, full maturity delay for challenge rewards, pushed.
+- Active feature: Iteration 70, chain-owned validator auditor selection, in progress.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
-  challenger reward claims.
+  challenger reward claims. Mandatory validator audits exist, but assignments still need explicit
+  chain-owned auditor selection and authorization.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -17,8 +18,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with deterministic live bad-block generation, auditor-selection policy, appeal paths,
-  live calibration, or Docker `/health`.
+- Next action: continue with deterministic live bad-block generation, appeal paths, live calibration, or
+  Docker `/health`.
 
 ## Readiness Matrix
 
@@ -35,10 +36,49 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; chain-owned pending claim view; executable `study::economic_invariant_study` | Add auditor-selection policy, appeal paths, live parameter calibration |
+| Economics and slashing invariant | Partial; Iteration 70 auditor selection implemented locally | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable `study::economic_invariant_study` | Add appeal paths and live parameter calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 70: Chain-Owned Validator Auditor Selection
+
+Feature capability: mandatory validator audit assignments should name the validator responsible for the
+audit, exclude the audited validator, and reject reports from non-assigned auditors.
+
+Readiness requirements covered:
+- `upow.md` §12.2 and `mvp_spec.md` §25.5: mandatory audits must be randomized, accountable, and slashable.
+- `local_chain_production_readiness.md` economics gap: full auditor-selection policy must move out of
+  role-side discovery.
+
+Canonical owner: chain block transition and validator audit assignment state.
+Old shortcut being removed: any registered non-audited validator can no longer submit any open audit.
+Validation plan: focused audit assignment/report tests, storage/root tests, role runtime audit test,
+formatting/whitespace, crate/workspace checks, final Gate 0, tarpaulin attempt.
+
+Implementation summary:
+- Added a persisted `auditor` to validator audit assignments and committed it in the audit-assignment
+  root.
+- Deterministically selects a registered auditor distinct from the audited validator, and skips assignment
+  when no separate auditor exists.
+- Rejects chain and network audit reports from non-assigned auditors, and limits validator role audit
+  observation to locally assigned audits.
+- Updated audit, storage, root, node-ingest, role-runtime, and docs coverage.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused tests passed for mandatory separate-auditor assignment, contradicted/missed audits,
+  state-root/storage persistence, node payload ingest, and validator role audit reporting.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 401 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 69: Full Challenge-Reward Maturity Delay
 
@@ -73,8 +113,6 @@ Validation evidence:
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
 - Feature commit: `7595b0e` (`Delay challenge rewards by maturity rule`) is pushed to `main`.
-
-## Recent Iterations
 
 ### Iteration 68: Local Checker Challenge-Reward Evidence
 
@@ -192,7 +230,7 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 68 on June 20, 2026:
+Latest full validation is Iteration 70 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release

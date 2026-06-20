@@ -210,8 +210,11 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         .validator_audit_assignments()
         .get(&audit_id)
         .unwrap();
+    let assigned_auditor = assignment.auditor;
     assert_eq!(assignment.receipt_id, receipt.receipt_id);
     assert_eq!(assignment.validator, assigned);
+    assert_ne!(assigned_auditor, assigned);
+    assert!(chain.state().validators().contains_key(&assigned_auditor));
     assert_eq!(assignment.assigned_at_height, 0);
     assert_eq!(assignment.deadline_height, 1);
     let delayed_validator_claim = chain
@@ -235,7 +238,7 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         .get(&audit_id)
         .expect("missed audit must slash");
     assert_eq!(slash.validator, assigned);
-    assert_eq!(slash.auditor, [0; 32]);
+    assert_eq!(slash.auditor, assigned_auditor);
     assert_eq!(slash.amount, 77);
     assert_eq!(slash.slashed_at_height, 1);
     assert_eq!(slash.reason, "validator missed mandatory audit");
@@ -285,6 +288,50 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
 }
 
 #[test]
+fn mandatory_validator_audit_assignment_requires_separate_auditor() {
+    let beacon = hash_bytes(b"test", &[b"audit-separate-auditor"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"audit-separate-miner");
+    let validator = address(b"audit-separate-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"audit-separate-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    chain.produce_block(validator, 1_000).unwrap();
+    assert!(chain.state().validator_audit_assignments().is_empty());
+}
+
+#[test]
 fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result() {
     let beacon = hash_bytes(b"test", &[b"audit-report-beacon"]);
     let params = ChainParams {
@@ -305,9 +352,9 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
     };
     let mut chain = Chain::with_params(params, beacon);
     let miner = address(b"audit-report-miner");
-    let auditor = address(b"audit-report-auditor");
+    let candidate_auditor = address(b"audit-report-auditor");
     chain.register_miner(miner, 100).unwrap();
-    chain.register_validator(auditor, 10_000).unwrap();
+    chain.register_validator(candidate_auditor, 10_000).unwrap();
     let validators: Vec<_> = (0..4)
         .map(|i| address(format!("audit-report-validator-{i}").as_bytes()))
         .collect();
@@ -363,6 +410,23 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .keys()
         .next()
         .expect("mandatory audit must be assigned");
+    let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
+    assert_ne!(auditor, audited);
+    let unauthorized_auditor = validators
+        .iter()
+        .copied()
+        .find(|validator| *validator != audited && *validator != auditor)
+        .expect("non-selected registered auditor should exist");
+    assert_eq!(
+        chain.submit_validator_audit_report(ValidatorAuditReport::new(
+            audit_id,
+            unauthorized_auditor,
+            VerificationResult::Invalid,
+            true,
+            hash_bytes(b"test", &[b"unauthorized-audit-report"]),
+        )),
+        Err(TvmError::InvalidReceipt("validator audit auditor mismatch"))
+    );
     let delayed_validator_claim = chain
         .state()
         .pending_receipt_rewards()
@@ -451,7 +515,9 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
 
     let mut passing_chain = Chain::with_params(chain.params().clone(), beacon);
     passing_chain.register_miner(miner, 100).unwrap();
-    passing_chain.register_validator(auditor, 10_000).unwrap();
+    passing_chain
+        .register_validator(candidate_auditor, 10_000)
+        .unwrap();
     for validator in &validators {
         passing_chain
             .register_validator(*validator, 10_000)
@@ -488,6 +554,7 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .keys()
         .next()
         .expect("mandatory audit must be assigned");
+    let auditor = passing_chain.state().validator_audit_assignments()[&audit_id].auditor;
     let events = passing_chain
         .submit_validator_audit_report(ValidatorAuditReport::new(
             audit_id,

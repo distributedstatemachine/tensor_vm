@@ -166,11 +166,12 @@ pub(super) fn validator_audit_assignment_root(
         encoded.extend_from_slice(&assignment.audit_id);
         encoded.extend_from_slice(&assignment.receipt_id);
         encoded.extend_from_slice(&assignment.validator);
+        encoded.extend_from_slice(&assignment.auditor);
         encoded.extend_from_slice(&assignment.assigned_at_height.to_le_bytes());
         encoded.extend_from_slice(&assignment.deadline_height.to_le_bytes());
         encoded.extend_from_slice(&assignment.seed);
     }
-    hash_bytes(b"tensor-vm-validator-audit-assignment-root-v1", &[&encoded])
+    hash_bytes(b"tensor-vm-validator-audit-assignment-root-v2", &[&encoded])
 }
 
 pub(super) fn validator_audit_result_root(results: &BTreeMap<Hash, ValidatorAuditResult>) -> Hash {

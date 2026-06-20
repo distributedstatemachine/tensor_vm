@@ -337,9 +337,9 @@ mod tests {
         };
         let mut chain = Chain::with_params(params, beacon);
         let miner = address(b"ingest-audit-miner");
-        let auditor = address(b"ingest-audit-auditor");
+        let candidate_auditor = address(b"ingest-audit-auditor");
         chain.register_miner(miner, 100).unwrap();
-        chain.register_validator(auditor, 10_000).unwrap();
+        chain.register_validator(candidate_auditor, 10_000).unwrap();
         let validators: Vec<_> = (0..4)
             .map(|i| address(format!("ingest-audit-validator-{i}").as_bytes()))
             .collect();
@@ -378,6 +378,7 @@ mod tests {
             .keys()
             .next()
             .expect("audit assignment should exist");
+        let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
         (chain, audit_id, auditor)
     }
 

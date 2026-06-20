@@ -263,11 +263,6 @@ fn validator_role_audit_report_submission_observes_assignments_and_skips_duplica
         &chain.validator_assignment_seed(&receipt_id),
     );
     let audited = assignment.validators[0];
-    let auditor = validators
-        .iter()
-        .copied()
-        .find(|validator| *validator != audited)
-        .expect("separate auditor should be available");
     let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
     insert_bundle_tensors(&mut node, &bundle);
     submit_validator_role_attestation(&mut node, audited, receipt_id)
@@ -281,6 +276,18 @@ fn validator_role_audit_report_submission_observes_assignments_and_skips_duplica
         .keys()
         .next()
         .expect("audit assignment should be created");
+    let auditor = node.chain.state().validator_audit_assignments()[&audit_id].auditor;
+    assert_ne!(auditor, audited);
+    let non_selected_auditor = validators
+        .iter()
+        .copied()
+        .find(|validator| *validator != audited && *validator != auditor)
+        .expect("separate non-selected auditor should be available");
+    assert!(
+        validator_role_audit_observation(&node, non_selected_auditor)
+            .assigned_audits
+            .is_empty()
+    );
 
     let observation = validator_role_audit_observation(&node, auditor);
     assert_eq!(observation.assigned_audits, BTreeSet::from([audit_id]));

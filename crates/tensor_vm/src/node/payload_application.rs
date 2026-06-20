@@ -239,6 +239,9 @@ pub fn apply_network_validator_audit_report_payload(
     let Some(assignment) = chain.state().validator_audit_assignments().get(&audit_id) else {
         return NetworkPayloadApply::Pending;
     };
+    if assignment.auditor != auditor {
+        return NetworkPayloadApply::Invalid;
+    }
     if !chain.state().validators().contains_key(&auditor)
         || !chain
             .state()
@@ -694,9 +697,9 @@ mod tests {
         };
         let mut chain = Chain::with_params(params, beacon);
         let miner = address(b"network-audit-miner");
-        let auditor = address(b"network-audit-auditor");
+        let candidate_auditor = address(b"network-audit-auditor");
         chain.register_miner(miner, 100).unwrap();
-        chain.register_validator(auditor, 10_000).unwrap();
+        chain.register_validator(candidate_auditor, 10_000).unwrap();
         let validators: Vec<_> = (0..4)
             .map(|i| address(format!("network-audit-validator-{i}").as_bytes()))
             .collect();
@@ -735,6 +738,7 @@ mod tests {
             .keys()
             .next()
             .expect("audit assignment should exist");
+        let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
         (chain, audit_id, auditor)
     }
 

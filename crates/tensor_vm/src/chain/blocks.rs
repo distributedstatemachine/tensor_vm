@@ -757,7 +757,7 @@ fn apply_missed_validator_audit_slashes(
                 audit_id: assignment.audit_id,
                 receipt_id: assignment.receipt_id,
                 validator: assignment.validator,
-                auditor: [0; 32],
+                auditor: assignment.auditor,
                 amount: actual_slash,
                 slashed_at_height: block_height,
                 reason: "validator missed mandatory audit".to_owned(),
@@ -804,6 +804,9 @@ fn assign_validator_audits(
         if draw % denominator >= numerator {
             continue;
         }
+        let Some(auditor) = select_validator_auditor(child_state, &validator, &seed) else {
+            continue;
+        };
         delay_validator_audit_reward(child_state, &receipt_id, &validator, deadline_height);
         child_state.validator_audit_assignments.insert(
             audit_id,
@@ -811,12 +814,31 @@ fn assign_validator_audits(
                 audit_id,
                 receipt_id,
                 validator,
+                auditor,
                 assigned_at_height: block_height,
                 deadline_height,
                 seed,
             },
         );
     }
+}
+
+fn select_validator_auditor(
+    child_state: &ChainState,
+    audited_validator: &Address,
+    seed: &Hash,
+) -> Option<Address> {
+    let candidates = child_state
+        .validators
+        .keys()
+        .copied()
+        .filter(|validator| validator != audited_validator)
+        .collect::<Vec<_>>();
+    if candidates.is_empty() {
+        return None;
+    }
+    let draw = u64::from_le_bytes(seed[8..16].try_into().expect("slice has length 8"));
+    Some(candidates[(draw as usize) % candidates.len()])
 }
 
 fn delay_validator_audit_reward(

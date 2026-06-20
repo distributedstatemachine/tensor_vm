@@ -505,12 +505,13 @@ TensorBlock {
 > once for that receipt, and credits treasury. If receipt rewards were already pending, the unavailable-data
 > evidence voids those delayed claims before spendability. The local reference also state-roots validator
 > audit assignments, signed audit results, and validator audit slash records when audit sampling is
-> configured. Audit assignment delays the audited validator's pending receipt reward through the audit
-> deadline; a missed audit or contradictory audit result slashes that validator once, credits treasury, and
-> voids that delayed validator reward. Registered validator roles now observe local audit assignments,
-> submit signed audit reports through the shared chain command path, gossip bounded audit-report payloads,
-> and expose submitted plus network-applied report counters. Full auditor-selection policy, appeal paths,
-> full bond calibration, and broader invalid-output slashing remain TODO before claiming the full §12
+> configured. Audit assignment names a deterministic registered auditor distinct from the audited
+> validator, delays the audited validator's pending receipt reward through the audit deadline, and rejects
+> reports from non-assigned auditors; a missed audit or contradictory audit result slashes that validator
+> once, credits treasury, and voids that delayed validator reward. Registered validator roles now observe
+> only their assigned local audit work, submit signed audit reports through the shared chain command path,
+> gossip bounded audit-report payloads, and expose submitted plus network-applied report counters. Appeal
+> paths, full bond calibration, and broader invalid-output slashing remain TODO before claiming the full §12
 > economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)

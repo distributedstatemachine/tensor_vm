@@ -140,6 +140,9 @@ pub fn submit_validator_audit_report(
         .get(&report.audit_id)
         .cloned()
         .ok_or(TvmError::InvalidReceipt("unknown validator audit"))?;
+    if report.auditor != assignment.auditor {
+        return Err(TvmError::InvalidReceipt("validator audit auditor mismatch"));
+    }
     if chain.state.height > assignment.deadline_height {
         return Err(TvmError::InvalidReceipt("validator audit deadline expired"));
     }

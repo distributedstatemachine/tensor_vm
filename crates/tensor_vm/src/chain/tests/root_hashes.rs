@@ -63,10 +63,10 @@ fn state_root_commits_to_validator_audit_records() {
     };
     let mut chain = Chain::with_params(params, beacon);
     let miner = address(b"audit-root-miner");
-    let auditor = address(b"audit-root-auditor");
+    let candidate_auditor = address(b"audit-root-auditor");
     let validator = address(b"audit-root-validator");
     chain.register_miner(miner, 100).unwrap();
-    chain.register_validator(auditor, 10_000).unwrap();
+    chain.register_validator(candidate_auditor, 10_000).unwrap();
     chain.register_validator(validator, 10_000).unwrap();
     let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
     let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
@@ -101,6 +101,8 @@ fn state_root_commits_to_validator_audit_records() {
         .keys()
         .next()
         .unwrap();
+    let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
+    assert_ne!(auditor, audited);
 
     chain
         .submit_validator_audit_report(ValidatorAuditReport::new(
