@@ -4,11 +4,21 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem, MODULUS};
 use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::jobs::{LinearTrainingStepJob, MatmulJob};
-use crate::tensor::{DType, Tensor, rescale_signed_elem_half_even};
+use crate::tensor::{
+    DType, Tensor, rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
+};
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
 
 const SUITE_VERSION: u64 = 1;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConformanceOutput {
+    pub dtype: DType,
+    pub scale: i64,
+    pub data: Vec<Elem>,
+    pub shape: Vec<usize>,
+}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConformanceVector {
@@ -25,6 +35,7 @@ pub struct ConformanceVector {
     pub expected_scale: i64,
     pub expected_data: Vec<Elem>,
     pub expected_shape: Vec<usize>,
+    pub expected_outputs: Vec<ConformanceOutput>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -192,6 +203,44 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[0, 8, p - 8, 20],
             &[4],
         ),
+        multi_output_vector(
+            "fixed32-quantize-int8-per-channel-axis1-v1",
+            "quantize_int8_per_channel",
+            "B",
+            &[&[2, 3]],
+            &[DType::Fixed32],
+            &[0],
+            &[("axis", 1)],
+            &[&[0, 64, 128, p - 64, p - 128, 127]],
+            vec![
+                ConformanceOutput {
+                    dtype: DType::Int8,
+                    scale: 0,
+                    data: vec![0, 32, 64, p - 64, p - 64, 64],
+                    shape: vec![2, 3],
+                },
+                ConformanceOutput {
+                    dtype: DType::Fixed32,
+                    scale: 0,
+                    data: vec![1, 2, 2],
+                    shape: vec![3],
+                },
+            ],
+        ),
+        scaled_vector(
+            "int8-dequantize-per-channel-axis1-v1",
+            "dequantize_int8_per_channel",
+            "B",
+            &[&[2, 3], &[3]],
+            &[DType::Int8, DType::Fixed32],
+            &[0, 0],
+            &[],
+            &[&[0, 32, 64, p - 64, p - 64, 64], &[1, 2, 2]],
+            DType::Fixed32,
+            0,
+            &[0, 64, 128, p - 64, p - 128, 128],
+            &[2, 3],
+        ),
         vector(
             "field-transpose-row-major-v1",
             "transpose",
@@ -330,7 +379,7 @@ pub fn cpu_reference_conformance_profile() -> Result<ConformanceProfile> {
     let vectors = conformance_vectors();
     let mut passed_ops = BTreeSet::new();
     for vector in &vectors {
-        if execute_vector(vector)? != expected_tensor(vector)? {
+        if execute_vector_outputs(vector)? != expected_tensors(vector)? {
             return Err(TvmError::VerificationFailed("conformance vector mismatch"));
         }
         passed_ops.insert(vector.op_name);
@@ -389,9 +438,9 @@ fn ensure_ops(profile: &ConformanceProfile, required_ops: &[&'static str]) -> Re
     Ok(())
 }
 
-fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
+fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
     let tensors = vector.input_tensors()?;
-    match vector.op_name {
+    let output = match vector.op_name {
         "add" => tensors[0].add(&tensors[1]),
         "sub" => tensors[0].sub(&tensors[1]),
         "mul" => tensors[0].mul(&tensors[1]),
@@ -473,8 +522,24 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
                 data,
             )
         }
+        "quantize_int8_per_channel" => {
+            let scale = quantize_scales(&tensors[0], param(vector, "axis")? as usize)?;
+            let quantized = quantize_tensor(&tensors[0], param(vector, "axis")? as usize, &scale)?;
+            let scale_tensor = Tensor::from_vec_with_scale(
+                vec![scale.len()],
+                DType::Fixed32,
+                tensors[0].scale(),
+                scale
+                    .into_iter()
+                    .map(crate::tensor::signed_i128_to_elem)
+                    .collect(),
+            )?;
+            return Ok(vec![quantized, scale_tensor]);
+        }
+        "dequantize_int8_per_channel" => dequantize_tensor(&tensors[0], &tensors[1]),
         _ => Err(TvmError::InvalidReceipt("unknown conformance op")),
-    }
+    }?;
+    Ok(vec![output])
 }
 
 fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
@@ -503,6 +568,111 @@ fn round_tensor(tensor: &Tensor) -> Result<Tensor> {
         return Ok(tensor.clone());
     }
     cast_tensor(tensor, tensor.dtype(), 0)
+}
+
+fn quantize_scales(tensor: &Tensor, axis: usize) -> Result<Vec<i128>> {
+    if tensor.dtype() != DType::Fixed32 || axis >= tensor.shape().len() {
+        return Err(TvmError::InvalidReceipt("invalid conformance quantize"));
+    }
+    let mut max_abs = vec![0i128; tensor.shape()[axis]];
+    for (index, value) in tensor.as_slice().iter().enumerate() {
+        let channel = unravel_index(tensor.shape(), index)?[axis];
+        max_abs[channel] = max_abs[channel].max(signed_elem_to_i128(*value).abs());
+    }
+    Ok(max_abs
+        .into_iter()
+        .map(|value| ((value + 126) / 127).max(1))
+        .collect())
+}
+
+fn quantize_tensor(tensor: &Tensor, axis: usize, scales: &[i128]) -> Result<Tensor> {
+    let mut data = Vec::with_capacity(tensor.len());
+    for (index, value) in tensor.as_slice().iter().enumerate() {
+        let channel = unravel_index(tensor.shape(), index)?[axis];
+        let rounded = div_round_half_even_i128(signed_elem_to_i128(*value), scales[channel])?
+            .clamp(-128, 127);
+        data.push(signed_i128_to_elem(rounded));
+    }
+    Tensor::from_vec(tensor.shape().to_vec(), DType::Int8, data)
+}
+
+fn dequantize_tensor(quantized: &Tensor, scale: &Tensor) -> Result<Tensor> {
+    if quantized.dtype() != DType::Int8
+        || quantized.scale() != 0
+        || scale.dtype() != DType::Fixed32
+        || scale.shape().len() != 1
+    {
+        return Err(TvmError::InvalidReceipt("invalid conformance dequantize"));
+    }
+    let channel_dim = dequantize_channel_dim(quantized.shape(), scale.len())?;
+    let mut data = Vec::with_capacity(quantized.len());
+    for (index, value) in quantized.as_slice().iter().enumerate() {
+        let channel = if scale.len() == 1 {
+            0
+        } else {
+            unravel_index(quantized.shape(), index)?[channel_dim]
+        };
+        data.push(signed_i128_to_elem(
+            signed_elem_to_i128(*value) * signed_elem_to_i128(scale.as_slice()[channel]),
+        ));
+    }
+    Tensor::from_vec_with_scale(
+        quantized.shape().to_vec(),
+        DType::Fixed32,
+        scale.scale(),
+        data,
+    )
+}
+
+fn dequantize_channel_dim(shape: &[usize], scale_len: usize) -> Result<usize> {
+    if scale_len == 1 {
+        return Ok(0);
+    }
+    let mut matches = shape
+        .iter()
+        .enumerate()
+        .filter_map(|(axis, dim)| (*dim == scale_len).then_some(axis));
+    let dim = matches
+        .next()
+        .ok_or(TvmError::InvalidReceipt("invalid conformance dequantize"))?;
+    if matches.next().is_some() {
+        return Err(TvmError::InvalidReceipt("invalid conformance dequantize"));
+    }
+    Ok(dim)
+}
+
+fn div_round_half_even_i128(value: i128, divisor: i128) -> Result<i128> {
+    if divisor <= 0 {
+        return Err(TvmError::InvalidReceipt("invalid conformance quantize"));
+    }
+    let sign = if value < 0 { -1 } else { 1 };
+    let abs = value.abs();
+    let quotient = abs / divisor;
+    let remainder = abs % divisor;
+    let twice = remainder
+        .checked_mul(2)
+        .ok_or(TvmError::InvalidReceipt("invalid conformance quantize"))?;
+    let rounded_abs = if twice > divisor || (twice == divisor && quotient % 2 == 1) {
+        quotient
+            .checked_add(1)
+            .ok_or(TvmError::InvalidReceipt("invalid conformance quantize"))?
+    } else {
+        quotient
+    };
+    Ok(if sign < 0 { -rounded_abs } else { rounded_abs })
+}
+
+fn unravel_index(shape: &[usize], mut index: usize) -> Result<Vec<usize>> {
+    let mut coords = vec![0; shape.len()];
+    for axis in (0..shape.len()).rev() {
+        let dim = shape[axis];
+        if dim == 0 {
+            return Err(TvmError::InvalidReceipt("invalid conformance shape"));
+        }
+        coords[axis] = index % dim;
+        index /= dim;
+    }
+    Ok(coords)
 }
 
 fn signed_abs(value: Elem) -> Elem {
@@ -658,13 +828,27 @@ fn field_pow(mut base: Elem, mut exponent: Elem) -> Elem {
     acc
 }
 
-fn expected_tensor(vector: &ConformanceVector) -> Result<Tensor> {
-    Tensor::from_vec_with_scale(
-        vector.expected_shape.clone(),
-        vector.expected_dtype,
-        vector.expected_scale,
-        vector.expected_data.clone(),
-    )
+fn expected_tensors(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
+    if vector.expected_outputs.is_empty() {
+        return Ok(vec![Tensor::from_vec_with_scale(
+            vector.expected_shape.clone(),
+            vector.expected_dtype,
+            vector.expected_scale,
+            vector.expected_data.clone(),
+        )?]);
+    }
+    vector
+        .expected_outputs
+        .iter()
+        .map(|output| {
+            Tensor::from_vec_with_scale(
+                output.shape.clone(),
+                output.dtype,
+                output.scale,
+                output.data.clone(),
+            )
+        })
+        .collect()
 }
 
 fn param(vector: &ConformanceVector, name: &str) -> Result<u64> {
@@ -715,6 +899,7 @@ fn vector(
         expected_scale: 0,
         expected_data: expected_data.to_vec(),
         expected_shape: expected_shape.to_vec(),
+        expected_outputs: Vec::new(),
     }
 }
 
@@ -747,6 +932,40 @@ fn scaled_vector(
         expected_scale,
         expected_data: expected_data.to_vec(),
         expected_shape: expected_shape.to_vec(),
+        expected_outputs: Vec::new(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn multi_output_vector(
+    id: &'static str,
+    op_name: &'static str,
+    tier: &'static str,
+    input_shapes: &[&[usize]],
+    input_dtypes: &[DType],
+    input_scales: &[i64],
+    params: &[(&'static str, u64)],
+    input_data: &[&[Elem]],
+    expected_outputs: Vec<ConformanceOutput>,
+) -> ConformanceVector {
+    let first = expected_outputs
+        .first()
+        .expect("multi-output conformance vectors need outputs");
+    ConformanceVector {
+        id,
+        op_name,
+        tier,
+        dtype: first.dtype,
+        input_dtypes: input_dtypes.to_vec(),
+        input_scales: input_scales.to_vec(),
+        input_shapes: input_shapes.iter().map(|shape| shape.to_vec()).collect(),
+        params: params.to_vec(),
+        input_data: input_data.iter().map(|data| data.to_vec()).collect(),
+        expected_dtype: first.dtype,
+        expected_scale: first.scale,
+        expected_data: first.data.clone(),
+        expected_shape: first.shape.clone(),
+        expected_outputs,
     }
 }
 
@@ -797,6 +1016,13 @@ fn encode_vector(vector: &ConformanceVector, out: &mut Vec<u8>) {
     out.extend_from_slice(&vector.expected_scale.to_le_bytes());
     encode_field_slice(&vector.expected_data, out);
     encode_shape(&vector.expected_shape, out);
+    out.extend_from_slice(&(vector.expected_outputs.len() as u64).to_le_bytes());
+    for output in &vector.expected_outputs {
+        out.push(output.dtype.tag());
+        out.extend_from_slice(&output.scale.to_le_bytes());
+        encode_field_slice(&output.data, out);
+        encode_shape(&output.shape, out);
+    }
 }
 
 fn encode_str(value: &str, out: &mut Vec<u8>) {
@@ -847,6 +1073,8 @@ mod tests {
         assert!(op_names.contains("stack"));
         assert!(op_names.contains("full"));
         assert!(op_names.contains("arange"));
+        assert!(op_names.contains("quantize_int8_per_channel"));
+        assert!(op_names.contains("dequantize_int8_per_channel"));
         assert!(op_names.contains("mse_loss"));
         assert!(vectors.iter().any(|vector| {
             vector.id == "fixed32-round-half-even-scale1-to-scale0-v1"
@@ -854,6 +1082,12 @@ mod tests {
                 && vector.input_scales == vec![1]
                 && vector.expected_dtype == DType::Fixed32
                 && vector.expected_scale == 0
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-quantize-int8-per-channel-axis1-v1"
+                && vector.expected_outputs.len() == 2
+                && vector.expected_outputs[0].dtype == DType::Int8
+                && vector.expected_outputs[1].dtype == DType::Fixed32
         }));
         assert_eq!(conformance_suite_hash(), conformance_suite_hash());
     }
@@ -884,6 +1118,8 @@ mod tests {
             "matmul",
             "full",
             "arange",
+            "quantize_int8_per_channel",
+            "dequantize_int8_per_channel",
             "mse_loss",
         ] {
             assert!(profile.passes(op), "missing conformance pass for {op}");

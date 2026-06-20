@@ -3,7 +3,9 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
-use crate::tensor::{DType, Tensor, rescale_signed_elem_half_even};
+use crate::tensor::{
+    DType, Tensor, rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
+};
 use crate::types::{Hash, hash_bytes};
 use serde_json::Value as JsonValue;
 
@@ -464,6 +466,10 @@ fn literal_field(value: &IrLiteral) -> Result<Elem> {
 }
 
 fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>> {
+    if op.op == "quantize_int8_per_channel" {
+        return quantize_int8_per_channel(one_tensor_value(&args)?, &op.kwargs);
+    }
+
     let output = match op.op.as_str() {
         "matmul" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
@@ -510,6 +516,7 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "stack" => stack_tensors(&args, &op.kwargs)?,
         "full" => full_tensor(&op.kwargs)?,
         "arange" => arange_tensor(&op.kwargs)?,
+        "dequantize_int8_per_channel" => dequantize_int8_per_channel(&args)?,
         _ => {
             return Err(TvmError::InvalidReceipt(
                 "tensor ir op is not executable by exact interpreter",
@@ -814,6 +821,123 @@ fn round_tensor(tensor: &Tensor) -> Result<Tensor> {
         .map(|value| rescale_signed_elem_half_even(*value, tensor.scale(), 0))
         .collect::<Result<Vec<_>>>()?;
     Tensor::from_vec_with_scale(tensor.shape().to_vec(), tensor.dtype(), 0, data)
+}
+
+fn quantize_int8_per_channel(
+    tensor: &Tensor,
+    kwargs: &BTreeMap<String, IrValue>,
+) -> Result<Vec<RuntimeValue>> {
+    if tensor.dtype() != DType::Fixed32 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir quantize requires fixed32 input",
+        ));
+    }
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir quantize requires explicit dim",
+    ))?;
+    if dim >= tensor.shape().len() {
+        return Err(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"));
+    }
+    let channels = tensor.shape()[dim];
+    let mut max_abs = vec![0i128; channels];
+    for (index, value) in tensor.as_slice().iter().enumerate() {
+        let channel = unravel_index(tensor.shape(), index)?[dim];
+        max_abs[channel] = max_abs[channel].max(signed_elem_to_i128(*value).abs());
+    }
+    let scales = max_abs
+        .iter()
+        .map(|value| ((*value + 126) / 127).max(1))
+        .collect::<Vec<_>>();
+    let mut quantized = Vec::with_capacity(tensor.len());
+    for (index, value) in tensor.as_slice().iter().enumerate() {
+        let channel = unravel_index(tensor.shape(), index)?[dim];
+        let raw = signed_elem_to_i128(*value);
+        let rounded = div_round_half_even_i128(raw, scales[channel])?.clamp(-128, 127);
+        quantized.push(signed_i128_to_elem(rounded));
+    }
+    let q = Tensor::from_vec(tensor.shape().to_vec(), DType::Int8, quantized)?;
+    let scale = Tensor::from_vec_with_scale(
+        vec![channels],
+        DType::Fixed32,
+        tensor.scale(),
+        scales
+            .into_iter()
+            .map(signed_i128_to_elem)
+            .collect::<Vec<_>>(),
+    )?;
+    Ok(vec![RuntimeValue::Tensor(q), RuntimeValue::Tensor(scale)])
+}
+
+fn dequantize_int8_per_channel(values: &[RuntimeValue]) -> Result<Tensor> {
+    let [quantized, scale] = two_tensor_values(values)?;
+    if quantized.dtype() != DType::Int8
+        || quantized.scale() != 0
+        || scale.dtype() != DType::Fixed32
+        || scale.shape().len() != 1
+    {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    let channel_dim = dequantize_channel_dim(quantized.shape(), scale.len())?;
+    let mut data = Vec::with_capacity(quantized.len());
+    for (index, value) in quantized.as_slice().iter().enumerate() {
+        let channel = if scale.len() == 1 {
+            0
+        } else {
+            unravel_index(quantized.shape(), index)?[channel_dim]
+        };
+        let raw = signed_elem_to_i128(*value)
+            .checked_mul(signed_elem_to_i128(scale.as_slice()[channel]))
+            .ok_or(TvmError::InvalidReceipt("tensor ir quantize overflow"))?;
+        data.push(signed_i128_to_elem(raw));
+    }
+    Tensor::from_vec_with_scale(
+        quantized.shape().to_vec(),
+        DType::Fixed32,
+        scale.scale(),
+        data,
+    )
+}
+
+fn dequantize_channel_dim(shape: &[usize], scale_len: usize) -> Result<usize> {
+    if scale_len == 1 {
+        return Ok(0);
+    }
+    let mut matches = shape
+        .iter()
+        .enumerate()
+        .filter_map(|(axis, dim)| (*dim == scale_len).then_some(axis));
+    let dim = matches.next().ok_or(TvmError::InvalidReceipt(
+        "tensor ir dequantize scale mismatch",
+    ))?;
+    if matches.next().is_some() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir dequantize scale ambiguous",
+        ));
+    }
+    Ok(dim)
+}
+
+fn div_round_half_even_i128(value: i128, divisor: i128) -> Result<i128> {
+    if divisor <= 0 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir quantize scale mismatch",
+        ));
+    }
+    let sign = if value < 0 { -1 } else { 1 };
+    let abs = value.abs();
+    let quotient = abs / divisor;
+    let remainder = abs % divisor;
+    let twice = remainder
+        .checked_mul(2)
+        .ok_or(TvmError::InvalidReceipt("tensor ir quantize overflow"))?;
+    let rounded_abs = if twice > divisor || (twice == divisor && quotient % 2 == 1) {
+        quotient
+            .checked_add(1)
+            .ok_or(TvmError::InvalidReceipt("tensor ir quantize overflow"))?
+    } else {
+        quotient
+    };
+    Ok(if sign < 0 { -rounded_abs } else { rounded_abs })
 }
 
 fn concat_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -1483,6 +1607,56 @@ fn infer_outputs(
             dtype: dtype_kwarg(kwargs, "dtype")?,
             scale: scale_kwarg(kwargs, "scale")?.unwrap_or(0),
         },
+        "quantize_int8_per_channel" => {
+            let arg = one_arg(args)?;
+            if arg.dtype != DType::Fixed32 {
+                return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+            }
+            let dim = optional_usize_kwarg(kwargs, "dim")?
+                .ok_or(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"))?;
+            if dim >= arg.shape.len() {
+                return Err(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"));
+            }
+            return Ok(vec![
+                ValueShape {
+                    shape: arg.shape.clone(),
+                    dtype: DType::Int8,
+                    scale: 0,
+                },
+                ValueShape {
+                    shape: vec![arg.shape[dim]],
+                    dtype: DType::Fixed32,
+                    scale: arg.scale,
+                },
+            ]);
+        }
+        "dequantize_int8_per_channel" => {
+            let [quantized, scale] = two_args(args)?;
+            if quantized.dtype != DType::Int8
+                || quantized.scale != 0
+                || scale.dtype != DType::Fixed32
+                || scale.shape.len() != 1
+            {
+                return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+            }
+            let scale_len = usize::try_from(scale.shape[0])
+                .map_err(|_| TvmError::InvalidReceipt("tensor ir dequantize scale mismatch"))?;
+            let q_shape = quantized
+                .shape
+                .iter()
+                .map(|dim| {
+                    usize::try_from(*dim).map_err(|_| {
+                        TvmError::InvalidReceipt("tensor ir dequantize scale mismatch")
+                    })
+                })
+                .collect::<Result<Vec<_>>>()?;
+            dequantize_channel_dim(&q_shape, scale_len)?;
+            ValueShape {
+                shape: quantized.shape.clone(),
+                dtype: DType::Fixed32,
+                scale: scale.scale,
+            }
+        }
         "topk" => {
             let arg = one_arg(args)?;
             return Ok(vec![
@@ -2514,8 +2688,8 @@ const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
         output_count: 2,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
-        verification: IrVerificationClass::CanonicalReferenceRequired,
-        consensus_admitted: false,
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
     },
     OpSpec {
         name: "dequantize_int8_per_channel",
@@ -2524,8 +2698,8 @@ const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
-        verification: IrVerificationClass::CanonicalReferenceRequired,
-        consensus_admitted: false,
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
     },
     OpSpec {
         name: "quantize_pack_int8",
@@ -2657,57 +2831,63 @@ mod tests {
     }
 
     #[test]
-    fn quantization_vocabulary_is_carried_but_not_consensus_admitted() {
+    fn quantization_vocabulary_admits_exact_per_channel_ops_and_gates_packing() {
         let expected = [
             (
                 "quantize_int8_per_channel",
                 IrArity::Exact(1),
                 2,
                 &["dim"][..],
+                IrVerificationClass::ExactDeterministicReplay,
+                true,
             ),
-            ("dequantize_int8_per_channel", IrArity::Exact(2), 1, &[][..]),
-            ("quantize_pack_int8", IrArity::Exact(1), 1, &["dim"][..]),
+            (
+                "dequantize_int8_per_channel",
+                IrArity::Exact(2),
+                1,
+                &[][..],
+                IrVerificationClass::ExactDeterministicReplay,
+                true,
+            ),
+            (
+                "quantize_pack_int8",
+                IrArity::Exact(1),
+                1,
+                &["dim"][..],
+                IrVerificationClass::CanonicalReferenceRequired,
+                false,
+            ),
             (
                 "unpack_dequantize_int8",
                 IrArity::Exact(1),
                 1,
                 &["dim", "shape", "scale_dim"][..],
+                IrVerificationClass::CanonicalReferenceRequired,
+                false,
             ),
         ];
-        for (name, arity, output_count, kwargs) in expected {
+        for (name, arity, output_count, kwargs, verification, admitted) in expected {
             let spec = op_spec(name).expect("quantization op vocabulary must be present");
             assert_eq!(spec.tier, IrOpTier::B);
             assert_eq!(spec.arity, arity);
             assert_eq!(spec.output_count, output_count);
             assert_eq!(spec.allowed_kwargs, kwargs);
             assert_eq!(spec.required_kwargs, kwargs);
-            assert_eq!(
-                spec.verification,
-                IrVerificationClass::CanonicalReferenceRequired
-            );
-            assert!(!spec.consensus_admitted);
+            assert_eq!(spec.verification, verification);
+            assert_eq!(spec.consensus_admitted, admitted);
         }
 
         let mut graph = canonical_matmul_graph(2, 3, 4, DType::Fixed32);
-        graph.ops[0].op = "quantize_int8_per_channel".to_owned();
+        graph.ops[0].op = "quantize_pack_int8".to_owned();
         graph.ops[0].args = vec![input_ref("a")];
         graph.ops[0]
             .kwargs
             .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)));
-        graph.ops[0].out = vec![
-            tensor_spec("q", vec![2, 3], DType::Int8, 0),
-            tensor_spec("scale", vec![2], DType::Fixed32, 0),
-        ];
-        graph.outputs = vec![
-            GraphOutput {
-                name: "q".to_owned(),
-                value: IrRef::Op { id: 0, idx: 0 },
-            },
-            GraphOutput {
-                name: "scale".to_owned(),
-                value: IrRef::Op { id: 0, idx: 1 },
-            },
-        ];
+        graph.ops[0].out = vec![tensor_spec("packed", vec![2, 3], DType::Uint8, 0)];
+        graph.outputs = vec![GraphOutput {
+            name: "packed".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }];
         assert!(graph.validate_for_consensus().is_err());
     }
 
@@ -3170,6 +3350,99 @@ mod tests {
             }),
             Err(TvmError::InvalidReceipt(
                 "tensor ir execution input mismatch"
+            ))
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_per_channel_int8_quantize_dequantize() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 3], DType::Fixed32, 0)],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "quantize_int8_per_channel".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![
+                        tensor_spec("q", vec![2, 3], DType::Int8, 0),
+                        tensor_spec("scale", vec![3], DType::Fixed32, 0),
+                    ],
+                },
+                OpNode {
+                    id: 1,
+                    op: "dequantize_int8_per_channel".to_owned(),
+                    args: vec![IrRef::Op { id: 0, idx: 0 }, IrRef::Op { id: 0, idx: 1 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("dq", vec![2, 3], DType::Fixed32, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "q".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 0 },
+                },
+                GraphOutput {
+                    name: "scale".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 1 },
+                },
+                GraphOutput {
+                    name: "dq".to_owned(),
+                    value: op_ref(1),
+                },
+            ],
+        };
+        graph.validate_for_consensus().unwrap();
+
+        let input = Tensor::from_vec_with_scale(
+            vec![2, 3],
+            DType::Fixed32,
+            0,
+            vec![0, 64, 128, p - 64, p - 128, 127],
+        )
+        .unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), input)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["q"],
+            Tensor::from_vec(vec![2, 3], DType::Int8, vec![0, 32, 64, p - 64, p - 64, 64]).unwrap()
+        );
+        assert_eq!(
+            execution.outputs["scale"],
+            Tensor::from_vec(vec![3], DType::Fixed32, vec![1, 2, 2]).unwrap()
+        );
+        assert_eq!(
+            execution.outputs["dq"],
+            Tensor::from_vec(
+                vec![2, 3],
+                DType::Fixed32,
+                vec![0, 64, 128, p - 64, p - 128, 128]
+            )
+            .unwrap()
+        );
+        assert_eq!(execution.op_traces[0].output_roots.len(), 2);
+        assert_eq!(execution.op_traces[1].output_roots.len(), 1);
+
+        let mut ambiguous = graph.clone();
+        ambiguous.inputs[0].shape = vec![2, 2];
+        ambiguous.ops[0].out[0].shape = vec![2, 2];
+        ambiguous.ops[0].out[1].shape = vec![2];
+        ambiguous.ops[1].out[0].shape = vec![2, 2];
+        assert_eq!(
+            ambiguous.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir dequantize scale ambiguous"
             ))
         );
     }

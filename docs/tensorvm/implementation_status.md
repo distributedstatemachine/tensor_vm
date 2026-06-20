@@ -48,11 +48,14 @@ blocker clears. See
   graph execution rejects bound tensors whose dtype/scale does not match `TensorSpec`. The value model now
   also carries consensus-visible `int8`, `uint8`, and `bool` dtype tags through tensor commitments,
   shared codecs, p2p tensor payloads, and canonical IR JSON. Tensor construction and deterministic random
-  tensor generation enforce canonical int8, uint8, and bool ranges. The frozen registry carries
-  `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`, and
-  `unpack_dequantize_int8` with fixed arity, kwarg, output-count, and verifier metadata, but those ops
-  remain non-consensus-admitted until exact scale, saturation, byte-packing, and conformance-vector
-  semantics are pinned. The interpreter validates bound tensors
+  tensor generation enforce canonical int8, uint8, and bool ranges. The frozen registry admits exact
+  deterministic `quantize_int8_per_channel` and `dequantize_int8_per_channel`: quantize takes `Fixed32`
+  input plus a `dim` kwarg, returns an `Int8` tensor and rank-1 `Fixed32` scale tensor, selects
+  `scale_raw = max(1, ceil(max_abs_raw / 127))` per channel, round-half-even divides by scale, and clamps
+  to `[-128, 127]`; dequantize multiplies canonical int8 values by the supplied scale, infers a unique
+  channel dimension from the scale length, broadcasts length-1 scales, and rejects ambiguous scale matches.
+  `quantize_pack_int8` and `unpack_dequantize_int8` remain non-consensus-admitted until byte-packed
+  storage/layout semantics are pinned. The interpreter validates bound tensors
   and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
   output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
@@ -62,17 +65,19 @@ blocker clears. See
   settlement all carry the graph variant. Graph receipts replay through `TensorGraph::execute_exact` and
   settle through the same delayed pending receipt reward path after valid attestations. Role-runtime
   production for arbitrary graph jobs outside explicit graph artifacts, const-blob fetching, fixed-point
-  arithmetic scale policy beyond `cast`/`round`, exact quantization execution/conformance, and CUDA generic
-  graph execution remain open.
+  arithmetic scale policy beyond `cast`/`round`, byte-packed quantization pack/unpack semantics, and CUDA
+  generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
-  `reduce_sum`, `mean`, `cast`, `concat`, `stack`, `matmul`, `full`, `arange`, and `mse_loss`), including
-  per-input and expected output dtype/scale metadata for fixed-point rescale vectors, with a stable suite
-  hash, CPU reference backend pass reporting, default-build CUDA non-admission, and receipt verification
-  gates that reject otherwise-valid TensorOp or LinearTrainingStep receipts when the required conformance
-  profile is unavailable or missing an op. Mixed-dtype comparison/`where` conformance vectors remain
-  pending broader vector coverage and are currently covered by exact IR execution tests.
+  `reduce_sum`, `mean`, `cast`, `concat`, `stack`, `matmul`, `full`, `arange`,
+  `quantize_int8_per_channel`, `dequantize_int8_per_channel`, and `mse_loss`), including per-input and
+  expected output dtype/scale metadata for fixed-point rescale vectors plus multi-output expected tensors
+  for exact quantize scale output, with a stable suite hash, CPU reference backend pass reporting,
+  default-build CUDA non-admission, and receipt verification gates that reject otherwise-valid TensorOp,
+  LinearTrainingStep, or GraphExecution receipts when the required conformance profile is unavailable or
+  missing an admitted op. Mixed-dtype comparison/`where` conformance vectors remain pending broader vector
+  coverage and are currently covered by exact IR execution tests.
 - Tensor descriptors, Merkle commitments, chunk openings, and row access
 - Synthetic matmul jobs, TensorOp receipts, and trace commitments
 - Full-output Freivalds verification and row-sampled audit checks
