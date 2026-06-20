@@ -5,7 +5,13 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest completed feature: Iteration 19, canonical child-state block roots and block-opening evidence, is
+- Latest completed feature: Iteration 20, finalized-beacon consensus randomness binding, is implemented and
+  validated as `1f2b74d` (`Bind consensus randomness to finalized beacon`). Blocks now carry a persisted
+  `beacon_round`, chain state commits to finalized/genesis beacon rounds, validator/miner assignments and
+  Freivalds validation seeds are derived from chain-owned finalized-beacon seed helpers, block check leaves
+  include the finalized beacon round/value and parent commitment, and status exposes parent/child beacon
+  rounds plus a `block_uses_parent_finalized_beacon` evidence field.
+- Previous completed feature: Iteration 19, canonical child-state block roots and block-opening evidence, is
   implemented and validated as `232256d` (`Add canonical block apply openings`). Useful-verification blocks
   now commit to the child state root, use Merkle-openable selected-receipt and checks roots, expose parent
   snapshot plus child apply outcome evidence, and reject the old parent-root-as-block-state shortcut.
@@ -67,12 +73,81 @@ feature-sized iterations are summarized after validation and push, and older det
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
 | Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
 | Role-owned live work before proposal | Implemented/pushed | `e18d5b3`; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Rerun full Docker checker after `/health` blocker clears |
-| Canonical useful-verification block validity | Child apply/opening evidence implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce plus explicit production kind; strict vote validation checks child state root, beacon, parent-derived target, useful-PoW or fallback mode, proposer, selected receipts, Merkle-openable checks, attestation, and child reward roots; `232256d` exposes parent snapshot and child apply outcome evidence | Add persisted historical parent snapshots, challenge transaction/dispute flow, timeout rotation, and full fallback reward economics |
+| Canonical useful-verification block validity | Finalized-beacon binding implemented locally | Blocks carry selected-root/checks-root/beacon-round/beacon/target/nonce plus explicit production kind; strict vote validation checks child state root, parent finalized beacon, parent-derived target, useful-PoW or fallback mode, proposer, selected receipts, Merkle-openable finalized-beacon-bound checks, attestation, and child reward roots; `1f2b74d` rejects block-hash beacon randomness | Add VRF/drand or commit-reveal beacon messages, persisted historical parent snapshots, challenge transaction/dispute flow, timeout rotation, and full fallback reward economics |
 | Checker evidence | Updated/pushed | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; `d4a6182` adds exact role-owned miner/validator live counter gates | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
 ## Recent Iterations
+
+### Iteration 20: Finalized-Beacon Consensus Randomness Binding
+
+Feature capability:
+Make the consensus randomness source explicit and chain-owned for the current local v0 path. Blocks now
+carry a persisted finalized `beacon_round`, state roots commit to finalized/genesis beacon rounds, validator
+and miner assignment seeds come from canonical chain helpers, validation seeds bind the finalized beacon
+round/value, receipt id, job id, validator id, and validation round, and block check leaves include the
+finalized beacon commitment.
+
+Checkpoint before edits:
+- Canonical owner: `chain::validation`, `chain::blocks`, `chain::roots`, `ChainState`, and `TensorBlock`
+  own finalized-beacon seed derivation, blockspace ordering, checks-root binding, block admission, and
+  persistence of beacon round state.
+- Adapter callers: miner role, validator role, localnet, local harness, P2P, storage, and status call
+  chain-owned seed helpers or encode canonical block/state fields; they do not derive assignment or
+  validation randomness from raw local state.
+- Old shortcut removed: validator assignment, miner assignment, validation seed derivation, block checks,
+  and child beacon advancement no longer use generic raw finalized randomness or block-hash-derived beacon
+  advancement in the consensus path.
+- Regression tests: produced blocks use the parent finalized beacon rather than their own hash; mutated
+  block-hash beacons are rejected; checks roots are bound to the finalized beacon round; validation seeds
+  are bound to validator identity and beacon round.
+- Local synthetic disabled behavior: unchanged; profiles without synthetic jobs still do not synthesize
+  local work.
+- Producer/non-producer behavior: producers and non-producers validate the same beacon round/value,
+  selected receipt set, and checks-root commitments through the chain path.
+- Structured evidence source: `tvmd node block` reports `beacon_round`, `beacon`, `parent_beacon_round`,
+  `parent_beacon`, `child_beacon_round`, `child_beacon`, and `block_uses_parent_finalized_beacon`.
+- Finality source: signed validator `BlockVote`s through `SubmitBlockVote`, unchanged.
+- Wire-size and codec boundary: fixed `TensorBlock` payload and chain-state/snapshot codecs now include
+  beacon round fields; P2P wire and storage roundtrip tests were updated.
+
+Implementation summary:
+- Added persisted finalized/genesis beacon rounds to `ChainState` and a `beacon_round` field to
+  `TensorBlock`, with state root, fixed block payload, chain-state store, and snapshot encoding updates.
+- Replaced child beacon advancement with `next_finalized_beacon(round, beacon, height, epoch)`, avoiding
+  parent/current block hash as beacon entropy.
+- Added chain-owned assignment and validation seed helpers; runtime and local harness paths now use those
+  helpers for miner assignment, validator assignment, and Freivalds validation.
+- Bound block check leaves to finalized beacon round/value and parent commitment through a canonical
+  `block_check_seed`.
+- Extended block status and CLI tests with parent/child beacon round evidence and parent finalized-beacon
+  verification.
+
+Validation:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `cargo fmt && cargo test -p tensor_vm --lib block -- --nocapture`: 39 filtered block/codec/storage/P2P
+  tests passed.
+- `cargo test -p tensor_vm --lib proposer -- --nocapture`: 8 filtered proposer/reward/parser tests passed.
+- `cargo test -p tensor_vm --test tvmd_cli`: 8 integration tests passed.
+- `cargo test -p tensor_vm --lib`: 318 library tests passed.
+- `cargo test -p tensor_vm`: 318 library tests, 1 local CPU Compose test, 8 `tvmd_cli` integration tests,
+  28 `tvmd_runtime` integration tests, and doctests passed.
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `git diff --check`
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+
+Push evidence:
+- Feature commit `1f2b74d` (`Bind consensus randomness to finalized beacon`) is recorded for push with
+  this evidence update.
+
+Out of scope:
+- Full VRF, drand, or commit-reveal network message lifecycle and timeout handling.
+- Challenge transaction/dispute flow, reward clawback, slashing, and fallback rotation economics.
+- Persisted historical parent snapshot storage for replaying arbitrary old blocks from disk.
+- Full Docker checker rerun while the standing gateway `/health` timeout blocker remains unresolved.
 
 ### Iteration 19: Canonical Child-State Block Roots and Block-Opening Evidence
 
