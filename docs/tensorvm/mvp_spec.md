@@ -1276,10 +1276,10 @@ trace_root = MerkleRoot([
 
 Trace roots prepare the system for later interactive fraud proofs.
 
-Current local-reference status: fixed canonical TensorOp and LinearTrainingStep receipt constructors derive
-this root from `TensorGraph::execute_exact` for their canonical graph bodies, and verifiers require the
-same canonical trace root for otherwise-valid receipts. Arbitrary user-submitted graph-backed receipt
-records remain a separate open item.
+Current local-reference status: fixed canonical TensorOp and LinearTrainingStep receipt constructors and
+first-class graph-backed `GraphExecution` receipts derive this root from `TensorGraph::execute_exact`, and
+verifiers require the same canonical trace root for otherwise-valid receipts. Interactive fraud-proof
+opening over these roots remains future work.
 
 ---
 

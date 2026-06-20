@@ -2,8 +2,10 @@ use crate::chain::{
     BlockProductionKind, BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
 };
 use crate::challenge::BlockCheckChallenge;
+use crate::field::Elem;
 use crate::jobs::{
-    LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
+    GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob,
+    PrimitiveType, TensorOpReceipt,
 };
 use crate::merkle::MerkleProof;
 use crate::tensor::DType;
@@ -17,6 +19,7 @@ pub(crate) const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = 32 * 4 + 2;
 pub(crate) const MAX_BLOCK_CHECK_CHALLENGE_PROOF_HASHES: usize = 64;
 pub(crate) const BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN: usize =
     32 * 7 + 8 * 3 + 32 * MAX_BLOCK_CHECK_CHALLENGE_PROOF_HASHES;
+pub(crate) const MAX_GRAPH_NAME_BYTES: usize = 64;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CodecError {
@@ -29,9 +32,11 @@ pub(crate) enum CodecError {
     UnknownVerificationResult,
     InvalidOptionalU64,
     InvalidBool,
+    InvalidString,
     UsizeOverflow,
     ShapeVectorTooLarge,
     HashVectorTooLarge,
+    StringTooLarge,
 }
 
 pub(crate) fn dtype_tag(dtype: DType) -> u8 {
@@ -52,6 +57,7 @@ pub(crate) fn primitive_type_tag(primitive_type: PrimitiveType) -> u8 {
     match primitive_type {
         PrimitiveType::TensorOp => 1,
         PrimitiveType::LinearTrainingStep => 2,
+        PrimitiveType::GraphExecution => 3,
     }
 }
 
@@ -59,6 +65,7 @@ pub(crate) fn primitive_type_from_tag(tag: u8) -> Option<PrimitiveType> {
     match tag {
         1 => Some(PrimitiveType::TensorOp),
         2 => Some(PrimitiveType::LinearTrainingStep),
+        3 => Some(PrimitiveType::GraphExecution),
         _ => None,
     }
 }
@@ -192,6 +199,17 @@ pub(crate) fn encode_job_payload(job: &JobState) -> Vec<u8> {
             write_u64(&mut out, job.deadline_block);
             write_u64(&mut out, job.reward_weight);
         }
+        JobState::GraphExecution(job) => {
+            out.push(3);
+            write_hash(&mut out, &job.job_id);
+            write_u64(&mut out, job.epoch);
+            write_hash(&mut out, &job.graph_id);
+            write_named_hash_map(&mut out, &job.input_roots);
+            write_named_elem_map(&mut out, &job.field_params);
+            write_u64(&mut out, job.deadline_block);
+            write_u64(&mut out, job.reward_weight);
+            write_u64(&mut out, job.declared_tensor_work_units);
+        }
     }
     out
 }
@@ -241,6 +259,16 @@ pub(crate) fn decode_job_payload_from(
             deadline_block: read_u64(input, offset)?,
             reward_weight: read_u64(input, offset)?,
         })),
+        3 => Ok(JobState::GraphExecution(GraphJob {
+            job_id: read_hash(input, offset)?,
+            epoch: read_u64(input, offset)?,
+            graph_id: read_hash(input, offset)?,
+            input_roots: read_named_hash_map(input, offset, max_shape_dims)?,
+            field_params: read_named_elem_map(input, offset, max_shape_dims)?,
+            deadline_block: read_u64(input, offset)?,
+            reward_weight: read_u64(input, offset)?,
+            declared_tensor_work_units: read_u64(input, offset)?,
+        })),
         _ => Err(CodecError::UnknownJobTag),
     }
 }
@@ -275,6 +303,20 @@ pub(crate) fn encode_receipt_payload(receipt: &ReceiptState) -> Vec<u8> {
             write_hash(&mut out, &receipt.loss_commitment);
             write_hash(&mut out, &receipt.grad_w_root);
             write_hash(&mut out, &receipt.weight_root_after);
+            write_hash(&mut out, &receipt.trace_root);
+            write_u64(&mut out, receipt.tensor_work_units);
+            write_u64(&mut out, receipt.execution_time_ms);
+            write_u64(&mut out, receipt.submitted_at_block);
+            write_hash(&mut out, &receipt.signature);
+        }
+        ReceiptState::GraphExecution(receipt) => {
+            out.push(3);
+            write_hash(&mut out, &receipt.receipt_id);
+            write_hash(&mut out, &receipt.job_id);
+            write_hash(&mut out, &receipt.miner);
+            write_hash(&mut out, &receipt.graph_id);
+            write_named_hash_map(&mut out, &receipt.input_roots);
+            write_named_hash_map(&mut out, &receipt.output_roots);
             write_hash(&mut out, &receipt.trace_root);
             write_u64(&mut out, receipt.tensor_work_units);
             write_u64(&mut out, receipt.execution_time_ms);
@@ -336,6 +378,19 @@ pub(crate) fn decode_receipt_payload_from(
                 signature: read_hash(input, offset)?,
             },
         )),
+        3 => Ok(ReceiptState::GraphExecution(GraphReceipt {
+            receipt_id: read_hash(input, offset)?,
+            job_id: read_hash(input, offset)?,
+            miner: read_hash(input, offset)?,
+            graph_id: read_hash(input, offset)?,
+            input_roots: read_named_hash_map(input, offset, max_hashes)?,
+            output_roots: read_named_hash_map(input, offset, max_hashes)?,
+            trace_root: read_hash(input, offset)?,
+            tensor_work_units: read_u64(input, offset)?,
+            execution_time_ms: read_u64(input, offset)?,
+            submitted_at_block: read_u64(input, offset)?,
+            signature: read_hash(input, offset)?,
+        })),
         _ => Err(CodecError::UnknownReceiptTag),
     }
 }
@@ -459,6 +514,27 @@ fn write_hash(out: &mut Vec<u8>, hash: &Hash) {
     out.extend_from_slice(hash);
 }
 
+fn write_string(out: &mut Vec<u8>, value: &str) {
+    write_usize(out, value.len());
+    out.extend_from_slice(value.as_bytes());
+}
+
+fn write_named_hash_map(out: &mut Vec<u8>, values: &std::collections::BTreeMap<String, Hash>) {
+    write_usize(out, values.len());
+    for (name, hash) in values {
+        write_string(out, name);
+        write_hash(out, hash);
+    }
+}
+
+fn write_named_elem_map(out: &mut Vec<u8>, values: &std::collections::BTreeMap<String, Elem>) {
+    write_usize(out, values.len());
+    for (name, value) in values {
+        write_string(out, name);
+        write_u64(out, *value);
+    }
+}
+
 fn write_u64(out: &mut Vec<u8>, value: u64) {
     out.extend_from_slice(&value.to_le_bytes());
 }
@@ -563,6 +639,60 @@ fn read_hash_vec(
     Ok(values)
 }
 
+fn read_string(input: &[u8], offset: &mut usize) -> Result<String, CodecError> {
+    let len = read_usize(input, offset)?;
+    if len > MAX_GRAPH_NAME_BYTES {
+        return Err(CodecError::StringTooLarge);
+    }
+    let end = offset.checked_add(len).ok_or(CodecError::UsizeOverflow)?;
+    if end > input.len() {
+        return Err(CodecError::Truncated);
+    }
+    let bytes = &input[*offset..end];
+    *offset = end;
+    String::from_utf8(bytes.to_vec()).map_err(|_| CodecError::InvalidString)
+}
+
+fn read_named_hash_map(
+    input: &[u8],
+    offset: &mut usize,
+    max_entries: Option<usize>,
+) -> Result<std::collections::BTreeMap<String, Hash>, CodecError> {
+    let len = read_usize(input, offset)?;
+    if let Some(max_entries) = max_entries
+        && len > max_entries
+    {
+        return Err(CodecError::HashVectorTooLarge);
+    }
+    let mut values = std::collections::BTreeMap::new();
+    for _ in 0..len {
+        let name = read_string(input, offset)?;
+        let value = read_hash(input, offset)?;
+        values.insert(name, value);
+    }
+    Ok(values)
+}
+
+fn read_named_elem_map(
+    input: &[u8],
+    offset: &mut usize,
+    max_entries: Option<usize>,
+) -> Result<std::collections::BTreeMap<String, Elem>, CodecError> {
+    let len = read_usize(input, offset)?;
+    if let Some(max_entries) = max_entries
+        && len > max_entries
+    {
+        return Err(CodecError::HashVectorTooLarge);
+    }
+    let mut values = std::collections::BTreeMap::new();
+    for _ in 0..len {
+        let name = read_string(input, offset)?;
+        let value = read_u64(input, offset)?;
+        values.insert(name, value);
+    }
+    Ok(values)
+}
+
 fn read_optional_u64(input: &[u8], offset: &mut usize) -> Result<Option<u64>, CodecError> {
     match read_u8(input, offset)? {
         0 => Ok(None),
@@ -574,6 +704,7 @@ fn read_optional_u64(input: &[u8], offset: &mut usize) -> Result<Option<u64>, Co
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::collections::BTreeMap;
 
     #[test]
     fn shared_enum_tags_roundtrip_and_reject_unknown_tags() {
@@ -586,7 +717,11 @@ mod tests {
             assert_eq!(dtype_from_tag(dtype_tag(dtype)), Some(dtype));
         }
 
-        for primitive_type in [PrimitiveType::TensorOp, PrimitiveType::LinearTrainingStep] {
+        for primitive_type in [
+            PrimitiveType::TensorOp,
+            PrimitiveType::LinearTrainingStep,
+            PrimitiveType::GraphExecution,
+        ] {
             assert_eq!(
                 primitive_type_from_tag(primitive_type_tag(primitive_type)),
                 Some(primitive_type)
@@ -692,8 +827,18 @@ mod tests {
             deadline_block: 32,
             reward_weight: 33,
         });
+        let graph_job_inner = GraphJob::new(
+            34,
+            hash(35),
+            BTreeMap::from([("a".to_owned(), hash(36)), ("b".to_owned(), hash(37))]),
+            BTreeMap::from([("alpha".to_owned(), 5)]),
+            38,
+            39,
+            40,
+        );
+        let graph_job = JobState::GraphExecution(graph_job_inner);
 
-        for job in [tensor_job.clone(), linear_job.clone()] {
+        for job in [tensor_job.clone(), linear_job.clone(), graph_job.clone()] {
             let payload = encode_job_payload(&job);
             assert_eq!(decode_job_payload(&payload, Some(16)), Ok(job.clone()));
 
@@ -746,6 +891,15 @@ mod tests {
             decode_job_payload(&truncated[..truncated.len() - 1], Some(16)),
             Err(CodecError::Truncated)
         );
+
+        let mut oversized_name = encode_job_payload(&graph_job);
+        let graph_name_len_offset = 1 + 32 + 8 + 32 + 8;
+        oversized_name[graph_name_len_offset..graph_name_len_offset + 8]
+            .copy_from_slice(&65_u64.to_le_bytes());
+        assert_eq!(
+            decode_job_payload(&oversized_name, Some(16)),
+            Err(CodecError::StringTooLarge)
+        );
     }
 
     #[test]
@@ -783,8 +937,29 @@ mod tests {
             submitted_at_block: 60,
             signature: hash(61),
         });
+        let graph_job = GraphJob::new(
+            0,
+            hash(62),
+            BTreeMap::from([("a".to_owned(), hash(63)), ("b".to_owned(), hash(64))]),
+            BTreeMap::new(),
+            65,
+            2,
+            8,
+        );
+        let graph_receipt = ReceiptState::GraphExecution(GraphReceipt::from_roots(
+            &graph_job,
+            hash(66),
+            BTreeMap::from([("c".to_owned(), hash(67))]),
+            hash(68),
+            69,
+            70,
+        ));
 
-        for receipt in [tensor_receipt.clone(), linear_receipt.clone()] {
+        for receipt in [
+            tensor_receipt.clone(),
+            linear_receipt.clone(),
+            graph_receipt.clone(),
+        ] {
             let payload = encode_receipt_payload(&receipt);
             assert_eq!(
                 decode_receipt_payload(&payload, Some(16)),

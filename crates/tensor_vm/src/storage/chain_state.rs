@@ -421,6 +421,7 @@ fn storage_codec_error(error: payload_codec::CodecError) -> TvmError {
         }
         payload_codec::CodecError::InvalidOptionalU64 => TvmError::Storage("invalid optional u64"),
         payload_codec::CodecError::InvalidBool => TvmError::Storage("invalid boolean"),
+        payload_codec::CodecError::InvalidString => TvmError::Storage("invalid string"),
         payload_codec::CodecError::UsizeOverflow => {
             TvmError::Storage("chain state length overflow")
         }
@@ -428,6 +429,7 @@ fn storage_codec_error(error: payload_codec::CodecError) -> TvmError {
             TvmError::Storage("shape vector too large")
         }
         payload_codec::CodecError::HashVectorTooLarge => TvmError::Storage("hash vector too large"),
+        payload_codec::CodecError::StringTooLarge => TvmError::Storage("string too large"),
     }
 }
 
@@ -1147,8 +1149,8 @@ mod tests {
     use crate::chain::{ChainCommand, ChainEngine};
     use crate::ir::canonical_matmul_graph;
     use crate::jobs::{
-        LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
-        PrimitiveType, TensorOpReceipt,
+        GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt,
+        LinearTrainingStepSpec, MatmulJob, PrimitiveType, TensorOpReceipt,
     };
     use crate::tensor::{DType, Tensor};
     use crate::types::address;
@@ -1256,6 +1258,35 @@ mod tests {
         submit_receipt(
             &mut chain,
             ReceiptState::LinearTrainingStep(linear_receipt.clone()),
+        );
+
+        let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        let graph_id = graph.validate_for_consensus().unwrap();
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        let graph_a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let graph_b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let graph_inputs = BTreeMap::from([
+            ("a".to_owned(), graph_a.clone()),
+            ("b".to_owned(), graph_b.clone()),
+        ]);
+        let graph_input_roots = graph_inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let graph_job = GraphJob::new(0, graph_id, graph_input_roots, BTreeMap::new(), 13, 1, 8);
+        let (graph_receipt, _outputs) =
+            GraphReceipt::from_execution(&graph_job, &graph, miner, &graph_inputs, 3, 8).unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(graph_job)))
+            .unwrap();
+        submit_receipt(
+            &mut chain,
+            ReceiptState::GraphExecution(graph_receipt.clone()),
         );
         chain.settle_epoch(1_000, 500);
         assert!(

@@ -1,6 +1,7 @@
 use crate::ir::TensorGraph;
 use crate::jobs::{
-    LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
+    GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob,
+    PrimitiveType, TensorOpReceipt,
 };
 use crate::merkle::MerkleProof;
 use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
@@ -519,6 +520,7 @@ impl RewardState {
 pub enum JobState {
     TensorOp(MatmulJob),
     LinearTrainingStep(LinearTrainingStepJob),
+    GraphExecution(GraphJob),
 }
 
 impl JobState {
@@ -526,6 +528,7 @@ impl JobState {
         match self {
             Self::TensorOp(job) => job.job_id,
             Self::LinearTrainingStep(job) => job.job_id,
+            Self::GraphExecution(job) => job.job_id,
         }
     }
 
@@ -533,6 +536,7 @@ impl JobState {
         match self {
             Self::TensorOp(job) => job.deadline_block,
             Self::LinearTrainingStep(job) => job.deadline_block,
+            Self::GraphExecution(job) => job.deadline_block,
         }
     }
 
@@ -540,18 +544,21 @@ impl JobState {
         match self {
             Self::TensorOp(job) => job.program_hash(),
             Self::LinearTrainingStep(job) => job.program_hash(),
+            Self::GraphExecution(job) => job.program_hash(),
         }
     }
 
-    pub fn tensor_ir_graph(&self) -> TensorGraph {
+    pub fn tensor_ir_graph(&self) -> Option<TensorGraph> {
         match self {
-            Self::TensorOp(job) => job.tensor_ir_graph(),
-            Self::LinearTrainingStep(job) => job.tensor_ir_graph(),
+            Self::TensorOp(job) => Some(job.tensor_ir_graph()),
+            Self::LinearTrainingStep(job) => Some(job.tensor_ir_graph()),
+            Self::GraphExecution(_) => None,
         }
     }
 
-    pub fn canonical_program_body(&self) -> Vec<u8> {
-        self.tensor_ir_graph().canonical_json().into_bytes()
+    pub fn canonical_program_body(&self) -> Option<Vec<u8>> {
+        self.tensor_ir_graph()
+            .map(|graph| graph.canonical_json().into_bytes())
     }
 }
 
@@ -559,6 +566,7 @@ impl JobState {
 pub enum ReceiptState {
     TensorOp(TensorOpReceipt),
     LinearTrainingStep(LinearTrainingStepReceipt),
+    GraphExecution(GraphReceipt),
 }
 
 impl ReceiptState {
@@ -566,6 +574,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(receipt) => receipt.receipt_id,
             Self::LinearTrainingStep(receipt) => receipt.receipt_id,
+            Self::GraphExecution(receipt) => receipt.receipt_id,
         }
     }
 
@@ -573,6 +582,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(receipt) => receipt.job_id,
             Self::LinearTrainingStep(receipt) => receipt.job_id,
+            Self::GraphExecution(receipt) => receipt.job_id,
         }
     }
 
@@ -580,6 +590,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(receipt) => receipt.miner,
             Self::LinearTrainingStep(receipt) => receipt.miner,
+            Self::GraphExecution(receipt) => receipt.miner,
         }
     }
 
@@ -587,6 +598,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(_) => PrimitiveType::TensorOp,
             Self::LinearTrainingStep(_) => PrimitiveType::LinearTrainingStep,
+            Self::GraphExecution(_) => PrimitiveType::GraphExecution,
         }
     }
 
@@ -594,6 +606,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(receipt) => receipt.submitted_at_block,
             Self::LinearTrainingStep(receipt) => receipt.submitted_at_block,
+            Self::GraphExecution(receipt) => receipt.submitted_at_block,
         }
     }
 
@@ -601,6 +614,7 @@ impl ReceiptState {
         match self {
             Self::TensorOp(receipt) => receipt.tensor_work_units,
             Self::LinearTrainingStep(receipt) => receipt.tensor_work_units,
+            Self::GraphExecution(receipt) => receipt.tensor_work_units,
         }
     }
 
@@ -614,6 +628,13 @@ impl ReceiptState {
                 32 * (7 + roots) + 8 * 3
             }
             Self::LinearTrainingStep(_) => 32 * 10 + 8 * 4,
+            Self::GraphExecution(receipt) => {
+                let roots = receipt
+                    .input_roots
+                    .len()
+                    .saturating_add(receipt.output_roots.len()) as u64;
+                32 * (6 + roots) + 8 * 3
+            }
         }
     }
 }

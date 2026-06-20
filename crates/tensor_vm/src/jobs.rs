@@ -14,6 +14,184 @@ use crate::vm;
 pub enum PrimitiveType {
     TensorOp,
     LinearTrainingStep,
+    GraphExecution,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphJob {
+    pub job_id: Hash,
+    pub epoch: u64,
+    pub graph_id: Hash,
+    pub input_roots: BTreeMap<String, Hash>,
+    pub field_params: BTreeMap<String, Elem>,
+    pub deadline_block: u64,
+    pub reward_weight: u64,
+    pub declared_tensor_work_units: u64,
+}
+
+impl GraphJob {
+    pub fn new(
+        epoch: u64,
+        graph_id: Hash,
+        input_roots: BTreeMap<String, Hash>,
+        field_params: BTreeMap<String, Elem>,
+        deadline_block: u64,
+        reward_weight: u64,
+        declared_tensor_work_units: u64,
+    ) -> Self {
+        let job_id = graph_job_id(GraphJobIdInput {
+            epoch,
+            graph_id: &graph_id,
+            input_roots: &input_roots,
+            field_params: &field_params,
+            deadline_block,
+            reward_weight,
+            declared_tensor_work_units,
+        });
+        Self {
+            job_id,
+            epoch,
+            graph_id,
+            input_roots,
+            field_params,
+            deadline_block,
+            reward_weight,
+            declared_tensor_work_units,
+        }
+    }
+
+    pub fn recompute_job_id(&self) -> Hash {
+        graph_job_id(GraphJobIdInput {
+            epoch: self.epoch,
+            graph_id: &self.graph_id,
+            input_roots: &self.input_roots,
+            field_params: &self.field_params,
+            deadline_block: self.deadline_block,
+            reward_weight: self.reward_weight,
+            declared_tensor_work_units: self.declared_tensor_work_units,
+        })
+    }
+
+    pub fn tensor_work_units(&self) -> u64 {
+        self.declared_tensor_work_units
+            .saturating_mul(self.reward_weight)
+    }
+
+    pub fn program_hash(&self) -> Hash {
+        self.graph_id
+    }
+
+    pub fn exact_ir_execution(
+        &self,
+        graph: &TensorGraph,
+        tensors: &BTreeMap<String, Tensor>,
+    ) -> Result<IrExecution> {
+        for (name, expected_root) in &self.input_roots {
+            let Some(tensor) = tensors.get(name) else {
+                return Err(TvmError::InvalidReceipt("missing graph input tensor"));
+            };
+            if tensor.commitment_root() != *expected_root {
+                return Err(TvmError::InvalidReceipt("graph input root mismatch"));
+            }
+        }
+        if tensors.len() != self.input_roots.len() {
+            return Err(TvmError::InvalidReceipt("unexpected graph input tensor"));
+        }
+        graph.execute_exact(&IrExecutionInputs {
+            tensors: tensors.clone(),
+            field_params: self.field_params.clone(),
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphReceipt {
+    pub receipt_id: Hash,
+    pub job_id: Hash,
+    pub miner: Address,
+    pub graph_id: Hash,
+    pub input_roots: BTreeMap<String, Hash>,
+    pub output_roots: BTreeMap<String, Hash>,
+    pub trace_root: Hash,
+    pub tensor_work_units: u64,
+    pub execution_time_ms: u64,
+    pub submitted_at_block: u64,
+    pub signature: Signature,
+}
+
+impl GraphReceipt {
+    pub fn from_execution(
+        job: &GraphJob,
+        graph: &TensorGraph,
+        miner: Address,
+        tensors: &BTreeMap<String, Tensor>,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Result<(Self, BTreeMap<String, Tensor>)> {
+        let execution = job.exact_ir_execution(graph, tensors)?;
+        let output_roots = execution
+            .outputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect::<BTreeMap<_, _>>();
+        let receipt = Self::from_roots(
+            job,
+            miner,
+            output_roots,
+            execution.trace_root,
+            submitted_at_block,
+            execution_time_ms,
+        );
+        Ok((receipt, execution.outputs))
+    }
+
+    pub fn from_roots(
+        job: &GraphJob,
+        miner: Address,
+        output_roots: BTreeMap<String, Hash>,
+        trace_root: Hash,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Self {
+        let unsigned = graph_receipt_digest(GraphReceiptDigestInput {
+            job_id: &job.job_id,
+            miner: &miner,
+            graph_id: &job.graph_id,
+            input_roots: &job.input_roots,
+            output_roots: &output_roots,
+            trace_root: &trace_root,
+            tensor_work_units: job.tensor_work_units(),
+            execution_time_ms,
+            submitted_at_block,
+        });
+        Self {
+            receipt_id: unsigned,
+            job_id: job.job_id,
+            miner,
+            graph_id: job.graph_id,
+            input_roots: job.input_roots.clone(),
+            output_roots,
+            trace_root,
+            tensor_work_units: job.tensor_work_units(),
+            execution_time_ms,
+            submitted_at_block,
+            signature: sign(&miner, &unsigned),
+        }
+    }
+
+    pub fn recompute_receipt_id(&self) -> Hash {
+        graph_receipt_digest(GraphReceiptDigestInput {
+            job_id: &self.job_id,
+            miner: &self.miner,
+            graph_id: &self.graph_id,
+            input_roots: &self.input_roots,
+            output_roots: &self.output_roots,
+            trace_root: &self.trace_root,
+            tensor_work_units: self.tensor_work_units,
+            execution_time_ms: self.execution_time_ms,
+            submitted_at_block: self.submitted_at_block,
+        })
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -473,6 +651,58 @@ struct ReceiptDigestInput<'a> {
     submitted_at_block: u64,
 }
 
+struct GraphJobIdInput<'a> {
+    epoch: u64,
+    graph_id: &'a Hash,
+    input_roots: &'a BTreeMap<String, Hash>,
+    field_params: &'a BTreeMap<String, Elem>,
+    deadline_block: u64,
+    reward_weight: u64,
+    declared_tensor_work_units: u64,
+}
+
+fn graph_job_id(input: GraphJobIdInput<'_>) -> Hash {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&input.epoch.to_le_bytes());
+    encoded.extend_from_slice(input.graph_id);
+    encode_named_hashes(&mut encoded, input.input_roots);
+    encoded.extend_from_slice(&(input.field_params.len() as u64).to_le_bytes());
+    for (name, value) in input.field_params {
+        encode_name(&mut encoded, name);
+        encoded.extend_from_slice(&value.to_le_bytes());
+    }
+    encoded.extend_from_slice(&input.deadline_block.to_le_bytes());
+    encoded.extend_from_slice(&input.reward_weight.to_le_bytes());
+    encoded.extend_from_slice(&input.declared_tensor_work_units.to_le_bytes());
+    hash_bytes(b"tensor-vm-graph-job-v1", &[&encoded])
+}
+
+struct GraphReceiptDigestInput<'a> {
+    job_id: &'a Hash,
+    miner: &'a Address,
+    graph_id: &'a Hash,
+    input_roots: &'a BTreeMap<String, Hash>,
+    output_roots: &'a BTreeMap<String, Hash>,
+    trace_root: &'a Hash,
+    tensor_work_units: u64,
+    execution_time_ms: u64,
+    submitted_at_block: u64,
+}
+
+fn graph_receipt_digest(input: GraphReceiptDigestInput<'_>) -> Hash {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(input.job_id);
+    encoded.extend_from_slice(input.miner);
+    encoded.extend_from_slice(input.graph_id);
+    encode_named_hashes(&mut encoded, input.input_roots);
+    encode_named_hashes(&mut encoded, input.output_roots);
+    encoded.extend_from_slice(input.trace_root);
+    encoded.extend_from_slice(&input.tensor_work_units.to_le_bytes());
+    encoded.extend_from_slice(&input.execution_time_ms.to_le_bytes());
+    encoded.extend_from_slice(&input.submitted_at_block.to_le_bytes());
+    hash_bytes(b"tensor-vm-graph-receipt-v1", &[&encoded])
+}
+
 fn receipt_digest(input: ReceiptDigestInput<'_>) -> Hash {
     let mut encoded = Vec::new();
     encoded.extend_from_slice(input.job_id);
@@ -493,6 +723,19 @@ fn receipt_digest(input: ReceiptDigestInput<'_>) -> Hash {
     hash_bytes(input.domain, &[&encoded])
 }
 
+fn encode_named_hashes(out: &mut Vec<u8>, values: &BTreeMap<String, Hash>) {
+    out.extend_from_slice(&(values.len() as u64).to_le_bytes());
+    for (name, root) in values {
+        encode_name(out, name);
+        out.extend_from_slice(root);
+    }
+}
+
+fn encode_name(out: &mut Vec<u8>, name: &str) {
+    out.extend_from_slice(&(name.len() as u64).to_le_bytes());
+    out.extend_from_slice(name.as_bytes());
+}
+
 fn encode_usizes(values: &[usize]) -> Vec<u8> {
     let mut out = Vec::with_capacity(8 + values.len() * 8);
     out.extend_from_slice(&(values.len() as u64).to_le_bytes());
@@ -505,6 +748,7 @@ fn encode_usizes(values: &[usize]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::canonical_matmul_graph;
     use crate::types::address;
 
     #[test]
@@ -570,6 +814,39 @@ mod tests {
         assert_eq!(
             job.execute(&wrong_weights),
             Err(TvmError::InvalidReceipt("weight root mismatch"))
+        );
+    }
+
+    #[test]
+    fn graph_receipt_commits_to_exact_graph_execution() {
+        let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let inputs = BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]);
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(3, graph_id, input_roots, BTreeMap::new(), 20, 2, 8);
+
+        let (receipt, outputs) =
+            GraphReceipt::from_execution(&job, &graph, address(b"graph-miner"), &inputs, 4, 9)
+                .unwrap();
+        let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+
+        assert_eq!(receipt.graph_id, graph_id);
+        assert_eq!(receipt.output_roots["c"], outputs["c"].commitment_root());
+        assert_eq!(
+            receipt.output_roots["c"],
+            execution.outputs["c"].commitment_root()
+        );
+        assert_eq!(receipt.trace_root, execution.trace_root);
+        assert_eq!(receipt.tensor_work_units, 16);
+        assert_eq!(receipt.receipt_id, receipt.recompute_receipt_id());
+        assert_eq!(
+            job.exact_ir_execution(&graph, &BTreeMap::new()),
+            Err(TvmError::InvalidReceipt("missing graph input tensor"))
         );
     }
 }

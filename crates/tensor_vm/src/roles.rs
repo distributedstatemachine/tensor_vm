@@ -1,6 +1,7 @@
 use crate::chain::{Chain, JobState, ReceiptState};
 use crate::error::{Result, TvmError};
-use crate::jobs::{LinearTrainingStepOutput, PrimitiveType};
+use crate::ir::TensorGraph;
+use crate::jobs::{GraphJob, LinearTrainingStepOutput, PrimitiveType};
 use crate::miner::MinerNode;
 use crate::runtime::CpuReferenceBackend;
 use crate::scheduler::SyntheticLocalJobSource;
@@ -19,6 +20,11 @@ pub enum RoleReceiptArtifacts {
     LinearTrainingStep {
         weights_before: Tensor,
         output: Box<LinearTrainingStepOutput>,
+    },
+    GraphExecution {
+        graph: TensorGraph,
+        inputs: std::collections::BTreeMap<String, Tensor>,
+        outputs: std::collections::BTreeMap<String, Tensor>,
     },
 }
 
@@ -44,6 +50,13 @@ impl RoleReceiptBundle {
                 output.grad_w.clone(),
                 output.weight_after.clone(),
             ],
+            RoleReceiptArtifacts::GraphExecution {
+                inputs, outputs, ..
+            } => inputs
+                .values()
+                .chain(outputs.values())
+                .cloned()
+                .collect::<Vec<_>>(),
         }
     }
 }
@@ -90,7 +103,36 @@ impl CpuReferenceMinerRole {
                     },
                 })
             }
+            JobState::GraphExecution(_) => Err(TvmError::InvalidReceipt(
+                "graph execution requires explicit graph inputs",
+            )),
         }
+    }
+
+    pub fn execute_graph_job(
+        &self,
+        job: &GraphJob,
+        graph: &TensorGraph,
+        inputs: &std::collections::BTreeMap<String, Tensor>,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Result<RoleReceiptBundle> {
+        let (receipt, outputs) = crate::jobs::GraphReceipt::from_execution(
+            job,
+            graph,
+            self.address,
+            inputs,
+            submitted_at_block,
+            execution_time_ms,
+        )?;
+        Ok(RoleReceiptBundle {
+            receipt: ReceiptState::GraphExecution(receipt),
+            artifacts: RoleReceiptArtifacts::GraphExecution {
+                graph: graph.clone(),
+                inputs: inputs.clone(),
+                outputs,
+            },
+        })
     }
 }
 
@@ -142,6 +184,31 @@ impl ReferenceValidatorRole {
                 validation_seed,
                 params,
             ),
+            (
+                JobState::GraphExecution(job),
+                ReceiptState::GraphExecution(receipt),
+                RoleReceiptArtifacts::GraphExecution { graph, inputs, .. },
+            ) => {
+                let report = crate::verify::verify_graph_execution(
+                    job,
+                    receipt,
+                    graph,
+                    inputs,
+                    validation_seed,
+                )?;
+                Ok(ValidatorAttestation::new(
+                    self.address,
+                    self.stake,
+                    crate::verify::AttestationStatement {
+                        receipt_id: receipt.receipt_id,
+                        job_id: receipt.job_id,
+                        primitive_type: PrimitiveType::GraphExecution,
+                        result: report.result,
+                        checks_root: report.checks_root,
+                        data_availability_passed: report.data_availability_passed,
+                    },
+                ))
+            }
             _ => Err(TvmError::InvalidReceipt(
                 "job and receipt primitive mismatch",
             )),
@@ -162,6 +229,7 @@ pub fn primitive_type(job: &JobState) -> PrimitiveType {
     match job {
         JobState::TensorOp(_) => PrimitiveType::TensorOp,
         JobState::LinearTrainingStep(_) => PrimitiveType::LinearTrainingStep,
+        JobState::GraphExecution(_) => PrimitiveType::GraphExecution,
     }
 }
 
@@ -169,10 +237,12 @@ pub fn primitive_type(job: &JobState) -> PrimitiveType {
 mod tests {
     use super::*;
     use crate::chain::ChainParams;
-    use crate::jobs::{LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
+    use crate::ir::canonical_matmul_graph;
+    use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
     use crate::tensor::DType;
     use crate::types::{address, hash_bytes};
     use crate::verify::VerificationResult;
+    use std::collections::BTreeMap;
 
     #[test]
     fn cpu_reference_miner_role_executes_tensor_op_jobs() {
@@ -235,6 +305,43 @@ mod tests {
 
         assert_eq!(attestation.result, VerificationResult::Valid);
         assert_eq!(attestation.receipt_id, bundle.receipt_id());
+        assert!(attestation.verify_signature());
+    }
+
+    #[test]
+    fn cpu_roles_execute_and_verify_graph_jobs() {
+        let params = ChainParams::default();
+        let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let inputs = BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]);
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+        let miner = CpuReferenceMinerRole::new(address(b"role-graph-miner"));
+
+        let bundle = miner
+            .execute_graph_job(&job, &graph, &inputs, 0, 2)
+            .unwrap();
+        let validator = ReferenceValidatorRole::new(address(b"role-graph-validator"), 10_000);
+        let attestation = validator
+            .verify_receipt(
+                &JobState::GraphExecution(job.clone()),
+                &bundle,
+                &hash_bytes(b"test", &[b"role-graph-seed"]),
+                &params.freivalds,
+            )
+            .unwrap();
+
+        assert_eq!(
+            primitive_type(&JobState::GraphExecution(job)),
+            PrimitiveType::GraphExecution
+        );
+        assert_eq!(bundle.served_tensors().len(), 3);
+        assert_eq!(attestation.result, VerificationResult::Valid);
         assert!(attestation.verify_signature());
     }
 

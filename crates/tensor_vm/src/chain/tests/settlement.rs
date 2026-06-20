@@ -1,4 +1,8 @@
 use super::*;
+use crate::canonical_matmul_graph;
+use crate::jobs::{GraphJob, GraphReceipt};
+use crate::verify::verify_graph_execution;
+use std::collections::BTreeMap;
 
 #[test]
 fn chain_settles_valid_tensorwork_and_rewards_participants() {
@@ -104,6 +108,100 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         chain.state().rewards().balance(&validators[0]),
         validator_reward
     );
+}
+
+#[test]
+fn chain_settles_valid_graph_execution_and_delays_rewards() {
+    let beacon = hash_bytes(b"test", &[b"graph-settlement"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"graph-settlement-miner");
+    let validator = address(b"graph-settlement-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+    let inputs = BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+    let (receipt, _outputs) =
+        GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+    let report = verify_graph_execution(
+        &job,
+        &receipt,
+        &graph,
+        &inputs,
+        &hash_bytes(b"test", &[b"graph-validation"]),
+    )
+    .unwrap();
+
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+            job.clone(),
+        )))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::GraphExecution,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+
+    chain.settle_epoch(1_000, 500);
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .settled_tensor_work,
+        receipt.tensor_work_units
+    );
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    chain.set_position_for_testing(claimable_at_height, 0);
+    chain.release_matured_receipt_rewards().unwrap();
+
+    assert_eq!(chain.state().rewards().balance(&miner), 1_000);
 }
 
 #[test]

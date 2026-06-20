@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 46 is complete.
-- Current status: Iteration 46 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 47, graph-backed exact job and receipt admission.
+- Current status: implementation and validation complete on June 20, 2026; commit/push pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,10 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action after Iteration 46: move to arbitrary graph-backed jobs/receipts, full VRF/drand
-  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, remaining exact
-  signed/fixed-point unary or quantization replay, or the Docker `/health` blocker if the environment
-  changes.
+- Next action: commit and push Iteration 47, then move to full VRF/drand commit-reveal
+  lifecycle, multi-validator proposer competition/fork-choice policy, remaining exact signed/fixed-point
+  unary or quantization replay, or the Docker `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
@@ -36,6 +35,81 @@ feature-sized iterations are summarized after validation and push, and older det
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
+
+## Active Feature Iteration
+
+### Iteration 47: Graph-Backed Exact Job And Receipt Admission
+
+Feature capability: registered canonical Tensor IR graph bodies can be referenced by first-class
+`GraphExecution` jobs and receipts, encoded over the shared payload codec, rooted/persisted in chain state,
+exact-replay verified through `TensorGraph::execute_exact`, and settled/rewarded through the existing receipt
+machinery when validators attest.
+
+Readiness requirements covered:
+- `upow.md` §4.4-§4.6: jobs reference content-addressed graphs by `graph_id` and require registered,
+  consensus-valid canonical bodies.
+- `upow.md` §5: graph receipts commit to named input roots, output roots, `trace_root`, miner identity,
+  deterministic receipt id, and signature.
+- `upow.md` §11.1: graph receipts enter the same canonical receipt/attestation/settlement/blockspace path
+  as fixed current jobs.
+
+Canonical owner: `ir::TensorGraph::execute_exact` remains the owner of exact graph execution and trace-root
+construction; `chain::receipts` owns job/receipt admission checks.
+Adapter callers: shared payload codec, storage, p2p wire wrappers, node payload application, and role tests
+consume the new `JobState`/`ReceiptState` variants without adding consensus decisions.
+Old shortcut being removed: arbitrary registered graph bodies can no longer only exist as inert program
+bodies; they can be bound to executable jobs and receipt records.
+Regression test that proves the shortcut is gone: graph job/receipt chain tests, codec/storage/root tests,
+role exact replay tests, and settlement tests for graph receipts.
+Behavior with local synthetic block production disabled: unchanged; graph jobs can be admitted through
+shared commands/payloads, but the local synthetic job source keeps emitting only current canonical jobs.
+Behavior for producer and non-producer roles: producer policy is unchanged; validators verify graph receipts
+through the same role verifier once graph tensors/artifacts are available.
+Structured evidence source: `GraphJob`, `GraphReceipt`, state roots, shared payload roundtrips, receipt
+settlement events, and focused tests.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: add bounded map/string encodings to the existing shared job/receipt payload
+codec; p2p wire continues delegating to that shared codec.
+
+Parallel subagents:
+- Copernicus mapped the readiness slice and scope boundaries.
+- Dalton mapped the data model, admission checks, codec/storage/p2p/role paths.
+- Lorentz mapped existing coverage and missing tests.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns code changes because `JobState`/`ReceiptState` variants touch shared files.
+- Read-only explorers remain background support only; no parallel writers.
+
+Tests/checkers/docs to add or update:
+- Added focused `jobs`, `codec`, `chain`, `storage`, `roles`, and settlement tests.
+- Updated status/tarpaulin evidence after validation.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm graph -- --nocapture` passed 10 focused graph tests.
+- `cargo test -p tensor_vm codec::tests` passed 6 codec/storage-codec tests.
+- `cargo test -p tensor_vm storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`
+  passed.
+
+Broad validation commands before commit:
+- First required gate: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- `cargo fmt --all` applied formatting; `git diff --check` passed.
+- `cargo test -p tensor_vm` passed 365 library tests plus integration tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace --release` passed.
+- Final `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet library tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
+
+Observable evidence: a registered non-fixed graph can be submitted as a graph job, produce an
+exact trace-root receipt, survive codec/storage/root paths, receive a valid graph attestation, and settle
+through the same delayed reward path.
+
+Out of scope: Tier-C consensus admission, redundancy committee redesign, fraud games, `const_blob` fetching,
+CUDA generic graph execution, mixed-dtype conformance vectors, exact quantization/signed fixed-point unary
+completion, VRF/drand lifecycle, multi-validator fork-choice, and Docker `/health`.
+
+Split trigger: split smaller if the app role runtime or p2p payload admission changes require unrelated
+status/checker rewrites beyond compiling the new variants and proving shared-codec roundtrips.
 
 ## Recent Iterations
 
@@ -230,11 +304,13 @@ passed; tarpaulin remained blocked by missing `cargo-tarpaulin`. Feature commit 
 - Latest current-iteration Gate 0: `cargo test -p tensor_vm local_testnet --release` passed first and
   final on June 20, 2026 with 5 local-testnet library tests plus
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
-- Latest focused tests: `cargo test -p tensor_vm --lib ir::tests -- --nocapture` passed 12 tests;
-  `cargo test -p tensor_vm --lib conformance::tests -- --nocapture` passed 3 tests.
-- Latest broad gates: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
+- Latest focused tests: `cargo test -p tensor_vm graph -- --nocapture` passed 10 focused graph tests;
+  `cargo test -p tensor_vm codec::tests` passed 6 codec/storage-codec tests;
+  `cargo test -p tensor_vm storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`
   passed.
+- Latest broad gates: `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
+  passed after `cargo fmt --all`.
 - Current tarpaulin blocker:
 
 ```text

@@ -45,10 +45,15 @@ blocker clears. See
   `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`. The interpreter validates bound tensors
   and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
   output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
-  that do not yet have exact replay implementation fail closed. Arbitrary graph-backed job/receipt
-  admission, role/runtime receipt production for arbitrary registered graphs, const-blob fetching,
-  mixed-dtype conformance vectors, exact replay for the remaining admitted registry (exact
-  signed/fixed-point unary ops and exact quantization), and CUDA generic graph execution remain open.
+  that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
+  be referenced by first-class `GraphExecution` jobs and receipts: command admission checks the registered
+  graph body, input roots, params, job id, receipt digest, miner signature, and deadline; shared codec,
+  p2p wrappers, state roots, storage snapshots, RPC/explorer rendering, telemetry, role verification, and
+  settlement all carry the graph variant. Graph receipts replay through `TensorGraph::execute_exact` and
+  settle through the same delayed pending receipt reward path after valid attestations. Role-runtime
+  production for arbitrary graph jobs outside explicit graph artifacts, const-blob fetching, mixed-dtype
+  conformance vectors, exact replay for the remaining admitted registry (exact signed/fixed-point unary ops
+  and exact quantization), and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only shaping/generator coverage (`add`, `sub`, `mul`, `scalar_mul`,
   `transpose`, `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`,

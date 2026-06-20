@@ -4,7 +4,7 @@ use crate::error::Result;
 use crate::error::TvmError;
 #[cfg(test)]
 use crate::jobs::PrimitiveType;
-use crate::jobs::{LinearTrainingStepReceipt, TensorOpReceipt};
+use crate::jobs::{GraphReceipt, LinearTrainingStepReceipt, TensorOpReceipt};
 use crate::types::{Address, Hash};
 use crate::verify::ValidatorAttestation;
 
@@ -134,6 +134,10 @@ impl Chain {
 
     pub fn submit_linear_receipt(&mut self, receipt: LinearTrainingStepReceipt) -> Result<()> {
         receipts::submit_linear_training_step(self, receipt)
+    }
+
+    pub fn submit_graph_receipt(&mut self, receipt: GraphReceipt) -> Result<()> {
+        receipts::submit_graph_execution(self, receipt)
     }
 
     pub fn apply_transaction(

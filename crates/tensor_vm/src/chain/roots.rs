@@ -375,6 +375,21 @@ pub(super) fn job_root(jobs: &BTreeMap<Hash, JobState>) -> Hash {
                 encoded.extend_from_slice(&job.deadline_block.to_le_bytes());
                 encoded.extend_from_slice(&job.reward_weight.to_le_bytes());
             }
+            JobState::GraphExecution(job) => {
+                encoded.push(3);
+                encoded.extend_from_slice(&job.job_id);
+                encoded.extend_from_slice(&job.epoch.to_le_bytes());
+                encoded.extend_from_slice(&job.graph_id);
+                encode_named_hashes(&mut encoded, &job.input_roots);
+                encoded.extend_from_slice(&(job.field_params.len() as u64).to_le_bytes());
+                for (name, value) in &job.field_params {
+                    encode_name(&mut encoded, name);
+                    encoded.extend_from_slice(&value.to_le_bytes());
+                }
+                encoded.extend_from_slice(&job.deadline_block.to_le_bytes());
+                encoded.extend_from_slice(&job.reward_weight.to_le_bytes());
+                encoded.extend_from_slice(&job.declared_tensor_work_units.to_le_bytes());
+            }
         }
     }
     hash_bytes(b"tensor-vm-job-root-v1", &[&encoded])
@@ -412,6 +427,20 @@ pub(super) fn receipt_root(receipts: &BTreeMap<Hash, ReceiptState>) -> Hash {
                 encoded.extend_from_slice(&receipt.loss_commitment);
                 encoded.extend_from_slice(&receipt.grad_w_root);
                 encoded.extend_from_slice(&receipt.weight_root_after);
+                encoded.extend_from_slice(&receipt.trace_root);
+                encoded.extend_from_slice(&receipt.tensor_work_units.to_le_bytes());
+                encoded.extend_from_slice(&receipt.execution_time_ms.to_le_bytes());
+                encoded.extend_from_slice(&receipt.submitted_at_block.to_le_bytes());
+                encoded.extend_from_slice(&receipt.signature);
+            }
+            ReceiptState::GraphExecution(receipt) => {
+                encoded.push(3);
+                encoded.extend_from_slice(&receipt.receipt_id);
+                encoded.extend_from_slice(&receipt.job_id);
+                encoded.extend_from_slice(&receipt.miner);
+                encoded.extend_from_slice(&receipt.graph_id);
+                encode_named_hashes(&mut encoded, &receipt.input_roots);
+                encode_named_hashes(&mut encoded, &receipt.output_roots);
                 encoded.extend_from_slice(&receipt.trace_root);
                 encoded.extend_from_slice(&receipt.tensor_work_units.to_le_bytes());
                 encoded.extend_from_slice(&receipt.execution_time_ms.to_le_bytes());
@@ -635,6 +664,19 @@ fn encode_hashes(out: &mut Vec<u8>, hashes: &[Hash]) {
     for hash in hashes {
         out.extend_from_slice(hash);
     }
+}
+
+fn encode_named_hashes(out: &mut Vec<u8>, hashes: &BTreeMap<String, Hash>) {
+    out.extend_from_slice(&(hashes.len() as u64).to_le_bytes());
+    for (name, hash) in hashes {
+        encode_name(out, name);
+        out.extend_from_slice(hash);
+    }
+}
+
+fn encode_name(out: &mut Vec<u8>, name: &str) {
+    out.extend_from_slice(&(name.len() as u64).to_le_bytes());
+    out.extend_from_slice(name.as_bytes());
 }
 
 fn encode_usizes(out: &mut Vec<u8>, values: &[usize]) {

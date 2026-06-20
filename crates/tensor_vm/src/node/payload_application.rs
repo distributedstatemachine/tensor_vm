@@ -395,6 +395,9 @@ mod tests {
             JobState::LinearTrainingStep(job) => {
                 job.reward_weight = job.reward_weight.saturating_add(1)
             }
+            JobState::GraphExecution(job) => {
+                job.reward_weight = job.reward_weight.saturating_add(1)
+            }
         }
         assert_eq!(
             apply_network_job_payload(&mut chain, job_id, &encode_job_payload(&conflicting)),
@@ -588,6 +591,9 @@ mod tests {
                 receipt.execution_time_ms = receipt.execution_time_ms.saturating_add(1)
             }
             ReceiptState::LinearTrainingStep(receipt) => {
+                receipt.execution_time_ms = receipt.execution_time_ms.saturating_add(1)
+            }
+            ReceiptState::GraphExecution(receipt) => {
                 receipt.execution_time_ms = receipt.execution_time_ms.saturating_add(1)
             }
         }

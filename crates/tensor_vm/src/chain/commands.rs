@@ -56,6 +56,9 @@ impl ChainEngine for Chain {
             }
             ChainCommand::SubmitJob(job) => {
                 let job_id = job.job_id();
+                if let super::JobState::GraphExecution(graph_job) = &job {
+                    receipts::submit_graph_job(self, graph_job)?;
+                }
                 self.submit_job(job);
                 Ok(vec![ChainEvent::JobAccepted(job_id)])
             }
@@ -66,6 +69,7 @@ impl ChainEngine for Chain {
                     ReceiptState::LinearTrainingStep(receipt) => {
                         self.submit_linear_receipt(receipt)?
                     }
+                    ReceiptState::GraphExecution(receipt) => self.submit_graph_receipt(receipt)?,
                 }
                 Ok(vec![ChainEvent::ReceiptAccepted(receipt_id)])
             }

@@ -67,6 +67,7 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     let mut receipt_ids = Vec::new();
     let mut tensor_op_receipt_ids = Vec::new();
     let mut linear_training_receipt_ids = Vec::new();
+    let mut graph_execution_receipt_ids = Vec::new();
     let mut settled_receipt_ids = Vec::new();
     for receipt in chain
         .state()
@@ -82,6 +83,7 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
         match receipt.primitive_type() {
             PrimitiveType::TensorOp => tensor_op_receipt_ids.push(receipt_id),
             PrimitiveType::LinearTrainingStep => linear_training_receipt_ids.push(receipt_id),
+            PrimitiveType::GraphExecution => graph_execution_receipt_ids.push(receipt_id),
         }
     }
     let finalized = chain.is_block_finalized(&block_hash);
@@ -262,6 +264,14 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field(
         "linear_training_receipt_ids",
         hex_hash_list(&linear_training_receipt_ids),
+    );
+    report.field(
+        "graph_execution_receipt_count",
+        graph_execution_receipt_ids.len(),
+    );
+    report.field(
+        "graph_execution_receipt_ids",
+        hex_hash_list(&graph_execution_receipt_ids),
     );
     report.field("settled_receipt_count", settled_receipt_ids.len());
     report.field("settled_receipt_ids", hex_hash_list(&settled_receipt_ids));

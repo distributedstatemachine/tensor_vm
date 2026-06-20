@@ -200,6 +200,13 @@ pub(super) fn receipts_agree(left: &ReceiptState, right: &ReceiptState) -> bool 
                 && left.weight_root_after == right.weight_root_after
                 && left.trace_root == right.trace_root
         }
+        (ReceiptState::GraphExecution(left), ReceiptState::GraphExecution(right)) => {
+            left.job_id == right.job_id
+                && left.graph_id == right.graph_id
+                && left.input_roots == right.input_roots
+                && left.output_roots == right.output_roots
+                && left.trace_root == right.trace_root
+        }
         _ => false,
     }
 }
@@ -222,6 +229,6 @@ pub(super) fn has_conflicting_linear_receipt(
                     && other.weight_root_after != receipt.weight_root_after
                     && chain.has_attestation_quorum(other_id)
             }
-            ReceiptState::TensorOp(_) => false,
+            ReceiptState::TensorOp(_) | ReceiptState::GraphExecution(_) => false,
         })
 }

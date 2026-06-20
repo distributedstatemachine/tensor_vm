@@ -4,9 +4,10 @@ use crate::conformance::{
 };
 use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
+use crate::ir::TensorGraph;
 use crate::jobs::{
-    LinearTrainingStepJob, LinearTrainingStepOutput, LinearTrainingStepReceipt, MatmulJob,
-    PrimitiveType, TensorOpReceipt,
+    GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepOutput,
+    LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
 use crate::tensor::{Tensor, random_field_vector};
 use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
@@ -64,6 +65,15 @@ pub struct LinearVerificationReport {
     pub checks_root: Hash,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct GraphVerificationReport {
+    pub result: VerificationResult,
+    pub exact_replay_passed: bool,
+    pub data_availability_passed: bool,
+    pub conformance_suite_hash: Hash,
+    pub checks_root: Hash,
+}
+
 pub struct TensorOpConformanceVerification<'a> {
     pub job: &'a MatmulJob,
     pub receipt: &'a TensorOpReceipt,
@@ -82,6 +92,15 @@ pub struct LinearConformanceVerification<'a> {
     pub output: &'a LinearTrainingStepOutput,
     pub validation_seed: &'a Hash,
     pub params: &'a FreivaldsParams,
+    pub conformance_profile: &'a ConformanceProfile,
+}
+
+pub struct GraphConformanceVerification<'a> {
+    pub job: &'a GraphJob,
+    pub receipt: &'a GraphReceipt,
+    pub graph: &'a TensorGraph,
+    pub tensors: &'a std::collections::BTreeMap<String, Tensor>,
+    pub validation_seed: &'a Hash,
     pub conformance_profile: &'a ConformanceProfile,
 }
 
@@ -459,6 +478,106 @@ pub fn verify_linear_training_step_with_conformance_profile(
     })
 }
 
+pub fn verify_graph_execution(
+    job: &GraphJob,
+    receipt: &GraphReceipt,
+    graph: &TensorGraph,
+    tensors: &std::collections::BTreeMap<String, Tensor>,
+    validation_seed: &Hash,
+) -> Result<GraphVerificationReport> {
+    let profile = cpu_reference_conformance_profile()?;
+    verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+        job,
+        receipt,
+        graph,
+        tensors,
+        validation_seed,
+        conformance_profile: &profile,
+    })
+}
+
+pub fn verify_graph_execution_with_conformance_profile(
+    input: GraphConformanceVerification<'_>,
+) -> Result<GraphVerificationReport> {
+    let GraphConformanceVerification {
+        job,
+        receipt,
+        graph,
+        tensors,
+        validation_seed,
+        conformance_profile,
+    } = input;
+    if graph.validate_for_consensus()? != job.graph_id {
+        return Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"));
+    }
+    for op in &graph.ops {
+        if !conformance_profile.passes(&op.op) {
+            return Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted",
+            ));
+        }
+    }
+    if receipt.job_id != job.job_id {
+        return Err(TvmError::InvalidReceipt("job id mismatch"));
+    }
+    if receipt.submitted_at_block > job.deadline_block {
+        return Err(TvmError::InvalidReceipt("receipt submitted after deadline"));
+    }
+    if receipt.graph_id != job.graph_id {
+        return Err(TvmError::InvalidReceipt("graph id mismatch"));
+    }
+    if receipt.input_roots != job.input_roots {
+        return Err(TvmError::InvalidReceipt("input roots mismatch"));
+    }
+    if receipt.tensor_work_units != job.tensor_work_units() {
+        return Err(TvmError::InvalidReceipt("tensor work mismatch"));
+    }
+    if receipt.receipt_id != receipt.recompute_receipt_id() {
+        return Err(TvmError::InvalidReceipt("receipt digest mismatch"));
+    }
+    if !verify_signature(&receipt.miner, &receipt.receipt_id, &receipt.signature) {
+        return Err(TvmError::InvalidReceipt("bad receipt signature"));
+    }
+    let execution = job.exact_ir_execution(graph, tensors)?;
+    let output_roots = execution
+        .outputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect::<std::collections::BTreeMap<_, _>>();
+    let exact_replay_passed =
+        output_roots == receipt.output_roots && execution.trace_root == receipt.trace_root;
+    let data_availability_passed = true;
+    let result = if exact_replay_passed && data_availability_passed {
+        VerificationResult::Valid
+    } else {
+        VerificationResult::Invalid
+    };
+    let mut encoded_outputs = Vec::new();
+    for (name, root) in &receipt.output_roots {
+        encoded_outputs.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        encoded_outputs.extend_from_slice(name.as_bytes());
+        encoded_outputs.extend_from_slice(root);
+    }
+    let checks_root = hash_bytes(
+        b"tensor-vm-graph-checks-v1",
+        &[
+            validation_seed,
+            &job.graph_id,
+            &receipt.receipt_id,
+            &receipt.trace_root,
+            &encoded_outputs,
+            &conformance_suite_hash(),
+        ],
+    );
+    Ok(GraphVerificationReport {
+        result,
+        exact_replay_passed,
+        data_availability_passed,
+        conformance_suite_hash: conformance_suite_hash(),
+        checks_root,
+    })
+}
+
 fn random_linear_equal(left: &Tensor, right: &Tensor, seed: &Hash) -> Result<bool> {
     if left.shape() != right.shape() {
         return Err(TvmError::ShapeMismatch {
@@ -493,6 +612,7 @@ fn attestation_digest(validator: &Address, stake: u64, statement: &AttestationSt
     let primitive = match statement.primitive_type {
         PrimitiveType::TensorOp => 1_u8,
         PrimitiveType::LinearTrainingStep => 2_u8,
+        PrimitiveType::GraphExecution => 3_u8,
     };
     let result = match statement.result {
         VerificationResult::Valid => 1_u8,

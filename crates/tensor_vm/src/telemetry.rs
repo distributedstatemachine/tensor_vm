@@ -5,7 +5,7 @@ use crate::study::matmul_verification_cost_study;
 use crate::types::Hash;
 use crate::verify::VerificationResult;
 use serde::Serialize;
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, PartialEq, Serialize)]
 pub struct TelemetrySnapshot {
@@ -278,6 +278,9 @@ fn estimate_receipt_verification_bytes(chain: &Chain, receipt: &ReceiptState) ->
                 .saturating_add(targets.saturating_mul(2))
                 .saturating_mul(elem_bytes)
         }
+        ReceiptState::GraphExecution(receipt) => {
+            receipt.tensor_work_units.saturating_mul(elem_bytes)
+        }
     }
 }
 
@@ -347,6 +350,14 @@ fn receipt_agreement_key(receipt: &ReceiptState) -> Vec<u8> {
             encoded.extend_from_slice(&receipt.weight_root_after);
             encoded.extend_from_slice(&receipt.trace_root);
         }
+        ReceiptState::GraphExecution(receipt) => {
+            encoded.push(PrimitiveType::GraphExecution as u8);
+            encoded.extend_from_slice(&receipt.job_id);
+            encoded.extend_from_slice(&receipt.graph_id);
+            encode_named_hashes(&mut encoded, &receipt.input_roots);
+            encode_named_hashes(&mut encoded, &receipt.output_roots);
+            encoded.extend_from_slice(&receipt.trace_root);
+        }
     }
     encoded
 }
@@ -354,6 +365,15 @@ fn receipt_agreement_key(receipt: &ReceiptState) -> Vec<u8> {
 fn encode_hashes(out: &mut Vec<u8>, hashes: &[Hash]) {
     out.extend_from_slice(&(hashes.len() as u64).to_le_bytes());
     for hash in hashes {
+        out.extend_from_slice(hash);
+    }
+}
+
+fn encode_named_hashes(out: &mut Vec<u8>, hashes: &BTreeMap<String, Hash>) {
+    out.extend_from_slice(&(hashes.len() as u64).to_le_bytes());
+    for (name, hash) in hashes {
+        out.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        out.extend_from_slice(name.as_bytes());
         out.extend_from_slice(hash);
     }
 }

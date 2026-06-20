@@ -85,6 +85,19 @@ pub(super) fn job_value(job: &JobState) -> Value {
             "deadline_block": job.deadline_block,
             "reward_weight": job.reward_weight,
         }),
+        JobState::GraphExecution(job) => json!({
+            "job_id": hex(&job.job_id),
+            "primitive_type": "graph_execution",
+            "epoch": job.epoch,
+            "graph_id": hex(&job.graph_id),
+            "input_roots": job.input_roots.iter().map(|(name, root)| {
+                (name.clone(), json!(hex(root)))
+            }).collect::<serde_json::Map<_, _>>(),
+            "field_params": job.field_params,
+            "deadline_block": job.deadline_block,
+            "reward_weight": job.reward_weight,
+            "declared_tensor_work_units": job.declared_tensor_work_units,
+        }),
     }
 }
 

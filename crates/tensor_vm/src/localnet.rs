@@ -84,6 +84,7 @@ fn produce_synthetic_cpu_work_from_source(
         Some(JobState::LinearTrainingStep(job)) => {
             produce_synthetic_linear_training_work(chain, &scheduler, job)
         }
+        Some(JobState::GraphExecution(_)) => Ok(None),
         None => Ok(None),
     }
 }
@@ -163,7 +164,9 @@ fn produce_synthetic_linear_training_work(
     })?;
     let weight_root_after = match &canonical_receipt.receipt {
         ReceiptState::LinearTrainingStep(receipt) => receipt.weight_root_after,
-        ReceiptState::TensorOp(_) => unreachable!("linear round must produce linear receipts"),
+        ReceiptState::TensorOp(_) | ReceiptState::GraphExecution(_) => {
+            unreachable!("linear round must produce linear receipts")
+        }
     };
     chain.apply_command(ChainCommand::ApplyModelTransition {
         model_id: job.model_id,

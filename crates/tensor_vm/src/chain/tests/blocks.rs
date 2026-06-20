@@ -513,7 +513,9 @@ fn block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values
     let mut altered_receipts = chain.state().receipts().clone();
     match altered_receipts.get_mut(&receipt.receipt_id).unwrap() {
         ReceiptState::TensorOp(receipt) => receipt.execution_time_ms += 1,
-        ReceiptState::LinearTrainingStep(_) => unreachable!("test inserts tensor op receipt"),
+        ReceiptState::LinearTrainingStep(_) | ReceiptState::GraphExecution(_) => {
+            unreachable!("test inserts tensor op receipt")
+        }
     }
     assert_ne!(
         receipt_root(chain.state().receipts()),

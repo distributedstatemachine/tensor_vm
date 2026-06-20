@@ -128,6 +128,10 @@ fn validator_receipt_required_remote_roots(node: &RpcNode, receipt: &ReceiptStat
             roots.push(receipt.grad_w_root);
             roots.push(receipt.weight_root_after);
         }
+        ReceiptState::GraphExecution(receipt) => {
+            roots.extend(receipt.input_roots.values().copied());
+            roots.extend(receipt.output_roots.values().copied());
+        }
     }
     roots.sort();
     roots.dedup();

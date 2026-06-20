@@ -1,5 +1,8 @@
 use super::*;
 use crate::canonical_matmul_graph;
+use crate::jobs::{GraphJob, GraphReceipt};
+use crate::tensor::{DType, Tensor};
+use std::collections::BTreeMap;
 
 #[test]
 fn chain_engine_applies_profile_neutral_commands() {
@@ -301,6 +304,63 @@ fn chain_engine_applies_profile_neutral_commands() {
     );
     assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 97);
     assert_eq!(chain.state().rewards().treasury(), 3);
+}
+
+#[test]
+fn chain_engine_admits_graph_jobs_and_receipts_from_registered_program_body() {
+    let beacon = hash_bytes(b"test", &[b"graph-command"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"graph-command-miner");
+    chain
+        .apply_command(ChainCommand::RegisterMiner {
+            address: miner,
+            stake: 100,
+        })
+        .unwrap();
+
+    let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+    let graph_id = graph.validate_for_consensus().unwrap();
+    let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 0, 0, 1]).unwrap();
+    let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![2, 3, 4, 5]).unwrap();
+    let inputs = BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+            job.clone()
+        ))),
+        Err(TvmError::InvalidReceipt("unknown tensor ir graph body"))
+    );
+
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+            job.clone(),
+        )))
+        .unwrap();
+
+    let (receipt, _outputs) =
+        GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 6).unwrap();
+    let events = chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+
+    assert_eq!(
+        events,
+        vec![ChainEvent::ReceiptAccepted(receipt.receipt_id)]
+    );
+    assert!(chain.state().receipts().contains_key(&receipt.receipt_id));
 }
 
 #[test]

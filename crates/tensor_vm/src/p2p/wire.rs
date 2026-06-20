@@ -536,9 +536,11 @@ fn p2p_codec_error(error: CodecError, trailing_error: &'static str) -> TvmError 
         }
         CodecError::InvalidOptionalU64 => TvmError::InvalidReceipt("invalid optional u64 tag"),
         CodecError::InvalidBool => TvmError::InvalidReceipt("invalid bool tag"),
+        CodecError::InvalidString => TvmError::InvalidReceipt("invalid string"),
         CodecError::UsizeOverflow => TvmError::InvalidReceipt("usize overflow"),
         CodecError::ShapeVectorTooLarge => TvmError::InvalidReceipt("shape vector too large"),
         CodecError::HashVectorTooLarge => TvmError::InvalidReceipt("hash vector too large"),
+        CodecError::StringTooLarge => TvmError::InvalidReceipt("string too large"),
     }
 }
 
@@ -717,7 +719,7 @@ mod tests {
             TensorOpReceipt::from_job(
                 match &job {
                     JobState::TensorOp(job) => job,
-                    JobState::LinearTrainingStep(_) => unreachable!(),
+                    JobState::LinearTrainingStep(_) | JobState::GraphExecution(_) => unreachable!(),
                 },
                 miner,
                 3,

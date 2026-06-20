@@ -180,6 +180,17 @@ pub(super) fn explorer_jobs(chain: &Chain, limit: usize) -> Vec<ExplorerJob> {
                 deadline_block: job.deadline_block,
                 detail: format!("model step {} input {:?}", job.step, job.input_shape),
             },
+            JobState::GraphExecution(job) => ExplorerJob {
+                job_id: hex(&job.job_id),
+                primitive_type: "graph_execution".to_owned(),
+                deadline_block: job.deadline_block,
+                detail: format!(
+                    "graph {} inputs {} params {}",
+                    hex(&job.graph_id),
+                    job.input_roots.len(),
+                    job.field_params.len()
+                ),
+            },
         })
         .collect()
 }
@@ -204,6 +215,7 @@ pub(super) fn primitive_label(primitive: PrimitiveType) -> &'static str {
     match primitive {
         PrimitiveType::TensorOp => "tensor_op",
         PrimitiveType::LinearTrainingStep => "linear_training_step",
+        PrimitiveType::GraphExecution => "graph_execution",
     }
 }
 
