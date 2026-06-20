@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 36, consensus-driven matured reward release during block transitions.
-- Current status: Iteration 36 implementation is in progress on June 20, 2026.
+- Active feature: none; Iteration 36 is complete.
+- Current status: Iteration 36 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,14 +14,14 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: complete Iteration 36 validation, commit, push, and record final evidence. Standing blockers
-  remain the missing workflow document, missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 35: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 36: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`, Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -31,7 +31,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer, receipt, challenge, and credit rewards exist; block `reward_root` now binds spendable plus pending reward ledgers; local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, configured validator mandatory-audit reward delay/slashing, and network-visible validator audit reports exist; full bond calibration and appeal-safe security are not complete | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
+| Economics and slashing invariant | Partial | Delayed proposer, receipt, challenge, and credit rewards exist; block `reward_root` now binds spendable plus pending reward ledgers; block transitions now release still-mature pending claims after applying current-block delay/void effects; local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, configured validator mandatory-audit reward delay/slashing, and network-visible validator audit reports exist; full bond calibration and appeal-safe security are not complete | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
@@ -48,9 +48,9 @@ into spendable balances. Iteration 36 keeps delayed spendability but moves matur
 progression.
 
 Files/modules touched: `crates/tensor_vm/src/chain/commands.rs`,
-`crates/tensor_vm/src/chain/blocks.rs`, `crates/tensor_vm/src/chain/tests/rewards.rs`,
-`docs/tensorvm/coverage_matrix.md`, `docs/tensorvm/implementation_status.md`,
-`docs/tensorvm/tarpaulin_report.md`, and this exec plan.
+`crates/tensor_vm/src/chain/blocks.rs`, `crates/tensor_vm/src/chain/tests/attestations.rs`,
+`crates/tensor_vm/src/chain/tests/rewards.rs`, `docs/tensorvm/coverage_matrix.md`,
+`docs/tensorvm/implementation_status.md`, `docs/tensorvm/tarpaulin_report.md`, and this exec plan.
 
 Parallel subagents run:
 - Reward path explorer: confirmed no remaining production immediate-credit path, but identified test-only
@@ -86,15 +86,21 @@ Implemented locally:
 - Matured voided proposer reward claims are now pruned without credit instead of remaining pending forever.
 - Added focused tests for producer/non-producer automatic mature release and voided proposer-claim sweep.
 
-Validation completed locally so far:
+Validation completed locally:
 - Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused tests passed: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`.
-- `cargo fmt --check --all` passed after implementation.
-
-Remaining validation before commit: `git diff --check`, final
-`cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`,
-`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-`cargo tarpaulin --workspace --offline` if available.
+- Focused tests passed: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`,
+  `cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`,
+  `cargo test -p tensor_vm --lib chain::tests::settlement -- --nocapture`,
+  `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`,
+  `cargo test -p tensor_vm --lib chain::tests::root_hashes -- --nocapture`, and
+  `cargo test -p tensor_vm --lib chain::tests::attestations::mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, final
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
+- Feature commit: `58da0e6` (`Release matured rewards during blocks`).
+- Push result: `9e28b71..58da0e6  main -> main` on `origin/main`.
 
 Out of scope: unified formal reward-claim object/status, replacing test-only spendable-balance helpers,
 public reward-settlement evidence, full auditor-selection policy, appeal paths, and bond calibration.
@@ -624,24 +630,27 @@ challenges void affected pending receipt rewards before spendability.
 
 Latest current-iteration evidence:
 - Starting branch state: `## main...origin/main`.
-- Iteration 35 required Gate 0 first and final Gate 0:
+- Iteration 36 required Gate 0 first and final Gate 0:
   `cargo test -p tensor_vm local_testnet --release` passed.
-- Iteration 35 focused validation:
-  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 4 tests passed.
+- Iteration 36 focused validation:
+  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 6 tests passed.
   - `cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`: 16 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::settlement -- --nocapture`: 5 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`: 3 tests passed.
   - `cargo test -p tensor_vm --lib chain::tests::root_hashes -- --nocapture`: 3 tests passed.
-- Iteration 35 broad validation before feature commit:
+  - `cargo test -p tensor_vm --lib chain::tests::attestations::mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply -- --nocapture`: 1 test passed.
+- Iteration 36 broad validation before feature commit:
   - `cargo fmt --check --all`: passed.
   - `git diff --check`: passed.
-  - `cargo test -p tensor_vm`: passed with 348 library tests, 1 local CPU Compose integration test, 8
+  - `cargo test -p tensor_vm`: passed with 350 library tests, 1 local CPU Compose integration test, 8
     `tvmd_cli` integration tests, 30 `tvmd_runtime` integration tests, and doc-test targets.
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
-  - `cargo test --workspace --release`: passed with 14 `experiments`, 348 `tensor_vm`, 1 local CPU
+  - `cargo test --workspace --release`: passed with 14 `experiments`, 350 `tensor_vm`, 1 local CPU
     Compose, 8 `tvmd_cli`, 30 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 35 feature commit: `f53700c` (`Bind reward root to pending claims`).
-- Iteration 35 push result: `36c7fbd..f53700c  main -> main` on `origin/main`.
+- Iteration 36 feature commit: `58da0e6` (`Release matured rewards during blocks`).
+- Iteration 36 push result: `9e28b71..58da0e6  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
