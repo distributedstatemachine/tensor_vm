@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 86 complete locally; commit/push pending - fraud-path economic calibration.
+- Active feature: Iteration 86 complete; push pending - fraud-path economic calibration.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -16,8 +16,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: complete broader fraud-path bond calibration, then continue fork-choice/withholding policy
-  or rerun the full Docker scenario after the `/health` blocker clears.
+- Next action: push Iteration 86 evidence, then continue fork-choice/withholding policy, measured
+  economics, or rerun the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -101,7 +101,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: pending.
+- Feature commit: `1116beb` (`Expose fraud path economic calibration`) on `main`; push pending.
 
 ## Recent Iterations
 
