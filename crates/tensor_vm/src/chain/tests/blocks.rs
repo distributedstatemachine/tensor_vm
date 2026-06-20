@@ -16,6 +16,25 @@ fn mine_test_block(block: &mut TensorBlock) {
     resign_test_block(block);
 }
 
+fn add_settled_test_receipt(chain: &mut Chain, beacon: &Hash, label: &[u8]) -> Hash {
+    let miner = address(format!("{}-miner", String::from_utf8_lossy(label)).as_bytes());
+    if !chain.state().miners().contains_key(&miner) {
+        chain.register_miner(miner, 100).unwrap();
+    }
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt));
+    chain.mark_receipt_settled_for_testing(receipt_id);
+    receipt_id
+}
+
+fn useful_head_preference(left: &TensorBlock, right: &TensorBlock) -> std::cmp::Ordering {
+    left.pow_hash()
+        .cmp(&right.pow_hash())
+        .then_with(|| left.hash().cmp(&right.hash()))
+}
+
 #[test]
 fn blocks_advance_height_and_commit_state() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -26,6 +45,150 @@ fn blocks_advance_height_and_commit_state() {
     assert_eq!(block.height, 0);
     assert_eq!(chain.state().height(), 1);
     assert_eq!(chain.blocks().len(), 1);
+}
+
+#[test]
+fn competing_useful_head_with_better_pow_replaces_unfinalized_head() {
+    let beacon = hash_bytes(b"test", &[b"competing-useful-head"]);
+    let mut parent = Chain::new(beacon);
+    let validator_a = address(b"competing-useful-validator-a");
+    let validator_b = address(b"competing-useful-validator-b");
+    parent
+        .register_validator(validator_a, parent.params().validator_min_stake)
+        .unwrap();
+    parent
+        .register_validator(validator_b, parent.params().validator_min_stake)
+        .unwrap();
+    let receipt_id = add_settled_test_receipt(&mut parent, &beacon, b"competing-useful");
+
+    let mut branch_a = parent.clone();
+    let mut branch_b = parent.clone();
+    let block_a = branch_a.produce_block(validator_a, 1_000).unwrap();
+    let block_b = branch_b.produce_block(validator_b, 1_000).unwrap();
+    assert_eq!(block_a.parent_hash, block_b.parent_hash);
+    assert_eq!(
+        block_a.production_kind,
+        BlockProductionKind::UsefulVerificationPow
+    );
+    assert_eq!(
+        block_b.production_kind,
+        BlockProductionKind::UsefulVerificationPow
+    );
+
+    let (better, better_state, worse) = if useful_head_preference(&block_a, &block_b).is_lt() {
+        (block_a.clone(), branch_a.state().clone(), block_b.clone())
+    } else {
+        (block_b.clone(), branch_b.state().clone(), block_a.clone())
+    };
+
+    let mut peer = parent;
+    assert_eq!(
+        peer.admit_block(worse.clone()).unwrap(),
+        BlockAdmission::Applied {
+            height: worse.height,
+            hash: worse.hash()
+        }
+    );
+    assert_eq!(
+        peer.admit_block(better.clone()).unwrap(),
+        BlockAdmission::Replaced {
+            height: better.height,
+            old_hash: worse.hash(),
+            hash: better.hash()
+        }
+    );
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(better.hash())
+    );
+    assert_eq!(peer.state(), &better_state);
+    assert_eq!(peer.selected_receipts_for_block(&better), vec![receipt_id]);
+}
+
+#[test]
+fn competing_head_does_not_replace_finalized_head() {
+    let beacon = hash_bytes(b"test", &[b"finalized-competing-head"]);
+    let mut parent = Chain::new(beacon);
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("finalized-competing-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        parent
+            .register_validator(*validator, parent.params().validator_min_stake)
+            .unwrap();
+    }
+    add_settled_test_receipt(&mut parent, &beacon, b"finalized-competing");
+
+    let mut branches = validators
+        .iter()
+        .take(2)
+        .map(|validator| {
+            let mut branch = parent.clone();
+            branch.produce_block(*validator, 1_000).unwrap()
+        })
+        .collect::<Vec<_>>();
+    branches.sort_by(useful_head_preference);
+    let better = branches[0].clone();
+    let worse = branches[1].clone();
+
+    let mut peer = parent;
+    peer.admit_block(worse.clone()).unwrap();
+    peer.submit_block_vote(BlockVote::new(validators[0], 10_000, &worse))
+        .unwrap();
+    peer.submit_block_vote(BlockVote::new(validators[1], 10_000, &worse))
+        .unwrap();
+    assert!(peer.is_block_finalized(&worse.hash()));
+
+    assert_eq!(
+        peer.admit_block(better.clone()).unwrap(),
+        BlockAdmission::Invalid {
+            height: better.height,
+            hash: better.hash(),
+            reason: BlockInvalidReason::FinalizedConflict,
+        }
+    );
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(worse.hash())
+    );
+}
+
+#[test]
+fn competing_fallback_head_does_not_replace_accepted_fallback() {
+    let beacon = hash_bytes(b"test", &[b"competing-fallback-head"]);
+    let mut parent = Chain::new(beacon);
+    let proposer = address(b"competing-fallback-validator");
+    parent
+        .register_validator(proposer, parent.params().validator_min_stake)
+        .unwrap();
+
+    let mut branch_a = parent.clone();
+    let mut branch_b = parent.clone();
+    let fallback_a = branch_a.produce_block(proposer, 1_000).unwrap();
+    let fallback_b = branch_b.produce_block(proposer, 1_006).unwrap();
+    assert_eq!(
+        fallback_a.production_kind,
+        BlockProductionKind::PowSkipFallback
+    );
+    assert_eq!(
+        fallback_b.production_kind,
+        BlockProductionKind::PowSkipFallback
+    );
+
+    let mut peer = parent;
+    peer.admit_block(fallback_a.clone()).unwrap();
+    assert_eq!(
+        peer.admit_block(fallback_b.clone()).unwrap(),
+        BlockAdmission::Invalid {
+            height: fallback_b.height,
+            hash: fallback_b.hash(),
+            reason: BlockInvalidReason::NonPreferredCompetingHead,
+        }
+    );
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(fallback_a.hash())
+    );
 }
 
 #[test]

@@ -11,7 +11,9 @@ use crate::verify::ValidatorAttestation;
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum BlockInvalidReason {
     ConflictingHeight,
+    FinalizedConflict,
     InvalidPayload,
+    NonPreferredCompetingHead,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -22,6 +24,11 @@ pub enum BlockAdmission {
     },
     Duplicate {
         height: u64,
+        hash: Hash,
+    },
+    Replaced {
+        height: u64,
+        old_hash: Hash,
         hash: Hash,
     },
     PendingParent {
@@ -215,6 +222,11 @@ pub enum ChainEvent {
     },
     BlockAccepted {
         height: u64,
+        hash: Hash,
+    },
+    BlockReplaced {
+        height: u64,
+        old_hash: Hash,
         hash: Hash,
     },
     BlockFinalized(Hash),

@@ -215,10 +215,11 @@ pub(super) fn prepare_parent_state(chain: &mut Chain) -> Result<()> {
 pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmission> {
     let block_hash = block.hash();
     let height = block.height;
-    if let Some(existing) = chain
+    if let Some((existing_index, existing)) = chain
         .blocks
         .iter()
-        .find(|candidate| candidate.height == block.height)
+        .enumerate()
+        .find(|(_, candidate)| candidate.height == block.height)
     {
         if existing.hash() == block_hash {
             return Ok(BlockAdmission::Duplicate {
@@ -226,11 +227,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
                 hash: block_hash,
             });
         }
-        return Ok(BlockAdmission::Invalid {
-            height,
-            hash: block_hash,
-            reason: BlockInvalidReason::ConflictingHeight,
-        });
+        return admit_competing_head(chain, existing_index, block, block_hash);
     }
     if block.height != chain.state.height {
         return Ok(BlockAdmission::PendingParent {
@@ -285,6 +282,101 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
         height,
         hash: block_hash,
     })
+}
+
+fn admit_competing_head(
+    chain: &mut Chain,
+    existing_index: usize,
+    block: TensorBlock,
+    block_hash: Hash,
+) -> Result<BlockAdmission> {
+    let height = block.height;
+    if existing_index + 1 != chain.blocks.len() || chain.state.height != height.saturating_add(1) {
+        return Ok(BlockAdmission::Invalid {
+            height,
+            hash: block_hash,
+            reason: BlockInvalidReason::ConflictingHeight,
+        });
+    }
+
+    let existing = chain.blocks[existing_index].clone();
+    let existing_hash = existing.hash();
+    if chain.is_block_finalized(&existing_hash) {
+        return Ok(BlockAdmission::Invalid {
+            height,
+            hash: block_hash,
+            reason: BlockInvalidReason::FinalizedConflict,
+        });
+    }
+    if block.parent_hash != existing.parent_hash {
+        return Ok(BlockAdmission::Invalid {
+            height,
+            hash: block_hash,
+            reason: BlockInvalidReason::ConflictingHeight,
+        });
+    }
+    validate(chain, &block, true)?;
+    if !competing_head_preferred(&block, &existing) {
+        return Ok(BlockAdmission::Invalid {
+            height,
+            hash: block_hash,
+            reason: BlockInvalidReason::NonPreferredCompetingHead,
+        });
+    }
+
+    let mut parent_state = parent_state_for_validation(chain, &block);
+    parent_state.block_selected_receipts.remove(&existing_hash);
+    parent_state.block_selected_receipts.remove(&block_hash);
+    let outcome = apply_outcome(chain, &block)?;
+    chain.blocks[existing_index] = block.clone();
+    chain.block_parent_states.remove(&existing_hash);
+    chain
+        .block_parent_states
+        .insert(block_hash, parent_state.clone());
+    chain.state = apply_block_to_parent_state(
+        &parent_state,
+        chain.params.epoch_length,
+        block.beacon_round,
+        &block.beacon,
+        height,
+        &outcome.selected_receipt_ids,
+        BlockRewardContext {
+            proposer: block.proposer,
+            proposer_reward: block.proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
+        },
+    );
+    chain
+        .state
+        .block_selected_receipts
+        .insert(block_hash, outcome.selected_receipt_ids);
+    Ok(BlockAdmission::Replaced {
+        height,
+        old_hash: existing_hash,
+        hash: block_hash,
+    })
+}
+
+fn competing_head_preferred(candidate: &TensorBlock, existing: &TensorBlock) -> bool {
+    if candidate.production_kind != super::BlockProductionKind::UsefulVerificationPow
+        || existing.production_kind != super::BlockProductionKind::UsefulVerificationPow
+    {
+        return false;
+    }
+    candidate
+        .pow_hash()
+        .cmp(&existing.pow_hash())
+        .then_with(|| candidate.hash().cmp(&existing.hash()))
+        .is_lt()
 }
 
 pub(super) fn blockspace_caps() -> BlockspaceCaps {
@@ -669,9 +761,11 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
                 parent_state.included_receipts.remove(&receipt_id);
             }
         }
+        parent_state.block_selected_receipts.remove(&candidate_hash);
         parent_state.block_votes.remove(&candidate_hash);
         parent_state.finalized_blocks.remove(&candidate_hash);
     }
+    parent_state.block_selected_receipts.remove(&block_hash);
     parent_state.block_votes.remove(&block_hash);
     parent_state.finalized_blocks.remove(&block_hash);
     parent_state

@@ -60,24 +60,27 @@ pub fn apply_network_block_payload(
     if height > chain.state().height() {
         return NetworkBlockPayloadApply::Pending;
     }
-    if height < chain.state().height() {
+    let current_head_competitor = height.saturating_add(1) == chain.state().height();
+    if height < chain.state().height() && !current_head_competitor {
         return NetworkBlockPayloadApply::Invalid;
     }
-    let expected_parent = chain
-        .blocks
-        .last()
-        .map(crate::chain::TensorBlock::hash)
-        .unwrap_or([0; 32]);
-    if block.parent_hash != expected_parent {
-        return NetworkBlockPayloadApply::Pending;
+    if !current_head_competitor {
+        let expected_parent = chain
+            .blocks
+            .last()
+            .map(crate::chain::TensorBlock::hash)
+            .unwrap_or([0; 32]);
+        if block.parent_hash != expected_parent {
+            return NetworkBlockPayloadApply::Pending;
+        }
     }
 
     let mut candidate = chain.clone();
-    if candidate.prepare_block_parent_state().is_err() {
+    if !current_head_competitor && candidate.prepare_block_parent_state().is_err() {
         return NetworkBlockPayloadApply::Invalid;
     }
     match candidate.admit_block(block) {
-        Ok(BlockAdmission::Applied { .. }) => {
+        Ok(BlockAdmission::Applied { .. }) | Ok(BlockAdmission::Replaced { .. }) => {
             *chain = candidate;
             NetworkBlockPayloadApply::Applied { appended: 1 }
         }
@@ -391,7 +394,10 @@ mod tests {
     use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
     use super::*;
     use crate::{
-        chain::{BlockVote, ChainParams, JobState, ReceiptState, ValidatorAuditReport},
+        chain::{
+            BlockProductionKind, BlockVote, ChainParams, JobState, ReceiptState, TensorBlock,
+            ValidatorAuditReport,
+        },
         challenge::{BlockCheckChallenge, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
@@ -595,6 +601,70 @@ mod tests {
                 &encode_block_payload(&conflicting),
             ),
             NetworkBlockPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn block_payload_application_replaces_current_head_with_better_useful_pow() {
+        let seed = hash_bytes(b"test", &[b"network-competing-head"]);
+        let mut parent = Chain::new(seed);
+        let miner = address(b"network-competing-miner");
+        let validator_a = address(b"network-competing-validator-a");
+        let validator_b = address(b"network-competing-validator-b");
+        parent.register_miner(miner, 100).unwrap();
+        parent.register_validator(validator_a, 10_000).unwrap();
+        parent.register_validator(validator_b, 10_000).unwrap();
+        parent.produce_block(validator_a, 1_000).unwrap();
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &seed, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        parent.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+        parent.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+        let mut branch_a = parent.clone();
+        let mut branch_b = parent.clone();
+        let block_a = branch_a.produce_block(validator_a, 1_012).unwrap();
+        let block_b = branch_b.produce_block(validator_b, 1_012).unwrap();
+        assert_eq!(
+            block_a.production_kind,
+            BlockProductionKind::UsefulVerificationPow
+        );
+        assert_eq!(
+            block_b.production_kind,
+            BlockProductionKind::UsefulVerificationPow
+        );
+        let (better, worse) = if block_a
+            .pow_hash()
+            .cmp(&block_b.pow_hash())
+            .then_with(|| block_a.hash().cmp(&block_b.hash()))
+            .is_lt()
+        {
+            (block_a, block_b)
+        } else {
+            (block_b, block_a)
+        };
+
+        let mut consumer = parent;
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                worse.height,
+                worse.hash(),
+                &encode_block_payload(&worse),
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                better.height,
+                better.hash(),
+                &encode_block_payload(&better),
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            consumer.blocks().last().map(TensorBlock::hash),
+            Some(better.hash())
         );
     }
 

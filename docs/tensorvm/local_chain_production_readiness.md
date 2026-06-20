@@ -276,9 +276,11 @@ The first chain-core cleanup slices are already in the tree:
 
 These are foundation pieces, not completion. Miner receipts, validator attestations, validator block votes,
 and configured validator proposer ticks now have role-owned submission paths for locally available work, and
-validators can fetch missing tensors remotely. The local runtime still needs a fresh full Docker proof of
-that proposer path after the standing `/health` blocker clears, plus broader multi-validator proposer
-competition/fork-choice policy, before it satisfies the local CPU spec as a production-grade local chain.
+validators can fetch missing tensors remotely. The chain core now has a current-head competition policy
+that replaces an unfinalized useful head only with a same-parent useful head carrying a strictly better
+PoW hash while keeping finalized and fallback heads stable. The local runtime still needs a fresh full
+Docker proof of that proposer path after the standing `/health` blocker clears, plus full multi-branch
+fork-tree support, before it satisfies the local CPU spec as a production-grade local chain.
 
 ## Highest-Priority Gaps
 
@@ -288,8 +290,8 @@ Current live production now runs inside `validator-00`'s validator runtime. Dete
 publication remains a local producer duty, but receipt execution, attestation, settlement preparation,
 block proposal, and finality voting run through role-owned ticks and shared chain commands. Finality votes
 come from explicit validator role block-vote submissions. The full gate still needs fresh Docker evidence
-after the gateway `/health` blocker clears and still needs broader multi-validator proposer competition
-policy beyond the single configured local proposer.
+after the gateway `/health` blocker clears and still needs Docker evidence for multi-validator proposer
+competition beyond the single configured local proposer.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
 

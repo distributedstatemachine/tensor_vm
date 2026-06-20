@@ -461,6 +461,11 @@ Block admission and finality are separate:
 
 This gives PoW-style permissionless block proposal + BFT economic finality. TensorWork (miner output volume) affects **rewards and blockspace capacity only** — never proposer selection (that would be circular: current receipts must not influence who validates current receipts).
 
+> Status: the local reference now applies a narrow current-head fork-choice policy for validator
+> competition. A valid same-parent useful UVPoW block can replace the unfinalized current useful head only
+> when its PoW hash is strictly better; finalized heads and accepted fallback heads are not replaced.
+> Full side-branch storage and public Docker evidence remain open.
+
 ### 11.4 Block structure
 
 ```text

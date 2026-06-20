@@ -127,6 +127,15 @@ impl ChainEngine for Chain {
                 BlockAdmission::Applied { height, hash } => {
                     Ok(vec![ChainEvent::BlockAccepted { height, hash }])
                 }
+                BlockAdmission::Replaced {
+                    height,
+                    old_hash,
+                    hash,
+                } => Ok(vec![ChainEvent::BlockReplaced {
+                    height,
+                    old_hash,
+                    hash,
+                }]),
                 BlockAdmission::Duplicate { .. } => Ok(Vec::new()),
                 BlockAdmission::PendingParent { .. } => {
                     Err(TvmError::InvalidReceipt("block parent pending"))

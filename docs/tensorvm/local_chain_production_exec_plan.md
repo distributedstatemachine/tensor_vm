@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 87 complete - delayed block-check proposer reward protection.
+- Active feature: Iteration 88 complete pending commit - competing-head fork-choice and withholding policy.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -16,7 +16,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue fork-choice/withholding policy, measured economics, or rerun the full Docker
+- Next action: continue measured economics, full multi-branch fork-tree work, or rerun the full Docker
   scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
@@ -28,9 +28,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; checker expects live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Add multi-validator proposer competition/fork-choice policy; rerun Docker |
+| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement | Rerun Docker and continue full fork-tree policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges | Remaining: full transcript disputes, fork-choice/withholding policy, fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy | Remaining: full transcript disputes, full multi-branch fork trees, fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor | Pin full VRF/drand construction and external commit-reveal ordering |
@@ -38,6 +38,77 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 88: Competing-Head Fork-Choice And Withholding Policy
+
+Feature capability: replace first-seen-wins same-height block admission with a chain-owned policy for the
+unfinalized current head: competing useful UVPoW heads on the same parent are compared by PoW hash, while
+accepted fallback heads are not displaced by late useful blocks so withheld useful blocks lose after the
+fallback timeout.
+
+Readiness requirements covered: `mvp_spec.md` §20.5/§37.9 and `upow.md` §11 deterministic UVPoW block
+validity, proposer competition, and withholding mitigation.
+
+Canonical owner: `chain::blocks` validates and applies competing-head replacement against stored parent
+state; `chain::engine` exposes typed admission/event evidence.
+Adapter callers: node payload application, p2p ingestion, RPC, runtime, and checkers remain callers of
+`ChainCommand::SubmitBlock`/`Chain::admit_block`.
+Old shortcut being removed: any non-identical same-height block is currently rejected as
+`ConflictingHeight`, so the first received unfinalized useful head wins even when a competing validator has
+strictly better UVPoW evidence.
+Regression test that proves the shortcut is gone: focused block tests apply a less-preferred useful head,
+then replace it with a better useful head on the same parent; they also prove finalized heads and accepted
+fallback heads are not replaced.
+Behavior with local synthetic block production disabled: policy uses only submitted block payloads,
+stored parent snapshots, canonical block validation, and chain state; it is independent of synthetic job
+generation.
+Behavior for producer and non-producer roles: producers and non-producers run the same block admission
+policy for locally produced and network-ingested blocks; no role-local fork branch owns selection.
+Structured evidence source: `BlockAdmission::Replaced`, `ChainEvent::BlockReplaced`, block hashes, parent
+hashes, production kind, and selected-receipt parent snapshots.
+Finality source: finalized block state blocks replacement; unfinalized current-head replacement remains
+admission policy and does not fabricate votes or finality.
+Wire-size and codec boundary: no block, p2p, RPC, or storage payload shape change; only in-process typed
+admission/event enums gain replacement evidence.
+
+Files/modules likely touched: `chain/blocks.rs`, `chain/engine.rs`, focused block tests, docs/status
+coverage, and this plan.
+Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
+Parallelizable implementation workstreams: read-only discovery and validation only.
+Tests/checkers/docs to add or update: focused chain block tests and coverage/status/upow/readiness text.
+Narrow validation commands: `cargo test -p tensor_vm fork --quiet`, `cargo test -p tensor_vm block --quiet`.
+Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
+workspace release, tarpaulin attempt if feasible.
+Expected observable evidence: same-parent unfinalized useful heads no longer use first-seen-wins; fallback
+withholding mitigation keeps an accepted fallback head stable against late useful payloads.
+Out of scope: full multi-branch fork tree, public Docker rerun, fee-market ordering, or changing block/p2p
+wire payloads.
+Split trigger: if replacement requires persisted side forks, block-log migrations, or network codec
+changes, split those from this current-head-only policy.
+
+Implementation summary:
+- Added typed `BlockAdmission::Replaced`, `BlockInvalidReason::{FinalizedConflict, NonPreferredCompetingHead}`,
+  and `ChainEvent::BlockReplaced` evidence.
+- `chain::blocks` now lets a strictly better same-parent useful UVPoW block replace only the unfinalized
+  current useful head, using reconstructed parent state for the replacement child transition.
+- Finalized heads, historical heights, different-parent conflicts, fallback heads, and non-preferred useful
+  competitors remain rejected.
+- Network block payload application now lets current-head competitors reach chain admission and treats
+  chain-approved replacement as applied.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm fork --quiet` passed with 0 matched tests,
+  `cargo test -p tensor_vm block --quiet` passed, and
+  `cargo test -p tensor_vm block_payload_application_replaces_current_head_with_better_useful_pow --quiet`
+  passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 419 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
 
 ### Iteration 87: Delayed Block-Check Proposer Reward Protection
 
@@ -156,13 +227,13 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 86 on June 20, 2026:
+Latest full validation is Iteration 88 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm economic --quiet
-cargo test -p tensor_vm status --quiet
-cargo test -p tensor_vm explorer_overview_exports --quiet
+cargo test -p tensor_vm fork --quiet
+cargo test -p tensor_vm block --quiet
+cargo test -p tensor_vm block_payload_application_replaces_current_head_with_better_useful_pow --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

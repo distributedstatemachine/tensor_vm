@@ -12,8 +12,10 @@ Historical useful block evidence now stores exact parent `ChainState` snapshots 
 persists them in the chain-state file, so `BlockApplyOutcome`, selected-receipt openings, checks roots, and
 child roots stay replay-stable after later receipts and blocks. PoW-skip fallback validation now enforces
 the configured `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks.
-Remaining consensus gaps are full verifier-transcript challenge semantics, multi-validator proposer
-competition/fork-choice policy, and a fresh full Docker proof of live validator proposer/block-assembly
+The current-head fork-choice policy now replaces an unfinalized useful head only when a competing useful
+UVPoW block on the same parent has a strictly better PoW hash, while finalized heads and accepted fallback
+heads remain stable. Remaining consensus gaps are full verifier-transcript challenge semantics, full
+multi-branch fork trees, and a fresh full Docker proof of live validator proposer/block-assembly
 networking and diagnostic challenge evidence after the current `/health` blocker clears. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
 propagation support now exist as diagnostic chain/node/runtime helpers. See
@@ -111,6 +113,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   eligibility, deterministic settled-receipt blockspace selection, block-level `checks_root`, beacon,
   difficulty target, nonce search, useful-verification PoW checking, stake-weighted block-finality votes,
   zero-receipt fallback proposer eligibility through the stake-weighted `chain::proposer` selector,
+  current-head replacement for better same-parent useful UVPoW competitors before finality,
   duplicate-vote rejection, finalized block tracking, and finality-rate telemetry
 - Duplicate registration, duplicate receipt, and duplicate validator-attestation rejection
 - Account, miner, validator, job, receipt, attestation, reward, and model-state registries
