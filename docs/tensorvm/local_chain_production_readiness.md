@@ -225,9 +225,11 @@ The local bundle is useful and should remain the first operational target:
   plus the recorded stake slash: upheld outcomes keep the reward voided for normal pruning, while reversed
   reward-void outcomes reinstate the pending claim without immediate spendable credit and refund the slash
   from treasury back to validator stake. Chain state, service status, and explorer overview now
-  expose live validator-audit economic calibration for the configured sampling probability, slash amount,
-  at-risk pending validator reward exposure, required slashable bond, and pass/fail invariant. Governed
-  broader bond calibration remains open economics work.
+  expose live validator-audit economic calibration plus a broader implemented-path fraud calibration for
+  validator-audit, miner data-unavailability, and block-check/proposer clawback paths, including required
+  slashable bonds, aggregate worst-required-bond, and pass/fail invariant status. Governed calibration for
+  measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remains open
+  economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

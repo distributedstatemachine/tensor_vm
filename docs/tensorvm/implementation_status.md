@@ -147,10 +147,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   slash-side reward void or reverse it; reversed outcomes restore the pending validator receipt claim,
   refund the recorded stake slash from treasury back to validator stake, and still require the normal
   maturity sweep before spendable reward credit. Chain state
-  now also exposes a live validator-audit economic calibration view from configured audit sampling, slash
-  amount, and current non-voided pending validator receipt reward exposure; service status and explorer
-  overview render the required slashable bond plus pass/fail invariant. Broader fraud-path bond
-  calibration remains open.
+  now also exposes live validator-audit economic calibration plus a broader implemented-path fraud
+  calibration view covering validator-audit, miner data-unavailability, and block-check/proposer clawback
+  paths; service status and explorer overview render required slashable bonds, aggregate
+  worst-required-bond, and pass/fail invariants. Measured detection probabilities, remaining fraud paths,
+  and broader invalid-output slashing remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable

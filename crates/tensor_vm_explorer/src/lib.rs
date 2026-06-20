@@ -121,6 +121,58 @@ impl ExplorerValidatorAuditEconomicCalibration {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerFraudPathEconomicCalibration {
+    pub path: String,
+    pub detection_numerator: u64,
+    pub detection_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub slashable_bond: u64,
+    pub reward_from_fraud: u64,
+    pub at_risk_reward_claim_count: usize,
+    pub required_slashable_bond: u64,
+    pub invariant_holds: bool,
+}
+
+impl ExplorerFraudPathEconomicCalibration {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"path\":\"{}\",\"detection_numerator\":{},\"detection_denominator\":{},\"detection_probability_bps\":{},\"slashable_bond\":{},\"reward_from_fraud\":{},\"at_risk_reward_claim_count\":{},\"required_slashable_bond\":{},\"invariant_holds\":{}}}",
+            escape_json(&self.path),
+            self.detection_numerator,
+            self.detection_denominator,
+            self.detection_probability_bps,
+            self.slashable_bond,
+            self.reward_from_fraud,
+            self.at_risk_reward_claim_count,
+            self.required_slashable_bond,
+            self.invariant_holds
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerFraudPathEconomicCalibrationSummary {
+    pub path_count: usize,
+    pub all_invariants_hold: bool,
+    pub max_required_slashable_bond: u64,
+    pub worst_path: String,
+    pub paths: Vec<ExplorerFraudPathEconomicCalibration>,
+}
+
+impl ExplorerFraudPathEconomicCalibrationSummary {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"path_count\":{},\"all_invariants_hold\":{},\"max_required_slashable_bond\":{},\"worst_path\":\"{}\",\"paths\":{}}}",
+            self.path_count,
+            self.all_invariants_hold,
+            self.max_required_slashable_bond,
+            escape_json(&self.worst_path),
+            json_array(&self.paths, ExplorerFraudPathEconomicCalibration::to_json)
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerBlock {
     pub height: u64,
     pub epoch: u64,
@@ -285,13 +337,14 @@ pub struct ExplorerOverview {
     pub receipts: Vec<ExplorerReceipt>,
     pub pending_rewards: Vec<ExplorerPendingReward>,
     pub validator_audit_economic_calibration: ExplorerValidatorAuditEconomicCalibration,
+    pub fraud_path_economic_calibration: ExplorerFraudPathEconomicCalibrationSummary,
     pub jobs: Vec<ExplorerJob>,
 }
 
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
@@ -299,6 +352,7 @@ impl ExplorerOverview {
             json_array(&self.receipts, ExplorerReceipt::to_json),
             json_array(&self.pending_rewards, ExplorerPendingReward::to_json),
             self.validator_audit_economic_calibration.to_json(),
+            self.fraud_path_economic_calibration.to_json(),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
     }

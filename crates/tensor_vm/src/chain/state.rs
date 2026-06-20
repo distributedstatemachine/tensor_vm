@@ -358,6 +358,28 @@ pub struct ValidatorAuditEconomicCalibration {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FraudPathEconomicCalibration {
+    pub path: &'static str,
+    pub detection_numerator: u64,
+    pub detection_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub slashable_bond: u64,
+    pub reward_from_fraud: u64,
+    pub at_risk_reward_claim_count: usize,
+    pub required_slashable_bond: u64,
+    pub invariant_holds: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct FraudPathEconomicCalibrationSummary {
+    pub paths: Vec<FraudPathEconomicCalibration>,
+    pub path_count: usize,
+    pub all_invariants_hold: bool,
+    pub max_required_slashable_bond: u64,
+    pub worst_path: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceiptRandomnessAnchor {
     pub receipt_id: Hash,
     pub beacon_round: u64,
@@ -1325,6 +1347,75 @@ impl ChainState {
         }
     }
 
+    pub fn fraud_path_economic_calibration(
+        &self,
+        params: &ChainParams,
+    ) -> FraudPathEconomicCalibrationSummary {
+        let validator_audit = self.validator_audit_economic_calibration(params);
+        let mut paths = vec![FraudPathEconomicCalibration {
+            path: "validator_audit",
+            detection_numerator: validator_audit.detection_numerator,
+            detection_denominator: validator_audit.detection_denominator,
+            detection_probability_bps: validator_audit.detection_probability_bps,
+            slashable_bond: validator_audit.slashable_bond,
+            reward_from_fraud: validator_audit.reward_from_fraud,
+            at_risk_reward_claim_count: validator_audit.at_risk_validator_reward_claim_count,
+            required_slashable_bond: validator_audit.required_slashable_bond,
+            invariant_holds: validator_audit.invariant_holds,
+        }];
+
+        let at_risk_miner_rewards = self
+            .pending_receipt_rewards
+            .values()
+            .filter(|reward| reward.kind == ReceiptRewardKind::Miner && !reward.voided_by_challenge)
+            .collect::<Vec<_>>();
+        paths.push(fraud_path_calibration(
+            "data_unavailability",
+            1,
+            1,
+            params.data_unavailability_miner_slash_amount,
+            at_risk_miner_rewards
+                .iter()
+                .map(|reward| reward.amount)
+                .max()
+                .unwrap_or_default(),
+            at_risk_miner_rewards.len(),
+        ));
+
+        let at_risk_proposer_rewards = self
+            .pending_proposer_rewards
+            .values()
+            .filter(|reward| !reward.voided_by_challenge)
+            .collect::<Vec<_>>();
+        let reward_from_fraud = at_risk_proposer_rewards
+            .iter()
+            .map(|reward| reward.amount)
+            .max()
+            .unwrap_or_default();
+        paths.push(fraud_path_calibration(
+            "block_check",
+            1,
+            1,
+            reward_from_fraud,
+            reward_from_fraud,
+            at_risk_proposer_rewards.len(),
+        ));
+
+        let path_count = paths.len();
+        let all_invariants_hold = paths.iter().all(|path| path.invariant_holds);
+        let worst = paths
+            .iter()
+            .max_by_key(|path| path.required_slashable_bond)
+            .expect("fraud path calibration must include at least one path");
+        FraudPathEconomicCalibrationSummary {
+            path_count,
+            all_invariants_hold,
+            max_required_slashable_bond: worst.required_slashable_bond,
+            worst_path: worst.path,
+            paths,
+        }
+    }
+
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {
         &self.model_states
     }
@@ -1348,6 +1439,40 @@ fn required_slashable_bond(
     let quotient = (reward_from_fraud as u128).saturating_mul(detection_denominator as u128)
         / detection_numerator as u128;
     quotient.saturating_add(1).min(u64::MAX as u128) as u64
+}
+
+fn fraud_path_calibration(
+    path: &'static str,
+    detection_numerator: u64,
+    detection_denominator: u64,
+    slashable_bond: u64,
+    reward_from_fraud: u64,
+    at_risk_reward_claim_count: usize,
+) -> FraudPathEconomicCalibration {
+    let detection_denominator = detection_denominator.max(1);
+    let detection_numerator = detection_numerator.min(detection_denominator);
+    let required_slashable_bond = required_slashable_bond(
+        reward_from_fraud,
+        detection_numerator,
+        detection_denominator,
+    );
+    let invariant_holds = reward_from_fraud == 0
+        || (detection_numerator > 0
+            && (slashable_bond as u128).saturating_mul(detection_numerator as u128)
+                > (reward_from_fraud as u128).saturating_mul(detection_denominator as u128));
+    FraudPathEconomicCalibration {
+        path,
+        detection_numerator,
+        detection_denominator,
+        detection_probability_bps: ((detection_numerator as u128) * 10_000
+            / detection_denominator as u128)
+            .min(u64::MAX as u128) as u64,
+        slashable_bond,
+        reward_from_fraud,
+        at_risk_reward_claim_count,
+        required_slashable_bond,
+        invariant_holds,
+    }
 }
 
 #[derive(Clone, Debug)]

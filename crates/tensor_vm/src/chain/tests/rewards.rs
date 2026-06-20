@@ -447,6 +447,87 @@ fn validator_audit_economic_calibration_uses_live_at_risk_validator_rewards() {
 }
 
 #[test]
+fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
+    let beacon = hash_bytes(b"test", &[b"fraud-path-economic-calibration"]);
+    let params = ChainParams {
+        data_unavailability_miner_slash_amount: 150,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 2,
+        validator_audit_slash_amount: 300,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"fraud-path-proposer");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+    chain
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"fraud-path-miner-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"fraud-path-miner-receipt"]),
+        beneficiary: address(b"fraud-path-miner"),
+        amount: 149,
+        kind: ReceiptRewardKind::Miner,
+        claimable_at_height: 9,
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"fraud-path-validator-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"fraud-path-validator-receipt"]),
+        beneficiary: address(b"fraud-path-validator"),
+        amount: 120,
+        kind: ReceiptRewardKind::Validator,
+        claimable_at_height: 10,
+        voided_by_challenge: false,
+    });
+
+    let calibration = chain
+        .state()
+        .fraud_path_economic_calibration(chain.params());
+    assert_eq!(calibration.path_count, 3);
+    assert!(!calibration.all_invariants_hold);
+    assert_eq!(calibration.worst_path, "block_check");
+    assert_eq!(calibration.max_required_slashable_bond, 501);
+
+    let validator_audit = calibration
+        .paths
+        .iter()
+        .find(|path| path.path == "validator_audit")
+        .unwrap();
+    assert_eq!(validator_audit.detection_numerator, 1);
+    assert_eq!(validator_audit.detection_denominator, 2);
+    assert_eq!(validator_audit.slashable_bond, 300);
+    assert_eq!(validator_audit.reward_from_fraud, 120);
+    assert_eq!(validator_audit.required_slashable_bond, 241);
+    assert!(validator_audit.invariant_holds);
+
+    let data_unavailability = calibration
+        .paths
+        .iter()
+        .find(|path| path.path == "data_unavailability")
+        .unwrap();
+    assert_eq!(data_unavailability.detection_probability_bps, 10_000);
+    assert_eq!(data_unavailability.slashable_bond, 150);
+    assert_eq!(data_unavailability.reward_from_fraud, 149);
+    assert_eq!(data_unavailability.required_slashable_bond, 150);
+    assert!(data_unavailability.invariant_holds);
+
+    let block_check = calibration
+        .paths
+        .iter()
+        .find(|path| path.path == "block_check")
+        .unwrap();
+    assert_eq!(block_check.detection_probability_bps, 10_000);
+    assert_eq!(block_check.slashable_bond, 500);
+    assert_eq!(block_check.reward_from_fraud, 500);
+    assert_eq!(block_check.at_risk_reward_claim_count, 1);
+    assert_eq!(block_check.required_slashable_bond, 501);
+    assert!(!block_check.invariant_holds);
+}
+
+#[test]
 fn block_transition_releases_matured_rewards_without_manual_command() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {

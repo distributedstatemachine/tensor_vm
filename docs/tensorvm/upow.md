@@ -519,14 +519,15 @@ TensorBlock {
 > validator receipt reward voided for normal pruning, while a reversed reward-void outcome reinstates the
 > pending claim, refunds the recorded stake slash from treasury back to validator stake, and still releases
 > the reward only through the normal maturity sweep.
-> Chain state also exposes a live validator-audit economic calibration view from the configured audit
-> sampling probability, slash amount, and current non-voided pending validator receipt reward exposure,
-> including the required slashable bond for the strict `bond * P(detection) > reward_from_fraud`
-> invariant and whether the current parameters satisfy it.
+> Chain state also exposes live economic calibration from current params and pending reward exposure. The
+> validator-audit view reports configured audit sampling probability, slash amount, non-voided pending
+> validator receipt reward exposure, required slashable bond, and pass/fail invariant. The broader
+> fraud-path view covers implemented validator-audit, miner data-unavailability, and block-check/proposer
+> clawback paths with aggregate worst-required-bond and all-path pass/fail status.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
-> gossip bounded audit-report payloads, and expose submitted plus network-applied report counters. Broader
-> bond calibration and broader invalid-output slashing remain TODO before
+> gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.
+> Measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remain TODO before
 > claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
@@ -617,9 +618,11 @@ This section is non-normative guidance on how the spec components partition into
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
-- [~] Economic calibration: live validator-audit calibration now reports the configured audit detection
-  probability, current pending validator reward exposure, required slashable bond, and pass/fail invariant;
-  broader bond calibration across all fraud paths and measured detection probabilities remains open (§12.2).
+- [~] Economic calibration: live calibration now reports the configured validator-audit detection
+  probability, current pending validator reward exposure, implemented miner data-unavailability and
+  block-check/proposer clawback paths, required slashable bonds, aggregate worst-required-bond, and
+  pass/fail invariants; measured detection probabilities, remaining fraud paths, and broader
+  invalid-output slashing remain open (§12.2).
 - [ ] Reward concentration / anti-monopoly curve for TensorWork.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [ ] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with `const_blob` inputs (availability of the blob during a dispute).

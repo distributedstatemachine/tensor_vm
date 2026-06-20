@@ -279,6 +279,54 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         "validator_audit_economic_invariant_holds",
         audit_economics.invariant_holds,
     );
+    let fraud_path_economics = chain
+        .state()
+        .fraud_path_economic_calibration(chain.params());
+    report.field(
+        "fraud_path_economic_path_count",
+        fraud_path_economics.path_count,
+    );
+    report.field(
+        "fraud_path_economic_all_invariants_hold",
+        fraud_path_economics.all_invariants_hold,
+    );
+    report.field(
+        "fraud_path_economic_max_required_slashable_bond",
+        fraud_path_economics.max_required_slashable_bond,
+    );
+    report.field(
+        "fraud_path_economic_worst_path",
+        fraud_path_economics.worst_path,
+    );
+    for path in fraud_path_economics.paths {
+        let prefix = format!("fraud_path_economic_{}", path.path);
+        report.field(
+            &format!("{prefix}_detection_numerator"),
+            path.detection_numerator,
+        );
+        report.field(
+            &format!("{prefix}_detection_denominator"),
+            path.detection_denominator,
+        );
+        report.field(
+            &format!("{prefix}_detection_probability_bps"),
+            path.detection_probability_bps,
+        );
+        report.field(&format!("{prefix}_slashable_bond"), path.slashable_bond);
+        report.field(
+            &format!("{prefix}_reward_from_fraud"),
+            path.reward_from_fraud,
+        );
+        report.field(
+            &format!("{prefix}_at_risk_reward_claim_count"),
+            path.at_risk_reward_claim_count,
+        );
+        report.field(
+            &format!("{prefix}_required_slashable_bond"),
+            path.required_slashable_bond,
+        );
+        report.field(&format!("{prefix}_invariant_holds"), path.invariant_holds);
+    }
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
     report.field(
@@ -533,12 +581,28 @@ mod tests {
             },
             beacon,
         );
+        let proposer = address(b"status-fraud-path-proposer");
+        chain
+            .register_validator(proposer, chain.params().validator_min_stake)
+            .unwrap();
+        chain
+            .produce_block_with_rewards(proposer, 1_000, 400, 100)
+            .unwrap();
         chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
             claim_id: hash_bytes(b"test", &[b"status-audit-validator-claim"]),
             receipt_id: hash_bytes(b"test", &[b"status-audit-receipt"]),
             beneficiary: address(b"status-audit-validator"),
             amount: 50,
             kind: ReceiptRewardKind::Validator,
+            claimable_at_height: 10,
+            voided_by_challenge: false,
+        });
+        chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+            claim_id: hash_bytes(b"test", &[b"status-fraud-path-miner-claim"]),
+            receipt_id: hash_bytes(b"test", &[b"status-fraud-path-miner-receipt"]),
+            beneficiary: address(b"status-fraud-path-miner"),
+            amount: 9,
+            kind: ReceiptRewardKind::Miner,
             claimable_at_height: 10,
             voided_by_challenge: false,
         });
@@ -587,6 +651,35 @@ mod tests {
         assert_eq!(
             fields.value("validator_audit_economic_invariant_holds"),
             Some("true")
+        );
+        assert_eq!(fields.value("fraud_path_economic_path_count"), Some("3"));
+        assert_eq!(
+            fields.value("fraud_path_economic_all_invariants_hold"),
+            Some("false")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_max_required_slashable_bond"),
+            Some("501")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_worst_path"),
+            Some("block_check")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_validator_audit_required_slashable_bond"),
+            Some("101")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_data_unavailability_required_slashable_bond"),
+            Some("10")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_block_check_slashable_bond"),
+            Some("500")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_block_check_invariant_holds"),
+            Some("false")
         );
 
         let _ = std::fs::remove_dir_all(data_dir);

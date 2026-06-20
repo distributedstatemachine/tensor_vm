@@ -3,7 +3,8 @@ use crate::hash::hex;
 use crate::jobs::PrimitiveType;
 use crate::types::Address;
 use tensor_vm_explorer::{
-    ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview,
+    ExplorerAccount, ExplorerBlock, ExplorerFraudPathEconomicCalibration,
+    ExplorerFraudPathEconomicCalibrationSummary, ExplorerJob, ExplorerMiner, ExplorerOverview,
     ExplorerPendingReward, ExplorerReceipt, ExplorerSummary, ExplorerValidator,
     ExplorerValidatorAuditEconomicCalibration,
 };
@@ -197,6 +198,35 @@ pub(super) fn explorer_validator_audit_economic_calibration(
     }
 }
 
+pub(super) fn explorer_fraud_path_economic_calibration(
+    chain: &Chain,
+) -> ExplorerFraudPathEconomicCalibrationSummary {
+    let calibration = chain
+        .state()
+        .fraud_path_economic_calibration(chain.params());
+    ExplorerFraudPathEconomicCalibrationSummary {
+        path_count: calibration.path_count,
+        all_invariants_hold: calibration.all_invariants_hold,
+        max_required_slashable_bond: calibration.max_required_slashable_bond,
+        worst_path: calibration.worst_path.to_owned(),
+        paths: calibration
+            .paths
+            .into_iter()
+            .map(|path| ExplorerFraudPathEconomicCalibration {
+                path: path.path.to_owned(),
+                detection_numerator: path.detection_numerator,
+                detection_denominator: path.detection_denominator,
+                detection_probability_bps: path.detection_probability_bps,
+                slashable_bond: path.slashable_bond,
+                reward_from_fraud: path.reward_from_fraud,
+                at_risk_reward_claim_count: path.at_risk_reward_claim_count,
+                required_slashable_bond: path.required_slashable_bond,
+                invariant_holds: path.invariant_holds,
+            })
+            .collect(),
+    }
+}
+
 fn reward_claim_key_label(key: RewardClaimKey) -> String {
     match key {
         RewardClaimKey::BlockHeight(height) => height.to_string(),
@@ -253,6 +283,7 @@ pub(super) fn explorer_overview(
         receipts: explorer_receipts(chain, receipt_limit),
         pending_rewards: explorer_pending_rewards(chain, receipt_limit),
         validator_audit_economic_calibration: explorer_validator_audit_economic_calibration(chain),
+        fraud_path_economic_calibration: explorer_fraud_path_economic_calibration(chain),
         jobs: explorer_jobs(chain, job_limit),
     }
 }
