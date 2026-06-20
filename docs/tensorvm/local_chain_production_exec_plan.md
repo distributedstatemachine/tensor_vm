@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 31 is validated and awaiting commit/push evidence.
-- Current status: Iteration 31 implemented and validated on June 20, 2026; commit/push evidence update pending.
+- Active feature: none; Iteration 31 is complete.
+- Current status: Iteration 31 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,7 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 31, then record commit/push evidence.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -37,7 +38,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ### Iteration 31: Network-Visible Block-Check Challenge Propagation
 
-Implemented and awaiting commit/push evidence.
+Implemented and pushed as `9216461` (`Propagate block check challenges`).
 
 Summary:
 - Added bounded block-check challenge p2p payloads with explicit challenge-id, block-hash, challenger,
@@ -58,6 +59,7 @@ Validation:
 - `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
 - `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
+- Push result: `6556db2..9216461  main -> main`.
 
 Architecture shortcut answers:
 - Canonical owner: `chain::challenges` via `ChainCommand::SubmitBlockCheckChallenge`.
