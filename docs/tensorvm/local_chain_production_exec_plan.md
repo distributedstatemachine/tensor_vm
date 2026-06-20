@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 42 is complete.
-- Current status: Iteration 42 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 43 explicit fallback reward maturity delay.
+- Current status: Iteration 43 implemented and validated on June 20, 2026; commit/push evidence pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,7 +14,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with arbitrary graph-backed jobs/receipts, wider admitted-registry
+- Next action after Iteration 43: continue with arbitrary graph-backed jobs/receipts, wider admitted-registry
   executor/verifier coverage, full VRF/drand commit-reveal lifecycle, multi-validator proposer
   competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
 
@@ -37,6 +37,57 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 43: Explicit Fallback Reward Maturity Delay
+
+Feature capability: empty `PowSkipFallback` proposer claims now mature by height using the full
+reward-settlement plus challenge-window delay, instead of remaining blocked behind a later-useful-block
+unlock latch.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` owns reward maturity policy and pending-claim release.
+- Adapter callers: role runtime, RPC, p2p ingest, storage, and checkers observe or apply chain commands
+  only; they do not release fallback rewards directly.
+- Old shortcut being removed: fallback proposer rewards no longer require `requires_useful_successor` to be
+  cleared by unrelated useful blockspace before they can release.
+- Regression tests: `fallback_proposer_reward_uses_explicit_maturity_delay`,
+  `reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury`,
+  `release_matured_proposer_rewards_sweeps_voided_claims_without_credit`, and
+  `block_transition_releases_matured_rewards_without_manual_command`.
+- Synthetic production disabled: unchanged; fallback reward maturity is a chain height rule.
+- Producer/non-producer roles: both validate/apply the same pending reward claim and reward root.
+- Structured evidence source: pending proposer reward `claimable_at_height`, reward roots, release events,
+  and spendable reward balances.
+- Finality source: unchanged; reward maturity remains separate from block finality.
+- Wire-size and codec boundary: no network/storage payload shape change; the old snapshot flag remains
+  decodable but new fallback claims do not depend on it.
+
+Validation target:
+- Focused: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`.
+- Broad: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`,
+  `cargo test -p tensor_vm local_testnet --release`, and the expected tarpaulin blocked check.
+
+Validation evidence:
+- Required first gate for this iteration: `cargo test -p tensor_vm local_testnet --release` passed before
+  edits on June 20, 2026.
+- `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture` passed: 7 reward tests.
+- `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture` passed: 4 command tests.
+- `cargo test -p tensor_vm --lib chain::tests::attestations -- --nocapture` passed: 8 attestation/audit
+  tests after separating retention-window math from reward maturity policy.
+- `cargo fmt --check --all` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm` passed: 358 library tests, 8 `tvmd_cli` tests, 31 `tvmd_runtime` tests, and
+  the `local_cpu_compose` integration test.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace --release` passed: experiments, tensor_vm, tensor_vm_explorer, integration, and
+  doc-test targets.
+- Final `cargo test -p tensor_vm local_testnet --release` passed: 5 library local-testnet tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo tarpaulin --workspace --offline` failed as expected because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
+
+Commit/push evidence: pending.
 
 ### Iteration 42: State-Rooted Arbitrary Tensor IR Graph-Body Admission
 
@@ -215,9 +266,10 @@ error: no such command: `tarpaulin`
 
 ## Archive
 
-- Iteration 40, `6cea749 Delay fallback proposer rewards`: empty `PowSkipFallback` blocks now create reduced
-  delayed proposer claims that require a later useful block before release; reward roots and node-store
-  snapshots include the `requires_useful_successor` flag.
+- Iteration 40, `6cea749 Delay fallback proposer rewards`: empty `PowSkipFallback` blocks created reduced
+  delayed proposer claims that required a later useful block before release; Iteration 43 replaced that
+  release latch with explicit full reward-maturity delay while preserving snapshot decoding of the
+  `requires_useful_successor` flag.
 - Iteration 35, `f53700c Bind reward root to pending claims`: block `reward_root` now commits spendable
   rewards plus pending proposer, receipt, challenge, and credit ledgers; old spendable-only roots are
   rejected. Evidence update was followed by Iteration 36.
@@ -235,8 +287,8 @@ error: no such command: `tarpaulin`
 - Iteration 31, `9216461 Propagate block check challenges`: added bounded block-check challenge p2p
   payloads, pending retry, chain-command application, and delayed challenge reward evidence.
 - Iteration 30, `5664acb Delay validator proposer rewards`: useful proposals create delayed proposer
-  reward claims; later work changed fallback proposals from unrewarded to reduced delayed claims that
-  require a useful successor before release.
+  reward claims; later work changed fallback proposals from unrewarded to reduced delayed claims, and
+  Iteration 43 made fallback release depend on explicit reward maturity height.
 - Iteration 29, `4e8b0c6 Propagate validator audit reports`: validator roles gossip/apply signed audit
   reports through bounded p2p/node payloads.
 - Iteration 28, `99d819c Add validator audit reward slashing`: added audit assignments/results/slashes and

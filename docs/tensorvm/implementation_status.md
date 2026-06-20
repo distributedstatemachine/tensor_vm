@@ -81,7 +81,8 @@ blocker clears. See
   reward ledger, a block `reward_root` that binds spendable rewards plus pending proposer, receipt,
   challenge, and credit ledgers, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
   Validator-owned useful proposals now create delayed proposer reward claims, and empty fallback proposals
-  create reduced delayed proposer claims that remain blocked until later useful blockspace is included.
+  create reduced proposer claims with an explicit full reward-maturity delay rather than a later-useful-block
+  release latch.
   Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
   released only after maturity. Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the

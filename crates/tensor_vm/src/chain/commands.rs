@@ -426,14 +426,10 @@ fn release_matured_credit_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
 }
 
 fn pending_credit_reward_claimable_height(chain: &Chain) -> u64 {
-    chain.state.height.saturating_add(
-        chain
-            .params
-            .reward_settlement_delay_epochs
-            .saturating_add(chain.params.challenge_window_epochs)
-            .max(1)
-            .saturating_mul(chain.params.epoch_length.max(1)),
-    )
+    chain
+        .state
+        .height
+        .saturating_add(chain.params.reward_maturity_delay_blocks())
 }
 
 fn pending_credit_reward_claim_id(

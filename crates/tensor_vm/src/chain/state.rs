@@ -89,6 +89,19 @@ fn default_difficulty_floor_target() -> Hash {
 }
 
 impl ChainParams {
+    pub fn reward_maturity_delay_blocks(&self) -> u64 {
+        self.reward_settlement_delay_epochs
+            .saturating_add(self.challenge_window_epochs)
+            .max(1)
+            .saturating_mul(self.epoch_length.max(1))
+    }
+
+    pub fn challenge_window_blocks(&self) -> u64 {
+        self.challenge_window_epochs
+            .max(1)
+            .saturating_mul(self.epoch_length.max(1))
+    }
+
     pub fn tensor_retention_window_blocks(&self) -> u64 {
         self.reward_settlement_delay_epochs
             .saturating_add(self.challenge_window_epochs)

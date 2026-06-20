@@ -289,12 +289,9 @@ impl Chain {
                     if reward.proposer == proposer && !reward.voided_by_challenge {
                         reward.amount = reward.amount.saturating_add(allocation.proposer_reward);
                         reward.claimable_at_height = reward.claimable_at_height.max(
-                            self.state.height.saturating_add(
-                                self.params
-                                    .challenge_window_epochs
-                                    .max(1)
-                                    .saturating_mul(self.params.epoch_length.max(1)),
-                            ),
+                            self.state
+                                .height
+                                .saturating_add(self.params.challenge_window_blocks()),
                         );
                     }
                 })
@@ -302,12 +299,10 @@ impl Chain {
                     block_height,
                     proposer,
                     amount: allocation.proposer_reward,
-                    claimable_at_height: self.state.height.saturating_add(
-                        self.params
-                            .challenge_window_epochs
-                            .max(1)
-                            .saturating_mul(self.params.epoch_length.max(1)),
-                    ),
+                    claimable_at_height: self
+                        .state
+                        .height
+                        .saturating_add(self.params.challenge_window_blocks()),
                     voided_by_challenge: false,
                     requires_useful_successor: false,
                 });

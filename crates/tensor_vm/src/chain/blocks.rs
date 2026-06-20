@@ -28,6 +28,35 @@ struct BlockRewardContext {
     validator_audit_slash_amount: u64,
 }
 
+impl BlockRewardContext {
+    fn reward_maturity_delay_blocks(self, epoch_length: u64) -> u64 {
+        self.reward_settlement_delay_epochs
+            .saturating_add(self.challenge_window_epochs)
+            .max(1)
+            .saturating_mul(epoch_length.max(1))
+    }
+
+    fn challenge_window_blocks(self, epoch_length: u64) -> u64 {
+        self.challenge_window_epochs
+            .max(1)
+            .saturating_mul(epoch_length.max(1))
+    }
+
+    fn proposer_claimable_at_height(
+        self,
+        block_height: u64,
+        epoch_length: u64,
+        selected_receipts: &[Hash],
+    ) -> u64 {
+        let delay = if selected_receipts.is_empty() {
+            self.reward_maturity_delay_blocks(epoch_length)
+        } else {
+            self.challenge_window_blocks(epoch_length)
+        };
+        block_height.saturating_add(delay)
+    }
+}
+
 pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
     produce_inner(chain, proposer, timestamp, 0)
 }
@@ -652,13 +681,8 @@ fn apply_block_to_parent_state(
     reward_context: BlockRewardContext,
 ) -> ChainState {
     let mut child_state = parent_state.clone();
-    let receipt_reward_claimable_at_height = block_height.saturating_add(
-        reward_context
-            .reward_settlement_delay_epochs
-            .saturating_add(reward_context.challenge_window_epochs)
-            .max(1)
-            .saturating_mul(epoch_length.max(1)),
-    );
+    let receipt_reward_claimable_at_height =
+        block_height.saturating_add(reward_context.reward_maturity_delay_blocks(epoch_length));
     for receipt_id in selected_receipts {
         child_state.included_receipts.insert(*receipt_id);
         for reward in child_state.pending_receipt_rewards.values_mut() {
@@ -688,9 +712,6 @@ fn apply_block_to_parent_state(
         reward_context.validator_audit_sample_denominator,
         reward_context.validator_audit_window_blocks,
     );
-    if !selected_receipts.is_empty() {
-        unlock_fallback_proposer_rewards(&mut child_state);
-    }
     super::commands::release_all_matured_rewards(&mut child_state);
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
@@ -699,29 +720,23 @@ fn apply_block_to_parent_state(
     child_state.finalized_beacon_round = next_round;
     child_state.finalized_randomness = next_beacon;
     if reward_context.proposer_reward > 0 {
-        let challenge_window_blocks = reward_context
-            .challenge_window_epochs
-            .max(1)
-            .saturating_mul(epoch_length.max(1));
         child_state.pending_proposer_rewards.insert(
             block_height,
             PendingProposerReward {
                 block_height,
                 proposer: reward_context.proposer,
                 amount: reward_context.proposer_reward,
-                claimable_at_height: block_height.saturating_add(challenge_window_blocks),
+                claimable_at_height: reward_context.proposer_claimable_at_height(
+                    block_height,
+                    epoch_length,
+                    selected_receipts,
+                ),
                 voided_by_challenge: false,
-                requires_useful_successor: selected_receipts.is_empty(),
+                requires_useful_successor: false,
             },
         );
     }
     child_state
-}
-
-fn unlock_fallback_proposer_rewards(child_state: &mut ChainState) {
-    for reward in child_state.pending_proposer_rewards.values_mut() {
-        reward.requires_useful_successor = false;
-    }
 }
 
 fn apply_missed_validator_audit_slashes(
