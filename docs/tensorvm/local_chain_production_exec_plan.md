@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 74, validator audit appeal reward-delay resolution.
+- Active feature: Iteration 75, deterministic bad-block challenge generation.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
@@ -14,7 +14,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   through the audit appeal deadline after a slash. Chain state, service status, and explorer overview now
   expose live validator-audit economic calibration from current params and pending validator reward
   exposure. Appeal resolution now mutates delayed pending validator reward claims directly, without
-  immediate spendable credit or adapter-side release.
+  immediate spendable credit or adapter-side release. Deterministic diagnostic bad-block challenge
+  generation now derives a malformed observed block and signed challenge from a produced useful block while
+  normal block admission remains strict.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -22,8 +24,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with broader bond calibration, deterministic live bad-block generation,
-  multi-validator proposer/fork-choice, governed stake-slash reversal, or Docker `/health`.
+- Next action: add wire/cache support for network-wide live malformed-block challenge propagation, broader
+  bond calibration, multi-validator proposer/fork-choice, governed stake-slash reversal, or Docker `/health`.
 
 ## Readiness Matrix
 
@@ -36,7 +38,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, network-visible block-check challenges, and deterministic diagnostic bad-block challenge generation | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, network-wide live malformed-block propagation |
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
@@ -45,59 +47,26 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 74: Validator Audit Appeal Reward-Delay Resolution
+### Iteration 75: Deterministic Bad-Block Challenge Generation
 
-Feature capability: resolve an existing validator audit appeal through the chain command path by either
-keeping the delayed validator receipt reward voided until normal pruning, or reversing the reward void so
-the existing maturity sweep releases it only after `claimable_at_height`.
-
-Readiness requirements covered:
-- `upow.md` §12: validator rewards remain slash/appeal subject to delayed settlement instead of immediate
-  credit or adapter-owned release.
-- `mvp_spec.md` §20.7/§26 and coverage criterion 5: challenge/audit outcomes operate on delayed
-  state-rooted reward claims before maturity.
-- `implementation_status.md`: close the open appeal outcome mechanics gap without bypassing the delayed
-  reward ledger.
-
-Canonical owner: `chain::validation` resolves audit appeals and mutates `ChainState::pending_receipt_rewards`.
-Adapter callers: none in this slice; callers use `ChainCommand`/`ChainEvent` only.
-Old shortcut being removed: appeal outcome work could have been modeled as an adapter release/prune action
-outside the pending reward ledger.
-Regression test that proves the shortcut is gone: focused chain tests show a reversed appeal unvoids the
-pending validator receipt claim but does not credit spendable balance until `release_matured_receipt_rewards`.
-Behavior with local synthetic block production disabled: resolution is independent of production and reads
-only persisted audit/slash/appeal/reward state.
-Behavior for producer and non-producer roles: any node applying the same command reaches the same pending
-claim void/release state.
-Structured evidence source: chain events, `validator_audit_appeals`, and `pending_receipt_rewards`.
-Finality source: no finality changes; resolution is a chain command that must be included/applied by the
-same engine path as other consensus mutations.
-Wire-size and codec boundary: no p2p wire changes in this slice; command is local chain API only.
-
-Files/modules likely touched: `chain/state.rs`, `chain/engine.rs`, `chain/validation.rs`,
-`chain/commands.rs`, `chain.rs`, focused audit tests, and docs/status updates.
-Narrow validation commands: focused `validator_audit` tests and reward-release tests.
-Broad validation commands before commit: fmt, diff check, full crate, clippy, workspace release, final
-Gate 0, tarpaulin attempt.
-Expected observable evidence: reversed appeals restore delayed claim eligibility without immediate spendable
-credit; upheld appeals keep the claim voided for normal pruning.
-Out of scope: p2p appeal-resolution gossip, central adjudicator networking, stake slash reversal, broader
-bond calibration, deterministic live bad-block generation, Docker `/health`.
-Split trigger: if persistence schema changes require broad codec migration, split storage/schema from
-appeal reward behavior.
+Feature capability: deterministically derive a signed block-check challenge from a produced useful block by
+corrupting its observed `checks_root` evidence in a diagnostic path, without admitting malformed blocks
+through normal consensus validation.
 
 Implementation summary:
-- Added `ValidatorAuditAppealResolution` and `ChainCommand::ResolveValidatorAuditAppeal`.
-- Stored one-shot appeal resolution in the state-rooted/persisted appeal record.
-- Reversed reward-void outcomes clear the delayed validator receipt claim's void flag but do not credit
-  spendable balance; release still goes through `release_matured_receipt_rewards`.
-- Upheld outcomes keep the delayed claim voided for normal pruning.
-- Updated focused chain/storage tests and economics/readiness docs.
+- Added `DeterministicBlockCheckChallenge`, `Chain::deterministic_bad_block_check_challenge`, and
+  `Chain::install_diagnostic_observed_block`.
+- Replaced the hand-built bad-block fixtures in chain and node payload tests with the shared helper.
+- Preserved the existing shared `ChainCommand::SubmitBlockCheckChallenge` resolution path: proposer reward
+  clawback, receipt quarantine, proposer throttle, and delayed challenger reward.
+
+Boundary decision: network-wide live propagation of malformed blocks still requires either an
+observed-invalid-block side cache or a wire extension carrying the observed invalid block. This iteration
+does not weaken `admit_block` to accept malformed blocks.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused tests: `cargo test -p tensor_vm validator_audit --quiet` and
-  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
+- Focused: `cargo test -p tensor_vm block_check_challenge --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 404 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -105,10 +74,16 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `c8a6f9e` (`Resolve audit appeals through delayed rewards`) is pushed to
-  `origin/main`; evidence commit `32fb557` (`Record audit appeal reward evidence`) is also pushed.
 
 ## Recent Iterations
+
+### Iteration 74: Validator Audit Appeal Reward-Delay Resolution
+
+Appeal resolution now mutates delayed pending validator reward claims directly. Upheld outcomes keep the
+claim voided for normal pruning; reversed reward-void outcomes clear the void flag but do not credit
+spendable balance until `release_matured_receipt_rewards`. Validation passed focused audit/storage tests,
+full crate, clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit
+`c8a6f9e`, evidence commit `32fb557`, and push-evidence commit `7026c94` are pushed.
 
 ### Iteration 73: Live Validator-Audit Economic Calibration
 
@@ -116,82 +91,6 @@ Chain state, service status, and explorer overview expose live validator-audit e
 configured audit sampling, slash amount, and current non-voided pending validator reward exposure.
 Validation passed focused chain/status/RPC tests, full crate, clippy, workspace release, and first/final
 Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit `8dbb654` are pushed.
-
-### Iteration 72: Validator Audit Reward Hold-Through Appeal Window
-
-Validator audit slashes now void the affected validator receipt reward and hold the voided pending claim
-through the audit appeal deadline before pruning without credit. Validation passed focused audit/root/storage
-tests, full crate, clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature
-commit `4ae1610` and evidence commit `e9077a9` are pushed.
-
-### Iteration 71: Chain-Owned Validator Audit Appeals
-
-Validators slashed by a mandatory audit can submit a signed, bounded appeal tied to an existing audit slash.
-Appeal records are state-rooted and persisted. Validation passed focused audit/root/storage tests, full
-crate, clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit
-`09b2a49` and evidence commit `af2c377` are pushed.
-
-### Iteration 70: Chain-Owned Validator Auditor Selection
-
-Mandatory audit assignments now persist a deterministic auditor distinct from the audited validator,
-reject reports from non-assigned auditors, and limit validator role observation to local assignments.
-Validation passed focused audit/root/storage/node/role tests, full crate, clippy, workspace release, and
-first/final Gate 0; tarpaulin remained blocked. Feature commit `79b4d12` and evidence commit `94767bd`
-are pushed.
-
-### Iterations 69-68: Challenge Reward Delay And Evidence
-
-Block-check challenger bounties now use the full reward maturity rule, while the local checker requires
-future-maturity pending challenge reward evidence whenever challenge payloads are observed. Validation
-passed focused challenge/checker tests, full crate, clippy, workspace release, and first/final Gate 0;
-tarpaulin remained blocked. Feature commits `7595b0e` and `53eaa9e` are pushed.
-
-### Iteration 67: Chain-Owned Reward Claim View
-
-Unified chain-state pending reward claim view for proposer, receipt, challenge, and credit ledgers.
-Status/explorer/checkers now consume formal chain data instead of rebuilding ledger-specific adapter
-projections. Validation passed focused chain/status/RPC tests, full crate, clippy, workspace release, and
-first/final Gate 0; tarpaulin remained blocked. Feature commit `cf886d4` is pushed.
-
-### Iteration 66: Local Checker Delayed-Reward Claim Gate
-
-The local CPU checker now requires future-maturity, non-voided receipt/proposer pending reward claims
-instead of aggregate pending-reward counts. Validation passed shell syntax, compose artifact, full crate,
-clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit `2232724`
-and evidence commits `9547dde`/`7c9c209` are pushed.
-
-### Iteration 64: Exact Field `div` Admission
-
-Admitted exact field-only modular-inverse `div` with field dtype/scale validation, broadcast shape
-inference, zero-divisor rejection, conformance vector/profile evidence, and graph verifier profile gating.
-Validation passed focused IR/conformance/verifier tests, `cargo test -p tensor_vm`, formatting/whitespace,
-clippy, workspace release, and first/final Gate 0. Tarpaulin remained blocked. Feature commit `1ef3552`
-and evidence commit `d62bae3` are pushed.
-
-### Iteration 63: Exact Tier-A Matrix-Contraction `einsum` Admission
-
-Admitted the conservative exact rank-2 matrix-contraction `einsum` subset with registry admission,
-equation validation, shape inference, exact replay, conformance vectors, and graph verifier gating.
-Validation passed focused IR/conformance/verifier tests, `cargo test -p tensor_vm`,
-formatting/whitespace, clippy, workspace release, and first/final Gate 0. Tarpaulin remained blocked.
-Feature commit `0efedcc` and evidence commit `1019527` are pushed.
-
-### Iteration 65: Structured Delayed-Reward Maturity Evidence
-
-Exposed state-rooted pending reward claim maturity details through service status and explorer overview so
-local/public evidence can prove delayed rewards directly. Added bounded status samples for proposer,
-receipt, challenge, and credit ledgers, typed explorer pending reward samples, focused status/RPC/explorer
-tests, and docs. Validation passed focused tests, `cargo test -p tensor_vm`, formatting/whitespace, clippy,
-workspace release, and first/final Gate 0. Tarpaulin remained blocked. Feature commit `aa627d8` and
-evidence commit `3d9cd9b` are pushed.
-
-### Iteration 62: Dynamic-Output Exact `split` Admission
-
-Admitted exact Tier-B `split` with `outputs = len(sizes)`, shape inference, exact row-major replay,
-multi-output conformance vectors, and graph verifier profile gating. Validation passed focused
-IR/conformance/verifier tests, `cargo test -p tensor_vm`, formatting/whitespace, clippy, workspace release,
-and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and evidence commit
-`1019527` are pushed.
 
 ## Decision Log
 
@@ -207,12 +106,11 @@ and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and
 
 ## Validation Evidence
 
-Latest full validation is Iteration 74 on June 20, 2026:
+Latest full validation is Iteration 75 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm validator_audit --quiet
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
+cargo test -p tensor_vm block_check_challenge --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

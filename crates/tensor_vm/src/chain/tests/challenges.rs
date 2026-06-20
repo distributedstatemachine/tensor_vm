@@ -1,12 +1,5 @@
 use super::*;
 
-fn resign_challenge_test_block(block: &mut TensorBlock) {
-    let block_hash = block.hash();
-    block.proposer_signature = sign(&block.proposer, &block_hash);
-    block.validator_signature_aggregate =
-        hash_bytes(b"tensor-vm-validator-aggregate", &[&block_hash]);
-}
-
 #[test]
 fn challenge_outcome_slashes_miner_and_credits_treasury() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -118,33 +111,18 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .amount,
         1_000
     );
-    let outcome = chain.block_apply_outcome(&block).unwrap();
-    let opening = outcome.selected_openings.first().unwrap();
-
-    let observed_check_leaf = hash_bytes(b"test", &[b"bad-observed-check-leaf"]);
-    let observed_root = merkle_root(&[observed_check_leaf]);
-    let mut bad_block = block.clone();
-    bad_block.checks_root = observed_root;
-    resign_challenge_test_block(&mut bad_block);
-    chain.pop_block_for_testing();
-    chain.push_block_for_testing(bad_block.clone());
+    let diagnostic = chain
+        .deterministic_bad_block_check_challenge(&block, challenger)
+        .unwrap();
+    assert_eq!(diagnostic.challenge.receipt_id, receipt.receipt_id);
+    assert_ne!(diagnostic.observed_block.checks_root, block.checks_root);
     chain
-        .state
-        .block_selected_receipts
-        .insert(bad_block.hash(), vec![receipt.receipt_id]);
+        .install_diagnostic_observed_block(&diagnostic)
+        .unwrap();
 
-    let challenge =
-        crate::challenge::BlockCheckChallenge::new(crate::challenge::BlockCheckChallengeInput {
-            challenger,
-            block_hash: bad_block.hash(),
-            receipt_id: receipt.receipt_id,
-            expected_check_leaf: opening.check_leaf,
-            observed_check_leaf,
-            check_leaf_index: opening.check_leaf_index,
-            check_leaf_proof: build_proof(&[observed_check_leaf], 0).unwrap(),
-            recomputed_checks_root: outcome.checks_root,
-        });
-    let events = chain.submit_block_check_challenge(challenge).unwrap();
+    let events = chain
+        .submit_block_check_challenge(diagnostic.challenge.clone())
+        .unwrap();
 
     assert_eq!(events.len(), 2);
     assert!(matches!(
@@ -169,7 +147,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     else {
         panic!("expected pending challenge reward event");
     };
-    assert_eq!(block_hash, bad_block.hash());
+    assert_eq!(block_hash, diagnostic.observed_block.hash());
     assert_eq!(receipt_id, receipt.receipt_id);
     assert_eq!(pending_challenger, challenger);
     assert_eq!(amount, 500);
@@ -193,7 +171,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
         chain.state().pending_challenge_rewards().get(&claim_id),
         Some(reward)
             if reward.challenge_id == challenge_id
-                && reward.block_hash == bad_block.hash()
+                && reward.block_hash == diagnostic.observed_block.hash()
                 && reward.receipt_id == receipt.receipt_id
                 && reward.challenger == challenger
                 && reward.amount == 500

@@ -7,7 +7,7 @@ use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
     TensorOpReceipt,
 };
-use crate::merkle::{build_proof, merkle_root, verify_proof};
+use crate::merkle::verify_proof;
 use crate::scheduler::JobScheduler;
 use crate::tensor::{DType, Tensor};
 use crate::types::{address, hash_bytes, sign};

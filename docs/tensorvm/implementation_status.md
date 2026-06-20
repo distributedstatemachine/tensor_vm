@@ -10,9 +10,10 @@ parent-root checks before counting stake. Long-running validator roles can now s
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
 child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics, deterministic
-live invalid-block challenge generation, multi-validator proposer competition/fork-choice policy, and a
-fresh full Docker proof of live validator proposer/block-assembly networking after the current `/health`
-blocker clears. See
+bad-block challenge propagation over the live network, multi-validator proposer competition/fork-choice
+policy, and a fresh full Docker proof of live validator proposer/block-assembly networking after the
+current `/health` blocker clears. Deterministic local bad-block challenge construction now exists as a
+diagnostic chain helper. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -168,6 +169,9 @@ blocker clears. See
 - Challenge outcome application, miner/validator slashing, local block `checks_root` challenge admission,
   pending proposer reward invalidation, delayed pending challenger reward creation, challenged-receipt
   quarantine, and proposer throttle windows through the internal `chain::challenges` boundary
+- Deterministic diagnostic bad-block challenge generation through `Chain::deterministic_bad_block_check_challenge`,
+  which derives an observed malformed block and signed challenge from a produced useful block's canonical
+  selected-receipt opening without changing normal malformed-block admission rules
 - Bounded network-visible block-check challenge payloads over the shared p2p/node event path, with
   challenge-id consistency checks, Merkle-proof sibling bounds before allocation, pending retry while the
   challenged block is missing, canonical application through `ChainCommand::SubmitBlockCheckChallenge`,

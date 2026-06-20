@@ -54,6 +54,10 @@ The remaining uncovered `tensor_vm` lines are concentrated in block-admission re
 block and block-vote payload retry edges, and p2p request/response unhappy paths. Focused node and p2p
 tests cover the main block/block-vote payload happy paths, malformed payload rejection, invalid
 signature/root rejection, duplicate admission behavior, and bounded wire-length rejection.
+Iteration 75 added deterministic diagnostic block-check challenge generation in `chain::challenges`;
+focused chain and node payload tests cover deriving an observed malformed block from a produced useful
+block, applying the signed challenge through the shared command/payload path, and delaying the challenger
+reward.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

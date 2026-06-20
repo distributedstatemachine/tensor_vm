@@ -415,8 +415,9 @@ Required fix:
 - Query pending block-check challenger reward claims after a successful live challenge scenario, and
   separately verify mature release into spendable balances instead of immediate bounty credit. The shared
   p2p/node payload path, status counters, chain-owned full reward-maturity delay for challenge bounties,
-  and conditional checker gate for future-maturity challenge reward claims now exist; deterministic live
-  bad-block generation remains open.
+  conditional checker gate for future-maturity challenge reward claims, and deterministic local diagnostic
+  bad-block challenge generation now exist; network-wide live propagation still needs an observed-invalid
+  block cache or a wire payload that carries the observed malformed block.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.

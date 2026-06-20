@@ -1,11 +1,19 @@
 use super::Chain;
-use super::state::{BlockCheckChallengeRecord, PendingChallengeReward};
-use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
+use super::state::{BlockCheckChallengeRecord, PendingChallengeReward, TensorBlock};
+use crate::challenge::{BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome};
 use crate::error::{Result, TvmError};
-use crate::merkle::verify_proof;
-use crate::types::{Hash, hash_bytes};
+use crate::merkle::{build_proof, merkle_root, verify_proof};
+use crate::types::{Address, Hash, hash_bytes, sign};
 
 const CHALLENGER_REWARD_BPS: u64 = 5_000;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DeterministicBlockCheckChallenge {
+    pub observed_block: TensorBlock,
+    pub challenge: BlockCheckChallenge,
+    pub challenge_id: Hash,
+    pub selected_receipts: Vec<Hash>,
+}
 
 pub fn apply_outcome(chain: &mut Chain, outcome: ChallengeOutcome) -> Result<()> {
     match outcome {
@@ -60,6 +68,78 @@ pub fn apply_outcome(chain: &mut Chain, outcome: ChallengeOutcome) -> Result<()>
             },
         ),
     }
+}
+
+pub fn deterministic_bad_block_check_challenge(
+    chain: &Chain,
+    block: &TensorBlock,
+    challenger: Address,
+) -> Result<DeterministicBlockCheckChallenge> {
+    if !chain.state.validators.contains_key(&challenger) {
+        return Err(TvmError::UnknownValidator);
+    }
+    let outcome = chain.block_apply_outcome(block)?;
+    let opening = outcome
+        .selected_openings
+        .first()
+        .ok_or(TvmError::InvalidReceipt(
+            "block has no selected receipt to challenge",
+        ))?;
+    let observed_check_leaf = hash_bytes(
+        b"tensor-vm-diagnostic-bad-block-check-leaf-v1",
+        &[
+            &block.hash(),
+            &opening.receipt_id,
+            &opening.check_leaf_index.to_le_bytes(),
+        ],
+    );
+    if observed_check_leaf == opening.check_leaf {
+        return Err(TvmError::InvalidReceipt("diagnostic check leaf collision"));
+    }
+    let mut observed_block = block.clone();
+    observed_block.checks_root = merkle_root(&[observed_check_leaf]);
+    let observed_block_hash = observed_block.hash();
+    observed_block.proposer_signature = sign(&observed_block.proposer, &observed_block_hash);
+    observed_block.validator_signature_aggregate =
+        hash_bytes(b"tensor-vm-validator-aggregate", &[&observed_block_hash]);
+    let challenge = BlockCheckChallenge::new(BlockCheckChallengeInput {
+        challenger,
+        block_hash: observed_block.hash(),
+        receipt_id: opening.receipt_id,
+        expected_check_leaf: opening.check_leaf,
+        observed_check_leaf,
+        check_leaf_index: opening.check_leaf_index,
+        check_leaf_proof: build_proof(&[observed_check_leaf], 0)?,
+        recomputed_checks_root: outcome.checks_root,
+    });
+    let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
+    Ok(DeterministicBlockCheckChallenge {
+        observed_block,
+        challenge,
+        challenge_id,
+        selected_receipts: outcome.selected_receipt_ids,
+    })
+}
+
+pub fn install_diagnostic_observed_block(
+    chain: &mut Chain,
+    diagnostic: &DeterministicBlockCheckChallenge,
+) -> Result<()> {
+    let block_height = diagnostic.observed_block.height;
+    if let Some(position) = chain
+        .blocks
+        .iter()
+        .position(|block| block.height == block_height)
+    {
+        chain.blocks[position] = diagnostic.observed_block.clone();
+    } else {
+        return Err(TvmError::InvalidReceipt("diagnostic block height missing"));
+    }
+    chain.state.block_selected_receipts.insert(
+        diagnostic.observed_block.hash(),
+        diagnostic.selected_receipts.clone(),
+    );
+    Ok(())
 }
 
 pub fn submit_block_check(

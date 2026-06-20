@@ -26,6 +26,7 @@ mod test_helpers;
 mod transactions;
 mod validation;
 
+pub use challenges::DeterministicBlockCheckChallenge;
 pub use engine::{BlockAdmission, BlockInvalidReason, ChainCommand, ChainEngine, ChainEvent};
 #[cfg(test)]
 use settlement::{has_conflicting_linear_receipt, receipts_agree};
@@ -233,6 +234,21 @@ impl Chain {
         challenge: BlockCheckChallenge,
     ) -> Result<Vec<ChainEvent>> {
         self.apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
+    }
+
+    pub fn deterministic_bad_block_check_challenge(
+        &self,
+        block: &TensorBlock,
+        challenger: Address,
+    ) -> Result<DeterministicBlockCheckChallenge> {
+        challenges::deterministic_bad_block_check_challenge(self, block, challenger)
+    }
+
+    pub fn install_diagnostic_observed_block(
+        &mut self,
+        diagnostic: &DeterministicBlockCheckChallenge,
+    ) -> Result<()> {
+        challenges::install_diagnostic_observed_block(self, diagnostic)
     }
 
     pub fn release_matured_proposer_rewards(&mut self) -> Result<Vec<ChainEvent>> {

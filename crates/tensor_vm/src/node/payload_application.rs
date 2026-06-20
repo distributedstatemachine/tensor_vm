@@ -324,12 +324,9 @@ mod tests {
     use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
     use super::*;
     use crate::{
-        chain::{
-            BlockVote, ChainParams, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
-        },
-        challenge::{BlockCheckChallenge, BlockCheckChallengeInput, block_check_challenge_id},
+        chain::{BlockVote, ChainParams, JobState, ReceiptState, ValidatorAuditReport},
+        challenge::{BlockCheckChallenge, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
-        merkle::{build_proof, merkle_root},
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
@@ -742,13 +739,6 @@ mod tests {
         (chain, audit_id, auditor)
     }
 
-    fn resign_challenge_test_block(block: &mut TensorBlock) {
-        let block_hash = block.hash();
-        block.proposer_signature = sign(&block.proposer, &block_hash);
-        block.validator_signature_aggregate =
-            hash_bytes(b"tensor-vm-validator-aggregate", &[&block_hash]);
-    }
-
     fn block_check_challenge_chain() -> (Chain, BlockCheckChallenge, Hash) {
         let beacon = hash_bytes(b"test", &[b"network-block-check-challenge-beacon"]);
         let params = ChainParams {
@@ -807,26 +797,13 @@ mod tests {
         let block = chain
             .produce_block_with_rewards(proposer, 1_000, 900, 100)
             .unwrap();
-        let outcome = chain.block_apply_outcome(&block).unwrap();
-        let opening = outcome.selected_openings.first().unwrap();
-        let observed_check_leaf = hash_bytes(b"test", &[b"network-bad-observed-check-leaf"]);
-        let mut bad_block = block.clone();
-        bad_block.checks_root = merkle_root(&[observed_check_leaf]);
-        resign_challenge_test_block(&mut bad_block);
-        chain.pop_block_for_testing();
-        chain.push_block_for_testing(bad_block.clone());
+        let diagnostic = chain
+            .deterministic_bad_block_check_challenge(&block, challenger)
+            .unwrap();
         chain
-            .insert_block_selected_receipts_for_testing(bad_block.hash(), vec![receipt.receipt_id]);
-        let challenge = BlockCheckChallenge::new(BlockCheckChallengeInput {
-            challenger,
-            block_hash: bad_block.hash(),
-            receipt_id: receipt.receipt_id,
-            expected_check_leaf: opening.check_leaf,
-            observed_check_leaf,
-            check_leaf_index: opening.check_leaf_index,
-            check_leaf_proof: build_proof(&[observed_check_leaf], 0).unwrap(),
-            recomputed_checks_root: outcome.checks_root,
-        });
+            .install_diagnostic_observed_block(&diagnostic)
+            .unwrap();
+        let challenge = diagnostic.challenge;
         let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
         (chain, challenge, challenge_id)
     }
