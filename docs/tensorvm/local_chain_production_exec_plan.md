@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 82 complete; commit/push pending.
+- Active feature: Iteration 82 complete and pushed.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,7 +31,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 82 evidence, then continue with the next non-Docker consensus gap.
+- Next action: continue with the next non-Docker consensus gap or rerun the full Docker scenario after the
+  `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -110,6 +111,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `8ce051f` (`Prove chain-owned receipt reward delay`) is pushed to `origin/main`.
 
 ### Iteration 81: Inclusion-Gated Receipt Reward Release
 
