@@ -18,6 +18,13 @@ pub enum P2pMessage {
         validator: Address,
         payload: Vec<u8>,
     },
+    NewBlockCheckChallenge(Hash),
+    NewBlockCheckChallengePayload {
+        challenge_id: Hash,
+        block_hash: Hash,
+        challenger: Address,
+        payload: Vec<u8>,
+    },
     NewJob(Hash),
     NewJobPayload {
         job_id: Hash,

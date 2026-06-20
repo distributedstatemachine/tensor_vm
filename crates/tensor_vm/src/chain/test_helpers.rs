@@ -95,6 +95,16 @@ impl Chain {
         self.state.block_votes.insert(block_hash, votes);
     }
 
+    pub(crate) fn insert_block_selected_receipts_for_testing(
+        &mut self,
+        block_hash: Hash,
+        receipt_ids: Vec<Hash>,
+    ) {
+        self.state
+            .block_selected_receipts
+            .insert(block_hash, receipt_ids);
+    }
+
     pub(crate) fn push_block_for_testing(&mut self, block: TensorBlock) {
         self.blocks.push(block);
     }

@@ -1,9 +1,11 @@
 use super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
 use crate::{
     chain::{BlockAdmission, Chain, ChainCommand, ChainEngine},
+    challenge::block_check_challenge_id,
     p2p::{
-        decode_attestation_payload, decode_block_payload, decode_block_vote_payload,
-        decode_job_payload, decode_receipt_payload, decode_validator_audit_report_payload,
+        decode_attestation_payload, decode_block_check_challenge_payload, decode_block_payload,
+        decode_block_vote_payload, decode_job_payload, decode_receipt_payload,
+        decode_validator_audit_report_payload,
     },
     types::{Hash, hash_bytes},
     verify::ValidatorAttestation,
@@ -256,6 +258,51 @@ pub fn apply_network_validator_audit_report_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+pub fn apply_network_block_check_challenge_payload(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    block_hash: Hash,
+    challenger: Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if challenge_id == [0; 32] || block_hash == [0; 32] || challenger == [0; 32] {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(challenge) = decode_block_check_challenge_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if challenge.receipt_id == [0; 32]
+        || block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id) != challenge_id
+        || challenge.block_hash != block_hash
+        || challenge.challenger != challenger
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if let Some(existing) = chain.state().block_check_challenges().get(&challenge_id) {
+        return if existing.block_hash == challenge.block_hash
+            && existing.receipt_id == challenge.receipt_id
+            && existing.challenger == challenge.challenger
+            && existing.expected_check_leaf == challenge.expected_check_leaf
+            && existing.observed_check_leaf == challenge.observed_check_leaf
+        {
+            NetworkPayloadApply::Applied
+        } else {
+            NetworkPayloadApply::Invalid
+        };
+    }
+    if !chain
+        .blocks
+        .iter()
+        .any(|block| block.hash() == challenge.block_hash)
+    {
+        return NetworkPayloadApply::Pending;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
     hash_bytes(
         b"tensor-vm-attestation-announcement-v1",
@@ -274,16 +321,24 @@ mod tests {
     use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
     use super::*;
     use crate::{
-        chain::{BlockVote, ChainParams, JobState, ReceiptState, ValidatorAuditReport},
+        chain::{
+            BlockVote, ChainParams, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+        },
+        challenge::{BlockCheckChallenge, BlockCheckChallengeInput, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
+        merkle::{build_proof, merkle_root},
         p2p::{
-            encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
-            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
+            encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
+            encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
+            encode_validator_audit_report_payload,
         },
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
         types::{address, sign},
-        verify::{AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult},
+        verify::{
+            AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult,
+            verify_tensor_op,
+        },
     };
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
@@ -675,6 +730,233 @@ mod tests {
             .next()
             .expect("audit assignment should exist");
         (chain, audit_id, auditor)
+    }
+
+    fn resign_challenge_test_block(block: &mut TensorBlock) {
+        let block_hash = block.hash();
+        block.proposer_signature = sign(&block.proposer, &block_hash);
+        block.validator_signature_aggregate =
+            hash_bytes(b"tensor-vm-validator-aggregate", &[&block_hash]);
+    }
+
+    fn block_check_challenge_chain() -> (Chain, BlockCheckChallenge, Hash) {
+        let beacon = hash_bytes(b"test", &[b"network-block-check-challenge-beacon"]);
+        let params = ChainParams {
+            agreement_quorum: 1,
+            challenge_window_epochs: 1,
+            epoch_length: 4,
+            freivalds: FreivaldsParams {
+                minimum_validators: 1,
+                validators_per_job: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(params, beacon);
+        let miner = address(b"network-block-check-miner");
+        let proposer = address(b"network-block-check-proposer");
+        let challenger = address(b"network-block-check-watcher");
+        chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(proposer, 10_000).unwrap();
+        chain.register_validator(challenger, 10_000).unwrap();
+
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+        let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        let report = verify_tensor_op(
+            &job,
+            &receipt,
+            &a,
+            &b,
+            &c,
+            &hash_bytes(b"test", &[b"network-block-check-validation"]),
+            &chain.params().freivalds,
+        )
+        .unwrap();
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+        let assigned = JobScheduler::default()
+            .assign_validators(
+                &chain,
+                receipt.receipt_id,
+                &chain.validator_assignment_seed(&receipt.receipt_id),
+            )
+            .validators[0];
+        chain.insert_attestation_for_testing(ValidatorAttestation::new(
+            assigned,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ));
+        chain.settle_epoch(1_000, 500);
+        let block = chain
+            .produce_block_with_rewards(proposer, 1_000, 900, 100)
+            .unwrap();
+        let outcome = chain.block_apply_outcome(&block).unwrap();
+        let opening = outcome.selected_openings.first().unwrap();
+        let observed_check_leaf = hash_bytes(b"test", &[b"network-bad-observed-check-leaf"]);
+        let mut bad_block = block.clone();
+        bad_block.checks_root = merkle_root(&[observed_check_leaf]);
+        resign_challenge_test_block(&mut bad_block);
+        chain.pop_block_for_testing();
+        chain.push_block_for_testing(bad_block.clone());
+        chain
+            .insert_block_selected_receipts_for_testing(bad_block.hash(), vec![receipt.receipt_id]);
+        let challenge = BlockCheckChallenge::new(BlockCheckChallengeInput {
+            challenger,
+            block_hash: bad_block.hash(),
+            receipt_id: receipt.receipt_id,
+            expected_check_leaf: opening.check_leaf,
+            observed_check_leaf,
+            check_leaf_index: opening.check_leaf_index,
+            check_leaf_proof: build_proof(&[observed_check_leaf], 0).unwrap(),
+            recomputed_checks_root: outcome.checks_root,
+        });
+        let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
+        (chain, challenge, challenge_id)
+    }
+
+    #[test]
+    fn block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges() {
+        let (chain, challenge, challenge_id) = block_check_challenge_chain();
+        let payload = encode_block_check_challenge_payload(&challenge);
+        let mut missing_block = chain.clone();
+        missing_block.pop_block_for_testing();
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut missing_block,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+
+        let mut apply_chain = chain.clone();
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert!(
+            apply_chain
+                .state()
+                .block_check_challenges()
+                .contains_key(&challenge_id)
+        );
+        let pending_reward = apply_chain
+            .state()
+            .pending_challenge_rewards()
+            .values()
+            .find(|reward| {
+                reward.challenge_id == challenge_id
+                    && reward.block_hash == challenge.block_hash
+                    && reward.receipt_id == challenge.receipt_id
+                    && reward.challenger == challenge.challenger
+            })
+            .expect("accepted network challenge should delay challenger reward");
+        assert_eq!(pending_reward.amount, 500);
+        assert_eq!(pending_reward.claimable_at_height, 5);
+        assert_eq!(
+            apply_chain.state().rewards().balance(&challenge.challenger),
+            0
+        );
+        assert!(
+            apply_chain
+                .release_matured_challenge_rewards()
+                .unwrap()
+                .is_empty()
+        );
+        assert_eq!(
+            apply_chain.state().rewards().balance(&challenge.challenger),
+            0
+        );
+        apply_chain.set_position_for_testing(5, 1);
+        assert_eq!(
+            apply_chain
+                .release_matured_challenge_rewards()
+                .unwrap()
+                .len(),
+            2
+        );
+        assert_eq!(
+            apply_chain.state().rewards().balance(&challenge.challenger),
+            500
+        );
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                [0; 32],
+                challenge.block_hash,
+                challenge.challenger,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                hash_bytes(b"test", &[b"wrong-challenge-block"]),
+                challenge.challenger,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                address(b"wrong-challenge-validator"),
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &[1, 2, 3],
+            ),
+            NetworkPayloadApply::Invalid
+        );
+
+        let mut conflicting = challenge.clone();
+        conflicting.observed_check_leaf = hash_bytes(b"test", &[b"conflicting-check-leaf"]);
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &encode_block_check_challenge_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
     }
 
     #[test]

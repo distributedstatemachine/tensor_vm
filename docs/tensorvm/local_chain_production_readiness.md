@@ -170,7 +170,7 @@ The local bundle is useful and should remain the first operational target:
   `role_validator_proposer_work_ready`, `role_validator_useful_blocks_proposed`,
   `role_validator_fallback_blocks_proposed`, `role_validator_receipts_proposed`,
   `role_network_applied_blocks`, decoded `role_network_*_ingested` event counters,
-  block/job/receipt/attestation payload apply counters,
+  block/job/receipt/attestation/block-check-challenge payload apply counters,
   `role_network_invalid_events`,
   `role_latest_height`, `role_p2p_connected_peers`,
   `role_p2p_observed_jobs`, `role_p2p_observed_receipts`, `role_p2p_observed_attestations`,
@@ -180,8 +180,8 @@ The local bundle is useful and should remain the first operational target:
   loop, validator operators report block-production capability, only `validator-00` reports timed
   produced-block progress, miners report no block-production capability, every non-producer reports
   network-applied block progress from decoded block payloads, every non-producer has ingested decoded
-  block-payload/header/block-vote/job/receipt/attestation events with zero invalid network events, every non-producer has
-  accepted decoded block, block-vote, job, receipt, and attestation payloads through the chain engine, at least one real libp2p
+  block-payload/header/block-vote/job/receipt/attestation/block-check-challenge events with zero invalid network events, every non-producer has
+  accepted decoded block, block-vote, job, receipt, attestation, and block-check-challenge payloads through the chain engine when such payloads are present, at least one real libp2p
   connection, job/receipt/attestation/block/block-vote announcements observed through Gossipsub, and an observed network
   announcement for the selected finalized p2p-observed head hash. Validator operators report block-production
   capability, but only `validator-00` reports `role_local_producer=true` and positive timed produced-block
@@ -396,8 +396,9 @@ Required fix:
 - Query live receipt details and prove at least one new post-startup receipt has validator attestations.
 - Query pending miner and validator receipt reward claims after live jobs, and separately verify mature
   release into spendable balances once the reward-settlement delay plus challenge window has elapsed.
-- Query pending block-check challenger reward claims after a successful challenge scenario, and separately
-  verify mature release into spendable balances instead of immediate bounty credit.
+- Query pending block-check challenger reward claims after a successful live challenge scenario, and
+  separately verify mature release into spendable balances instead of immediate bounty credit. The shared
+  p2p/node payload path and status counters now exist; deterministic live bad-block generation remains open.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.
@@ -648,9 +649,9 @@ jobs, model-count advancement, attestation-count growth, pending receipt-reward 
 receipts, per-receipt validator-attestation details, live tensor descriptor/row/chunk/opening fetches, all
 15 operator node stores reporting role status, live chain counters, finalized live TensorOp and
 LinearTrainingStep block-view evidence, the single local producer, network
-applied block progress on every non-producer, accepted job, receipt, and attestation payload application
+applied block progress on every non-producer, accepted job, receipt, attestation, and block-check-challenge payload application when challenge evidence is present
 through the shared chain engine on every non-producer, validator-owned block-vote submission,
-non-producer block-vote ingestion/application, pending receipt/attestation/block-vote retry for out-of-order
+non-producer block-vote ingestion/application, pending receipt/attestation/block-vote/block-check-challenge retry for out-of-order
 p2p payloads, the same first live finalized block hash, the same finalized common-head block hash, and a
 finalized local-head checkpoint/state root that was also observed through p2p block gossip via
 `tvmd node block`, plus named post-seed TensorOp and LinearTrainingStep receipt evidence, real libp2p

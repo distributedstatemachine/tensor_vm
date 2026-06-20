@@ -1,7 +1,7 @@
 use super::payload_application::{
-    apply_network_attestation_payload, apply_network_block_payload,
-    apply_network_block_vote_payload, apply_network_job_payload, apply_network_receipt_payload,
-    apply_network_validator_audit_report_payload,
+    apply_network_attestation_payload, apply_network_block_check_challenge_payload,
+    apply_network_block_payload, apply_network_block_vote_payload, apply_network_job_payload,
+    apply_network_receipt_payload, apply_network_validator_audit_report_payload,
 };
 use crate::{chain::Chain, types::Hash};
 
@@ -38,6 +38,14 @@ pub trait NetworkPayloadProcessor {
         &mut self,
         block_hash: Hash,
         validator: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply;
+
+    fn apply_block_check_challenge(
+        &mut self,
+        challenge_id: Hash,
+        block_hash: Hash,
+        challenger: Hash,
         payload: &[u8],
     ) -> NetworkPayloadApply;
 
@@ -99,6 +107,22 @@ impl NetworkPayloadProcessor for ChainNetworkPayloadProcessor<'_> {
         apply_network_block_vote_payload(self.chain, block_hash, validator, payload)
     }
 
+    fn apply_block_check_challenge(
+        &mut self,
+        challenge_id: Hash,
+        block_hash: Hash,
+        challenger: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_block_check_challenge_payload(
+            self.chain,
+            challenge_id,
+            block_hash,
+            challenger,
+            payload,
+        )
+    }
+
     fn apply_receipt(&mut self, receipt_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_receipt_payload(self.chain, receipt_id, payload)
     }
@@ -147,6 +171,22 @@ impl<C: NetworkEventContext + ?Sized> NetworkPayloadProcessor
         payload: &[u8],
     ) -> NetworkPayloadApply {
         apply_network_block_vote_payload(self.context.chain(), block_hash, validator, payload)
+    }
+
+    fn apply_block_check_challenge(
+        &mut self,
+        challenge_id: Hash,
+        block_hash: Hash,
+        challenger: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_block_check_challenge_payload(
+            self.context.chain(),
+            challenge_id,
+            block_hash,
+            challenger,
+            payload,
+        )
     }
 
     fn apply_receipt(&mut self, receipt_id: Hash, payload: &[u8]) -> NetworkPayloadApply {

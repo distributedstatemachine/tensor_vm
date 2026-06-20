@@ -11,6 +11,8 @@ pub struct NetworkEventIngest {
     pub block_payloads_applied: usize,
     pub block_votes: usize,
     pub block_votes_applied: usize,
+    pub block_check_challenges: usize,
+    pub block_check_challenges_applied: usize,
     pub jobs: usize,
     pub job_payloads: usize,
     pub job_payloads_applied: usize,
@@ -36,6 +38,7 @@ impl NetworkEventIngest {
             || self.validator_audit_reports_applied > 0
             || self.block_payloads_applied > 0
             || self.block_votes_applied > 0
+            || self.block_check_challenges_applied > 0
             || self.invalid_events > 0
             || self.applied_blocks > 0
     }
@@ -54,6 +57,12 @@ impl NetworkEventIngest {
         self.block_votes_applied = self
             .block_votes_applied
             .saturating_add(other.block_votes_applied);
+        self.block_check_challenges = self
+            .block_check_challenges
+            .saturating_add(other.block_check_challenges);
+        self.block_check_challenges_applied = self
+            .block_check_challenges_applied
+            .saturating_add(other.block_check_challenges_applied);
         self.jobs = self.jobs.saturating_add(other.jobs);
         self.job_payloads = self.job_payloads.saturating_add(other.job_payloads);
         self.job_payloads_applied = self

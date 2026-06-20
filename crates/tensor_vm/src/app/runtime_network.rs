@@ -21,7 +21,8 @@ pub fn ingest_network_once(
         || ingested.job_payloads_applied > 0
         || ingested.receipt_payloads_applied > 0
         || ingested.attestation_payloads_applied > 0
-        || ingested.block_votes_applied > 0;
+        || ingested.block_votes_applied > 0
+        || ingested.block_check_challenges_applied > 0;
     runtime_state.record_network_ingest(ingested);
     if should_persist {
         store

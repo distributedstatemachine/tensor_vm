@@ -761,6 +761,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED=$(status_value role_network_block_payloads_applied "$STATUS")
     SERVICE_ROLE_NETWORK_BLOCK_VOTES=$(status_value role_network_block_votes_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED=$(status_value role_network_block_votes_applied "$STATUS")
+    SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=$(status_value role_network_block_check_challenges_ingested "$STATUS")
+    SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=$(status_value role_network_block_check_challenges_applied "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_EVENTS=$(status_value role_network_job_events_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_PAYLOADS=$(status_value role_network_job_payloads_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED=$(status_value role_network_job_payloads_applied "$STATUS")
@@ -856,6 +858,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_JOB_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" ] || { STATUS_MISMATCH=true; continue; }

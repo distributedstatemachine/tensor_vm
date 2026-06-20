@@ -1,9 +1,11 @@
 use crate::chain::{
     BlockProductionKind, BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
 };
+use crate::challenge::BlockCheckChallenge;
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
+use crate::merkle::MerkleProof;
 use crate::tensor::DType;
 use crate::types::Hash;
 use crate::verify::{ValidatorAttestation, VerificationResult};
@@ -12,6 +14,9 @@ pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 1 + 8 * 6 + 32 * 11;
 pub(crate) const BLOCK_VOTE_PAYLOAD_LEN: usize = 32 * 3 + 8 * 2;
 pub(crate) const ATTESTATION_PAYLOAD_LEN: usize = 32 * 5 + 8 + 3;
 pub(crate) const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = 32 * 4 + 2;
+pub(crate) const MAX_BLOCK_CHECK_CHALLENGE_PROOF_HASHES: usize = 64;
+pub(crate) const BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN: usize =
+    32 * 7 + 8 * 3 + 32 * MAX_BLOCK_CHECK_CHALLENGE_PROOF_HASHES;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CodecError {
@@ -405,6 +410,49 @@ pub(crate) fn decode_validator_audit_report_payload(
         return Err(CodecError::TrailingBytes);
     }
     Ok(report)
+}
+
+pub(crate) fn encode_block_check_challenge_payload(challenge: &BlockCheckChallenge) -> Vec<u8> {
+    let mut out = Vec::with_capacity(BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN);
+    write_hash(&mut out, &challenge.challenger);
+    write_hash(&mut out, &challenge.block_hash);
+    write_hash(&mut out, &challenge.receipt_id);
+    write_hash(&mut out, &challenge.expected_check_leaf);
+    write_hash(&mut out, &challenge.observed_check_leaf);
+    write_u64(&mut out, challenge.check_leaf_index);
+    write_u64(&mut out, challenge.check_leaf_proof.leaf_index);
+    write_hash_vec(&mut out, &challenge.check_leaf_proof.siblings);
+    write_hash(&mut out, &challenge.recomputed_checks_root);
+    write_hash(&mut out, &challenge.challenger_signature);
+    out
+}
+
+pub(crate) fn decode_block_check_challenge_payload(
+    input: &[u8],
+) -> Result<BlockCheckChallenge, CodecError> {
+    let mut offset = 0;
+    let challenge = BlockCheckChallenge {
+        challenger: read_hash(input, &mut offset)?,
+        block_hash: read_hash(input, &mut offset)?,
+        receipt_id: read_hash(input, &mut offset)?,
+        expected_check_leaf: read_hash(input, &mut offset)?,
+        observed_check_leaf: read_hash(input, &mut offset)?,
+        check_leaf_index: read_u64(input, &mut offset)?,
+        check_leaf_proof: MerkleProof {
+            leaf_index: read_u64(input, &mut offset)?,
+            siblings: read_hash_vec(
+                input,
+                &mut offset,
+                Some(MAX_BLOCK_CHECK_CHALLENGE_PROOF_HASHES),
+            )?,
+        },
+        recomputed_checks_root: read_hash(input, &mut offset)?,
+        challenger_signature: read_hash(input, &mut offset)?,
+    };
+    if offset != input.len() {
+        return Err(CodecError::TrailingBytes);
+    }
+    Ok(challenge)
 }
 
 fn write_hash(out: &mut Vec<u8>, hash: &Hash) {

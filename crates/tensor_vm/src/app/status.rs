@@ -97,6 +97,8 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_network_block_payloads_applied",
     "role_network_block_votes_ingested",
     "role_network_block_votes_applied",
+    "role_network_block_check_challenges_ingested",
+    "role_network_block_check_challenges_applied",
     "role_network_job_events_ingested",
     "role_network_job_payloads_ingested",
     "role_network_job_payloads_applied",

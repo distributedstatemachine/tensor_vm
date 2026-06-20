@@ -1,5 +1,6 @@
 use crate::api::P2pMessage;
 use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
+use crate::challenge::{BlockCheckChallenge, block_check_challenge_id};
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
 use crate::tensor::{DType, Tensor};
@@ -17,13 +18,16 @@ const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
 const BLOCK_PAYLOAD_LEN: usize = codec::TENSOR_BLOCK_PAYLOAD_LEN;
 const BLOCK_VOTE_PAYLOAD_LEN: usize = codec::BLOCK_VOTE_PAYLOAD_LEN;
 const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = codec::VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN;
+const BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN: usize = codec::BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN;
 
 pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
     match message {
         P2pMessage::NewBlock(_)
         | P2pMessage::NewBlockHeader { .. }
         | P2pMessage::NewBlockPayload { .. }
-        | P2pMessage::NewBlockVotePayload { .. } => Some(GossipTopic::Blocks),
+        | P2pMessage::NewBlockVotePayload { .. }
+        | P2pMessage::NewBlockCheckChallenge(_)
+        | P2pMessage::NewBlockCheckChallengePayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
         P2pMessage::NewReceipt(_) | P2pMessage::NewReceiptPayload { .. } => {
             Some(GossipTopic::Receipts)
@@ -66,6 +70,8 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewBlockHeader { .. }
         | P2pMessage::NewBlockPayload { .. }
         | P2pMessage::NewBlockVotePayload { .. }
+        | P2pMessage::NewBlockCheckChallenge(_)
+        | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewJob(_)
         | P2pMessage::NewJobPayload { .. }
         | P2pMessage::NewReceipt(_)
@@ -138,6 +144,22 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             out.push(19);
             write_hash(&mut out, block_hash);
             write_hash(&mut out, validator);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewBlockCheckChallenge(challenge_id) => {
+            out.push(22);
+            write_hash(&mut out, challenge_id);
+        }
+        P2pMessage::NewBlockCheckChallengePayload {
+            challenge_id,
+            block_hash,
+            challenger,
+            payload,
+        } => {
+            out.push(23);
+            write_hash(&mut out, challenge_id);
+            write_hash(&mut out, block_hash);
+            write_hash(&mut out, challenger);
             write_bytes(&mut out, payload);
         }
         P2pMessage::NewJob(hash) => {
@@ -299,6 +321,29 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 payload,
             }
         }
+        22 => P2pMessage::NewBlockCheckChallenge(reader.read_hash()?),
+        23 => {
+            let challenge_id = reader.read_hash()?;
+            let block_hash = reader.read_hash()?;
+            let challenger = reader.read_hash()?;
+            let payload = reader.read_bytes_with_max(BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN)?;
+            let challenge = decode_block_check_challenge_payload(&payload)?;
+            if block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id)
+                != challenge_id
+                || challenge.block_hash != block_hash
+                || challenge.challenger != challenger
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "block check challenge payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewBlockCheckChallengePayload {
+                challenge_id,
+                block_hash,
+                challenger,
+                payload,
+            }
+        }
         2 => P2pMessage::NewJob(reader.read_hash()?),
         13 => P2pMessage::NewJobPayload {
             job_id: reader.read_hash()?,
@@ -402,6 +447,15 @@ pub fn decode_block_vote_payload(input: &[u8]) -> TvmResult<BlockVote> {
     codec::decode_block_vote_payload(input).ok_or(TvmError::InvalidReceipt(
         "invalid block vote payload length",
     ))
+}
+
+pub fn encode_block_check_challenge_payload(challenge: &BlockCheckChallenge) -> Vec<u8> {
+    codec::encode_block_check_challenge_payload(challenge)
+}
+
+pub fn decode_block_check_challenge_payload(input: &[u8]) -> TvmResult<BlockCheckChallenge> {
+    codec::decode_block_check_challenge_payload(input)
+        .map_err(|error| p2p_codec_error(error, "trailing block check challenge payload bytes"))
 }
 
 pub fn encode_tensor_payload(tensor: &Tensor) -> Vec<u8> {
@@ -612,11 +666,15 @@ fn dtype_from_tag(tag: u8) -> TvmResult<DType> {
 mod tests {
     use super::*;
     use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
+    use crate::challenge::{
+        BlockCheckChallenge, BlockCheckChallengeInput, block_check_challenge_id,
+    };
     use crate::codec;
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
         PrimitiveType, TensorOpReceipt,
     };
+    use crate::merkle::MerkleProof;
     use crate::p2p::recommended_network_stack;
     use crate::scheduler::SyntheticLocalJobSource;
     use crate::tensor::{DType, Tensor};
@@ -691,6 +749,8 @@ mod tests {
             true,
             hash_bytes(b"test", &[b"audit-checks"]),
         );
+        let challenge = wire_test_challenge(b"p2p-roundtrip-challenge");
+        let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -706,6 +766,13 @@ mod tests {
                 block_hash,
                 validator: block_vote.validator,
                 payload: encode_block_vote_payload(&block_vote),
+            },
+            P2pMessage::NewBlockCheckChallenge(challenge_id),
+            P2pMessage::NewBlockCheckChallengePayload {
+                challenge_id,
+                block_hash: challenge.block_hash,
+                challenger: challenge.challenger,
+                payload: encode_block_check_challenge_payload(&challenge),
             },
             P2pMessage::NewJob(h),
             P2pMessage::NewJobPayload {
@@ -896,6 +963,84 @@ mod tests {
         let mut unknown_result = encode_validator_audit_report_payload(&report);
         unknown_result[64] = 255;
         assert!(decode_validator_audit_report_payload(&unknown_result).is_err());
+    }
+
+    #[test]
+    fn block_check_challenge_payloads_roundtrip_and_reject_malformed_edges() {
+        let challenge = wire_test_challenge(b"challenge-payload");
+        let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
+        let payload = encode_block_check_challenge_payload(&challenge);
+
+        assert_eq!(
+            decode_block_check_challenge_payload(&payload).unwrap(),
+            challenge
+        );
+        assert_eq!(
+            decode_message(&encode_message(
+                &P2pMessage::NewBlockCheckChallengePayload {
+                    challenge_id,
+                    block_hash: challenge.block_hash,
+                    challenger: challenge.challenger,
+                    payload: payload.clone(),
+                }
+            ))
+            .unwrap(),
+            P2pMessage::NewBlockCheckChallengePayload {
+                challenge_id,
+                block_hash: challenge.block_hash,
+                challenger: challenge.challenger,
+                payload: payload.clone(),
+            }
+        );
+
+        let mut wrong_id = encode_message(&P2pMessage::NewBlockCheckChallengePayload {
+            challenge_id,
+            block_hash: challenge.block_hash,
+            challenger: challenge.challenger,
+            payload: payload.clone(),
+        });
+        wrong_id[1] ^= 0x55;
+        assert!(decode_message(&wrong_id).is_err());
+
+        let wrong_block = encode_message(&P2pMessage::NewBlockCheckChallengePayload {
+            challenge_id,
+            block_hash: hash_bytes(b"test", &[b"wrong-challenge-block"]),
+            challenger: challenge.challenger,
+            payload: payload.clone(),
+        });
+        assert!(decode_message(&wrong_block).is_err());
+
+        let wrong_challenger = encode_message(&P2pMessage::NewBlockCheckChallengePayload {
+            challenge_id,
+            block_hash: challenge.block_hash,
+            challenger: address(b"wrong-challenge-challenger"),
+            payload: payload.clone(),
+        });
+        assert!(decode_message(&wrong_challenger).is_err());
+
+        assert!(decode_block_check_challenge_payload(&payload[..payload.len() - 1]).is_err());
+        let mut trailing = payload.clone();
+        trailing.push(0);
+        assert!(decode_block_check_challenge_payload(&trailing).is_err());
+
+        let mut oversized = challenge.clone();
+        oversized.check_leaf_proof.siblings = vec![hash_bytes(b"test", &[b"oversized-proof"]); 65];
+        let oversized_payload = encode_block_check_challenge_payload(&oversized);
+        assert!(decode_block_check_challenge_payload(&oversized_payload).is_err());
+        assert!(
+            decode_message(&encode_message(
+                &P2pMessage::NewBlockCheckChallengePayload {
+                    challenge_id: block_check_challenge_id(
+                        &oversized.block_hash,
+                        &oversized.receipt_id,
+                    ),
+                    block_hash: oversized.block_hash,
+                    challenger: oversized.challenger,
+                    payload: oversized_payload,
+                }
+            ))
+            .is_err()
+        );
     }
 
     #[test]
@@ -1168,6 +1313,28 @@ mod tests {
             Some(GossipTopic::Blocks)
         );
         assert_eq!(
+            gossip_topic_for_message(&P2pMessage::NewBlockCheckChallenge(h)),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(
+            gossip_topic_for_message(&P2pMessage::NewBlockCheckChallengePayload {
+                challenge_id: h,
+                block_hash: h,
+                challenger: address(b"mapping-challenge-validator"),
+                payload: vec![1, 2, 3],
+            }),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(&P2pMessage::NewBlockCheckChallengePayload {
+                challenge_id: h,
+                block_hash: h,
+                challenger: address(b"mapping-challenge-validator"),
+                payload: vec![1, 2, 3],
+            }),
+            None
+        );
+        assert_eq!(
             gossip_topic_for_message(&P2pMessage::NewJob(h)),
             Some(GossipTopic::Jobs)
         );
@@ -1367,5 +1534,21 @@ mod tests {
                 &[label, b"validator-signature"],
             ),
         }
+    }
+
+    fn wire_test_challenge(label: &[u8]) -> BlockCheckChallenge {
+        BlockCheckChallenge::new(BlockCheckChallengeInput {
+            challenger: address(b"wire-challenge-validator"),
+            block_hash: hash_bytes(b"test", &[label, b"block"]),
+            receipt_id: hash_bytes(b"test", &[label, b"receipt"]),
+            expected_check_leaf: hash_bytes(b"test", &[label, b"expected"]),
+            observed_check_leaf: hash_bytes(b"test", &[label, b"observed"]),
+            check_leaf_index: 0,
+            check_leaf_proof: MerkleProof {
+                leaf_index: 0,
+                siblings: vec![hash_bytes(b"test", &[label, b"sibling"])],
+            },
+            recomputed_checks_root: hash_bytes(b"test", &[label, b"recomputed"]),
+        })
     }
 }

@@ -8,9 +8,9 @@ validator-owned block production with useful-verification PoW fields over determ
 blockspace, selected receipts are marked included once, and block votes validate the known block with strict
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
-Remaining consensus gaps are full verifier-transcript challenge semantics, network/RPC challenge
-propagation, exact parent-state snapshots and child-state apply semantics, difficulty retargeting,
-zero-receipt skip fallback economics, and live validator proposer/block-assembly networking. See
+Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
+child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics, deterministic
+live invalid-block challenge generation, and live validator proposer/block-assembly networking. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -80,6 +80,10 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
 - Challenge outcome application, miner/validator slashing, local block `checks_root` challenge admission,
   pending proposer reward invalidation, delayed pending challenger reward creation, challenged-receipt
   quarantine, and proposer throttle windows through the internal `chain::challenges` boundary
+- Bounded network-visible block-check challenge payloads over the shared p2p/node event path, with
+  challenge-id consistency checks, Merkle-proof sibling bounds before allocation, pending retry while the
+  challenged block is missing, canonical application through `ChainCommand::SubmitBlockCheckChallenge`,
+  persistence on challenge mutation, and runtime/checker status counters for ingested/applied challenges
 - Profile-neutral `ChainCommand`, `ChainEvent`, and `ChainEngine` facade types through the internal
   `chain::engine` boundary
 - `ChainEngine` command dispatch, event emission, and view accessors through the internal

@@ -253,8 +253,5 @@ pub(super) fn challenge_reward_claim_id(challenge_id: &Hash, challenger: &Hash) 
 }
 
 pub(super) fn block_check_challenge_id(block_hash: &Hash, receipt_id: &Hash) -> Hash {
-    hash_bytes(
-        b"tensor-vm-block-check-challenge-id-v1",
-        &[block_hash, receipt_id],
-    )
+    crate::challenge::block_check_challenge_id(block_hash, receipt_id)
 }

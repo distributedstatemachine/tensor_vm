@@ -222,6 +222,14 @@ pub fn format_role_runtime_report(
         "network_block_votes_applied",
         network_events.block_votes_applied,
     );
+    report.field(
+        "network_block_check_challenges_ingested",
+        network_events.block_check_challenges,
+    );
+    report.field(
+        "network_block_check_challenges_applied",
+        network_events.block_check_challenges_applied,
+    );
     report.field("network_job_events_ingested", network_events.jobs);
     report.field("network_job_payloads_ingested", network_events.job_payloads);
     report.field(
@@ -427,6 +435,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_network_block_votes_applied",
         network_events.block_votes_applied,
+    );
+    report.field(
+        "role_network_block_check_challenges_ingested",
+        network_events.block_check_challenges,
+    );
+    report.field(
+        "role_network_block_check_challenges_applied",
+        network_events.block_check_challenges_applied,
     );
     report.field("role_network_job_events_ingested", network_events.jobs);
     report.field(

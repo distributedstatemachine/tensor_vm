@@ -952,6 +952,14 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_network_block_votes_applied",
             ),
             (
+                "SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES",
+                "role_network_block_check_challenges_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED",
+                "role_network_block_check_challenges_applied",
+            ),
+            (
                 "SERVICE_ROLE_NETWORK_JOB_EVENTS",
                 "role_network_job_events_ingested",
             ),

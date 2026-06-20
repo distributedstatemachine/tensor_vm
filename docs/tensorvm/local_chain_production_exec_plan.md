@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 30 is complete.
-- Current status: Iteration 30 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: none; Iteration 31 is validated and awaiting commit/push evidence.
+- Current status: Iteration 31 implemented and validated on June 20, 2026; commit/push evidence update pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,8 +14,7 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: commit and push Iteration 31, then record commit/push evidence.
 
 ## Readiness Matrix
 
@@ -26,8 +25,8 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`, Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, and block votes | Continue extending only through shared codecs/events |
-| Canonical useful-verification block validity | Partially complete | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and local check challenges | Remaining: full transcript disputes, network/RPC challenge propagation, exact replayable snapshots, live validator proposer networking |
+| Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenge payloads | Continue extending only through shared codecs/events |
+| Canonical useful-verification block validity | Partially complete | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots, live validator proposer networking |
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
@@ -35,6 +34,48 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Recent Iterations
+
+### Iteration 31: Network-Visible Block-Check Challenge Propagation
+
+Implemented and awaiting commit/push evidence.
+
+Summary:
+- Added bounded block-check challenge p2p payloads with explicit challenge-id, block-hash, challenger,
+  proof-size, and trailing-byte validation.
+- Node ingestion now queues challenges while the challenged block is missing, retries through the shared
+  pending-payload processor, and applies only through `ChainCommand::SubmitBlockCheckChallenge`.
+- Network-ingested challenges preserve the canonical delayed challenger reward claim: acceptance creates a
+  pending challenge reward and spendable balance is credited only by `ReleaseMaturedChallengeRewards`.
+- Runtime/status/checker surfaces report block-check challenge ingestion and application counters without
+  claiming live deterministic bad-block generation.
+
+Validation:
+- Required Gate 0 first and final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+- Focused p2p wire, node payload application, pending payload, message ingest, runtime state, CLI status,
+  and local CPU Compose tests passed.
+- Added focused delayed-reward network challenge coverage in
+  `node::payload_application::tests::block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges`.
+- `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
+- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
+
+Architecture shortcut answers:
+- Canonical owner: `chain::challenges` via `ChainCommand::SubmitBlockCheckChallenge`.
+- Adapter callers: p2p decode, node payload application/retry, runtime status, and local checker.
+- Old shortcut being removed: block-check challenge evidence is local chain-only and not network-visible.
+- Regression test: non-producer node ingest applies a serialized challenge payload through the shared node
+  event path, including pending retry when the challenged block arrives later.
+- Synthetic production disabled: inbound challenge payloads still decode, queue, retry, and apply when
+  dependencies exist.
+- Producer/non-producer behavior: any node may ingest valid challenges; only chain admission mutates state.
+- Structured evidence source: `NetworkEventIngest`, role runtime status fields, and checker status reads.
+- Finality source: unchanged block-vote finality; challenges affect rewards, receipt settlement, and
+  proposer throttle state.
+- Wire boundary: reuse shared bounded codec/wire patterns with a hard Merkle-proof sibling limit before
+  allocation.
+
+Out of scope: interactive `trace_root` fraud proofs, deterministic live bad-block generation in Docker, and
+changing reward maturity rules.
 
 ### Iteration 30: Validator Proposer Delayed-Reward Evidence
 
