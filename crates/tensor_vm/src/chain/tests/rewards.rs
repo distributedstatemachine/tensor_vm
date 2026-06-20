@@ -1,6 +1,13 @@
 use super::*;
 
 fn mine_reward_test_block(block: &mut TensorBlock) {
+    if !block.production_kind.requires_pow() {
+        let block_hash = block.hash();
+        block.proposer_signature = sign(&block.proposer, &block_hash);
+        block.validator_signature_aggregate =
+            hash_bytes(b"tensor-vm-validator-aggregate", &[&block_hash]);
+        return;
+    }
     for nonce in 0..=u64::MAX {
         block.nonce = nonce;
         if block.pow_valid() {
@@ -144,15 +151,6 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
             .height()
             .saturating_add(chain.params().challenge_window_blocks())
     );
-    assert!(
-        !chain
-            .state()
-            .pending_proposer_rewards()
-            .get(&block.height)
-            .unwrap()
-            .requires_useful_successor
-    );
-
     add_settled_receipt_for_blockspace(&mut chain, &beacon);
     chain.produce_block(proposer, 1_006).unwrap();
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
@@ -398,7 +396,6 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
         .unwrap();
     assert_eq!(fallback_reward.amount, 50);
     assert_eq!(fallback_reward.claimable_at_height, 2);
-    assert!(!fallback_reward.requires_useful_successor);
 
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&proposer), 0);

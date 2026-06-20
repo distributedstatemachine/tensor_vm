@@ -236,7 +236,6 @@ pub struct PendingProposerReward {
     pub amount: u64,
     pub claimable_at_height: u64,
     pub voided_by_challenge: bool,
-    pub requires_useful_successor: bool,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]

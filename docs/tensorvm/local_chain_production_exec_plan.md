@@ -5,13 +5,13 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 52, canonical byte-packed int8 quantization layout, implemented, validated, and
-  pushed; evidence commit pending.
+- Active feature: Iteration 53, proposer reward delay cleanup, implemented and validated; commit and push
+  pending.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
   magic/version bytes, rank, axis, output scale, shape, per-channel signed 64-bit scales, and row-major
-  int8 payload bytes.
+  int8 payload bytes. Iteration 52 feature commit `1b86f7f` and evidence commit `0387246` are pushed.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -19,7 +19,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 52 evidence, then select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 53, then record commit/push evidence.
 
 ## Readiness Matrix
 
@@ -36,10 +36,105 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 52 byte-packed quantization vectors implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, and Iteration 52 byte-exact pack/unpack vectors; CPU pass profile; default CUDA non-admission | Add remaining mixed-dtype admitted-op vectors and CUDA conformance evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
+| Economics and slashing invariant | Partial; Iteration 53 reward-delay cleanup implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 53: Proposer Reward Delay Cleanup
+
+Feature capability: proposer rewards use one explicit state-rooted delay rule: pending claims become
+spendable only after `claimable_at_height`, unless voided by a challenge. The old useful-successor latch is
+removed so fallback and useful proposer rewards share the same delayed-maturity path instead of carrying a
+dead workaround field.
+
+Readiness requirements covered:
+- `goal.md` §12: rewards are delayed state claims and the economic invariant is easier to reason about when
+  spendability depends on one maturity rule.
+- `upow.md` §11.4 and §12: block reward allocations are committed through reward roots and released only
+  after the settlement/challenge delay.
+- `local_chain_production_readiness.md`: fallback proposer rewards release after the explicit full
+  reward-settlement plus challenge-window delay without a later-useful-block unlock latch.
+
+Canonical owner: `chain::state::PendingProposerReward` owns consensus-visible proposer reward claim state;
+`chain::commands::release_matured_proposer_rewards` owns spendable release; `chain::blocks` owns block
+transition claim creation; `chain::roots::pending_proposer_reward_root` owns commitment encoding.
+Adapter callers: validator role reward sizing, runtime status, block status, and tests observe pending
+claims but do not own release policy.
+Old shortcut being removed: `requires_useful_successor` is a legacy latch that can keep a mature proposer
+claim unavailable for reasons unrelated to the explicit reward delay. Current production paths already set
+it to `false`; the field should not remain part of consensus state.
+Regression test that proves the shortcut is gone: fallback proposer rewards release at maturity without a
+useful successor, and no test or root encoding references `requires_useful_successor`.
+Behavior with local synthetic block production disabled: unchanged; validator proposer rewards still enter
+pending claims and mature by height.
+Behavior for producer and non-producer roles: unchanged; all nodes validate the same reward root and release
+rules.
+Structured evidence source: reward tests, challenge tests, block-root tests, local-testnet Gate 0, and
+status docs.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p payload enum changes; chain state root encoding drops the obsolete
+pending proposer reward latch byte.
+
+Parallel subagents:
+- Read-only subagent launch was not available in the prior iteration because the agent thread limit was
+  reached; parent performs the focused mapping directly unless capacity becomes available.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns all edits because this touches consensus state/root encoding and tests.
+- No parallel writers.
+
+Tests/checkers/docs to add or update:
+- Reward tests covering fallback proposer reward maturity without useful successor.
+- Root/reward tests updated so `pending_proposer_reward_root` commits only live proposer claim fields.
+- Status docs reflecting that proposer reward delay is height-only plus challenge voiding.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm chain::tests::rewards -- --nocapture`
+- `cargo test -p tensor_vm chain::tests::challenges -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: pending proposer rewards have no useful-successor state, mature proposer
+claims release solely by `claimable_at_height` unless voided, fallback proposer reward tests still pass, and
+reward roots remain deterministic.
+
+Out of scope: changing reward amounts, receipt/challenge/credit reward ledgers, auditor-selection policy,
+appeals, VRF/drand, fork-choice, Docker `/health`, public evidence, and arbitrary runtime role changes.
+
+Split trigger: if removing the field exposes serialized-state migration requirements beyond local
+reference genesis/test fixtures, stop after tests/docs and leave migration design for a separate iteration.
+
+Implementation summary:
+- Removed `requires_useful_successor` from `PendingProposerReward`.
+- Proposer reward release now filters only by `claimable_at_height`; voided claims are still pruned without
+  credit.
+- Pending proposer reward roots and chain-state storage encode only block height, proposer, amount,
+  claimable height, and challenge-voiding state.
+- Existing useful and fallback proposer reward constructors now create the same height-delayed pending
+  claim shape.
+- Reward tests no longer assert or depend on a useful-successor latch, and the fallback block test helper
+  preserves zero-nonce fallback validity while isolating reward-root mismatches.
+
+Validation evidence:
+- Required first gate: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026.
+- Focused reward tests: `cargo test -p tensor_vm chain::tests::rewards -- --nocapture` passed 7 tests.
+- Focused challenge tests: `cargo test -p tensor_vm chain::tests::challenges -- --nocapture` passed 3
+  tests.
+- Focused chain-state storage tests: `cargo test -p tensor_vm storage::chain_state::tests -- --nocapture`
+  passed 2 tests.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- Final gate: `cargo test -p tensor_vm local_testnet --release` passed with 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
 
 ### Iteration 52: Canonical Byte-Packed Int8 Quantization Layout
 

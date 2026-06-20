@@ -308,7 +308,6 @@ impl Chain {
                         .height
                         .saturating_add(self.params.challenge_window_blocks()),
                     voided_by_challenge: false,
-                    requires_useful_successor: false,
                 });
         }
         self.state

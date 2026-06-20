@@ -229,7 +229,6 @@ pub(super) fn pending_proposer_reward_root(rewards: &BTreeMap<u64, PendingPropos
         encoded.extend_from_slice(&reward.amount.to_le_bytes());
         encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
         encoded.push(u8::from(reward.voided_by_challenge));
-        encoded.push(u8::from(reward.requires_useful_successor));
     }
     hash_bytes(b"tensor-vm-pending-proposer-reward-root-v1", &[&encoded])
 }

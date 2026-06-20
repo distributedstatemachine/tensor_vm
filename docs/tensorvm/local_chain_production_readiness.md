@@ -161,8 +161,9 @@ The local bundle is useful and should remain the first operational target:
   the live overview exposes a pending proposer reward claim for useful block production. Empty fallback
   block production remains distinguishable from useful UVPoW, creates only a reduced delayed proposer
   claim, and releases that claim only after the explicit full reward-settlement plus challenge-window
-  maturity height is reached. It no longer depends on a later useful-block unlock. A fresh full Docker
-  runtime pass still awaits the standing gateway `/health` timeout blocker.
+  maturity height is reached. Pending proposer reward state, roots, and storage no longer carry a later
+  useful-block unlock latch. A fresh full Docker runtime pass still awaits the standing gateway `/health`
+  timeout blocker.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,
   builds a typed `NodeConfig` at the CLI boundary, and exposes `chain_profile`/`role_chain_profile` in
   readiness, serve, and status output. Only the local CPU profile enables deterministic synthetic block

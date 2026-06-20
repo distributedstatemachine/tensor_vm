@@ -732,7 +732,6 @@ fn apply_block_to_parent_state(
                     selected_receipts,
                 ),
                 voided_by_challenge: false,
-                requires_useful_successor: false,
             },
         );
     }
