@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 43 explicit fallback reward maturity delay.
-- Current status: Iteration 43 implemented and validated on June 20, 2026; commit/push evidence pending.
+- Active feature: none; Iteration 43 is complete.
+- Current status: Iteration 43 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -87,7 +87,10 @@ Validation evidence:
 - `cargo tarpaulin --workspace --offline` failed as expected because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
 
-Commit/push evidence: pending.
+Commit/push evidence:
+- Feature commit: `b0fd68e` (`Delay fallback proposer rewards by maturity height`).
+- Feature push: `git push` to `github.com:distributedstatemachine/tensor_vm.git` updated
+  `main -> main` from `2ee2340` to `b0fd68e`.
 
 ### Iteration 42: State-Rooted Arbitrary Tensor IR Graph-Body Admission
 
