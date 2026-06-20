@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 41, generic exact-IR interpreter foundation.
-- Current status: Iteration 41 is implemented and locally validated; feature commit/push evidence is
-  pending.
+- Active feature: none; Iteration 41 is complete.
+- Current status: Iteration 41 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,7 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push the generic exact-IR interpreter foundation, then record exact evidence.
+- Next action: continue with chain admission/fetch for user-submitted arbitrary graph bodies, wider
+  admitted-registry executor/verifier coverage, full VRF/drand commit-reveal lifecycle, multi-validator
+  proposer competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
@@ -83,6 +84,8 @@ Validation completed locally:
   and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
+- Feature commit: `6b7260c` (`Add exact Tensor IR interpreter foundation`).
+- Push result: `72816da..6b7260c  main -> main` on `origin/main`.
 
 Out of scope: chain admission of user-submitted arbitrary graph bodies, role/runtime execution of arbitrary
 graph jobs, const-blob fetching, full admitted-registry exact replay, Tier-C consensus admission, and CUDA
@@ -174,6 +177,8 @@ Latest current-iteration evidence:
   - `cargo test --workspace --release`: passed with 14 `experiments`, 355 `tensor_vm`, 1 local CPU
     Compose, 8 `tvmd_cli`, 31 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
+- Iteration 41 feature commit: `6b7260c` (`Add exact Tensor IR interpreter foundation`).
+- Iteration 41 push result: `72816da..6b7260c  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
