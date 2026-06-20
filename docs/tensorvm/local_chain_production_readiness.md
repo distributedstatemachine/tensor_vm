@@ -415,10 +415,10 @@ Required fix:
 - Query pending block-check challenger reward claims after a successful live challenge scenario, and
   separately verify mature release into spendable balances instead of immediate bounty credit. The shared
   p2p/node payload path, status counters, chain-owned full reward-maturity delay for challenge bounties,
-  conditional checker gate for future-maturity challenge reward claims, and deterministic local diagnostic
-  bad-block challenge generation now exist. Receivers can now cache bounded observed malformed blocks from a
-  p2p challenge payload without replacing their canonical block list; the remaining gap is checker-triggered
-  live diagnostic emission and a fresh Docker proof of the full scenario.
+  deterministic local diagnostic bad-block challenge generation, validator-proposer diagnostic emission,
+  observed malformed-block side-cache ingestion, and hard checker gate for future-maturity challenge reward
+  claims now exist. The remaining gap is a fresh Docker proof of the full scenario after the `/health`
+  blocker clears.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.
@@ -669,15 +669,16 @@ jobs, model-count advancement, attestation-count growth, pending receipt-reward 
 receipts, per-receipt validator-attestation details, live tensor descriptor/row/chunk/opening fetches, all
 15 operator node stores reporting role status, live chain counters, finalized live TensorOp and
 LinearTrainingStep block-view evidence, the single local producer, network
-applied block progress on every non-producer, accepted job, receipt, attestation, and block-check-challenge payload application when challenge evidence is present
+applied block progress on every non-producer, accepted job, receipt, attestation, and live diagnostic block-check-challenge payload application
 through the shared chain engine on every non-producer, validator-owned block-vote submission,
 non-producer block-vote ingestion/application, pending receipt/attestation/block-vote/block-check-challenge retry for out-of-order
 p2p payloads, the same first live finalized block hash, the same finalized common-head block hash, and a
 finalized local-head checkpoint/state root that was also observed through p2p block gossip via
 `tvmd node block`, plus named post-seed TensorOp and LinearTrainingStep receipt evidence, real libp2p
 connected-peer counts, job/receipt/attestation/block/block-vote gossip observations from every role runtime,
-positive timed-validator useful block proposal and selected-receipt counters, a positive pending proposer
-reward count for useful proposals, and nonempty block-log roots from every node store. The
+positive timed-validator useful block proposal and selected-receipt counters, positive pending proposer
+reward count for useful proposals, positive pending challenge reward claims for the diagnostic challenge
+path, and nonempty block-log roots from every node store. The
 restart-continuity script also captures
 pre/post peer IDs, heights, block counts, state roots, block-log roots, and finalized common heads for
 selected restart gates, and the rolling wrapper applies that gate to every counted operator by default.

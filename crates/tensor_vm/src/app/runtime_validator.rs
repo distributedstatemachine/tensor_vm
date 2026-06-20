@@ -1,13 +1,15 @@
-use crate::{NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService};
+use crate::{
+    Chain, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService, types::Address,
+};
 
 use super::{
     ServiceRuntimeConfig, chain_announcement_checkpoint, fetch_validator_role_missing_tensors,
-    publish_new_chain_announcements, publish_validator_block_proposal,
-    runtime_production::next_block_timestamp, runtime_role_wallet_registration,
-    submit_validator_role_attestation, submit_validator_role_audit_report,
-    submit_validator_role_block_proposal, submit_validator_role_block_vote,
-    validator_role_audit_observation, validator_role_block_proposal_observation,
-    validator_role_work_observation,
+    publish_new_chain_announcements, publish_observed_block_check_challenge,
+    publish_validator_block_proposal, runtime_production::next_block_timestamp,
+    runtime_role_wallet_registration, submit_validator_role_attestation,
+    submit_validator_role_audit_report, submit_validator_role_block_proposal,
+    submit_validator_role_block_vote, validator_role_audit_observation,
+    validator_role_block_proposal_observation, validator_role_work_observation,
 };
 
 pub fn tick_validator_role_work_once(
@@ -186,7 +188,28 @@ pub fn tick_validator_role_work_once(
                 let Some(block) = server.gateway().node.chain.blocks().last() else {
                     return Ok(status_changed);
                 };
+                let diagnostic = if block.production_kind.requires_pow() {
+                    diagnostic_block_check_challenger(&server.gateway().node.chain, block.proposer)
+                        .map(|challenger| {
+                            server
+                                .gateway()
+                                .node
+                                .chain
+                                .deterministic_bad_block_check_challenge(block, challenger)
+                        })
+                        .transpose()
+                        .map_err(|error| {
+                            format!(
+                                "failed to build live diagnostic block-check challenge: {error}"
+                            )
+                        })?
+                } else {
+                    None
+                };
                 publish_validator_block_proposal(p2p_service, block)?;
+                if let Some(diagnostic) = diagnostic {
+                    publish_observed_block_check_challenge(p2p_service, &diagnostic)?;
+                }
                 store
                     .persist_chain(&server.gateway().node.chain)
                     .map_err(|error| {
@@ -204,4 +227,14 @@ pub fn tick_validator_role_work_once(
         }
     }
     Ok(status_changed)
+}
+
+fn diagnostic_block_check_challenger(chain: &Chain, proposer: Address) -> Option<Address> {
+    chain
+        .state()
+        .validators()
+        .keys()
+        .copied()
+        .find(|validator| *validator != proposer)
+        .or_else(|| chain.state().validators().keys().copied().next())
 }

@@ -344,13 +344,16 @@ mod tests {
         chain::{Chain, ChainParams, JobState, ValidatorAuditReport},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
-            encode_attestation_payload, encode_job_payload, encode_receipt_payload,
-            encode_validator_audit_report_payload,
+            encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
+            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
         },
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
         types::{Hash, address, hash_bytes},
-        verify::{AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult},
+        verify::{
+            AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult,
+            verify_tensor_op,
+        },
     };
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
@@ -422,6 +425,75 @@ mod tests {
             .expect("audit assignment should exist");
         let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
         (chain, audit_id, auditor)
+    }
+
+    fn rewarded_block_check_challenge_chain() -> (
+        Chain,
+        crate::chain::TensorBlock,
+        crate::DeterministicBlockCheckChallenge,
+        Hash,
+    ) {
+        let beacon = hash_bytes(b"test", &[b"ingest-block-check-challenge-beacon"]);
+        let params = ChainParams {
+            agreement_quorum: 1,
+            challenge_window_epochs: 1,
+            epoch_length: 4,
+            freivalds: FreivaldsParams {
+                minimum_validators: 1,
+                validators_per_job: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(params, beacon);
+        let miner = address(b"ingest-block-check-miner");
+        let proposer = address(b"ingest-block-check-proposer");
+        let challenger = address(b"ingest-block-check-challenger");
+        chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(proposer, 10_000).unwrap();
+        chain.register_validator(challenger, 10_000).unwrap();
+
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+        let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        let report = verify_tensor_op(
+            &job,
+            &receipt,
+            &a,
+            &b,
+            &c,
+            &hash_bytes(b"test", &[b"ingest-block-check-validation"]),
+            &chain.params().freivalds,
+        )
+        .unwrap();
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+        let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+        let assigned_validator = JobScheduler::default()
+            .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+            .validators
+            .into_iter()
+            .next()
+            .unwrap();
+        chain.insert_attestation_for_testing(ValidatorAttestation::new(
+            assigned_validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ));
+        chain.settle_epoch(1_000, 500);
+        let block = chain
+            .produce_block_with_rewards(proposer, 1_000, 900, 100)
+            .unwrap();
+        let diagnostic = chain
+            .deterministic_bad_block_check_challenge(&block, challenger)
+            .unwrap();
+        (chain, block, diagnostic, challenger)
     }
 
     struct TestNetworkEventContext {
@@ -788,5 +860,66 @@ mod tests {
         assert_eq!(ingested.invalid_events, 0);
         assert!(pending.is_empty());
         assert!(context.chain.state().validator_audit_results()[&audit_id].passed);
+    }
+
+    #[test]
+    fn network_event_driver_applies_observed_block_check_challenge_with_delayed_reward() {
+        let (chain, block, diagnostic, challenger) = rewarded_block_check_challenge_chain();
+        let canonical_hash = block.hash();
+        let mut context = TestNetworkEventContext {
+            chain,
+            applied_payloads: Vec::new(),
+            applied_blocks: 0,
+        };
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id: diagnostic.challenge_id,
+                block_hash: diagnostic.challenge.block_hash,
+                challenger,
+                observed_block_payload: encode_block_payload(&diagnostic.observed_block),
+                challenge_payload: encode_block_check_challenge_payload(&diagnostic.challenge),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.block_check_challenges, 1);
+        assert_eq!(ingested.block_check_challenges_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert_eq!(
+            context
+                .chain
+                .blocks()
+                .last()
+                .expect("canonical block should remain present")
+                .hash(),
+            canonical_hash
+        );
+        assert!(
+            context
+                .chain
+                .state()
+                .block_check_challenges()
+                .contains_key(&diagnostic.challenge_id)
+        );
+        assert!(
+            context
+                .chain
+                .state()
+                .pending_challenge_rewards()
+                .values()
+                .any(|reward| {
+                    reward.challenge_id == diagnostic.challenge_id
+                        && reward.challenger == challenger
+                        && reward.amount > 0
+                        && !reward.voided_by_challenge
+                })
+        );
+        assert_eq!(context.chain.state().rewards().balance(&challenger), 0);
     }
 }

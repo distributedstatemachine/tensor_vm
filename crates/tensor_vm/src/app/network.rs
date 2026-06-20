@@ -1,6 +1,6 @@
 use crate::{
-    Chain, ChainCommand, ChainEngine, ChainProfile, JobState, NetworkEventIngest,
-    PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
+    Chain, ChainCommand, ChainEngine, ChainProfile, DeterministicBlockCheckChallenge, JobState,
+    NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
     encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
     encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
@@ -9,6 +9,7 @@ use crate::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
         attestation_announcement_hash, ingest_network_messages,
     },
+    p2p::encode_block_check_challenge_payload,
     scheduler::{JobSource, SyntheticLocalJobSource},
     types::{Address, Hash},
 };
@@ -155,6 +156,33 @@ pub fn publish_validator_block_proposal(
 ) -> std::result::Result<(), String> {
     publish_block_announcements(p2p_service, block)?;
     Ok(())
+}
+
+pub fn publish_observed_block_check_challenge(
+    p2p_service: &TensorVmLibp2pService,
+    diagnostic: &DeterministicBlockCheckChallenge,
+) -> std::result::Result<(), String> {
+    for message in observed_block_check_challenge_messages(diagnostic) {
+        p2p_service.publish_gossip(message).map_err(|error| {
+            format!("failed to publish observed block-check challenge: {error}")
+        })?;
+    }
+    Ok(())
+}
+
+pub fn observed_block_check_challenge_messages(
+    diagnostic: &DeterministicBlockCheckChallenge,
+) -> [P2pMessage; 2] {
+    [
+        P2pMessage::NewObservedBlockCheckChallengePayload {
+            challenge_id: diagnostic.challenge_id,
+            block_hash: diagnostic.challenge.block_hash,
+            challenger: diagnostic.challenge.challenger,
+            observed_block_payload: encode_block_payload(&diagnostic.observed_block),
+            challenge_payload: encode_block_check_challenge_payload(&diagnostic.challenge),
+        },
+        P2pMessage::NewBlockCheckChallenge(diagnostic.challenge_id),
+    ]
 }
 
 fn publish_block_announcements(
@@ -321,4 +349,72 @@ fn block_vote_announcement_keys(chain: &Chain) -> impl Iterator<Item = (Hash, Ad
         .block_votes()
         .iter()
         .flat_map(|(block_hash, votes)| votes.iter().map(move |vote| (*block_hash, vote.validator)))
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        decode_block_payload,
+        scheduler::JobScheduler,
+        testnet::{LocalTestnet, TestnetConfig},
+        types::hash_bytes,
+    };
+
+    #[test]
+    fn observed_block_check_challenge_messages_carry_delayed_reward_evidence_payload() {
+        let mut testnet = LocalTestnet::new(
+            TestnetConfig::default(),
+            hash_bytes(b"test", &[b"app-network-observed-challenge"]),
+        );
+        testnet.run_matmul_round(&JobScheduler::with_small_shape((8, 8, 8)));
+        let block = testnet
+            .chain
+            .blocks()
+            .last()
+            .expect("local round should produce a useful block")
+            .clone();
+        let challenger = *testnet
+            .chain
+            .state()
+            .validators()
+            .keys()
+            .find(|validator| **validator != block.proposer)
+            .expect("testnet should include a challenger validator");
+        let diagnostic = testnet
+            .chain
+            .deterministic_bad_block_check_challenge(&block, challenger)
+            .expect("useful block should derive diagnostic challenge");
+
+        let messages = observed_block_check_challenge_messages(&diagnostic);
+
+        let P2pMessage::NewObservedBlockCheckChallengePayload {
+            challenge_id,
+            block_hash,
+            challenger: message_challenger,
+            observed_block_payload,
+            challenge_payload,
+        } = &messages[0]
+        else {
+            panic!("first message should carry observed challenge payload");
+        };
+        assert_eq!(*challenge_id, diagnostic.challenge_id);
+        assert_eq!(*block_hash, diagnostic.challenge.block_hash);
+        assert_eq!(*message_challenger, challenger);
+        assert_eq!(
+            decode_block_payload(observed_block_payload)
+                .expect("observed block payload should decode")
+                .hash(),
+            diagnostic.challenge.block_hash
+        );
+        assert_eq!(
+            crate::p2p::decode_block_check_challenge_payload(challenge_payload)
+                .expect("challenge payload should decode"),
+            diagnostic.challenge
+        );
+        assert_eq!(
+            messages[1],
+            P2pMessage::NewBlockCheckChallenge(diagnostic.challenge_id)
+        );
+    }
 }

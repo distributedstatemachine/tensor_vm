@@ -508,7 +508,9 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] \
     && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] \
-    && [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ]; then
+    && [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] \
+    && [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] \
+    && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ]; then
     break
   fi
   attempt=$((attempt + 1))
@@ -529,10 +531,8 @@ done
 [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
 [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live synthetic jobs did not expose future-maturity pending receipt reward claims"
 [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims"
-if [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] \
-  && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -le 0 ]; then
-  fail "live challenge rewards were present but did not expose future-maturity pending challenge reward claims"
-fi
+[ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not add delayed challenge rewards"
+[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not expose future-maturity pending challenge reward claims"
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -1231,10 +1231,8 @@ done
 [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
-if [ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] \
-  && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -le 0 ]; then
-  fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
-fi
+[ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges"
+[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1323,7 +1321,7 @@ tensorwork_proposer_selection_removed=true
 finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}
 block_vote_finality_evidence=${BLOCK_FINALITY_VOTE_EVIDENCE}
 live_validator_proposer_networking=false
-live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
+live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_block_vote_networking=true
 all_non_producer_network_applied_blocks=true
 all_non_producer_network_block_payload_ingestion=true

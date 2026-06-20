@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 74 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 77 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,7 +15,7 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 74 coverage could not
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 77 coverage could not
 be regenerated. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -62,6 +62,10 @@ Iteration 76 added the bounded observed-invalid-block cache and `NewObservedBloc
 wire/node path; focused p2p, chain, node payload, and pending-retry tests cover carrying the observed
 malformed block without replacing the canonical block list and resolving the challenge through delayed
 pending challenger rewards.
+Iteration 77 added live validator-proposer diagnostic challenge emission and hardened the local checker to
+require applied diagnostic challenges plus future-maturity pending challenge reward claims. Focused
+app/network, node ingest, and compose contract tests cover the emitted bounded payload, noncanonical
+observed-block application, and delayed reward evidence.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

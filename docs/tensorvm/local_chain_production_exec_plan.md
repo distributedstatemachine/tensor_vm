@@ -5,20 +5,20 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 76, network-visible observed bad-block challenges.
-- Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
+- Active feature: Iteration 77, live diagnostic observed bad-block challenge emission.
+- Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
+  proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
+  state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
   challenger reward claims. Mandatory validator audits now include deterministic chain-owned auditor
   selection, report authorization, signed state-rooted appeal records, and pending validator-reward holds
   through the audit appeal deadline after a slash. Chain state, service status, and explorer overview now
   expose live validator-audit economic calibration from current params and pending validator reward
-  exposure. Appeal resolution now mutates delayed pending validator reward claims directly, without
-  immediate spendable credit or adapter-side release. Deterministic diagnostic bad-block challenge
-  generation now derives a malformed observed block and signed challenge from a produced useful block while
-  normal block admission remains strict. Observed malformed blocks now propagate through a bounded p2p/node
-  payload and resolve from a noncanonical side cache, so receivers do not replace valid canonical blocks to
-  prove the delayed challenger reward path.
+  exposure. Deterministic observed bad-block challenges now resolve through a noncanonical side cache and
+  delayed pending challenger reward claims. Validator proposers publish the diagnostic over bounded p2p
+  payloads after useful proposals, and the checker requires applied challenge counters plus future-maturity
+  pending challenge reward claims.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -26,8 +26,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: add checker-triggered live diagnostic bad-block emission and rerun the full Docker scenario
-  after the `/health` blocker clears.
+- Next action: rerun the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -40,7 +39,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, block-check challenges, and observed malformed block-check challenge payloads | Continue extending only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, network-visible block-check challenges, deterministic diagnostic bad-block challenge generation, and observed-malformed-block p2p/cache support | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, checker-triggered live malformed-block diagnostic emission |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, network-visible block-check challenges, deterministic diagnostic bad-block challenge generation, live diagnostic emission, and observed-malformed-block p2p/cache support | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, fresh Docker proof |
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
@@ -49,64 +48,69 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 76: Network-Visible Observed Bad-Block Challenges
+### Iteration 77: Live Diagnostic Observed Bad-Block Challenge Emission
 
-Feature capability: propagate a malformed observed block plus its signed block-check challenge over the
-shared p2p/node path, cache the observed malformed block outside canonical chain state, and resolve the
-challenge through the existing delayed reward/clawback path.
+Feature capability: when a validator role produces a useful block, derive one deterministic observed
+malformed-block challenge, gossip it over the shared p2p/node path, and require checker evidence from the
+normal delayed pending challenger reward claim path.
 
 Readiness requirements covered:
 - `mvp_spec.md` §20.7 and acceptance criterion 4: network-visible validators can dispute a bad
-  `checks_root` observation instead of relying on a test-only replacement of the canonical block list.
-- `local_chain_production_readiness.md` gap 7: provide the wire/cache support needed for a live successful
-  block-check challenge scenario.
+  `checks_root` observation from live block proposal gossip.
+- `local_chain_production_readiness.md` gap 7: close the checker-triggered live diagnostic emission gap on
+  top of the observed malformed block cache/wire support.
 
-Canonical owner: `chain::challenges` owns observed invalid block lookup and challenge resolution.
-Adapter callers: p2p/node ingest may cache an observed malformed block before applying the existing
-`ChainCommand::SubmitBlockCheckChallenge`.
-Old shortcut being removed: challenge tests had to replace the canonical block vector with a malformed
-block to make the challenge resolvable.
-Regression test that proves the shortcut is gone: chain and node payload tests keep the valid canonical
-block while applying an observed-block challenge through the cache.
-Behavior with local synthetic block production disabled: inbound observed-block challenge payloads can
-apply whenever the challenged parent/canonical height is known; no synthetic production branch is needed.
-Behavior for producer and non-producer roles: both roles ingest the same bounded payload and run the same
-chain command; producers do not bypass validation.
+Canonical owner: `chain::challenges` continues to own observed invalid block lookup, proposer clawback, and
+pending challenger reward enqueue.
+Adapter callers: validator runtime publication and p2p/node ingest call shared codecs and
+`ChainCommand::SubmitBlockCheckChallenge`; checker reads status/explorer evidence only.
+Old shortcut being removed: checker accepted missing live challenge evidence unless a challenge happened by
+chance.
+Regression test that proves the shortcut is gone: focused runtime/message/checker tests must prove the
+diagnostic payload is emitted/applied and checker output gates on future-maturity challenge reward claims.
+Behavior with local synthetic block production disabled: local block production remains disabled for
+non-producers; they only ingest/apply the observed challenge payload and delayed reward state.
+Behavior for producer and non-producer roles: a producer gossips the observed malformed block challenge for
+its useful proposal; non-producers cache/apply it and surface pending challenge reward claims.
 Structured evidence source: `NetworkEventIngest.block_check_challenges_applied`,
-`ChainState::block_check_challenges`, and pending challenge reward claims.
+`ChainState::block_check_challenges`, explorer/status pending challenge reward counts, and future-maturity
+pending challenge reward claims.
 Finality source: unchanged; challenge affects reward finality, not block-vote finality.
-Wire-size and codec boundary: add a new bounded p2p message tag that reuses canonical `TensorBlock` and
-`BlockCheckChallenge` codecs; no duplicate block codec.
+Wire-size and codec boundary: reuse bounded tag 24 `TensorBlock` plus `BlockCheckChallenge` payloads; no
+new block codec and no unbounded checker-only blob.
 
 Implementation summary:
-- Added a non-consensus observed-invalid-block cache to `Chain`; `Chain` equality and persistence remain
-  based on params, canonical state, and canonical blocks only.
-- Changed `install_diagnostic_observed_block` to cache the observed malformed block instead of replacing
-  `chain.blocks`.
-- Added `NewObservedBlockCheckChallengePayload` p2p tag 24 with bounded `TensorBlock` and
-  `BlockCheckChallenge` payloads, decode-time consistency checks, node application, and pending retry.
-- Reused `ChainCommand::SubmitBlockCheckChallenge` so successful observed-block challenges still void the
-  proposer reward and create a delayed pending challenger reward claim.
+- Added `observed_block_check_challenge_messages` and `publish_observed_block_check_challenge` so runtime
+  publication reuses bounded `TensorBlock` and `BlockCheckChallenge` codecs.
+- The validator proposer tick now derives and gossips one deterministic observed malformed-block challenge
+  after useful block proposal gossip, choosing a registered non-proposer challenger when available.
+- Tightened the local CPU checker to require positive pending challenge rewards, future-maturity challenge
+  reward claims, applied live block-check challenges, and matching reward-evidence output.
+- Added focused message-builder, node ingest, and compose contract tests proving the delayed reward path.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
 - Focused: `cargo test -p tensor_vm block_check_challenge --quiet` passed.
-- Focused wire: `cargo test -p tensor_vm p2p::wire::tests::block_check_challenge_payloads_roundtrip_and_reject_malformed_edges --quiet` passed.
+- Focused: `cargo test -p tensor_vm observed_block_check_challenge --quiet` passed.
+- Focused compose: `cargo test -p tensor_vm --test local_cpu_compose --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 405 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 407 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-Expected observable evidence: a decoded p2p payload carrying the malformed observed block lets a receiver
-with the valid canonical block apply the challenge and create a delayed challenger reward claim.
-Out of scope: checker-triggered live diagnostic emission, full Docker rerun, hard proposer stake slashing,
-and fraud-proof transcripts.
-Split trigger: if the wire extension requires broad runtime status/checker plumbing, split cache/wire from
-checker enforcement.
+Out of scope: full verifier-transcript fraud proofs, hard proposer stake slashing, and Docker rerun until
+the `/health` blocker clears.
 
 ## Recent Iterations
+
+### Iteration 76: Network-Visible Observed Bad-Block Challenges
+
+Observed malformed blocks now propagate through bounded p2p tag 24, cache outside canonical chain state,
+and resolve through `ChainCommand::SubmitBlockCheckChallenge`, preserving delayed challenger reward claims.
+Validation passed focused challenge/wire tests, full crate, clippy, workspace release, and first/final Gate
+0; tarpaulin remained blocked. Feature commit `40f14d5` is pushed.
 
 ### Iteration 75: Deterministic Bad-Block Challenge Generation
 
@@ -168,11 +172,13 @@ Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit
 
 ## Validation Evidence
 
-Latest full validation is Iteration 75 on June 20, 2026:
+Latest full validation is Iteration 77 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
 cargo test -p tensor_vm block_check_challenge --quiet
+cargo test -p tensor_vm observed_block_check_challenge --quiet
+cargo test -p tensor_vm --test local_cpu_compose --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

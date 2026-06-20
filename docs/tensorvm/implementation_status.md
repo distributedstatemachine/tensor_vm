@@ -10,10 +10,10 @@ parent-root checks before counting stake. Long-running validator roles can now s
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
 child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics,
-checker-triggered live diagnostic bad-block emission, multi-validator proposer competition/fork-choice
-policy, and a fresh full Docker proof of live validator proposer/block-assembly networking after the
-current `/health` blocker clears. Deterministic local bad-block challenge construction and observed-block
-p2p propagation support now exist as diagnostic chain/node helpers. See
+multi-validator proposer competition/fork-choice policy, and a fresh full Docker proof of live validator
+proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
+clears. Deterministic local bad-block challenge construction, live validator-proposer diagnostic emission,
+and observed-block p2p propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -150,8 +150,8 @@ p2p propagation support now exist as diagnostic chain/node helpers. See
   reward delay from structured state instead of adapter-rebuilt count-only workarounds. The local CPU
   checker now fails unless live explorer overview evidence includes non-voided pending receipt and
   proposer reward claims whose
-  `claimable_at_height` is greater than the observed live height, and it also requires future-maturity
-  pending challenge reward claims whenever live block-check challenge payloads are applied.
+  `claimable_at_height` is greater than the observed live height, plus positive pending challenge reward
+  claims with future maturity from the live diagnostic block-check challenge path.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
@@ -177,7 +177,9 @@ p2p propagation support now exist as diagnostic chain/node helpers. See
   applying the signed challenge. The path has challenge-id consistency checks, Merkle-proof sibling bounds
   before allocation, pending retry while the challenged block or parent context is missing, canonical
   application through `ChainCommand::SubmitBlockCheckChallenge`, persistence on challenge mutation, and
-  runtime/checker status counters for ingested/applied challenges
+  runtime/checker status counters for ingested/applied challenges. Validator proposers now publish one
+  deterministic observed malformed-block challenge after a useful proposal, and receivers apply it through
+  the normal delayed pending challenger reward path instead of immediate credit.
 - Profile-neutral `ChainCommand`, `ChainEvent`, and `ChainEngine` facade types through the internal
   `chain::engine` boundary
 - `ChainEngine` command dispatch, event emission, and view accessors through the internal
