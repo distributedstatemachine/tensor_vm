@@ -29,6 +29,8 @@ pub struct ValidatorRoleAuditObservation {
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ValidatorRoleBlockProposalObservation {
     pub settled_receipts: BTreeSet<Hash>,
+    pub artifact_ready_receipts: BTreeSet<Hash>,
+    pub attested_receipts: BTreeSet<Hash>,
 }
 
 pub fn validator_role_work_observation(
@@ -105,9 +107,27 @@ pub fn validator_role_block_proposal_observation(
     if !node.chain.state().validators().contains_key(&validator) {
         return ValidatorRoleBlockProposalObservation::default();
     }
-    ValidatorRoleBlockProposalObservation {
+    let mut observation = ValidatorRoleBlockProposalObservation {
         settled_receipts: node.chain.state().settled_receipts().clone(),
+        ..ValidatorRoleBlockProposalObservation::default()
+    };
+    for receipt_id in &observation.settled_receipts {
+        if let Some(receipt) = node.chain.state().receipts().get(receipt_id)
+            && role_receipt_bundle_from_local_tensors(node, receipt).is_some()
+        {
+            observation.artifact_ready_receipts.insert(*receipt_id);
+        }
+        if node
+            .chain
+            .state()
+            .attestations()
+            .get(receipt_id)
+            .is_some_and(|attestations| !attestations.is_empty())
+        {
+            observation.attested_receipts.insert(*receipt_id);
+        }
     }
+    observation
 }
 
 fn validator_has_attested_for_receipt(chain: &Chain, validator: Address, receipt_id: Hash) -> bool {

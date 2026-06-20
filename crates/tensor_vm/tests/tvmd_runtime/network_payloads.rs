@@ -117,6 +117,138 @@ fn network_payload_application_defers_out_of_order_receipts_and_attestations() {
 }
 
 #[test]
+fn network_applied_receipt_and_attestation_make_validator_proposal_useful() {
+    let mut source = LocalTestnet::new(TestnetConfig::default(), local_cpu_seed_beacon());
+    let scheduler = JobScheduler::with_small_shape((8, 8, 8));
+    source.run_matmul_round(&scheduler);
+    let job = source
+        .chain
+        .state()
+        .jobs()
+        .values()
+        .next()
+        .expect("local round must produce a job")
+        .clone();
+    let receipt = source
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("local round must produce a receipt")
+        .clone();
+    let receipt_id = receipt.receipt_id();
+    let attestation = source
+        .chain
+        .state()
+        .attestations()
+        .values()
+        .flat_map(|items| items.iter())
+        .next()
+        .expect("local round must produce an attestation")
+        .clone();
+    let attestation_id = attestation_announcement_hash(&attestation);
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, local_cpu_seed_beacon());
+    register_miner(&mut chain, receipt.miner());
+    register_validator(&mut chain, attestation.validator);
+    let mut server = test_rpc_server(chain);
+
+    apply_network_job_payload(
+        &mut server.gateway_mut().node.chain,
+        job.job_id(),
+        &encode_job_payload(&job),
+    )
+    .unwrap();
+    assert_eq!(
+        apply_network_receipt_payload(
+            &mut server.gateway_mut().node.chain,
+            receipt_id,
+            &encode_receipt_payload(&receipt),
+        ),
+        NetworkPayloadApply::Applied
+    );
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .receipts()
+            .get(&receipt_id),
+        Some(&receipt)
+    );
+    assert!(
+        !server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt_id)
+    );
+
+    assert_eq!(
+        apply_network_attestation_payload(
+            &mut server.gateway_mut().node.chain,
+            attestation_id,
+            &encode_attestation_payload(&attestation),
+        ),
+        NetworkPayloadApply::Applied
+    );
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .attestations()
+            .get(&receipt_id)
+            .and_then(|items| items.first()),
+        Some(&attestation)
+    );
+    let proposal = tensor_vm::app::submit_validator_role_block_proposal(
+        &mut server.gateway_mut().node,
+        attestation.validator,
+        1_000,
+    )
+    .unwrap()
+    .expect("network-applied settled receipt should produce useful block");
+    assert_eq!(proposal.blocks_proposed, 1);
+    assert_eq!(proposal.useful_blocks_proposed, 1);
+    assert_eq!(proposal.fallback_blocks_proposed, 0);
+    assert_eq!(proposal.selected_receipts, vec![receipt_id]);
+    let block = server.gateway().node.chain.blocks().last().unwrap();
+    assert_eq!(block.proposer, attestation.validator);
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .selected_receipts_for_block(block),
+        vec![receipt_id]
+    );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+}
+
+#[test]
 fn pending_network_payloads_retry_after_dependencies_arrive() {
     let mut testnet = LocalTestnet::new(TestnetConfig::default(), local_cpu_seed_beacon());
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));

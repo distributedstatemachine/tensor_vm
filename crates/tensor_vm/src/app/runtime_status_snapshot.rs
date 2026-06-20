@@ -50,6 +50,8 @@ pub struct RuntimeStatusSnapshot {
     pub(super) validator_audit_reports_submitted: usize,
     pub(super) validator_proposer_work_ready: bool,
     pub(super) validator_proposer_settled_receipts_seen: usize,
+    pub(super) validator_proposer_artifact_ready_receipts_seen: usize,
+    pub(super) validator_proposer_attested_receipts_seen: usize,
     pub(super) validator_blocks_proposed: usize,
     pub(super) validator_useful_blocks_proposed: usize,
     pub(super) validator_fallback_blocks_proposed: usize,
@@ -126,6 +128,10 @@ impl RuntimeStatusSnapshot {
             validator_proposer_work_ready: state.validator_proposer_work_ready(),
             validator_proposer_settled_receipts_seen: state
                 .validator_proposer_settled_receipts_seen(),
+            validator_proposer_artifact_ready_receipts_seen: state
+                .validator_proposer_artifact_ready_receipts_seen(),
+            validator_proposer_attested_receipts_seen: state
+                .validator_proposer_attested_receipts_seen(),
             validator_blocks_proposed: state.validator_blocks_proposed(),
             validator_useful_blocks_proposed: state.validator_useful_blocks_proposed(),
             validator_fallback_blocks_proposed: state.validator_fallback_blocks_proposed(),

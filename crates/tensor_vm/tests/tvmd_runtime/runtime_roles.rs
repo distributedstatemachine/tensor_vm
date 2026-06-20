@@ -4,7 +4,7 @@ use tensor_vm::app::{
     LocalProductionContext, LocalProductionSchedule, RoleServiceConfig, RoleServiceRunner,
     RuntimeRole, chain_profile_from_label, produce_and_publish_synthetic_job,
     runtime_role_wallet_registered, runtime_role_wallet_registration, submit_miner_role_receipt,
-    submit_validator_role_attestation, submit_validator_role_block_proposal,
+    submit_validator_role_attestation, tick_validator_role_work_once,
 };
 
 #[test]
@@ -291,11 +291,11 @@ fn scheduled_local_production_publishes_jobs_without_producer_receipts_or_attest
             .pending_proposer_rewards()
             .is_empty()
     );
-    assert_eq!(server.gateway().node.chain.blocks().len(), 1);
-    assert_eq!(runtime_state.produced_blocks(), 1);
-    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(server.gateway().node.chain.blocks().len(), 0);
+    assert_eq!(runtime_state.produced_blocks(), 0);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 0);
     assert_eq!(runtime_state.validator_useful_blocks_proposed(), 0);
-    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 0);
     assert_eq!(runtime_state.validator_receipts_proposed(), 0);
     assert_eq!(runtime_state.validator_proposer_settled_receipts_seen(), 0);
     assert!(!runtime_state.validator_proposer_work_ready());
@@ -387,14 +387,50 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
     assert_eq!(attestations.len(), 1);
     assert_eq!(attestations[0].validator, validator);
 
-    let proposal =
-        submit_validator_role_block_proposal(&mut server.gateway_mut().node, validator, 1_000)
-            .unwrap()
-            .expect("validator should propose over role-owned settled receipt");
-    assert_eq!(proposal.blocks_proposed, 1);
-    assert_eq!(proposal.useful_blocks_proposed, 1);
-    assert_eq!(proposal.fallback_blocks_proposed, 0);
-    assert_eq!(proposal.selected_receipts, vec![receipt.receipt_id()]);
+    assert!(
+        !server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id())
+    );
+    assert_eq!(server.gateway().node.chain.blocks().len(), 0);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .is_empty()
+    );
+    let data_dir = unique_temp_data_dir("role-owned-proposal-tick");
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&server.gateway().node.chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(validator),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_block_interval(Some(Duration::from_millis(1)))
+        .with_local_producer(true),
+    };
+    let mut runtime_state = NodeRuntimeState::default();
+    let changed = tick_validator_role_work_once(
+        &config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+    assert!(changed);
     assert!(
         server
             .gateway()
@@ -404,7 +440,21 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .settled_receipts()
             .contains(&receipt.receipt_id())
     );
+    assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_useful_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_receipts_proposed(), 1);
+    assert_eq!(runtime_state.validator_proposer_settled_receipts_seen(), 1);
+    assert_eq!(
+        runtime_state.validator_proposer_artifact_ready_receipts_seen(),
+        1
+    );
+    assert_eq!(runtime_state.validator_proposer_attested_receipts_seen(), 1);
+    assert!(runtime_state.validator_proposer_work_ready());
+    assert_eq!(server.gateway().node.chain.blocks().len(), 1);
     let block = server.gateway().node.chain.blocks().last().unwrap();
+    let block_height = block.height;
     assert_eq!(block.proposer, validator);
     assert_eq!(block.proposer_reward, 500);
     let pending_proposer_reward = server
@@ -413,10 +463,11 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         .chain
         .state()
         .pending_proposer_rewards()
-        .get(&block.height)
+        .get(&block_height)
         .expect("useful role proposal should delay proposer reward");
     assert_eq!(pending_proposer_reward.proposer, validator);
     assert_eq!(pending_proposer_reward.amount, 500);
+    let claimable_at_height = pending_proposer_reward.claimable_at_height;
     assert_eq!(
         server
             .gateway()
@@ -436,5 +487,52 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         vec![receipt.receipt_id()]
     );
 
+    while server.gateway().node.chain.state().height() < claimable_at_height {
+        let timestamp = server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .height()
+            .saturating_add(1)
+            .saturating_mul(1_000);
+        server
+            .gateway_mut()
+            .node
+            .chain
+            .apply_command(ChainCommand::ProduceBlock {
+                proposer: validator,
+                timestamp,
+            })
+            .unwrap();
+    }
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::ReleaseMaturedProposerRewards)
+        .unwrap();
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block_height)
+            .is_none()
+    );
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .rewards()
+            .balance(&validator),
+        500
+    );
+
     drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }

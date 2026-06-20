@@ -2,9 +2,11 @@ use crate::{NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService};
 
 use super::{
     ServiceRuntimeConfig, chain_announcement_checkpoint, fetch_validator_role_missing_tensors,
-    publish_new_chain_announcements, runtime_role_wallet_registration,
+    publish_new_chain_announcements, publish_validator_block_proposal,
+    runtime_production::next_block_timestamp, runtime_role_wallet_registration,
     submit_validator_role_attestation, submit_validator_role_audit_report,
-    submit_validator_role_block_vote, validator_role_audit_observation,
+    submit_validator_role_block_proposal, submit_validator_role_block_vote,
+    validator_role_audit_observation, validator_role_block_proposal_observation,
     validator_role_work_observation,
 };
 
@@ -154,6 +156,52 @@ pub fn tick_validator_role_work_once(
             .map_err(|error| format!("failed to persist validator block vote state: {error}"))?;
         runtime_state.record_validator_block_vote_submission(submission.block_votes_submitted);
         status_changed = true;
+    }
+    if config.node.local_synthetic_producer() {
+        server
+            .gateway_mut()
+            .node
+            .chain
+            .prepare_block_parent_state()
+            .map_err(|error| {
+                format!("validator proposer failed to prepare parent state: {error}")
+            })?;
+        let observation =
+            validator_role_block_proposal_observation(&server.gateway().node, validator);
+        let proposer_work_ready = !observation.settled_receipts.is_empty();
+        if runtime_state.record_validator_block_proposal_observation(
+            observation.settled_receipts,
+            observation.artifact_ready_receipts,
+            observation.attested_receipts,
+        ) {
+            status_changed = true;
+        }
+        if proposer_work_ready {
+            let timestamp = next_block_timestamp(server);
+            if let Some(proposal) = submit_validator_role_block_proposal(
+                &mut server.gateway_mut().node,
+                validator,
+                timestamp,
+            )? {
+                let Some(block) = server.gateway().node.chain.blocks().last() else {
+                    return Ok(status_changed);
+                };
+                publish_validator_block_proposal(p2p_service, block)?;
+                store
+                    .persist_chain(&server.gateway().node.chain)
+                    .map_err(|error| {
+                        format!("failed to persist validator block proposal: {error}")
+                    })?;
+                runtime_state.record_produced_block();
+                runtime_state.record_validator_block_proposal_submission(
+                    proposal.blocks_proposed,
+                    proposal.useful_blocks_proposed,
+                    proposal.fallback_blocks_proposed,
+                    proposal.selected_receipts.len(),
+                );
+                status_changed = true;
+            }
+        }
     }
     Ok(status_changed)
 }

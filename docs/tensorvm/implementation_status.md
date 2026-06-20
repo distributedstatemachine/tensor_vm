@@ -128,10 +128,13 @@ live invalid-block challenge generation, and live validator proposer/block-assem
   and exposes validator-submitted plus network-ingested/applied audit-report counters for service and role
   runtimes.
 - Validator proposer role status now distinguishes useful settled-receipt block proposals from empty
-  fallback blocks. The timed validator producer records settled-receipt proposer readiness, total proposed
-  blocks, useful proposal count, fallback proposal count, and selected receipt count; `tvmd node status`
-  passes those fields through and the local CPU checker requires positive useful proposal plus
-  proposed-receipt evidence instead of accepting a generic produced-block counter.
+  fallback blocks. The scheduled local producer publishes deterministic jobs only; the validator role tick
+  observes settled receipts with local tensor artifacts and validator attestations before submitting useful
+  block proposals through the chain engine. Runtime status records settled-receipt proposer readiness,
+  artifact-ready receipt count, attested receipt count, total proposed blocks, useful proposal count,
+  fallback proposal count, and selected receipt count; `tvmd node status` passes those fields through and
+  the local CPU checker requires positive useful proposal, proposed-receipt, artifact-ready, and attested
+  receipt evidence instead of accepting a generic produced-block counter.
 - `CpuReferenceMinerRole`, `ReferenceValidatorRole`, and `RoleReceiptBundle` boundaries for CPU role work,
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine

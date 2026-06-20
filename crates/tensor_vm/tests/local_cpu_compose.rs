@@ -903,6 +903,14 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_validator_proposer_settled_receipts_seen",
             ),
             (
+                "SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN",
+                "role_validator_proposer_artifact_ready_receipts_seen",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN",
+                "role_validator_proposer_attested_receipts_seen",
+            ),
+            (
                 "SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED",
                 "role_validator_blocks_proposed",
             ),
@@ -1145,6 +1153,8 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] || fail "service block view did not expose finalized canonical blockspace evidence""#,
             r#"[ "$BLOCK_CHECKS_ROOT_EVIDENCE" = "true" ] || fail "service block view did not expose finalized block checks-root evidence""#,
             r#"[ "$VALIDATOR_PROPOSER_EVIDENCE" = "true" ] || fail "service block view did not expose validator proposer evidence""#,
+            r#"[ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
+            r#"[ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
             r#"[ "$FINALITY_REQUIRES_USEFUL_POW" = "true" ] || fail "service block view did not expose useful-PoW finality validation evidence""#,
             r#"[ "$LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live receipt submissions""#,
             r#"[ "$LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live tensor inserts""#,

@@ -5,8 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 31 is complete.
-- Current status: Iteration 31 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 32, validator proposer settled-work readiness evidence.
+- Current status: Iteration 32 implementation and validation are complete locally; feature commit/push is
+  pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,14 +15,13 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: commit and push Iteration 32, then record commit/push evidence.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 26: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 32: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`, Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -35,6 +35,79 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Recent Iterations
+
+### Iteration 32: Validator Proposer Settled-Work Readiness Evidence
+
+Feature capability: validator proposer runtime/status/checker evidence distinguishes raw settled-receipt
+visibility from settled receipts that have local tensor artifacts and validator attestations available before
+useful block proposal. This tightens the remaining proposer-networking gap without moving consensus logic
+out of `chain` or claiming the full Docker proposer gate is complete.
+
+Readiness requirements covered: `mvp_spec.md` §4.6/§20.5 and readiness gap 1 require validators to build
+blocks from accepted state and canonical blockspace, while the checker must avoid overclaiming hidden
+service-owned orchestration. Required Gate 0 passed first with
+`cargo test -p tensor_vm local_testnet --release`.
+
+Files/modules likely touched: `app/runtime_production.rs`, `app/runtime_validator.rs`,
+`app/validator_role.rs`, `node/runtime_state.rs`, `app/runtime_status_snapshot.rs`,
+`app/runtime_status.rs`, `app/status.rs`,
+`deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`, `tests/tvmd_runtime/*`,
+`tests/local_cpu_compose.rs`, and readiness/status docs.
+
+Parallel subagents: code-path explorer, test-coverage explorer, and checker/readiness explorer launched in
+parallel before implementation.
+
+Tests/checkers/docs to add or update: validator role proposal observation tests, runtime-state/status
+field tests, local CPU Compose checker-field test, checker assertions for producer-only useful proposal
+artifact/attestation evidence, and docs that keep `live_validator_proposer_networking=false` until real
+network-derived block assembly is implemented.
+
+Validation: focused validator-role/runtime-status/local-CPU-Compose tests, `cargo fmt --check --all`,
+`git diff --check`, final Gate 0, `cargo test -p tensor_vm`, clippy, release workspace tests, and
+tarpaulin if available.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` remains the only owner of settlement, canonical blockspace, block production,
+  reward delay, and finality through `ChainCommand::Produce*Block` and block validation.
+- Adapter callers: validator role observation/submission, runtime status snapshots, and the local checker.
+- Old shortcut being removed: proposer evidence only says "some settled receipts existed" before proposal.
+- Regression test: role proposal observation reports artifact-ready and attested settled receipts before a
+  useful proposal, and the checker requires those counts for the sole local validator producer.
+- Synthetic production disabled: no local proposal counters advance; status fields remain zero/false.
+- Producer/non-producer behavior: only the configured validator producer may report useful proposal and
+  proposer settled-work evidence; miners and non-producer validators must report zero proposal counters.
+- Structured evidence source: typed `NodeRuntimeState` and `RuntimeStatusSnapshot` fields, not shell-only
+  derived booleans.
+- Finality source: unchanged stake-weighted block votes; this slice does not synthesize or alter votes.
+- Wire-size and codec boundary: unchanged; no new wire payloads or unbounded reads.
+
+Out of scope: replacing the remaining timed synthetic job trigger, proving live proposer networking end to
+end, full verifier transcript fraud proofs, or deterministic live bad-block generation.
+
+Implemented locally:
+- Scheduled local production now publishes deterministic jobs only; validator-role tick observation and
+  submission own useful block proposals for the local validator producer.
+- Proposer observation/status/checker evidence now distinguishes settled receipts, local-artifact-ready
+  receipts, and attested receipts before useful proposal.
+- Useful role-owned proposals still use `ChainCommand::ProduceRewardedBlock`, creating delayed pending
+  proposer reward claims; the runtime regression test releases the claim only after the recorded maturity
+  height through `ChainCommand::ReleaseMaturedProposerRewards`.
+- The local checker requires positive artifact-ready and attested proposer evidence for `validator-00` and
+  zero proposer evidence from miners and non-producer validators.
+
+Validation completed locally:
+- `cargo test -p tensor_vm local_testnet --release` passed first and again after implementation.
+- Focused runtime/status/checker coverage passed: `cargo test -p tensor_vm --test tvmd_runtime
+  runtime_roles -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime validator_role --
+  --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime network_payloads -- --nocapture`, `cargo test
+  -p tensor_vm --test tvmd_runtime runtime_state -- --nocapture`, `cargo test -p tensor_vm --lib
+  node::runtime_state -- --nocapture`, `cargo test -p tensor_vm --test local_cpu_compose -- --nocapture`,
+  and `cargo test -p tensor_vm --test tvmd_cli
+  role_run_commands_serve_through_role_specific_surfaces -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
 
 ### Iteration 31: Network-Visible Block-Check Challenge Propagation
 

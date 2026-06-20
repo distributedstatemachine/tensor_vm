@@ -81,6 +81,8 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_validator_audit_reports_submitted",
     "role_validator_proposer_work_ready",
     "role_validator_proposer_settled_receipts_seen",
+    "role_validator_proposer_artifact_ready_receipts_seen",
+    "role_validator_proposer_attested_receipts_seen",
     "role_validator_blocks_proposed",
     "role_validator_useful_blocks_proposed",
     "role_validator_fallback_blocks_proposed",

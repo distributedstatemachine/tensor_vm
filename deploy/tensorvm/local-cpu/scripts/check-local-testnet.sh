@@ -746,6 +746,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=$(status_value role_validator_attestations_submitted "$STATUS")
     SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY=$(status_value role_validator_proposer_work_ready "$STATUS")
     SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN=$(status_value role_validator_proposer_settled_receipts_seen "$STATUS")
+    SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN=$(status_value role_validator_proposer_artifact_ready_receipts_seen "$STATUS")
+    SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN=$(status_value role_validator_proposer_attested_receipts_seen "$STATUS")
     SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED=$(status_value role_validator_blocks_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=$(status_value role_validator_useful_blocks_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=$(status_value role_validator_fallback_blocks_proposed "$STATUS")
@@ -834,6 +836,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     is_u64 "$SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "true" ] || [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
@@ -973,6 +977,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -993,6 +999,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
       miner-*)
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "false" ] || { STATUS_MISMATCH=true; continue; }
@@ -1002,6 +1010,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1028,6 +1038,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }

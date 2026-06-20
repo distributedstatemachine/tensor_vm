@@ -1,9 +1,6 @@
 use std::time::{Duration, Instant};
 
-use super::{
-    produce_and_publish_synthetic_job, publish_validator_block_proposal,
-    submit_validator_role_block_proposal, validator_role_block_proposal_observation,
-};
+use super::produce_and_publish_synthetic_job;
 use crate::{
     ChainProfile, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService, types::Address,
 };
@@ -46,49 +43,21 @@ impl LocalProductionSchedule {
         }
         let mut status_changed = false;
         if context.local_producer {
-            let Some(validator) = context.validator else {
+            if context.validator.is_none() {
                 self.next_block_at = Some(Instant::now() + interval);
                 return Ok(false);
-            };
-            let _ = produce_and_publish_synthetic_job(
+            }
+            if produce_and_publish_synthetic_job(
                 context.server,
                 context.p2p_service,
                 context.profile,
-            )?;
-            let observation = validator_role_block_proposal_observation(
-                &context.server.gateway().node,
-                validator,
-            );
-            if context
-                .runtime_state
-                .record_validator_block_proposal_observation(observation.settled_receipts)
+            )?
+            .is_some()
             {
-                status_changed = true;
-            }
-            let timestamp = next_block_timestamp(context.server);
-            if let Some(proposal) = submit_validator_role_block_proposal(
-                &mut context.server.gateway_mut().node,
-                validator,
-                timestamp,
-            )? {
-                let Some(block) = context.server.gateway().node.chain.blocks().last() else {
-                    self.next_block_at = Some(Instant::now() + interval);
-                    return Ok(false);
-                };
-                publish_validator_block_proposal(context.p2p_service, block)?;
                 context
                     .store
                     .persist_chain(&context.server.gateway().node.chain)
-                    .map_err(|error| format!("failed to persist produced block: {error}"))?;
-                context.runtime_state.record_produced_block();
-                context
-                    .runtime_state
-                    .record_validator_block_proposal_submission(
-                        proposal.blocks_proposed,
-                        proposal.useful_blocks_proposed,
-                        proposal.fallback_blocks_proposed,
-                        proposal.selected_receipts.len(),
-                    );
+                    .map_err(|error| format!("failed to persist produced job: {error}"))?;
                 status_changed = true;
             }
         }
@@ -97,7 +66,7 @@ impl LocalProductionSchedule {
     }
 }
 
-fn next_block_timestamp(server: &RpcHttpServer) -> u64 {
+pub(super) fn next_block_timestamp(server: &RpcHttpServer) -> u64 {
     let chain = &server.gateway().node.chain;
     chain
         .blocks()

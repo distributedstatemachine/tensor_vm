@@ -112,6 +112,8 @@ pub struct NodeRuntimeState {
     validator_audit_artifact_ready: BTreeSet<Hash>,
     validator_audit_artifact_missing: BTreeSet<Hash>,
     validator_proposer_settled_receipts_seen: BTreeSet<Hash>,
+    validator_proposer_artifact_ready_receipts_seen: BTreeSet<Hash>,
+    validator_proposer_attested_receipts_seen: BTreeSet<Hash>,
     validator_attestations_submitted: usize,
     validator_audit_reports_submitted: usize,
     validator_blocks_proposed: usize,
@@ -213,6 +215,14 @@ impl NodeRuntimeState {
 
     pub fn validator_proposer_settled_receipts_seen(&self) -> usize {
         self.validator_proposer_settled_receipts_seen.len()
+    }
+
+    pub fn validator_proposer_artifact_ready_receipts_seen(&self) -> usize {
+        self.validator_proposer_artifact_ready_receipts_seen.len()
+    }
+
+    pub fn validator_proposer_attested_receipts_seen(&self) -> usize {
+        self.validator_proposer_attested_receipts_seen.len()
     }
 
     pub fn validator_proposer_work_ready(&self) -> bool {
@@ -344,9 +354,15 @@ impl NodeRuntimeState {
     pub fn record_validator_block_proposal_observation(
         &mut self,
         settled_receipts: BTreeSet<Hash>,
+        artifact_ready_receipts: BTreeSet<Hash>,
+        attested_receipts: BTreeSet<Hash>,
     ) -> bool {
-        let changed = self.validator_proposer_settled_receipts_seen != settled_receipts;
+        let changed = self.validator_proposer_settled_receipts_seen != settled_receipts
+            || self.validator_proposer_artifact_ready_receipts_seen != artifact_ready_receipts
+            || self.validator_proposer_attested_receipts_seen != attested_receipts;
         self.validator_proposer_settled_receipts_seen = settled_receipts;
+        self.validator_proposer_artifact_ready_receipts_seen = artifact_ready_receipts;
+        self.validator_proposer_attested_receipts_seen = attested_receipts;
         changed
     }
 
@@ -475,8 +491,14 @@ mod tests {
         assert!(!state.validator_work_ready());
         state.record_validator_attestation_submission(1);
         assert_eq!(state.validator_attestations_submitted(), 1);
-        assert!(state.record_validator_block_proposal_observation(BTreeSet::from([[5; 32]])));
+        assert!(state.record_validator_block_proposal_observation(
+            BTreeSet::from([[5; 32]]),
+            BTreeSet::from([[5; 32]]),
+            BTreeSet::from([[5; 32]]),
+        ));
         assert_eq!(state.validator_proposer_settled_receipts_seen(), 1);
+        assert_eq!(state.validator_proposer_artifact_ready_receipts_seen(), 1);
+        assert_eq!(state.validator_proposer_attested_receipts_seen(), 1);
         assert!(state.validator_proposer_work_ready());
         state.record_validator_block_proposal_submission(2, 1, 1, 3);
         assert_eq!(state.validator_blocks_proposed(), 2);

@@ -115,6 +115,14 @@ pub fn format_role_runtime_report(
         snapshot.validator_proposer_settled_receipts_seen,
     );
     report.field(
+        "validator_proposer_artifact_ready_receipts_seen",
+        snapshot.validator_proposer_artifact_ready_receipts_seen,
+    );
+    report.field(
+        "validator_proposer_attested_receipts_seen",
+        snapshot.validator_proposer_attested_receipts_seen,
+    );
+    report.field(
         "validator_blocks_proposed",
         snapshot.validator_blocks_proposed,
     );
@@ -383,6 +391,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_validator_proposer_settled_receipts_seen",
         snapshot.validator_proposer_settled_receipts_seen,
+    );
+    report.field(
+        "role_validator_proposer_artifact_ready_receipts_seen",
+        snapshot.validator_proposer_artifact_ready_receipts_seen,
+    );
+    report.field(
+        "role_validator_proposer_attested_receipts_seen",
+        snapshot.validator_proposer_attested_receipts_seen,
     );
     report.field(
         "role_validator_blocks_proposed",
