@@ -1096,6 +1096,127 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_packed_quantize_dequantize_receipt() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Fixed32,
+                scale: 0,
+            }],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "quantize_pack_int8".to_owned(),
+                    args: vec![IrRef::Input {
+                        name: "x".to_owned(),
+                    }],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "packed".to_owned(),
+                        shape: vec![62],
+                        dtype: DType::Uint8,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 1,
+                    op: "unpack_dequantize_int8".to_owned(),
+                    args: vec![IrRef::Op { id: 0, idx: 0 }],
+                    kwargs: BTreeMap::from([
+                        (
+                            "dim".to_owned(),
+                            crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(1)),
+                        ),
+                        (
+                            "shape".to_owned(),
+                            crate::ir::IrValue::Literal(crate::ir::IrLiteral::List(vec![
+                                crate::ir::IrLiteral::Uint(2),
+                                crate::ir::IrLiteral::Uint(3),
+                            ])),
+                        ),
+                        (
+                            "scale_dim".to_owned(),
+                            crate::ir::IrValue::Literal(crate::ir::IrLiteral::Int(0)),
+                        ),
+                    ]),
+                    out: vec![TensorSpec {
+                        name: "dq".to_owned(),
+                        shape: vec![2, 3],
+                        dtype: DType::Fixed32,
+                        scale: 0,
+                    }],
+                },
+            ],
+            outputs: vec![GraphOutput {
+                name: "dq".to_owned(),
+                value: IrRef::Op { id: 1, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input = Tensor::from_vec(
+            vec![2, 3],
+            DType::Fixed32,
+            vec![0, 64, 128, p - 64, p - 128, 127],
+        )
+        .unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 12);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-pack-quant-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["dq"],
+            Tensor::from_vec(
+                vec![2, 3],
+                DType::Fixed32,
+                vec![0, 64, 128, p - 64, p - 128, 128]
+            )
+            .unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-pack-quant-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        let mut missing_unpack = cpu_reference_conformance_profile().unwrap();
+        missing_unpack.passed_ops.remove("unpack_dequantize_int8");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-pack-quant-validation"]),
+                conformance_profile: &missing_unpack,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn tensor_op_verifier_rejects_metadata_and_shape_mismatches() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);

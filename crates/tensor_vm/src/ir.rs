@@ -517,6 +517,8 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "full" => full_tensor(&op.kwargs)?,
         "arange" => arange_tensor(&op.kwargs)?,
         "dequantize_int8_per_channel" => dequantize_int8_per_channel(&args)?,
+        "quantize_pack_int8" => quantize_pack_int8(one_tensor_value(&args)?, &op.kwargs)?,
+        "unpack_dequantize_int8" => unpack_dequantize_int8(one_tensor_value(&args)?, &op.kwargs)?,
         _ => {
             return Err(TvmError::InvalidReceipt(
                 "tensor ir op is not executable by exact interpreter",
@@ -915,6 +917,227 @@ fn dequantize_channel_dim(shape: &[usize], scale_len: usize) -> Result<usize> {
         ));
     }
     Ok(dim)
+}
+
+const PACKED_INT8_MAGIC: &[u8; 4] = b"TVQ8";
+const PACKED_INT8_VERSION: u8 = 1;
+const PACKED_INT8_HEADER_LEN: usize = 16;
+
+fn quantize_pack_int8(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let [quantized, scale] = quantize_int8_per_channel(tensor, kwargs)?
+        .try_into()
+        .map_err(|_| TvmError::InvalidReceipt("tensor ir quantize output mismatch"))?;
+    let RuntimeValue::Tensor(quantized) = quantized else {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir quantize output mismatch",
+        ));
+    };
+    let RuntimeValue::Tensor(scale) = scale else {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir quantize output mismatch",
+        ));
+    };
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir quantize requires explicit dim",
+    ))?;
+    let packed = encode_packed_int8(
+        quantized.shape(),
+        dim,
+        scale.scale(),
+        scale.as_slice(),
+        quantized.as_slice(),
+    )?;
+    Tensor::from_vec(
+        vec![packed.len()],
+        DType::Uint8,
+        packed.into_iter().map(Elem::from).collect(),
+    )
+}
+
+fn unpack_dequantize_int8(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    if tensor.dtype() != DType::Uint8 || tensor.scale() != 0 || tensor.shape().len() != 1 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize dtype mismatch",
+        ));
+    }
+    let expected_shape = concrete_shape_kwarg(kwargs, "shape")?;
+    let expected_dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir packed quantize dim mismatch",
+    ))?;
+    let expected_scale = integer_kwarg(kwargs, "scale_dim")?;
+    let bytes = tensor
+        .as_slice()
+        .iter()
+        .map(|value| {
+            u8::try_from(*value)
+                .map_err(|_| TvmError::InvalidReceipt("tensor ir packed quantize byte mismatch"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    let decoded = decode_packed_int8(&bytes)?;
+    if decoded.shape != expected_shape
+        || decoded.dim != expected_dim
+        || decoded.output_scale != expected_scale
+    {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize metadata mismatch",
+        ));
+    }
+    let q = Tensor::from_vec(decoded.shape.clone(), DType::Int8, decoded.quantized)?;
+    let scale = Tensor::from_vec_with_scale(
+        vec![decoded.scales.len()],
+        DType::Fixed32,
+        decoded.output_scale,
+        decoded.scales,
+    )?;
+    dequantize_int8_per_channel(&[RuntimeValue::Tensor(q), RuntimeValue::Tensor(scale)])
+}
+
+struct PackedInt8Payload {
+    shape: Vec<usize>,
+    dim: usize,
+    output_scale: i64,
+    scales: Vec<Elem>,
+    quantized: Vec<Elem>,
+}
+
+fn packed_int8_len(shape: &[usize], dim: usize) -> Result<usize> {
+    if dim >= shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"));
+    }
+    let elements = checked_usize_product(shape)?;
+    PACKED_INT8_HEADER_LEN
+        .checked_add(
+            shape
+                .len()
+                .checked_mul(8)
+                .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?,
+        )
+        .and_then(|len| len.checked_add(shape[dim].checked_mul(8)?))
+        .and_then(|len| len.checked_add(elements))
+        .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))
+}
+
+fn encode_packed_int8(
+    shape: &[usize],
+    dim: usize,
+    output_scale: i64,
+    scales: &[Elem],
+    quantized: &[Elem],
+) -> Result<Vec<u8>> {
+    if dim >= shape.len()
+        || scales.len() != shape[dim]
+        || quantized.len() != checked_usize_product(shape)?
+    {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize metadata mismatch",
+        ));
+    }
+    let rank = u8::try_from(shape.len())
+        .map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    let dim_byte =
+        u8::try_from(dim).map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    let mut out = Vec::with_capacity(packed_int8_len(shape, dim)?);
+    out.extend_from_slice(PACKED_INT8_MAGIC);
+    out.push(PACKED_INT8_VERSION);
+    out.push(rank);
+    out.push(dim_byte);
+    out.push(0);
+    out.extend_from_slice(&output_scale.to_le_bytes());
+    for dim in shape {
+        out.extend_from_slice(&(*dim as u64).to_le_bytes());
+    }
+    for scale in scales {
+        let raw = i64::try_from(signed_elem_to_i128(*scale))
+            .map_err(|_| TvmError::InvalidReceipt("tensor ir quantize scale mismatch"))?;
+        if raw <= 0 {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir quantize scale mismatch",
+            ));
+        }
+        out.extend_from_slice(&raw.to_le_bytes());
+    }
+    for value in quantized {
+        let raw = i8::try_from(signed_elem_to_i128(*value))
+            .map_err(|_| TvmError::InvalidReceipt("tensor ir int8 range mismatch"))?;
+        out.push(raw as u8);
+    }
+    Ok(out)
+}
+
+fn decode_packed_int8(bytes: &[u8]) -> Result<PackedInt8Payload> {
+    if bytes.len() < PACKED_INT8_HEADER_LEN
+        || &bytes[0..4] != PACKED_INT8_MAGIC
+        || bytes[4] != PACKED_INT8_VERSION
+        || bytes[7] != 0
+    {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize header mismatch",
+        ));
+    }
+    let rank = bytes[5] as usize;
+    let dim = bytes[6] as usize;
+    if rank == 0 || dim >= rank {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize metadata mismatch",
+        ));
+    }
+    let output_scale = i64::from_le_bytes(read_packed_i64(bytes, 8)?);
+    let mut offset = PACKED_INT8_HEADER_LEN;
+    let mut shape = Vec::with_capacity(rank);
+    for _ in 0..rank {
+        let dim = u64::from_le_bytes(read_packed_u64(bytes, offset)?);
+        offset += 8;
+        shape.push(
+            usize::try_from(dim)
+                .map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))?,
+        );
+    }
+    let elements = checked_usize_product(&shape)?;
+    let channels = *shape.get(dim).ok_or(TvmError::InvalidReceipt(
+        "tensor ir packed quantize metadata mismatch",
+    ))?;
+    let expected_len = packed_int8_len(&shape, dim)?;
+    if bytes.len() != expected_len {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir packed quantize length mismatch",
+        ));
+    }
+    let mut scales = Vec::with_capacity(channels);
+    for _ in 0..channels {
+        let raw = i64::from_le_bytes(read_packed_i64(bytes, offset)?);
+        offset += 8;
+        if raw <= 0 {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir quantize scale mismatch",
+            ));
+        }
+        scales.push(signed_i128_to_elem(raw as i128));
+    }
+    let mut quantized = Vec::with_capacity(elements);
+    for byte in &bytes[offset..] {
+        quantized.push(signed_i128_to_elem(i8::from_le_bytes([*byte]) as i128));
+    }
+    Ok(PackedInt8Payload {
+        shape,
+        dim,
+        output_scale,
+        scales,
+        quantized,
+    })
+}
+
+fn read_packed_i64(bytes: &[u8], offset: usize) -> Result<[u8; 8]> {
+    bytes
+        .get(offset..offset + 8)
+        .ok_or(TvmError::InvalidReceipt(
+            "tensor ir packed quantize length mismatch",
+        ))?
+        .try_into()
+        .map_err(|_| TvmError::InvalidReceipt("tensor ir packed quantize length mismatch"))
+}
+
+fn read_packed_u64(bytes: &[u8], offset: usize) -> Result<[u8; 8]> {
+    read_packed_i64(bytes, offset)
 }
 
 fn div_round_half_even_i128(value: i128, divisor: i128) -> Result<i128> {
@@ -1655,6 +1878,52 @@ fn infer_outputs(
                 shape: quantized.shape.clone(),
                 dtype: DType::Fixed32,
                 scale: scale.scale,
+            }
+        }
+        "quantize_pack_int8" => {
+            let arg = one_arg(args)?;
+            if arg.dtype != DType::Fixed32 {
+                return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+            }
+            let dim = optional_usize_kwarg(kwargs, "dim")?
+                .ok_or(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"))?;
+            let shape = arg
+                .shape
+                .iter()
+                .map(|dim| {
+                    usize::try_from(*dim)
+                        .map_err(|_| TvmError::InvalidReceipt("tensor ir shape mismatch"))
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let packed_len = packed_int8_len(&shape, dim)?;
+            ValueShape {
+                shape: vec![packed_len as i64],
+                dtype: DType::Uint8,
+                scale: 0,
+            }
+        }
+        "unpack_dequantize_int8" => {
+            let arg = one_arg(args)?;
+            if arg.dtype != DType::Uint8 || arg.scale != 0 || arg.shape.len() != 1 {
+                return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+            }
+            let shape = concrete_shape_kwarg(kwargs, "shape")?;
+            let dim = optional_usize_kwarg(kwargs, "dim")?
+                .ok_or(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"))?;
+            if dim >= shape.len() {
+                return Err(TvmError::InvalidReceipt("tensor ir quantize dim mismatch"));
+            }
+            let scale = integer_kwarg(kwargs, "scale_dim")?;
+            let packed_len = packed_int8_len(&shape, dim)?;
+            if arg.shape[0] != packed_len as i64 {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir packed quantize length mismatch",
+                ));
+            }
+            ValueShape {
+                shape: shape.into_iter().map(|dim| dim as i64).collect(),
+                dtype: DType::Fixed32,
+                scale,
             }
         }
         "topk" => {
@@ -2708,8 +2977,8 @@ const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
         output_count: 1,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
-        verification: IrVerificationClass::CanonicalReferenceRequired,
-        consensus_admitted: false,
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
     },
     OpSpec {
         name: "unpack_dequantize_int8",
@@ -2718,8 +2987,8 @@ const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
         output_count: 1,
         allowed_kwargs: &["dim", "shape", "scale_dim"],
         required_kwargs: &["dim", "shape", "scale_dim"],
-        verification: IrVerificationClass::CanonicalReferenceRequired,
-        consensus_admitted: false,
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
     },
 ];
 
@@ -2831,7 +3100,7 @@ mod tests {
     }
 
     #[test]
-    fn quantization_vocabulary_admits_exact_per_channel_ops_and_gates_packing() {
+    fn quantization_vocabulary_admits_exact_quantization_ops() {
         let expected = [
             (
                 "quantize_int8_per_channel",
@@ -2854,16 +3123,16 @@ mod tests {
                 IrArity::Exact(1),
                 1,
                 &["dim"][..],
-                IrVerificationClass::CanonicalReferenceRequired,
-                false,
+                IrVerificationClass::ExactDeterministicReplay,
+                true,
             ),
             (
                 "unpack_dequantize_int8",
                 IrArity::Exact(1),
                 1,
                 &["dim", "shape", "scale_dim"][..],
-                IrVerificationClass::CanonicalReferenceRequired,
-                false,
+                IrVerificationClass::ExactDeterministicReplay,
+                true,
             ),
         ];
         for (name, arity, output_count, kwargs, verification, admitted) in expected {
@@ -2883,12 +3152,12 @@ mod tests {
         graph.ops[0]
             .kwargs
             .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)));
-        graph.ops[0].out = vec![tensor_spec("packed", vec![2, 3], DType::Uint8, 0)];
+        graph.ops[0].out = vec![tensor_spec("packed", vec![54], DType::Uint8, 0)];
         graph.outputs = vec![GraphOutput {
             name: "packed".to_owned(),
             value: IrRef::Op { id: 0, idx: 0 },
         }];
-        assert!(graph.validate_for_consensus().is_err());
+        assert!(graph.validate_for_consensus().is_ok());
     }
 
     #[test]
@@ -3444,6 +3713,124 @@ mod tests {
             Err(TvmError::InvalidReceipt(
                 "tensor ir dequantize scale ambiguous"
             ))
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_packed_int8_quantize_dequantize() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 3], DType::Fixed32, 0)],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "quantize_pack_int8".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![tensor_spec("packed", vec![62], DType::Uint8, 0)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "unpack_dequantize_int8".to_owned(),
+                    args: vec![op_ref(0)],
+                    kwargs: BTreeMap::from([
+                        ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                        (
+                            "shape".to_owned(),
+                            IrValue::Literal(IrLiteral::List(vec![
+                                IrLiteral::Uint(2),
+                                IrLiteral::Uint(3),
+                            ])),
+                        ),
+                        ("scale_dim".to_owned(), IrValue::Literal(IrLiteral::Int(0))),
+                    ]),
+                    out: vec![tensor_spec("dq", vec![2, 3], DType::Fixed32, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "packed".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "dq".to_owned(),
+                    value: op_ref(1),
+                },
+            ],
+        };
+        graph.validate_for_consensus().unwrap();
+
+        let input = Tensor::from_vec_with_scale(
+            vec![2, 3],
+            DType::Fixed32,
+            0,
+            vec![0, 64, 128, p - 64, p - 128, 127],
+        )
+        .unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), input)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+        let expected_bytes = vec![
+            84, 86, 81, 56, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
+            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+            32, 64, 192, 192, 64,
+        ];
+        assert_eq!(
+            execution.outputs["packed"],
+            Tensor::from_vec(
+                vec![62],
+                DType::Uint8,
+                expected_bytes.iter().map(|value| *value as Elem).collect(),
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            execution.outputs["dq"],
+            Tensor::from_vec(
+                vec![2, 3],
+                DType::Fixed32,
+                vec![0, 64, 128, p - 64, p - 128, 128]
+            )
+            .unwrap()
+        );
+
+        let mut wrong_shape = graph.clone();
+        wrong_shape.ops[1].kwargs.insert(
+            "shape".to_owned(),
+            IrValue::Literal(IrLiteral::List(vec![
+                IrLiteral::Uint(3),
+                IrLiteral::Uint(2),
+            ])),
+        );
+        assert!(wrong_shape.validate_for_consensus().is_err());
+
+        let mut bad_payload = execution.outputs["packed"].clone();
+        bad_payload.as_mut_slice()[0] = 0;
+        let mut unpack_only = graph.clone();
+        unpack_only.inputs[0] = tensor_spec("x", vec![62], DType::Uint8, 0);
+        unpack_only.ops.remove(0);
+        unpack_only.ops[0].id = 0;
+        unpack_only.ops[0].args = vec![input_ref("x")];
+        unpack_only.outputs = vec![GraphOutput {
+            name: "dq".to_owned(),
+            value: op_ref(0),
+        }];
+        assert_eq!(
+            unpack_only
+                .execute_exact(&IrExecutionInputs {
+                    tensors: BTreeMap::from([("x".to_owned(), bad_payload)]),
+                    field_params: BTreeMap::new(),
+                })
+                .unwrap_err(),
+            TvmError::InvalidReceipt("tensor ir packed quantize header mismatch")
         );
     }
 

@@ -55,8 +55,9 @@ shared codecs, p2p tensor payloads, and canonical IR JSON. The frozen registry n
 `quantize_int8_per_channel` and `dequantize_int8_per_channel` execution: quantize uses deterministic
 per-channel integer scales, round-half-even division, and int8 clamping, while dequantize multiplies by a
 rank-1 scale tensor and rejects ambiguous inferred channel dimensions. Byte-packed
-`quantize_pack_int8`/`unpack_dequantize_int8` remain carried but non-consensus-admitted until storage-layout
-semantics are pinned. Interpreter output includes named
+`quantize_pack_int8`/`unpack_dequantize_int8` are also admitted with a canonical flat `uint8` payload
+layout containing `TVQ8` magic/version bytes, rank, quantization axis, output scale, original shape,
+per-channel signed 64-bit scales, and row-major int8 payload bytes. Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Focused
@@ -74,8 +75,9 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::exact_interpreter_rejects_deferred_ops`,
 `ir::tests::graph_validation_rejects_inconsistent_exact_tier_b_shapes`,
 `ir::tests::graph_json_roundtrips_narrow_integer_dtypes`,
-`ir::tests::quantization_vocabulary_admits_exact_per_channel_ops_and_gates_packing`,
+`ir::tests::quantization_vocabulary_admits_exact_quantization_ops`,
 `ir::tests::exact_interpreter_executes_per_channel_int8_quantize_dequantize`,
+`ir::tests::exact_interpreter_executes_packed_int8_quantize_dequantize`,
 `tensor::tests::narrow_integer_tensors_enforce_canonical_ranges_and_commit_dtype`,
 `tensor::tests::random_narrow_integer_tensors_are_canonical`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
@@ -92,9 +94,10 @@ The local reference also has a deterministic `F_p` conformance vector gate for t
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `scalar_mul`,
 `identity`, `neg`, signed-residue `abs`, `sign`, `relu`, field/integer and fixed-point `round`, `transpose`,
 `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`, and
-`quantize_int8_per_channel`, `dequantize_int8_per_channel`, and `mse_loss`, plus scale-aware fixed-point
-`cast`/`round` vectors using per-input and expected output dtype/scale metadata and multi-output expected
-tensors for exact quantize scale output. The suite has a stable hash, the CPU reference backend must pass it through
+`quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
+`unpack_dequantize_int8`, and `mse_loss`, plus scale-aware fixed-point `cast`/`round` vectors using
+per-input and expected output dtype/scale metadata, multi-output expected tensors for exact quantize scale
+output, and byte-exact packed payload vectors. The suite has a stable hash, the CPU reference backend must pass it through
 `runtime::backend_conformance_profile`, and `verify_tensor_op` / `verify_linear_training_step` reject
 otherwise-valid receipts when their required conformance profile is unavailable or missing an op.
 Mixed-dtype comparison and `where` coverage is currently exercised through the IR execution tests. Focused evidence:
@@ -103,14 +106,15 @@ Mixed-dtype comparison and `where` coverage is currently exercised through the I
 `conformance::tests::required_conformance_gates_current_jobs`,
 `verify::tests::graph_verifier_accepts_fixed_point_rescale_receipt`,
 `verify::tests::graph_verifier_accepts_quantize_dequantize_receipt`,
+`verify::tests::graph_verifier_accepts_packed_quantize_dequantize_receipt`,
 `runtime::tests::cpu_backend_reports_passing_conformance_profile`,
 `runtime::tests::gpu_backend_reports_device_and_requires_cuda_kernels`,
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: role-runtime production for arbitrary graph-backed jobs,
-const-blob fetching, fixed-point arithmetic scale policy beyond `cast`/`round`, byte-packed quantization
-pack/unpack semantics, index-consistency proofs for `gather`/`scatter`/`embedding`, additional mixed-dtype
+const-blob fetching, fixed-point arithmetic scale policy beyond `cast`/`round`, low-level packed tensor
+storage/chunking APIs, index-consistency proofs for `gather`/`scatter`/`embedding`, additional mixed-dtype
 conformance vectors, and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment.
 Tier-C, index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are
 still gated out of consensus when their verifier class is deferred.

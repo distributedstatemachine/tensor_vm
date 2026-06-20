@@ -93,8 +93,9 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > fixed-point `cast`/`round` half-even rescale vectors plus multi-output expected tensors for exact
 > per-channel int8 quantize scale output. `int8`, `uint8`, and `bool` dtype tags are implemented, exact
 > `quantize_int8_per_channel`/`dequantize_int8_per_channel` vectors are CPU-conformance covered, and
-> byte-packed quantization, broader admitted-registry vectors, CUDA pass evidence, and Tier-C/transcendental
-> vector references remain TODO before claiming complete §3.3 coverage for every runtime.
+> `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Broader
+> admitted-registry vectors, CUDA pass evidence, and Tier-C/transcendental vector references remain TODO
+> before claiming complete §3.3 coverage for every runtime.
 
 ---
 
@@ -373,8 +374,10 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > present only as non-admitted index-consistency-gated vocabulary. Runtime tensors now carry scale
 > metadata, exact replay enforces `TensorSpec.scale`, fixed-point `cast`/`round` use canonical
 > round-half-even rescale, and exact per-channel int8 quantize/dequantize replay is conformance covered.
-> Fixed-point arithmetic scale policy beyond `cast`/`round`, byte-packed quantization pack/unpack
-> semantics, and full verifier coverage for every exact Tier-B op remain TODO.
+> Byte-packed int8 quantization now uses a canonical flat `uint8` payload with explicit magic/version,
+> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Fixed-point arithmetic
+> scale policy beyond `cast`/`round`, low-level packed tensor storage/chunking APIs, and full verifier
+> coverage for every exact Tier-B op remain TODO.
 
 ---
 
@@ -583,15 +586,15 @@ This section is non-normative guidance on how the spec components partition into
 - [~] Exact `F_p` choice and fixed-point scale discipline: runtime tensor scale metadata, input-scale
   enforcement, fixed-point `cast`/`round` round-half-even rescale, and canonical `int8`/`uint8`/`bool`
   dtype tags are implemented; exact per-channel int8 quantize/dequantize scale selection and saturation
-  are conformance covered; range and rescale-after-mul policy beyond that slice plus byte-packing
-  semantics remain open.
+  are conformance covered; byte-packed quantization has a conformance-covered flat `uint8` payload layout;
+  range and rescale-after-mul policy beyond that slice plus low-level packed tensor storage APIs remain
+  open.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,
   comparison, generator, reduction, and fixed-point `cast`/`round` rescale surface with conformance gating
-  where the vector schema fits, plus exact per-channel int8 quantize/dequantize. Byte-packed quantization
-  pack/unpack, additional mixed-dtype vectors, and full verifier coverage for every exact Tier-B op remain
-  TODO (§7).
+  where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
+  mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
