@@ -152,7 +152,7 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
             .get(&block.height)
             .unwrap()
             .block_height
-            .saturating_add(chain.params().reward_maturity_delay_blocks())
+            .saturating_add(chain.params().proposer_reward_maturity_delay_blocks())
     );
     add_settled_receipt_for_blockspace(&mut chain, &beacon);
     chain.produce_block(proposer, 1_012).unwrap();
@@ -487,9 +487,9 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .state()
         .fraud_path_economic_calibration(chain.params());
     assert_eq!(calibration.path_count, 3);
-    assert!(!calibration.all_invariants_hold);
-    assert_eq!(calibration.worst_path, "block_check");
-    assert_eq!(calibration.max_required_slashable_bond, 501);
+    assert!(calibration.all_invariants_hold);
+    assert_eq!(calibration.worst_path, "validator_audit");
+    assert_eq!(calibration.max_required_slashable_bond, 241);
 
     let validator_audit = calibration
         .paths
@@ -521,10 +521,10 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .unwrap();
     assert_eq!(block_check.detection_probability_bps, 10_000);
     assert_eq!(block_check.slashable_bond, 500);
-    assert_eq!(block_check.reward_from_fraud, 500);
+    assert_eq!(block_check.reward_from_fraud, 0);
     assert_eq!(block_check.at_risk_reward_claim_count, 1);
-    assert_eq!(block_check.required_slashable_bond, 501);
-    assert!(!block_check.invariant_holds);
+    assert_eq!(block_check.required_slashable_bond, 0);
+    assert!(block_check.invariant_holds);
 }
 
 #[test]
@@ -555,7 +555,7 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
         block0_claim.claimable_at_height,
         block0
             .height
-            .saturating_add(producer.params().reward_maturity_delay_blocks())
+            .saturating_add(producer.params().proposer_reward_maturity_delay_blocks())
     );
     assert_eq!(producer.state().rewards().balance(&proposer), 0);
 
@@ -597,11 +597,26 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     let block2 = producer
         .produce_block_with_rewards(proposer, 1_024, 80, 20)
         .unwrap();
-    assert_eq!(producer.state().rewards().balance(&proposer), 500);
-    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(producer.state().rewards().balance(&proposer), 0);
+    assert!(producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(block2.reward_root, reward_root(producer.state()));
 
     peer.apply_command(ChainCommand::SubmitBlock(block2))
+        .unwrap();
+    assert_eq!(peer.state().rewards().balance(&proposer), 0);
+    assert!(peer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(peer.state(), producer.state());
+
+    add_settled_receipt_for_blockspace(&mut producer, &beacon);
+    add_settled_receipt_for_blockspace(&mut peer, &beacon);
+    let block3 = producer
+        .produce_block_with_rewards(proposer, 1_036, 80, 20)
+        .unwrap();
+    assert_eq!(producer.state().rewards().balance(&proposer), 500);
+    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(block3.reward_root, reward_root(producer.state()));
+
+    peer.apply_command(ChainCommand::SubmitBlock(block3))
         .unwrap();
     assert_eq!(peer.state().rewards().balance(&proposer), 500);
     assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
@@ -725,7 +740,7 @@ fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
         .get_mut(&block.height)
         .unwrap()
         .voided_by_challenge = true;
-    chain.set_position_for_testing(2, 1);
+    chain.set_position_for_testing(chain.params().proposer_reward_maturity_delay_blocks(), 1);
 
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
@@ -755,8 +770,14 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
         .pending_proposer_rewards()
         .get(&fallback.height)
         .unwrap();
+    let fallback_claimable_at_height = fallback_reward.claimable_at_height;
     assert_eq!(fallback_reward.amount, 50);
-    assert_eq!(fallback_reward.claimable_at_height, 2);
+    assert_eq!(
+        fallback_reward.claimable_at_height,
+        fallback
+            .height
+            .saturating_add(chain.params().proposer_reward_maturity_delay_blocks())
+    );
 
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
@@ -767,8 +788,18 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
             .contains_key(&fallback.height)
     );
 
-    chain.produce_block(proposer, 1_012).unwrap();
-    assert_eq!(chain.state().height(), 2);
+    while chain.state().height() < fallback_claimable_at_height {
+        let timestamp = chain.blocks().last().map_or(1_012, |block| {
+            block.timestamp.saturating_add(
+                chain
+                    .params()
+                    .pow_timeout_blocks
+                    .max(1)
+                    .saturating_mul(chain.params().block_time_seconds.max(1)),
+            )
+        });
+        chain.produce_block(proposer, timestamp).unwrap();
+    }
     let events = chain.release_matured_proposer_rewards().unwrap();
     assert!(events.contains(&ChainEvent::ProposerRewardReleased {
         block_height: fallback.height,

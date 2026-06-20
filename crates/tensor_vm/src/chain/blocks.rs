@@ -21,6 +21,7 @@ struct BlockRewardContext {
     proposer_reward: u64,
     reward_settlement_delay_epochs: u64,
     challenge_window_epochs: u64,
+    proposer_reward_hold_epochs: u64,
     data_unavailability_miner_slash_amount: u64,
     validator_audit_sample_numerator: u64,
     validator_audit_sample_denominator: u64,
@@ -37,7 +38,13 @@ impl BlockRewardContext {
     }
 
     fn proposer_claimable_at_height(self, block_height: u64, epoch_length: u64) -> u64 {
-        block_height.saturating_add(self.reward_maturity_delay_blocks(epoch_length))
+        block_height.saturating_add(
+            self.reward_maturity_delay_blocks(epoch_length)
+                .saturating_add(
+                    self.proposer_reward_hold_epochs
+                        .saturating_mul(epoch_length.max(1)),
+                ),
+        )
     }
 }
 
@@ -107,6 +114,7 @@ fn produce_inner(
             proposer_reward: pending_proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,
@@ -263,6 +271,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
             proposer_reward: block.proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,
@@ -581,6 +590,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
             proposer_reward: block.proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,

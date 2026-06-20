@@ -125,6 +125,7 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.verification_window);
     write_u64(out, params.reward_settlement_delay_epochs);
     write_u64(out, params.challenge_window_epochs);
+    write_u64(out, params.proposer_reward_hold_epochs);
     write_len(out, params.replication_factor);
     write_len(out, params.agreement_quorum);
     write_u64(out, params.finality_stake_numerator);
@@ -158,6 +159,7 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         verification_window: reader.read_u64()?,
         reward_settlement_delay_epochs: reader.read_u64()?,
         challenge_window_epochs: reader.read_u64()?,
+        proposer_reward_hold_epochs: reader.read_u64()?,
         replication_factor: reader.read_len()?,
         agreement_quorum: reader.read_len()?,
         finality_stake_numerator: reader.read_u64()?,

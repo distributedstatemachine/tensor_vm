@@ -335,7 +335,7 @@ impl Chain {
                 .filter(|block| block.proposer == proposer)
                 .map_or(self.state.height, |block| block.height);
             let claimable_at_height =
-                block_height.saturating_add(self.params.reward_maturity_delay_blocks());
+                block_height.saturating_add(self.params.proposer_reward_maturity_delay_blocks());
             self.state
                 .pending_proposer_rewards
                 .entry(block_height)

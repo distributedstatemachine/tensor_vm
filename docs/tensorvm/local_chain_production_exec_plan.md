@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 86 complete and pushed - fraud-path economic calibration.
+- Active feature: Iteration 87 complete - delayed block-check proposer reward protection.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -39,50 +39,75 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 86: Fraud-Path Economic Calibration
+### Iteration 87: Delayed Block-Check Proposer Reward Protection
 
-Feature capability: expose a chain-owned live calibration across implemented fraud paths, not just
-validator audits, so status/explorer evidence reports `bond * P(detection) > reward_from_fraud` for
-validator audit, miner data-unavailability, and block-check/proposer clawback paths.
+Feature capability: delay proposer rewards through the block-check fraud window so the block-check path is
+protected by canonical reward escrow instead of a calibration workaround that treats the pending reward as
+both fraud proceeds and slashable bond.
 
 Readiness requirements covered: `upow.md` §12 economics/slashing invariant and the local readiness gap for
-broader fraud-path bond calibration.
+block-check/proposer reward timing.
 
-Canonical owner: `crates/tensor_vm/src/chain/state.rs` computes calibration from `ChainParams` and live
-pending reward claims.
-Adapter callers: status and explorer/RPC render the chain-owned view; runtime, p2p, storage, and checkers
-remain consumers.
-Old shortcut being removed: economics evidence covered only validator-audit rewards while miner
-data-unavailability and block-check clawback paths were omitted from live calibration.
-Regression test that proves the shortcut is gone: focused chain/status/RPC tests assert all implemented
-fraud paths appear with path-specific bonds, at-risk claim counts, required bonds, and pass/fail invariant.
+Canonical owner: `ChainParams` and shared chain reward/block transitions compute and enforce delayed
+proposer reward claim heights; `ChainState` derives block-check economic exposure from live pending claims.
+Adapter callers: status and explorer/RPC render chain-owned evidence; runtime, p2p, and checkers remain
+consumers of the same state.
+Old shortcut being removed: block-check economics reports the pending proposer reward as immediate
+fraud profit, causing `bond * P(detection) > reward_from_fraud` to fail by construction even while the
+reward is still escrowed.
+Regression test that proves the shortcut is gone: focused reward/status/RPC tests show proposer reward
+claims mature after the block-check hold and the block-check path reports zero exposed reward while held.
 Behavior with local synthetic block production disabled: calibration is a read-only chain-state view over
 pending claims and params, independent of local synthetic job/block production.
 Behavior for producer and non-producer roles: producers and non-producers replay the same chain state and
-derive identical calibration; no role-local branch owns economics.
-Structured evidence source: `ChainState::fraud_path_economic_calibration`, pending reward claims,
-slash/clawback params, service status fields, and explorer overview JSON.
-Finality source: finalized/replayed chain state; calibration is evidence over canonical pending claims, not
-a finality rule.
-Wire-size and codec boundary: no persisted state, storage codec, or p2p payload change; explorer/status add
-bounded computed fields only.
+derive identical claim heights and calibration; no role-local branch owns economics.
+Structured evidence source: `ChainParams::proposer_reward_hold_blocks`, pending proposer reward claims,
+`ChainState::fraud_path_economic_calibration`, service status fields, and explorer overview JSON.
+Finality source: finalized/replayed chain state; reward release remains tied to canonical height and pending
+claim state, not adapter clocks.
+Wire-size and codec boundary: one persisted chain-param field is added to the storage codec; no p2p payload
+or block codec change.
 
-Files/modules likely touched: `chain/state.rs`, focused reward tests, `app/status.rs`,
-`rpc/explorer.rs`, `tensor_vm_explorer`, RPC/status tests, status docs, and this plan.
+Files/modules likely touched: `chain/state.rs`, `chain/blocks.rs`, `chain.rs`, storage codec tests,
+focused reward/status/RPC tests, status docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
 Parallelizable implementation workstreams: read-only discovery and validation only.
-Tests/checkers/docs to add or update: focused chain economics test, status test, explorer overview test,
-coverage/status/upow/readiness text.
-Narrow validation commands: `cargo test -p tensor_vm economic --quiet`, `cargo test -p tensor_vm status --quiet`,
-`cargo test -p tensor_vm explorer_overview_exports --quiet`.
+Tests/checkers/docs to add or update: focused chain reward/economics test, storage codec test, status test,
+explorer overview test, coverage/status/upow/readiness text.
+Narrow validation commands: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm storage --quiet`,
+`cargo test -p tensor_vm status --quiet`, `cargo test -p tensor_vm explorer_overview_exports --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: service status and explorer overview show all implemented fraud paths and an
-aggregate all-hold/worst-required-bond summary.
-Out of scope: changing slash amounts, adding full fraud-proof transcript disputes, fork-choice policy, CUDA
-evidence, or Docker rerun.
-Split trigger: if calibration requires new persisted params or p2p/status payload shape beyond bounded
-computed fields, split that from this read-only chain-state view.
+Expected observable evidence: proposer pending claims include a block-check hold and block-check economic
+calibration no longer fails solely because held rewards were counted as immediate fraud proceeds.
+Out of scope: changing slash amounts, adding full fraud-proof transcript disputes, fork-choice policy,
+CUDA evidence, or Docker rerun.
+Split trigger: if delayed rewards require changing block, p2p, or receipt wire payloads, split that from
+this parameterized chain-state transition.
+
+Implementation summary:
+- Added `ChainParams::proposer_reward_hold_blocks` and proposer-specific maturity for pending proposer
+  claims created by block production and epoch reward settlement.
+- Persisted the new chain parameter in the chain-state codec.
+- Updated block-check fraud-path economics so delayed proposer claims are slashable escrow and only
+  claimable rewards count as immediate fraud proceeds.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm storage --quiet`,
+  `cargo test -p tensor_vm status --quiet`, `cargo test -p tensor_vm explorer_overview_exports --quiet`,
+  `cargo test -p tensor_vm params --quiet`, and `cargo test -p tensor_vm challenge --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 415 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
+
+### Iteration 86: Fraud-Path Economic Calibration
 
 Implementation summary:
 - Added `ChainState::fraud_path_economic_calibration` for validator-audit, miner data-unavailability, and
@@ -103,8 +128,6 @@ Validation evidence:
   tarpaulin`.
 - Feature commit: `1116beb` (`Expose fraud path economic calibration`) pushed to `origin/main`.
 - Evidence commit: `abf78d1` (`Record fraud path calibration evidence`) pushed to `origin/main`.
-
-## Recent Iterations
 
 ### Iteration 85: Audit-Window Reward Escrow
 

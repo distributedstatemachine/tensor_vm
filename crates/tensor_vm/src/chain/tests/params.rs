@@ -24,6 +24,8 @@ fn audit_sampling_extends_reward_maturity_and_tensor_retention() {
     };
     assert_eq!(inactive.validator_audit_reward_hold_blocks(), 0);
     assert_eq!(inactive.reward_maturity_delay_blocks(), 7);
+    assert_eq!(inactive.proposer_reward_hold_blocks(), 7);
+    assert_eq!(inactive.proposer_reward_maturity_delay_blocks(), 14);
     assert_eq!(inactive.tensor_retention_window_blocks(), 0);
 
     let active = ChainParams {
@@ -32,6 +34,7 @@ fn audit_sampling_extends_reward_maturity_and_tensor_retention() {
     };
     assert_eq!(active.validator_audit_reward_hold_blocks(), 11);
     assert_eq!(active.reward_maturity_delay_blocks(), 11);
+    assert_eq!(active.proposer_reward_maturity_delay_blocks(), 18);
     assert_eq!(active.tensor_retention_window_blocks(), 11);
     assert_eq!(active.tensor_retention_deadline(5), 16);
 }

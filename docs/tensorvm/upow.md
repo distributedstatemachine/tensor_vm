@@ -493,6 +493,9 @@ TensorBlock {
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
   and released only after its maturity height.
+- Proposer rewards use an additional proposer-specific hold after the normal reward maturity delay. This
+  keeps block rewards escrowed past the block-check fraud window so a disproven block voids the pending
+  proposer claim before it can become spendable.
 - Local generic/faucet reward credits also use a state-rooted pending credit claim before spendability, so
   the shared `CreditReward` command cannot bypass the maturity boundary.
 
@@ -523,7 +526,9 @@ TensorBlock {
 > validator-audit view reports configured audit sampling probability, slash amount, non-voided pending
 > validator receipt reward exposure, required slashable bond, and pass/fail invariant. The broader
 > fraud-path view covers implemented validator-audit, miner data-unavailability, and block-check/proposer
-> clawback paths with aggregate worst-required-bond and all-path pass/fail status.
+> clawback paths with aggregate worst-required-bond and all-path pass/fail status; block-check exposure
+> treats delayed, non-voided proposer rewards as slashable escrow and counts fraud proceeds only after the
+> claim is actually spendable.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.

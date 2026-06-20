@@ -655,15 +655,15 @@ mod tests {
         assert_eq!(fields.value("fraud_path_economic_path_count"), Some("3"));
         assert_eq!(
             fields.value("fraud_path_economic_all_invariants_hold"),
-            Some("false")
+            Some("true")
         );
         assert_eq!(
             fields.value("fraud_path_economic_max_required_slashable_bond"),
-            Some("501")
+            Some("101")
         );
         assert_eq!(
             fields.value("fraud_path_economic_worst_path"),
-            Some("block_check")
+            Some("validator_audit")
         );
         assert_eq!(
             fields.value("fraud_path_economic_validator_audit_required_slashable_bond"),
@@ -679,7 +679,7 @@ mod tests {
         );
         assert_eq!(
             fields.value("fraud_path_economic_block_check_invariant_holds"),
-            Some("false")
+            Some("true")
         );
 
         let _ = std::fs::remove_dir_all(data_dir);

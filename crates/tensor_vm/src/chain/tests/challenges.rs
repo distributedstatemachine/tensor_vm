@@ -307,7 +307,7 @@ fn matured_proposer_reward_releases_after_full_maturity_delay() {
         pending.claimable_at_height,
         block
             .height
-            .saturating_add(chain.params().reward_maturity_delay_blocks())
+            .saturating_add(chain.params().proposer_reward_maturity_delay_blocks())
     );
     let claimable_at_height = pending.claimable_at_height;
     assert_eq!(chain.state().rewards().balance(&proposer), 0);

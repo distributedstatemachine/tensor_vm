@@ -16,6 +16,7 @@ pub struct ChainParams {
     pub verification_window: u64,
     pub reward_settlement_delay_epochs: u64,
     pub challenge_window_epochs: u64,
+    pub proposer_reward_hold_epochs: u64,
     pub replication_factor: usize,
     pub agreement_quorum: usize,
     pub finality_stake_numerator: u64,
@@ -50,6 +51,7 @@ impl Default for ChainParams {
             verification_window: 40,
             reward_settlement_delay_epochs: 1,
             challenge_window_epochs: 1,
+            proposer_reward_hold_epochs: 1,
             replication_factor: 5,
             agreement_quorum: 3,
             finality_stake_numerator: 2,
@@ -93,6 +95,16 @@ impl ChainParams {
     pub fn reward_maturity_delay_blocks(&self) -> u64 {
         self.base_reward_maturity_delay_blocks()
             .max(self.validator_audit_reward_hold_blocks())
+    }
+
+    pub fn proposer_reward_maturity_delay_blocks(&self) -> u64 {
+        self.reward_maturity_delay_blocks()
+            .saturating_add(self.proposer_reward_hold_blocks())
+    }
+
+    pub fn proposer_reward_hold_blocks(&self) -> u64 {
+        self.proposer_reward_hold_epochs
+            .saturating_mul(self.epoch_length.max(1))
     }
 
     fn base_reward_maturity_delay_blocks(&self) -> u64 {
@@ -1387,8 +1399,14 @@ impl ChainState {
             .values()
             .filter(|reward| !reward.voided_by_challenge)
             .collect::<Vec<_>>();
+        let slashable_bond = at_risk_proposer_rewards
+            .iter()
+            .map(|reward| reward.amount)
+            .max()
+            .unwrap_or_default();
         let reward_from_fraud = at_risk_proposer_rewards
             .iter()
+            .filter(|reward| reward.claimable_at_height <= self.height)
             .map(|reward| reward.amount)
             .max()
             .unwrap_or_default();
@@ -1396,7 +1414,7 @@ impl ChainState {
             "block_check",
             1,
             1,
-            reward_from_fraud,
+            slashable_bond,
             reward_from_fraud,
             at_risk_proposer_rewards.len(),
         ));

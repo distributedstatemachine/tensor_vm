@@ -126,7 +126,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   reward ledger, a block `reward_root` that binds spendable rewards plus pending proposer, receipt,
   challenge, and credit ledgers, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
   Validator-owned useful proposals and empty fallback proposals now both create proposer claims with the
-  explicit full reward-maturity delay, with fallback claims carrying the reduced reward amount. Pending
+  explicit full reward-maturity delay plus a proposer-specific hold, with fallback claims carrying the reduced reward amount. Pending
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
   Receipt, challenge, and generic credit reward claims are state-rooted and persisted. Receipt rewards
   release only after the receipt is included in canonical blockspace and the inclusion-based maturity
@@ -150,8 +150,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   now also exposes live validator-audit economic calibration plus a broader implemented-path fraud
   calibration view covering validator-audit, miner data-unavailability, and block-check/proposer clawback
   paths; service status and explorer overview render required slashable bonds, aggregate
-  worst-required-bond, and pass/fail invariants. Measured detection probabilities, remaining fraud paths,
-  and broader invalid-output slashing remain open.
+  worst-required-bond, and pass/fail invariants. Block-check calibration treats delayed non-voided
+  proposer claims as slashable escrow and counts reward-from-fraud only after the claim is spendable.
+  Measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable
