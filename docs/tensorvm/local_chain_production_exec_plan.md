@@ -79,6 +79,8 @@ Validation completed locally:
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
+- Feature commit: `a4c1378` (`Anchor receipt validation randomness`).
+- Push result: `4984e6f..a4c1378  main -> main` on `origin/main`.
 
 Out of scope: full VRF/drand implementation, external randomness service integration, public
 commit-reveal networking, and generic arbitrary-IR execution.
