@@ -3,8 +3,8 @@ use crate::chain::{
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
     PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardState,
-    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    TensorBlock, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -96,6 +96,8 @@ fn encode_chain_state_payload(chain: &Chain) -> Vec<u8> {
         out.extend_from_slice(&encode_block_payload(block));
     }
     encode_block_parent_states(&mut out, &chain.block_parent_states);
+    encode_side_branch_blocks(&mut out, &chain.side_branch_blocks);
+    encode_block_parent_states(&mut out, &chain.side_branch_child_states);
     out
 }
 
@@ -109,12 +111,16 @@ fn decode_chain_state_payload(bytes: &[u8]) -> Result<Chain> {
         blocks.push(decode_block_payload(reader.read_exact(BLOCK_PAYLOAD_LEN)?)?);
     }
     let block_parent_states = decode_block_parent_states(&mut reader)?;
+    let side_branch_blocks = decode_side_branch_blocks(&mut reader)?;
+    let side_branch_child_states = decode_block_parent_states(&mut reader)?;
     reader.finish()?;
     Ok(Chain::from_parts(ChainParts {
         params,
         state,
         blocks,
         block_parent_states,
+        side_branch_blocks,
+        side_branch_child_states,
     }))
 }
 
@@ -298,6 +304,27 @@ fn decode_block_parent_states(reader: &mut StateReader<'_>) -> Result<BTreeMap<H
         snapshots.insert(block_hash, parent_state);
     }
     Ok(snapshots)
+}
+
+fn encode_side_branch_blocks(out: &mut Vec<u8>, blocks: &BTreeMap<Hash, TensorBlock>) {
+    write_len(out, blocks.len());
+    for (block_hash, block) in blocks {
+        write_hash(out, block_hash);
+        out.extend_from_slice(&encode_block_payload(block));
+    }
+}
+
+fn decode_side_branch_blocks(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, TensorBlock>> {
+    let mut blocks = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let block_hash = reader.read_hash()?;
+        let block = decode_block_payload(reader.read_exact(BLOCK_PAYLOAD_LEN)?)?;
+        if block.hash() != block_hash {
+            return Err(TvmError::Storage("side branch block hash mismatch"));
+        }
+        blocks.insert(block_hash, block);
+    }
+    Ok(blocks)
 }
 
 fn encode_accounts(out: &mut Vec<u8>, accounts: &BTreeMap<Hash, AccountState>) {
@@ -1261,7 +1288,7 @@ mod tests {
         submit_block_vote, submit_job, submit_receipt, transfer,
     };
     use super::*;
-    use crate::chain::{ChainCommand, ChainEngine, ValidatorAuditAppeal};
+    use crate::chain::{BlockAdmission, ChainCommand, ChainEngine, ValidatorAuditAppeal};
     use crate::ir::canonical_matmul_graph;
     use crate::jobs::{
         GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt,
@@ -1467,7 +1494,26 @@ mod tests {
 
     #[test]
     fn chain_state_store_roundtrips_full_chain_and_detects_tampering() {
-        let chain = durable_chain_fixture(b"chain-state-store");
+        let mut chain = durable_chain_fixture(b"chain-state-store");
+        let mut side_branch_source = chain.clone();
+        let side_proposer = side_branch_source
+            .proposer_for_next_epoch(&side_branch_source.state().finalized_randomness())
+            .unwrap();
+        let side_branch = side_branch_source
+            .produce_block(side_proposer, 2_000)
+            .unwrap();
+        let canonical_proposer = chain
+            .proposer_for_next_epoch(&chain.state().finalized_randomness())
+            .unwrap();
+        chain.produce_block(canonical_proposer, 2_006).unwrap();
+        let next_canonical_proposer = chain
+            .proposer_for_next_epoch(&chain.state().finalized_randomness())
+            .unwrap();
+        chain.produce_block(next_canonical_proposer, 2_018).unwrap();
+        assert!(matches!(
+            chain.admit_block(side_branch.clone()).unwrap(),
+            BlockAdmission::SideBranchStored { .. }
+        ));
         let path = std::env::temp_dir().join(format!(
             "tensor-vm-state-{}-{}.bin",
             std::process::id(),
@@ -1484,6 +1530,16 @@ mod tests {
         let loaded = store.load_chain().unwrap();
         assert_eq!(loaded, chain);
         assert_eq!(loaded.state_root(), chain.state_root());
+        assert_eq!(loaded.side_branch_blocks(), chain.side_branch_blocks());
+        assert_eq!(
+            loaded.side_branch_child_states(),
+            chain.side_branch_child_states()
+        );
+        assert!(
+            loaded
+                .side_branch_blocks()
+                .contains_key(&side_branch.hash())
+        );
         let historical_block = loaded.blocks().first().unwrap();
         let historical_outcome = loaded.block_apply_outcome(historical_block).unwrap();
         assert_eq!(
@@ -1525,7 +1581,13 @@ mod tests {
         );
         assert_eq!(
             loaded_appeal.resolved_at_height,
-            Some(chain.state().height())
+            chain
+                .state()
+                .validator_audit_appeals()
+                .values()
+                .next()
+                .unwrap()
+                .resolved_at_height
         );
         assert_eq!(loaded_appeal.stake_refunded_amount, 17);
         assert_eq!(

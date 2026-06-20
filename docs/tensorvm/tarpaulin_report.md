@@ -111,6 +111,9 @@ block-check paths.
 Iteration 93 added late invalid-output delayed reward voiding. Focused settlement tests cover assigned
 `Invalid` attestations contesting already settled receipts, voiding pending miner and validator receipt
 claims before maturity, and preventing mature release from crediting spendable rewards.
+Iteration 94 added side-branch fork-tree storage. Focused chain, node payload, and storage tests cover
+known-parent side branch admission, side-branch grandchildren, canonical-state preservation, and
+chain-state roundtrip of side-branch block plus child-state maps.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

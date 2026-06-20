@@ -215,6 +215,12 @@ pub(super) fn prepare_parent_state(chain: &mut Chain) -> Result<()> {
 pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmission> {
     let block_hash = block.hash();
     let height = block.height;
+    if chain.side_branch_blocks.contains_key(&block_hash) {
+        return Ok(BlockAdmission::Duplicate {
+            height,
+            hash: block_hash,
+        });
+    }
     if let Some((existing_index, existing)) = chain
         .blocks
         .iter()
@@ -227,13 +233,13 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
                 hash: block_hash,
             });
         }
+        if existing_index + 1 != chain.blocks.len() || block.parent_hash != existing.parent_hash {
+            return admit_side_branch(chain, block, block_hash);
+        }
         return admit_competing_head(chain, existing_index, block, block_hash);
     }
     if block.height != chain.state.height {
-        return Ok(BlockAdmission::PendingParent {
-            height,
-            parent_hash: block.parent_hash,
-        });
+        return admit_side_branch(chain, block, block_hash);
     }
     let expected_parent = chain
         .blocks
@@ -241,10 +247,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
         .map(TensorBlock::hash)
         .unwrap_or([0; 32]);
     if block.parent_hash != expected_parent {
-        return Ok(BlockAdmission::PendingParent {
-            height,
-            parent_hash: block.parent_hash,
-        });
+        return admit_side_branch(chain, block, block_hash);
     }
 
     validate(chain, &block, true)?;
@@ -284,6 +287,72 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     })
 }
 
+fn admit_side_branch(
+    chain: &mut Chain,
+    block: TensorBlock,
+    block_hash: Hash,
+) -> Result<BlockAdmission> {
+    let height = block.height;
+    if chain
+        .blocks
+        .iter()
+        .any(|canonical| canonical.height == height && chain.is_block_finalized(&canonical.hash()))
+    {
+        return Ok(BlockAdmission::Invalid {
+            height,
+            hash: block_hash,
+            reason: BlockInvalidReason::FinalizedConflict,
+        });
+    }
+    let Some(parent_state) = known_sibling_parent_state(chain, &block)
+        .or_else(|| known_parent_child_state(chain, &block.parent_hash))
+    else {
+        return Ok(BlockAdmission::PendingParent {
+            height,
+            parent_hash: block.parent_hash,
+        });
+    };
+    let mut validation_chain = chain.clone();
+    validation_chain
+        .block_parent_states
+        .insert(block_hash, parent_state.clone());
+    validate(&validation_chain, &block, true)?;
+    let outcome = apply_outcome(&validation_chain, &block)?;
+    let child_state = apply_block_to_parent_state(
+        &parent_state,
+        chain.params.epoch_length,
+        block.beacon_round,
+        &block.beacon,
+        height,
+        &outcome.selected_receipt_ids,
+        BlockRewardContext {
+            proposer: block.proposer,
+            proposer_reward: block.proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
+        },
+    );
+    chain.block_parent_states.insert(block_hash, parent_state);
+    let parent_hash = block.parent_hash;
+    chain
+        .side_branch_child_states
+        .insert(block_hash, child_state);
+    chain.side_branch_blocks.insert(block_hash, block);
+    Ok(BlockAdmission::SideBranchStored {
+        height,
+        parent_hash,
+        hash: block_hash,
+    })
+}
+
 fn admit_competing_head(
     chain: &mut Chain,
     existing_index: usize,
@@ -315,7 +384,16 @@ fn admit_competing_head(
             reason: BlockInvalidReason::ConflictingHeight,
         });
     }
-    validate(chain, &block, true)?;
+    let parent_state = chain
+        .block_parent_states
+        .get(&existing_hash)
+        .cloned()
+        .unwrap_or_else(|| parent_state_for_validation(chain, &existing));
+    let mut validation_chain = chain.clone();
+    validation_chain
+        .block_parent_states
+        .insert(block_hash, parent_state.clone());
+    validate(&validation_chain, &block, true)?;
     if !competing_head_preferred(&block, &existing) {
         return Ok(BlockAdmission::Invalid {
             height,
@@ -324,10 +402,10 @@ fn admit_competing_head(
         });
     }
 
-    let mut parent_state = parent_state_for_validation(chain, &block);
+    let mut parent_state = parent_state;
     parent_state.block_selected_receipts.remove(&existing_hash);
     parent_state.block_selected_receipts.remove(&block_hash);
-    let outcome = apply_outcome(chain, &block)?;
+    let outcome = apply_outcome(&validation_chain, &block)?;
     chain.blocks[existing_index] = block.clone();
     chain.block_parent_states.remove(&existing_hash);
     chain
@@ -608,11 +686,12 @@ fn validate_fallback_timeout(chain: &Chain, block: &TensorBlock) -> Result<()> {
     if block.height == 0 {
         return Ok(());
     }
-    let Some(parent) = chain.blocks.iter().find(|candidate| {
-        candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
-    }) else {
+    let Some(parent) = known_block(chain, &block.parent_hash) else {
         return Err(TvmError::InvalidReceipt("block parent mismatch"));
     };
+    if parent.height + 1 != block.height {
+        return Err(TvmError::InvalidReceipt("block parent mismatch"));
+    }
     let timeout_seconds = chain
         .params
         .pow_timeout_blocks
@@ -738,6 +817,11 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
     if let Some(parent_state) = chain.block_parent_states.get(&block.hash()) {
         return parent_state.clone();
     }
+    if block.parent_hash != [0; 32]
+        && let Some(parent_state) = known_parent_child_state(chain, &block.parent_hash)
+    {
+        return parent_state;
+    }
 
     let mut parent_state = chain.state.clone();
     let block_hash = block.hash();
@@ -769,6 +853,72 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
     parent_state.block_votes.remove(&block_hash);
     parent_state.finalized_blocks.remove(&block_hash);
     parent_state
+}
+
+fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainState> {
+    if *parent_hash == [0; 32] {
+        let mut genesis_parent = chain.state.clone();
+        genesis_parent.height = 0;
+        genesis_parent.epoch = 0;
+        genesis_parent.finalized_beacon_round = genesis_parent.genesis_beacon_round;
+        genesis_parent.finalized_randomness = genesis_parent.genesis_randomness;
+        return Some(genesis_parent);
+    }
+    if chain
+        .blocks
+        .last()
+        .is_some_and(|block| block.hash() == *parent_hash)
+    {
+        return Some(chain.state.clone());
+    }
+    if let Some(child_state) = chain.side_branch_child_states.get(parent_hash) {
+        return Some(child_state.clone());
+    }
+    let parent = chain
+        .blocks
+        .iter()
+        .find(|candidate| candidate.hash() == *parent_hash)?;
+    let parent_parent_state = chain.block_parent_states.get(parent_hash)?;
+    Some(apply_block_to_parent_state(
+        parent_parent_state,
+        chain.params.epoch_length,
+        parent.beacon_round,
+        &parent.beacon,
+        parent.height,
+        &selected_receipts(chain, parent),
+        BlockRewardContext {
+            proposer: parent.proposer,
+            proposer_reward: parent.proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+            proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
+        },
+    ))
+}
+
+fn known_block<'a>(chain: &'a Chain, block_hash: &Hash) -> Option<&'a TensorBlock> {
+    chain
+        .blocks
+        .iter()
+        .find(|candidate| candidate.hash() == *block_hash)
+        .or_else(|| chain.side_branch_blocks.get(block_hash))
+}
+
+fn known_sibling_parent_state(chain: &Chain, block: &TensorBlock) -> Option<ChainState> {
+    chain
+        .blocks
+        .iter()
+        .chain(chain.side_branch_blocks.values())
+        .find(|sibling| sibling.height == block.height && sibling.parent_hash == block.parent_hash)
+        .and_then(|sibling| chain.block_parent_states.get(&sibling.hash()))
+        .cloned()
 }
 
 fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParentSnapshot {
@@ -1165,7 +1315,10 @@ fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> (u64, Hash) {
     chain
         .blocks
         .iter()
-        .find(|candidate| candidate.height + 1 == block.height)
+        .chain(chain.side_branch_blocks.values())
+        .find(|candidate| {
+            candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
+        })
         .map(|parent| {
             next_finalized_beacon(
                 parent.beacon_round,
@@ -1185,6 +1338,8 @@ fn parent_matches(chain: &Chain, block: &TensorBlock) -> bool {
         return block.parent_hash == [0; 32];
     }
     chain.blocks.iter().any(|candidate| {
+        candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
+    }) || chain.side_branch_blocks.values().any(|candidate| {
         candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
     }) || chain.blocks.last().is_some_and(|candidate| {
         candidate.height + 1 == block.height && candidate.hash() == block.parent_hash

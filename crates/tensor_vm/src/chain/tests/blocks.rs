@@ -656,6 +656,84 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
 }
 
 #[test]
+fn historical_parent_side_branch_is_stored_without_replacing_canonical_head() {
+    let beacon = hash_bytes(b"test", &[b"historical-side-branch"]);
+    let params = ChainParams {
+        pow_timeout_blocks: 1,
+        ..ChainParams::default()
+    };
+    let mut parent = Chain::with_params(params, beacon);
+    let proposer = address(b"historical-side-branch-validator");
+    parent
+        .register_validator(proposer, parent.params().validator_min_stake)
+        .unwrap();
+    parent.produce_block(proposer, 1_000).unwrap();
+
+    let mut canonical = parent.clone();
+    let canonical_one = canonical.produce_block(proposer, 1_006).unwrap();
+    let canonical_two = canonical.produce_block(proposer, 1_012).unwrap();
+    let canonical_state = canonical.state().clone();
+
+    let mut branch = parent.clone();
+    let side_one = branch.produce_block(proposer, 1_007).unwrap();
+    let side_two = branch.produce_block(proposer, 1_013).unwrap();
+    assert_eq!(side_one.parent_hash, canonical_one.parent_hash);
+    assert_ne!(side_one.hash(), canonical_one.hash());
+    assert_eq!(side_two.parent_hash, side_one.hash());
+
+    let mut peer = parent;
+    assert_eq!(
+        peer.admit_block(canonical_one.clone()).unwrap(),
+        BlockAdmission::Applied {
+            height: canonical_one.height,
+            hash: canonical_one.hash(),
+        }
+    );
+    assert_eq!(
+        peer.admit_block(canonical_two.clone()).unwrap(),
+        BlockAdmission::Applied {
+            height: canonical_two.height,
+            hash: canonical_two.hash(),
+        }
+    );
+    assert_eq!(peer.state(), &canonical_state);
+
+    assert_eq!(
+        peer.admit_block(side_one.clone()).unwrap(),
+        BlockAdmission::SideBranchStored {
+            height: side_one.height,
+            parent_hash: side_one.parent_hash,
+            hash: side_one.hash(),
+        }
+    );
+    assert_eq!(peer.state(), &canonical_state);
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(canonical_two.hash())
+    );
+    assert!(peer.side_branch_blocks().contains_key(&side_one.hash()));
+    assert!(
+        peer.side_branch_child_states()
+            .contains_key(&side_one.hash())
+    );
+
+    assert_eq!(
+        peer.admit_block(side_two.clone()).unwrap(),
+        BlockAdmission::SideBranchStored {
+            height: side_two.height,
+            parent_hash: side_one.hash(),
+            hash: side_two.hash(),
+        }
+    );
+    assert_eq!(peer.state(), &canonical_state);
+    assert!(peer.side_branch_blocks().contains_key(&side_two.hash()));
+    assert!(
+        peer.side_branch_child_states()
+            .contains_key(&side_two.hash())
+    );
+}
+
+#[test]
 fn block_kind_cannot_masquerade_across_empty_and_nonempty_blockspace() {
     let beacon = hash_bytes(b"test", &[b"kind-beacon"]);
     let mut empty_chain = Chain::new(beacon);

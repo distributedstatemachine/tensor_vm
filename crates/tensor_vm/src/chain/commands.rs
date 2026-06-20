@@ -136,6 +136,15 @@ impl ChainEngine for Chain {
                     old_hash,
                     hash,
                 }]),
+                BlockAdmission::SideBranchStored {
+                    height,
+                    parent_hash,
+                    hash,
+                } => Ok(vec![ChainEvent::SideBranchBlockStored {
+                    height,
+                    parent_hash,
+                    hash,
+                }]),
                 BlockAdmission::Duplicate { .. } => Ok(Vec::new()),
                 BlockAdmission::PendingParent { .. } => {
                     Err(TvmError::InvalidReceipt("block parent pending"))

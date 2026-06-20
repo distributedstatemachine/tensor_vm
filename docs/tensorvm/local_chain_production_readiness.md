@@ -282,9 +282,11 @@ These are foundation pieces, not completion. Miner receipts, validator attestati
 and configured validator proposer ticks now have role-owned submission paths for locally available work, and
 validators can fetch missing tensors remotely. The chain core now has a current-head competition policy
 that replaces an unfinalized useful head only with a same-parent useful head carrying a strictly better
-PoW hash while keeping finalized and fallback heads stable. The local runtime still needs a fresh full
-Docker proof of that proposer path after the standing `/health` blocker clears, plus full multi-branch
-fork-tree support, before it satisfies the local CPU spec as a production-grade local chain.
+PoW hash while keeping finalized and fallback heads stable. Valid known-parent non-canonical blocks are
+now retained in chain-owned side-branch fork storage with parent and child state snapshots, and those branch
+maps persist through chain-state snapshots. The local runtime still needs a fresh full Docker proof of that
+proposer path after the standing `/health` blocker clears, plus automatic deep-reorg selection, before it
+satisfies the local CPU spec as a production-grade local chain.
 
 ## Highest-Priority Gaps
 

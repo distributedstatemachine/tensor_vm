@@ -43,6 +43,8 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
         },
         blocks: Vec::new(),
         block_parent_states: BTreeMap::new(),
+        side_branch_blocks: BTreeMap::new(),
+        side_branch_child_states: BTreeMap::new(),
         observed_invalid_blocks: BTreeMap::new(),
     }
 }

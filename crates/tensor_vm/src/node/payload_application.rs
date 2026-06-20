@@ -80,7 +80,9 @@ pub fn apply_network_block_payload(
         return NetworkBlockPayloadApply::Invalid;
     }
     match candidate.admit_block(block) {
-        Ok(BlockAdmission::Applied { .. }) | Ok(BlockAdmission::Replaced { .. }) => {
+        Ok(BlockAdmission::Applied { .. })
+        | Ok(BlockAdmission::Replaced { .. })
+        | Ok(BlockAdmission::SideBranchStored { .. }) => {
             *chain = candidate;
             NetworkBlockPayloadApply::Applied { appended: 1 }
         }

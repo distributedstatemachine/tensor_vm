@@ -14,9 +14,12 @@ child roots stay replay-stable after later receipts and blocks. PoW-skip fallbac
 the configured `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks.
 The current-head fork-choice policy now replaces an unfinalized useful head only when a competing useful
 UVPoW block on the same parent has a strictly better PoW hash, while finalized heads and accepted fallback
-heads remain stable. Remaining consensus gaps are full verifier-transcript challenge semantics, full
-multi-branch fork trees, and a fresh full Docker proof of live validator proposer/block-assembly
-networking and diagnostic challenge evidence after the current `/health` blocker clears. Deterministic
+heads remain stable. Valid known-parent side branches are retained in chain-owned fork-tree storage with
+parent and child state snapshots, survive chain-state persistence, and do not mutate canonical head state
+unless the current-head replacement rule applies. Remaining consensus gaps are full verifier-transcript
+challenge semantics, automatic deep-reorg selection, and a fresh full Docker proof of live validator
+proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
+clears. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
 propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).

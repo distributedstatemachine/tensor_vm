@@ -197,6 +197,8 @@ mod tests {
             state: chain.state().clone(),
             blocks,
             block_parent_states: chain.block_parent_states.clone(),
+            side_branch_blocks: chain.side_branch_blocks.clone(),
+            side_branch_child_states: chain.side_branch_child_states.clone(),
         })
     }
 

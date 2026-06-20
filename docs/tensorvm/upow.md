@@ -469,7 +469,9 @@ This gives PoW-style permissionless block proposal + BFT economic finality. Tens
 > Status: the local reference now applies a narrow current-head fork-choice policy for validator
 > competition. A valid same-parent useful UVPoW block can replace the unfinalized current useful head only
 > when its PoW hash is strictly better; finalized heads and accepted fallback heads are not replaced.
-> Full side-branch storage and public Docker evidence remain open.
+> Valid known-parent side branches are now retained in chain-owned fork-tree storage with parent and child
+> state snapshots, and the chain-state codec persists that branch evidence without mutating the canonical
+> head. Automatic deep reorg selection and public Docker evidence remain open.
 
 ### 11.4 Block structure
 

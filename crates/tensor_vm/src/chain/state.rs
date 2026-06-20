@@ -1775,6 +1775,8 @@ pub struct Chain {
     pub(crate) state: ChainState,
     pub(crate) blocks: Vec<TensorBlock>,
     pub(crate) block_parent_states: BTreeMap<Hash, ChainState>,
+    pub(crate) side_branch_blocks: BTreeMap<Hash, TensorBlock>,
+    pub(crate) side_branch_child_states: BTreeMap<Hash, ChainState>,
     pub(crate) observed_invalid_blocks: BTreeMap<Hash, TensorBlock>,
 }
 
@@ -1784,6 +1786,8 @@ impl PartialEq for Chain {
             && self.state == other.state
             && self.blocks == other.blocks
             && self.block_parent_states == other.block_parent_states
+            && self.side_branch_blocks == other.side_branch_blocks
+            && self.side_branch_child_states == other.side_branch_child_states
     }
 }
 
@@ -1795,6 +1799,8 @@ pub(crate) struct ChainParts {
     pub state: ChainState,
     pub blocks: Vec<TensorBlock>,
     pub block_parent_states: BTreeMap<Hash, ChainState>,
+    pub side_branch_blocks: BTreeMap<Hash, TensorBlock>,
+    pub side_branch_child_states: BTreeMap<Hash, ChainState>,
 }
 
 impl Chain {
@@ -1804,6 +1810,8 @@ impl Chain {
             state: parts.state,
             blocks: parts.blocks,
             block_parent_states: parts.block_parent_states,
+            side_branch_blocks: parts.side_branch_blocks,
+            side_branch_child_states: parts.side_branch_child_states,
             observed_invalid_blocks: BTreeMap::new(),
         }
     }

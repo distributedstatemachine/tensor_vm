@@ -5,20 +5,20 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 93 complete - invalid-output delayed reward voiding.
+- Active feature: Iteration 94 complete - side-branch fork tree storage.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
-  malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
-  implemented locally. Late invalid-output attestations now contest settled receipts by voiding delayed
-  pending receipt rewards before maturity.
+  malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, and delayed
+  challenge rewards are implemented locally. Late invalid-output attestations now contest settled receipts
+  by voiding delayed pending receipt rewards before maturity.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue full multi-branch fork-tree work, remaining fraud-path/slashing work, or rerun the
-  full Docker scenario after the `/health` blocker clears.
+- Next action: continue verifier-transcript disputes, remaining fraud-path/slashing work, graph-runtime
+  production, or rerun the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -29,9 +29,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; checker expects live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement | Rerun Docker and continue full fork-tree policy |
+| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement and side-branch storage | Rerun Docker and continue automatic deep-reorg policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy | Remaining: full transcript disputes, full multi-branch fork trees, fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage | Remaining: full transcript disputes, automatic deep-reorg policy, fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
@@ -40,52 +40,61 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 93: Invalid-Output Delayed Reward Voiding
+### Iteration 94: Side-Branch Fork Tree Storage
 
-Feature capability: make late assigned `Invalid` attestations contest already settled receipts by voiding
-their delayed pending receipt rewards before any spendable credit.
+Feature capability: admit valid known-parent non-canonical blocks into chain-owned side-branch storage with
+parent and child state snapshots, without mutating canonical head state unless the current-head replacement
+rule applies.
 
-Canonical owner: `chain::validation::submit_attestation` mutates `settled_receipts`,
-`challenged_receipts`, and `pending_receipt_rewards`.
-Adapter callers: command, RPC, p2p, runtime, and checker paths continue to submit attestations through the
-same chain API.
-Old shortcut being removed: late invalid-output evidence blocked future quorum but did not contest pending
-rewards for a receipt that had already settled.
+Canonical owner: `chain::blocks` and `Chain` fork-tree state.
+Adapter callers: `ChainCommand::SubmitBlock`, p2p/node payload application, storage/node-store snapshots,
+and tests call the same chain admission boundary.
+Old shortcut being removed: valid blocks at known non-head parents were treated as conflicts or pending
+parents instead of being retained as fork-tree branches.
 Regression test that proves the shortcut is gone:
-`chain::tests::invalid_output_evidence_voids_delayed_receipt_rewards_before_release`.
-Behavior with local synthetic block production disabled: attestation admission mutates canonical chain state
-directly; no synthetic producer loop is required.
-Behavior for producer and non-producer roles: both roles apply the same attestation event through chain
-validation and converge on the same settled set and pending reward flags.
-Structured evidence source: `settled_receipts`, `challenged_receipts`, and `pending_receipt_rewards`.
-Finality source: canonical chain state height and delayed reward claim maturity.
-Wire-size and codec boundary: no p2p, block, storage, request, or consensus codec change.
+`chain::tests::historical_parent_side_branch_is_stored_without_replacing_canonical_head`.
+Behavior with local synthetic block production disabled: inbound block payload admission stores side
+branches independently of synthetic job/block production.
+Behavior for producer and non-producer roles: producers and non-producers retain valid alternate branches
+from network payloads; only canonical application changes head state.
+Structured evidence source: `Chain::side_branch_blocks`, `Chain::side_branch_child_states`,
+`block_parent_states`, storage roundtrip, and node payload application.
+Finality source: canonical finalized block set still gates canonical replacement; side-branch storage does
+not finalize or replace finalized heads.
+Wire-size and codec boundary: no p2p block codec change; chain-state storage persists side-branch
+block/state maps.
 
-Files/modules likely touched: `chain/validation.rs`, focused settlement tests, docs, and this plan.
+Files/modules likely touched: `chain/state.rs`, `chain/blocks.rs`, `chain/engine.rs`, `chain/commands.rs`,
+`chain.rs`, `storage/chain_state.rs`, node payload application, focused tests, docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Tests/checkers/docs to add or update: focused settlement test and economics docs.
-Narrow validation commands: `cargo test -p tensor_vm invalid_output_evidence --quiet` and
-`cargo test -p tensor_vm settlement --quiet`.
+Tests/checkers/docs to add or update: focused fork-tree, storage, node payload tests, and consensus docs.
+Narrow validation commands: `cargo test -p tensor_vm side_branch --quiet`,
+`cargo test -p tensor_vm block_payload_application --quiet`, and
+`cargo test -p tensor_vm storage::chain_state --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: a late invalid-output attestation removes the receipt from settled state,
-marks it challenged, voids miner and validator pending receipt rewards, and mature release credits nothing.
-Out of scope: miner stake slashing for invalid output, external drand/VRF, Docker rerun, or codec changes.
-Split trigger: if invalid-output stake slash records are added, split that from delayed reward voiding.
+Expected observable evidence: side branches are retained under known parents with canonical state unchanged;
+grandchildren validate against side-branch child state; persisted reload keeps branch data.
+Out of scope: automatic multi-block reorg selection, public Docker rerun, verifier-transcript fraud proofs,
+or wire format changes.
+Split trigger: if automatic reorg across branch depth is required, split that from branch storage/admission.
 
 Implementation summary:
-- Late assigned `Invalid` attestations now mark the receipt challenged, remove it from settled receipts,
-  and void matching pending miner and validator receipt rewards.
-- Added a settlement regression proving mature release credits nothing after invalid-output evidence voids
-  delayed receipt rewards.
-- Updated economics/readiness docs and coverage notes.
+- Added side-branch block and child-state maps to `Chain`, persisted them in chain-state snapshots, and
+  exposed read-only views.
+- Block admission now stores valid known-parent non-canonical branches and side-branch grandchildren without
+  mutating canonical head state, while preserving current-head useful replacement and finalized-head guards.
+- Node payload application retains side branches through the same `SubmitBlock` path.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm invalid_output_evidence --quiet` and
-  `cargo test -p tensor_vm settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm side_branch --quiet`,
+  `cargo test -p tensor_vm block_payload_application --quiet`,
+  `cargo test -p tensor_vm blocks --quiet`,
+  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`, and
+  `cargo test -p tensor_vm storage::chain_state --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 423 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 424 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -93,6 +102,13 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 93: Invalid-Output Delayed Reward Voiding
+
+Late assigned `Invalid` attestations now mark the receipt challenged, remove it from settled receipts, and
+void matching pending miner and validator receipt rewards before spendability. Validation passed focused
+settlement tests, full crate, clippy, workspace release, and first/final Gate 0. Commit `bf0d5fa` is pushed
+to `origin/main`.
 
 ### Iteration 91: Explicit Fraud-Window Reward Delay Evidence
 
@@ -187,12 +203,15 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 93 on June 20, 2026:
+Latest full validation is Iteration 94 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm invalid_output_evidence --quiet
-cargo test -p tensor_vm settlement --quiet
+cargo test -p tensor_vm side_branch --quiet
+cargo test -p tensor_vm block_payload_application --quiet
+cargo test -p tensor_vm blocks --quiet
+cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
+cargo test -p tensor_vm storage::chain_state --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

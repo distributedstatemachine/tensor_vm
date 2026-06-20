@@ -70,6 +70,14 @@ impl Chain {
         &self.blocks
     }
 
+    pub fn side_branch_blocks(&self) -> &std::collections::BTreeMap<Hash, TensorBlock> {
+        &self.side_branch_blocks
+    }
+
+    pub fn side_branch_child_states(&self) -> &std::collections::BTreeMap<Hash, ChainState> {
+        &self.side_branch_child_states
+    }
+
     pub fn register_miner(&mut self, address: Address, stake: u64) -> Result<()> {
         operators::register_miner(self, address, stake)
     }
