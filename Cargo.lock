@@ -2884,6 +2884,7 @@ dependencies = [
  "clap",
  "futures",
  "libp2p",
+ "num-bigint",
  "serde",
  "serde_json",
  "tensor_vm_explorer",

@@ -127,6 +127,13 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.treasury_reward_bps);
     write_u64(out, params.miner_min_stake);
     write_u64(out, params.validator_min_stake);
+    write_hash(out, &params.difficulty_initial_target);
+    write_hash(out, &params.difficulty_floor_target);
+    write_hash(out, &params.difficulty_ceiling_target);
+    write_u64(out, params.difficulty_target_block_time_seconds);
+    write_u64(out, params.difficulty_retarget_epoch_length);
+    write_u64(out, params.difficulty_retarget_max_ratio);
+    write_u64(out, params.pow_timeout_blocks);
     encode_freivalds_params(out, &params.freivalds);
 }
 
@@ -148,6 +155,13 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         treasury_reward_bps: reader.read_u64()?,
         miner_min_stake: reader.read_u64()?,
         validator_min_stake: reader.read_u64()?,
+        difficulty_initial_target: reader.read_hash()?,
+        difficulty_floor_target: reader.read_hash()?,
+        difficulty_ceiling_target: reader.read_hash()?,
+        difficulty_target_block_time_seconds: reader.read_u64()?,
+        difficulty_retarget_epoch_length: reader.read_u64()?,
+        difficulty_retarget_max_ratio: reader.read_u64()?,
+        pow_timeout_blocks: reader.read_u64()?,
         freivalds: decode_freivalds_params(reader)?,
     })
 }

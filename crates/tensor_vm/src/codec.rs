@@ -1,4 +1,4 @@
-use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock};
+use crate::chain::{BlockProductionKind, BlockVote, JobState, ReceiptState, TensorBlock};
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
@@ -6,7 +6,7 @@ use crate::tensor::DType;
 use crate::types::Hash;
 use crate::verify::{ValidatorAttestation, VerificationResult};
 
-pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 8 * 4 + 32 * 11;
+pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 1 + 8 * 4 + 32 * 11;
 pub(crate) const BLOCK_VOTE_PAYLOAD_LEN: usize = 32 * 3 + 8 * 2;
 pub(crate) const ATTESTATION_PAYLOAD_LEN: usize = 32 * 5 + 8 + 3;
 
@@ -84,6 +84,7 @@ pub(crate) fn encode_tensor_block_payload(block: &TensorBlock) -> Vec<u8> {
     write_hash(&mut out, &block.state_root);
     write_hash(&mut out, &block.reward_root);
     write_hash(&mut out, &block.beacon);
+    out.push(block.production_kind.tag());
     write_hash(&mut out, &block.difficulty_target);
     write_u64(&mut out, block.nonce);
     write_u64(&mut out, block.timestamp);
@@ -108,6 +109,11 @@ pub(crate) fn decode_tensor_block_payload(input: &[u8]) -> Option<TensorBlock> {
         state_root: read_hash(input, &mut offset).ok()?,
         reward_root: read_hash(input, &mut offset).ok()?,
         beacon: read_hash(input, &mut offset).ok()?,
+        production_kind: {
+            let kind = BlockProductionKind::from_tag(*input.get(offset)?)?;
+            offset += 1;
+            kind
+        },
         difficulty_target: read_hash(input, &mut offset).ok()?,
         nonce: read_u64(input, &mut offset).ok()?,
         timestamp: read_u64(input, &mut offset).ok()?,
@@ -531,6 +537,7 @@ mod tests {
             state_root: hash(7),
             reward_root: hash(8),
             beacon: hash(9),
+            production_kind: BlockProductionKind::UsefulVerificationPow,
             difficulty_target: hash(10),
             nonce: 12,
             timestamp: 13,

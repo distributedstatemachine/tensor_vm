@@ -8,8 +8,10 @@ fn resign_test_block(block: &mut TensorBlock) {
 }
 
 fn mine_test_block(block: &mut TensorBlock) {
-    while !block.pow_valid() {
-        block.nonce = block.nonce.saturating_add(1);
+    if block.production_kind.requires_pow() {
+        while !block.pow_valid() {
+            block.nonce = block.nonce.saturating_add(1);
+        }
     }
     resign_test_block(block);
 }
@@ -166,9 +168,116 @@ fn produced_blocks_mark_selected_settled_receipts_included_once() {
 
     let second = chain.produce_block(validator, 2_000).unwrap();
     assert!(chain.selected_receipts_for_block(&second).is_empty());
+    assert_eq!(second.production_kind, BlockProductionKind::PowSkipFallback);
     assert_eq!(
         second.settled_receipt_set_root,
         selected_receipt_root(&BTreeSet::new())
+    );
+}
+
+#[test]
+fn zero_receipt_parent_produces_explicit_fallback_block() {
+    let beacon = hash_bytes(b"test", &[b"fallback-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let validator = address(b"fallback-validator");
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let block = chain.produce_block(validator, 1_000).unwrap();
+
+    assert_eq!(block.production_kind, BlockProductionKind::PowSkipFallback);
+    assert_eq!(block.nonce, 0);
+    assert!(chain.selected_receipts_for_block(&block).is_empty());
+    assert_eq!(chain.validate_block(&block), Ok(()));
+}
+
+#[test]
+fn block_kind_cannot_masquerade_across_empty_and_nonempty_blockspace() {
+    let beacon = hash_bytes(b"test", &[b"kind-beacon"]);
+    let mut empty_chain = Chain::new(beacon);
+    let validator = address(b"kind-validator");
+    empty_chain.register_validator(validator, 10_000).unwrap();
+    let fallback = empty_chain.produce_block(validator, 1_000).unwrap();
+
+    let mut bad_useful = fallback.clone();
+    bad_useful.production_kind = BlockProductionKind::UsefulVerificationPow;
+    mine_test_block(&mut bad_useful);
+    assert_eq!(
+        empty_chain.validate_block(&bad_useful),
+        Err(TvmError::InvalidReceipt(
+            "useful pow requires selected receipts"
+        ))
+    );
+
+    let mut useful_chain = Chain::new(beacon);
+    let miner = address(b"kind-miner");
+    useful_chain.register_miner(miner, 100).unwrap();
+    useful_chain.register_validator(validator, 10_000).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    useful_chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    useful_chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    let useful = useful_chain.produce_block(validator, 1_000).unwrap();
+    assert_eq!(
+        useful.production_kind,
+        BlockProductionKind::UsefulVerificationPow
+    );
+
+    let mut bad_fallback = useful.clone();
+    bad_fallback.production_kind = BlockProductionKind::PowSkipFallback;
+    bad_fallback.nonce = 0;
+    resign_test_block(&mut bad_fallback);
+    assert_eq!(
+        useful_chain.validate_block(&bad_fallback),
+        Err(TvmError::InvalidReceipt(
+            "fallback requires zero selected receipts"
+        ))
+    );
+}
+
+#[test]
+fn uvpow_retarget_boundary_updates_target_with_bounded_adjustment() {
+    let beacon = hash_bytes(b"test", &[b"retarget-beacon"]);
+    let mut params = ChainParams {
+        difficulty_retarget_epoch_length: 2,
+        difficulty_target_block_time_seconds: 6,
+        difficulty_retarget_max_ratio: 4,
+        ..ChainParams::default()
+    };
+    params.difficulty_floor_target = [1; 32];
+    params.difficulty_ceiling_target = [0xff; 32];
+    let mut chain = Chain::with_params(params, beacon);
+    let validator = address(b"retarget-validator");
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let first = chain.produce_block(validator, 1_000).unwrap();
+    let second = chain.produce_block(validator, 1_006).unwrap();
+    assert_eq!(first.difficulty_target, second.difficulty_target);
+    let expected = chain.expected_difficulty_target(2);
+    assert!(expected < second.difficulty_target);
+
+    let third = chain.produce_block(validator, 1_012).unwrap();
+    assert_eq!(third.difficulty_target, expected);
+}
+
+#[test]
+fn uvpow_non_retarget_heights_reuse_parent_target() {
+    let beacon = hash_bytes(b"test", &[b"non-retarget-beacon"]);
+    let params = ChainParams {
+        difficulty_retarget_epoch_length: 3,
+        difficulty_target_block_time_seconds: 6,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let validator = address(b"non-retarget-validator");
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let first = chain.produce_block(validator, 1_000).unwrap();
+    let second = chain.produce_block(validator, 1_006).unwrap();
+
+    assert_eq!(first.difficulty_target, second.difficulty_target);
+    assert_eq!(
+        chain.expected_difficulty_target(2),
+        second.difficulty_target
     );
 }
 

@@ -23,6 +23,13 @@ pub struct ChainParams {
     pub treasury_reward_bps: u64,
     pub miner_min_stake: u64,
     pub validator_min_stake: u64,
+    pub difficulty_initial_target: Hash,
+    pub difficulty_floor_target: Hash,
+    pub difficulty_ceiling_target: Hash,
+    pub difficulty_target_block_time_seconds: u64,
+    pub difficulty_retarget_epoch_length: u64,
+    pub difficulty_retarget_max_ratio: u64,
+    pub pow_timeout_blocks: u64,
     pub freivalds: FreivaldsParams,
 }
 
@@ -45,9 +52,28 @@ impl Default for ChainParams {
             treasury_reward_bps: 500,
             miner_min_stake: 100,
             validator_min_stake: 10_000,
+            difficulty_initial_target: default_useful_pow_target(),
+            difficulty_floor_target: default_difficulty_floor_target(),
+            difficulty_ceiling_target: [0xff; 32],
+            difficulty_target_block_time_seconds: 6,
+            difficulty_retarget_epoch_length: 100,
+            difficulty_retarget_max_ratio: 4,
+            pow_timeout_blocks: 2,
             freivalds: FreivaldsParams::default(),
         }
     }
+}
+
+fn default_useful_pow_target() -> Hash {
+    let mut target = [0xff; 32];
+    target[0] = 0x7f;
+    target
+}
+
+fn default_difficulty_floor_target() -> Hash {
+    let mut target = [0xff; 32];
+    target[0] = 0x03;
+    target
 }
 
 impl ChainParams {
@@ -327,6 +353,40 @@ impl Transaction {
     }
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum BlockProductionKind {
+    UsefulVerificationPow,
+    PowSkipFallback,
+}
+
+impl BlockProductionKind {
+    pub fn tag(self) -> u8 {
+        match self {
+            Self::UsefulVerificationPow => 1,
+            Self::PowSkipFallback => 2,
+        }
+    }
+
+    pub fn from_tag(tag: u8) -> Option<Self> {
+        match tag {
+            1 => Some(Self::UsefulVerificationPow),
+            2 => Some(Self::PowSkipFallback),
+            _ => None,
+        }
+    }
+
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::UsefulVerificationPow => "useful_verification_pow",
+            Self::PowSkipFallback => "pow_skip_fallback",
+        }
+    }
+
+    pub fn requires_pow(self) -> bool {
+        matches!(self, Self::UsefulVerificationPow)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TensorBlock {
     pub height: u64,
@@ -339,6 +399,7 @@ pub struct TensorBlock {
     pub state_root: Hash,
     pub reward_root: Hash,
     pub beacon: Hash,
+    pub production_kind: BlockProductionKind,
     pub difficulty_target: Hash,
     pub nonce: u64,
     pub timestamp: u64,
@@ -361,6 +422,7 @@ impl TensorBlock {
                 &self.state_root,
                 &self.reward_root,
                 &self.beacon,
+                &[self.production_kind.tag()],
                 &self.difficulty_target,
                 &self.nonce.to_le_bytes(),
                 &self.timestamp.to_le_bytes(),
@@ -382,6 +444,7 @@ impl TensorBlock {
                 &self.state_root,
                 &self.reward_root,
                 &self.beacon,
+                &[self.production_kind.tag()],
                 &self.difficulty_target,
                 &self.timestamp.to_le_bytes(),
             ],

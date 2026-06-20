@@ -7,6 +7,7 @@ use super::{
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
+use num_bigint::BigUint;
 use std::collections::BTreeSet;
 
 pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
@@ -27,7 +28,12 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
     let attestation_root = attestation_root(&chain.state.attestations);
     let chain_state_root = state_root(&chain.state);
     let reward_root = reward_root(&chain.state.rewards);
-    let difficulty_target = useful_pow_difficulty_target();
+    let production_kind = if selection.receipt_ids.is_empty() {
+        super::BlockProductionKind::PowSkipFallback
+    } else {
+        super::BlockProductionKind::UsefulVerificationPow
+    };
+    let difficulty_target = expected_difficulty_target(chain, chain.state.height);
     let mut block = TensorBlock {
         height: chain.state.height,
         parent_hash,
@@ -39,13 +45,16 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         state_root: chain_state_root,
         reward_root,
         beacon,
+        production_kind,
         difficulty_target,
         nonce: 0,
         timestamp,
         proposer_signature: [0; 32],
         validator_signature_aggregate: [0; 32],
     };
-    block.nonce = find_nonce(&block);
+    if block.production_kind.requires_pow() {
+        block.nonce = find_nonce(&block);
+    }
     let block_hash = block.hash();
     block.proposer_signature = sign(&proposer, &block_hash);
     block.validator_signature_aggregate =
@@ -64,12 +73,12 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
     chain.state.epoch = chain.state.height / chain.params.epoch_length.max(1);
     chain.state.finalized_randomness =
         next_finalized_randomness(&beacon, &block_hash, chain.state.height);
-    block
-        .pow_valid()
-        .then_some(block)
-        .ok_or(TvmError::InvalidReceipt(
+    if block.production_kind.requires_pow() && !block.pow_valid() {
+        return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
-        ))
+        ));
+    }
+    Ok(block)
 }
 
 pub(super) fn produce_with_rewards(
@@ -188,10 +197,90 @@ pub(super) fn blockspace_caps() -> BlockspaceCaps {
     BlockspaceCaps::default()
 }
 
-pub(super) fn useful_pow_difficulty_target() -> Hash {
-    let mut target = [0xff; 32];
-    target[0] = 0x7f;
+pub(super) fn expected_difficulty_target(chain: &Chain, height: u64) -> Hash {
+    let parent_target = if height == 0 {
+        chain.params.difficulty_initial_target
+    } else {
+        chain
+            .blocks
+            .iter()
+            .find(|block| block.height + 1 == height)
+            .or_else(|| chain.blocks.last())
+            .map(|block| block.difficulty_target)
+            .unwrap_or(chain.params.difficulty_initial_target)
+    };
+    let interval = chain.params.difficulty_retarget_epoch_length.max(1);
+    let window_start_height = height.saturating_sub(interval);
+    let window = chain
+        .blocks
+        .iter()
+        .filter(|block| block.height >= window_start_height && block.height < height)
+        .collect::<Vec<_>>();
+    if height == 0 || !height.is_multiple_of(interval) || window.len() < interval as usize {
+        return clamp_target(&chain.params, parent_target);
+    }
+
+    let Some(first) = window.first() else {
+        return clamp_target(&chain.params, parent_target);
+    };
+    let Some(last) = window.last() else {
+        return clamp_target(&chain.params, parent_target);
+    };
+    let parent_target = chain
+        .blocks
+        .iter()
+        .find(|block| block.height + 1 == height)
+        .map(|block| block.difficulty_target)
+        .unwrap_or(chain.params.difficulty_initial_target);
+
+    let observed_time = last.timestamp.saturating_sub(first.timestamp).max(1);
+    let target_epoch_time = chain
+        .params
+        .difficulty_target_block_time_seconds
+        .max(1)
+        .saturating_mul(interval)
+        .max(1);
+    let max_ratio = chain.params.difficulty_retarget_max_ratio.max(1);
+    let (numerator, denominator) = bounded_ratio(observed_time, target_epoch_time, max_ratio);
+    clamp_target(
+        &chain.params,
+        scale_target(parent_target, numerator, denominator),
+    )
+}
+
+fn bounded_ratio(observed_time: u64, target_epoch_time: u64, max_ratio: u64) -> (u64, u64) {
+    let observed = observed_time as u128;
+    let target = target_epoch_time.max(1) as u128;
+    let max = max_ratio.max(1) as u128;
+    if observed.saturating_mul(max) < target {
+        (1, max_ratio.max(1))
+    } else if observed > target.saturating_mul(max) {
+        (max_ratio.max(1), 1)
+    } else {
+        (observed_time, target_epoch_time.max(1))
+    }
+}
+
+fn scale_target(target: Hash, numerator: u64, denominator: u64) -> Hash {
+    let value = BigUint::from_bytes_be(&target);
+    let scaled = value * BigUint::from(numerator) / BigUint::from(denominator.max(1));
+    biguint_to_hash(scaled)
+}
+
+fn biguint_to_hash(value: BigUint) -> Hash {
+    let bytes = value.to_bytes_be();
+    if bytes.len() > 32 {
+        return [0xff; 32];
+    }
+    let mut out = [0; 32];
+    out[32 - bytes.len()..].copy_from_slice(&bytes);
+    out
+}
+
+fn clamp_target(params: &super::ChainParams, target: Hash) -> Hash {
     target
+        .max(params.difficulty_floor_target)
+        .min(params.difficulty_ceiling_target)
 }
 
 pub(super) fn canonical_blockspace(
@@ -256,13 +345,20 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
     if !parent_matches(chain, block) {
         return Err(TvmError::InvalidReceipt("block parent mismatch"));
     }
-    if block.difficulty_target != useful_pow_difficulty_target() {
+    if block.difficulty_target != expected_difficulty_target(chain, block.height) {
         return Err(TvmError::InvalidReceipt("block difficulty target mismatch"));
     }
-    if !block.pow_valid() {
+    if block.production_kind.requires_pow() && !block.pow_valid() {
         return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
         ));
+    }
+    if matches!(
+        block.production_kind,
+        super::BlockProductionKind::PowSkipFallback
+    ) && block.nonce != 0
+    {
+        return Err(TvmError::InvalidReceipt("fallback nonce must be zero"));
     }
     let block_hash = block.hash();
     if !verify_signature(&block.proposer, &block_hash, &block.proposer_signature) {
@@ -297,6 +393,22 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
         }
         None => selection.receipt_ids,
     };
+    match block.production_kind {
+        super::BlockProductionKind::UsefulVerificationPow => {
+            if selected_receipts.is_empty() {
+                return Err(TvmError::InvalidReceipt(
+                    "useful pow requires selected receipts",
+                ));
+            }
+        }
+        super::BlockProductionKind::PowSkipFallback => {
+            if !selected_receipts.is_empty() {
+                return Err(TvmError::InvalidReceipt(
+                    "fallback requires zero selected receipts",
+                ));
+            }
+        }
+    }
     let selected_set: BTreeSet<Hash> = selected_receipts.iter().copied().collect();
     if block.settled_receipt_set_root != selected_receipt_root(&selected_set) {
         return Err(TvmError::InvalidReceipt("noncanonical settled receipt set"));

@@ -27,6 +27,11 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
         .map(|receipt| receipt.estimated_block_bytes())
         .sum::<u64>();
     let block_valid = chain.validate_block(block).is_ok();
+    let expected_difficulty_target = chain.expected_difficulty_target(block.height);
+    let fallback_valid = !block.production_kind.requires_pow()
+        && selected_receipt_ids.is_empty()
+        && block.nonce == 0
+        && block.difficulty_target == expected_difficulty_target;
     let proposer_registered = chain.state().validators().contains_key(&block.proposer);
     let pow_hash = block.pow_hash();
     let pow_header_hash = block.pow_header_hash();
@@ -84,7 +89,10 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("data_dir", data_dir);
     report.field("height", height);
     report.field("block_hash", hex(&block_hash));
-    report.field("block_validation", "useful_verification_pow");
+    report.field("block_validation", block.production_kind.label());
+    report.field("block_kind", block.production_kind.label());
+    report.field("pow_skip_fallback", !block.production_kind.requires_pow());
+    report.field("fallback_valid", fallback_valid);
     report.field("parent_hash", hex(&block.parent_hash));
     report.field("proposer", hex(&block.proposer));
     report.field("proposer_role", "validator");
@@ -109,10 +117,28 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("check_leaf_count", selected_receipt_ids.len());
     report.field("checks_root_recomputed", block_valid);
     report.field("difficulty_target", hex(&block.difficulty_target));
+    report.field(
+        "expected_difficulty_target",
+        hex(&expected_difficulty_target),
+    );
+    report.field(
+        "difficulty_retarget_epoch_length",
+        chain.params().difficulty_retarget_epoch_length,
+    );
+    report.field(
+        "difficulty_target_block_time_seconds",
+        chain.params().difficulty_target_block_time_seconds,
+    );
+    report.field(
+        "difficulty_retarget_max_ratio",
+        chain.params().difficulty_retarget_max_ratio,
+    );
+    report.field("pow_timeout_blocks", chain.params().pow_timeout_blocks);
     report.field("nonce", block.nonce);
     report.field("pow_header_hash", hex(&pow_header_hash));
     report.field("pow_hash", hex(&pow_hash));
     report.field("pow_valid", block.pow_valid());
+    report.field("pow_required", block.production_kind.requires_pow());
     report.field("canonical_blockspace_valid", block_valid);
     report.field("block_vote_count", valid_vote_validators.len());
     report.field(

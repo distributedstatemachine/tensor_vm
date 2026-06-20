@@ -323,6 +323,7 @@ mod tests {
             state_root: hash_bytes(b"test-block", &[label, b"state"]),
             reward_root: hash_bytes(b"test-block", &[label, b"rewards"]),
             beacon: hash_bytes(b"test-block", &[label, b"beacon"]),
+            production_kind: crate::chain::BlockProductionKind::UsefulVerificationPow,
             difficulty_target: [0xff; 32],
             nonce: height.saturating_add(1),
             timestamp: height.saturating_mul(6),

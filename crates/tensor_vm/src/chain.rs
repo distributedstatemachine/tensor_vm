@@ -30,9 +30,9 @@ pub use engine::{BlockAdmission, BlockInvalidReason, ChainCommand, ChainEngine, 
 #[cfg(test)]
 use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
-    AccountState, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams, ChainState,
-    HardwareClass, JobState, MinerState, ModelState, ReceiptState, RewardAllocation, RewardState,
-    TensorBlock, Transaction, ValidatorState,
+    AccountState, BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain,
+    ChainParams, ChainState, HardwareClass, JobState, MinerState, ModelState, ReceiptState,
+    RewardAllocation, RewardState, TensorBlock, Transaction, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -256,6 +256,10 @@ impl Chain {
 
     pub fn validate_block(&self, block: &TensorBlock) -> Result<()> {
         blocks::validate(self, block, true)
+    }
+
+    pub fn expected_difficulty_target(&self, height: u64) -> Hash {
+        blocks::expected_difficulty_target(self, height)
     }
 
     pub fn state_root(&self) -> Hash {

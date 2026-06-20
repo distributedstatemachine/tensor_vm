@@ -523,7 +523,17 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     stdout_u64(&block, "nonce");
     stdout_hex_hash(&block, "pow_header_hash");
     stdout_hex_hash(&block, "pow_hash");
-    assert_eq!(stdout_value(&block, "pow_valid"), "true");
+    if stdout_value(&block, "pow_required") == "true" {
+        assert_eq!(stdout_value(&block, "pow_valid"), "true");
+        assert_eq!(
+            stdout_value(&block, "block_kind"),
+            "useful_verification_pow"
+        );
+    } else {
+        assert_eq!(stdout_value(&block, "block_kind"), "pow_skip_fallback");
+        assert_eq!(stdout_value(&block, "pow_skip_fallback"), "true");
+        assert_eq!(stdout_value(&block, "fallback_valid"), "true");
+    }
     assert_ne!(stdout_hex_hash(&block, "state_root"), "0".repeat(64));
     assert_eq!(stdout_value(&block, "finalized"), "true");
     assert!(stdout_u64(&block, "block_vote_count") > 0);
@@ -645,7 +655,17 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
         stdout_value(&block, "tensorwork_proposer_selection"),
         "false"
     );
-    assert_eq!(stdout_value(&block, "pow_valid"), "true");
+    if stdout_value(&block, "pow_required") == "true" {
+        assert_eq!(stdout_value(&block, "pow_valid"), "true");
+        assert_eq!(
+            stdout_value(&block, "block_kind"),
+            "useful_verification_pow"
+        );
+    } else {
+        assert_eq!(stdout_value(&block, "block_kind"), "pow_skip_fallback");
+        assert_eq!(stdout_value(&block, "pow_skip_fallback"), "true");
+        assert_eq!(stdout_value(&block, "fallback_valid"), "true");
+    }
     assert!(matches!(
         stdout_value(&block, "canonical_blockspace_valid"),
         "true" | "false"
