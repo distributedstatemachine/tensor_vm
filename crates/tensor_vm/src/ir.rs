@@ -501,6 +501,11 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "relu" => unary_tensor(one_tensor_value(&args)?, signed_relu)?,
         "reshape" => reshape_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "broadcast" => broadcast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "squeeze" => squeeze_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "unsqueeze" => unsqueeze_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "slice" => slice_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "tril" => triangular_tensor(one_tensor_value(&args)?, &op.kwargs, true)?,
+        "triu" => triangular_tensor(one_tensor_value(&args)?, &op.kwargs, false)?,
         "neg" => {
             let tensor = one_tensor_value(&args)?;
             unary_tensor(tensor, |value| field::sub(0, value))?
@@ -630,6 +635,97 @@ fn broadcast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Resu
         data.push(broadcast_value(tensor, &shape, index)?);
     }
     Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn squeeze_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir squeeze requires explicit dim",
+    ))?;
+    let mut shape = tensor.shape().to_vec();
+    if dim >= shape.len() || shape[dim] != 1 || shape.len() == 1 {
+        return Err(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"));
+    }
+    shape.remove(dim);
+    Tensor::from_vec_with_scale(
+        shape,
+        tensor.dtype(),
+        tensor.scale(),
+        tensor.as_slice().to_vec(),
+    )
+}
+
+fn unsqueeze_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir unsqueeze requires explicit dim",
+    ))?;
+    let mut shape = tensor.shape().to_vec();
+    if dim > shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"));
+    }
+    shape.insert(dim, 1);
+    Tensor::from_vec_with_scale(
+        shape,
+        tensor.dtype(),
+        tensor.scale(),
+        tensor.as_slice().to_vec(),
+    )
+}
+
+fn slice_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir slice requires explicit dim",
+    ))?;
+    let start = optional_usize_kwarg(kwargs, "start")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir slice requires start"))?;
+    let end = optional_usize_kwarg(kwargs, "end")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir slice requires end"))?;
+    if dim >= tensor.shape().len() || start > end || end > tensor.shape()[dim] || start == end {
+        return Err(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"));
+    }
+    let mut shape = tensor.shape().to_vec();
+    shape[dim] = end - start;
+    let mut data = Vec::with_capacity(checked_usize_product(&shape)?);
+    for output_index in 0..checked_usize_product(&shape)? {
+        let mut coords = unravel_index(&shape, output_index)?;
+        coords[dim] += start;
+        data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
+    }
+    Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn triangular_tensor(
+    tensor: &Tensor,
+    kwargs: &BTreeMap<String, IrValue>,
+    lower: bool,
+) -> Result<Tensor> {
+    if tensor.shape().len() != 2 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir triangular rank mismatch",
+        ));
+    }
+    let diagonal = integer_kwarg(kwargs, "diagonal")?;
+    let [rows, cols] = [tensor.shape()[0], tensor.shape()[1]];
+    let mut data = Vec::with_capacity(tensor.len());
+    for row in 0..rows {
+        for col in 0..cols {
+            let keep = if lower {
+                (col as i64) <= (row as i64).saturating_add(diagonal)
+            } else {
+                (col as i64) >= (row as i64).saturating_add(diagonal)
+            };
+            data.push(if keep {
+                tensor.as_slice()[row * cols + col]
+            } else {
+                0
+            });
+        }
+    }
+    Tensor::from_vec_with_scale(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.scale(),
+        data,
+    )
 }
 
 fn binary_elementwise_tensor(
@@ -1759,6 +1855,19 @@ fn infer_outputs(
                 scale: arg.scale,
             }
         }
+        "squeeze" => infer_squeeze(args, kwargs)?,
+        "unsqueeze" => infer_unsqueeze(args, kwargs)?,
+        "slice" => infer_slice(args, kwargs)?,
+        "tril" | "triu" => {
+            let arg = one_arg(args)?;
+            if arg.shape.len() != 2 {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir triangular rank mismatch",
+                ));
+            }
+            integer_kwarg(kwargs, "diagonal")?;
+            arg.clone()
+        }
         "identity" | "neg" | "abs" | "sign" | "relu" => one_arg(args)?.clone(),
         "round" => {
             let arg = one_arg(args)?;
@@ -2052,6 +2161,51 @@ fn infer_stack_shape(
     }
     let mut output = args[0].clone();
     output.shape.insert(dim, args.len() as i64);
+    Ok(output)
+}
+
+fn infer_squeeze(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Result<ValueShape> {
+    let arg = one_arg(args)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"))?;
+    if dim >= arg.shape.len() || arg.shape[dim] != 1 || arg.shape.len() == 1 {
+        return Err(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"));
+    }
+    let mut output = arg.clone();
+    output.shape.remove(dim);
+    Ok(output)
+}
+
+fn infer_unsqueeze(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Result<ValueShape> {
+    let arg = one_arg(args)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"))?;
+    if dim > arg.shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"));
+    }
+    let mut output = arg.clone();
+    output.shape.insert(dim, 1);
+    Ok(output)
+}
+
+fn infer_slice(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Result<ValueShape> {
+    let arg = one_arg(args)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir slice dim mismatch"))?;
+    let start = optional_usize_kwarg(kwargs, "start")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"))?;
+    let end = optional_usize_kwarg(kwargs, "end")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"))?;
+    if dim >= arg.shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir slice dim mismatch"));
+    }
+    let dim_len = usize::try_from(arg.shape[dim])
+        .map_err(|_| TvmError::InvalidReceipt("tensor ir slice bounds mismatch"))?;
+    if start > end || end > dim_len || start == end {
+        return Err(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"));
+    }
+    let mut output = arg.clone();
+    output.shape[dim] = (end - start) as i64;
     Ok(output)
 }
 
@@ -2597,7 +2751,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 43] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -2725,6 +2879,56 @@ const FROZEN_OP_REGISTRY: [OpSpec; 43] = [
         output_count: 1,
         allowed_kwargs: &["shape"],
         required_kwargs: &["shape"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "squeeze",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["dim"],
+        required_kwargs: &["dim"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "unsqueeze",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["dim"],
+        required_kwargs: &["dim"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "slice",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["dim", "start", "end"],
+        required_kwargs: &["dim", "start", "end"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "tril",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["diagonal"],
+        required_kwargs: &["diagonal"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "triu",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["diagonal"],
+        required_kwargs: &["diagonal"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
@@ -4200,6 +4404,122 @@ mod tests {
         assert_eq!(
             bad_bounds.validate_for_consensus(),
             Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"))
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_single_output_structural_ops() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![3, 3], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "unsqueeze".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![tensor_spec(
+                        "expanded",
+                        vec![1, 3, 3],
+                        DType::FieldElement,
+                        0,
+                    )],
+                },
+                OpNode {
+                    id: 1,
+                    op: "squeeze".to_owned(),
+                    args: vec![op_ref(0)],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![tensor_spec("restored", vec![3, 3], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 2,
+                    op: "slice".to_owned(),
+                    args: vec![op_ref(1)],
+                    kwargs: BTreeMap::from([
+                        ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0))),
+                        ("start".to_owned(), IrValue::Literal(IrLiteral::Uint(0))),
+                        ("end".to_owned(), IrValue::Literal(IrLiteral::Uint(2))),
+                    ]),
+                    out: vec![tensor_spec("top_rows", vec![2, 3], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 3,
+                    op: "triu".to_owned(),
+                    args: vec![op_ref(1)],
+                    kwargs: BTreeMap::from([(
+                        "diagonal".to_owned(),
+                        IrValue::Literal(IrLiteral::Int(0)),
+                    )]),
+                    out: vec![tensor_spec("upper", vec![3, 3], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 4,
+                    op: "tril".to_owned(),
+                    args: vec![op_ref(3)],
+                    kwargs: BTreeMap::from([(
+                        "diagonal".to_owned(),
+                        IrValue::Literal(IrLiteral::Int(0)),
+                    )]),
+                    out: vec![tensor_spec("diagonal", vec![3, 3], DType::FieldElement, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "top_rows".to_owned(),
+                    value: op_ref(2),
+                },
+                GraphOutput {
+                    name: "diagonal".to_owned(),
+                    value: op_ref(4),
+                },
+            ],
+        };
+        graph.validate_for_consensus().unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([(
+                    "x".to_owned(),
+                    Tensor::from_vec(
+                        vec![3, 3],
+                        DType::FieldElement,
+                        vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+                    )
+                    .unwrap(),
+                )]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["top_rows"],
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6]).unwrap()
+        );
+        assert_eq!(
+            execution.outputs["diagonal"],
+            Tensor::from_vec(
+                vec![3, 3],
+                DType::FieldElement,
+                vec![1, 0, 0, 0, 5, 0, 0, 0, 9]
+            )
+            .unwrap()
+        );
+        assert_eq!(execution.op_traces.len(), 5);
+
+        let mut bad_squeeze = graph;
+        bad_squeeze.ops[1].kwargs =
+            BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]);
+        assert_eq!(
+            bad_squeeze.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"))
         );
     }
 

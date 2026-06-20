@@ -1500,6 +1500,168 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_single_output_structural_receipt() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![3, 3],
+                dtype: DType::FieldElement,
+                scale: 0,
+            }],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "unsqueeze".to_owned(),
+                    args: vec![IrRef::Input {
+                        name: "x".to_owned(),
+                    }],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "expanded".to_owned(),
+                        shape: vec![1, 3, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 1,
+                    op: "squeeze".to_owned(),
+                    args: vec![IrRef::Op { id: 0, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "restored".to_owned(),
+                        shape: vec![3, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 2,
+                    op: "slice".to_owned(),
+                    args: vec![IrRef::Op { id: 1, idx: 0 }],
+                    kwargs: BTreeMap::from([
+                        ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0))),
+                        ("start".to_owned(), IrValue::Literal(IrLiteral::Uint(0))),
+                        ("end".to_owned(), IrValue::Literal(IrLiteral::Uint(2))),
+                    ]),
+                    out: vec![TensorSpec {
+                        name: "top_rows".to_owned(),
+                        shape: vec![2, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 3,
+                    op: "triu".to_owned(),
+                    args: vec![IrRef::Op { id: 1, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "diagonal".to_owned(),
+                        IrValue::Literal(IrLiteral::Int(0)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "upper".to_owned(),
+                        shape: vec![3, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 4,
+                    op: "tril".to_owned(),
+                    args: vec![IrRef::Op { id: 3, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "diagonal".to_owned(),
+                        IrValue::Literal(IrLiteral::Int(0)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "diagonal".to_owned(),
+                        shape: vec![3, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "top_rows".to_owned(),
+                    value: IrRef::Op { id: 2, idx: 0 },
+                },
+                GraphOutput {
+                    name: "diagonal".to_owned(),
+                    value: IrRef::Op { id: 4, idx: 0 },
+                },
+            ],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input = Tensor::from_vec(
+            vec![3, 3],
+            DType::FieldElement,
+            vec![1, 2, 3, 4, 5, 6, 7, 8, 9],
+        )
+        .unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 9);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-structural-miner"),
+            &inputs,
+            1,
+            5,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["top_rows"],
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6]).unwrap()
+        );
+        assert_eq!(
+            outputs["diagonal"],
+            Tensor::from_vec(
+                vec![3, 3],
+                DType::FieldElement,
+                vec![1, 0, 0, 0, 5, 0, 0, 0, 9]
+            )
+            .unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-structural-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+
+        let mut missing_slice = cpu_reference_conformance_profile().unwrap();
+        missing_slice.passed_ops.remove("slice");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-structural-validation"]),
+                conformance_profile: &missing_slice,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn tensor_op_verifier_rejects_metadata_and_shape_mismatches() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);

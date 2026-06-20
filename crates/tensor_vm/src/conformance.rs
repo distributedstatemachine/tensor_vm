@@ -462,6 +462,56 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[6],
         ),
         vector(
+            "field-squeeze-dim1-v1",
+            "squeeze",
+            "B",
+            &[&[2, 1, 3]],
+            &[("dim", 1)],
+            &[&[1, 2, 3, 4, 5, 6]],
+            &[1, 2, 3, 4, 5, 6],
+            &[2, 3],
+        ),
+        vector(
+            "field-unsqueeze-dim1-v1",
+            "unsqueeze",
+            "B",
+            &[&[2, 3]],
+            &[("dim", 1)],
+            &[&[1, 2, 3, 4, 5, 6]],
+            &[1, 2, 3, 4, 5, 6],
+            &[2, 1, 3],
+        ),
+        vector(
+            "field-slice-dim0-v1",
+            "slice",
+            "B",
+            &[&[3, 4]],
+            &[("dim", 0), ("start", 1), ("end", 3)],
+            &[&[1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]],
+            &[5, 6, 7, 8, 9, 10, 11, 12],
+            &[2, 4],
+        ),
+        vector(
+            "field-tril-main-diagonal-v1",
+            "tril",
+            "B",
+            &[&[3, 3]],
+            &[("diagonal", 0)],
+            &[&[1, 2, 3, 4, 5, 6, 7, 8, 9]],
+            &[1, 0, 0, 4, 5, 0, 7, 8, 9],
+            &[3, 3],
+        ),
+        vector(
+            "field-triu-main-diagonal-v1",
+            "triu",
+            "B",
+            &[&[3, 3]],
+            &[("diagonal", 0)],
+            &[&[1, 2, 3, 4, 5, 6, 7, 8, 9]],
+            &[1, 2, 3, 0, 5, 6, 0, 0, 9],
+            &[3, 3],
+        ),
+        vector(
             "field-matmul-wraparound-v1",
             "matmul",
             "A",
@@ -632,6 +682,16 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "eq" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs == rhs),
         "where" => where_tensor(&tensors[0], &tensors[1], &tensors[2]),
         "clamp" => clamp_tensor(&tensors[0], param(vector, "min")?, param(vector, "max")?),
+        "squeeze" => squeeze_tensor(&tensors[0], param(vector, "dim")? as usize),
+        "unsqueeze" => unsqueeze_tensor(&tensors[0], param(vector, "dim")? as usize),
+        "slice" => slice_tensor(
+            &tensors[0],
+            param(vector, "dim")? as usize,
+            param(vector, "start")? as usize,
+            param(vector, "end")? as usize,
+        ),
+        "tril" => triangular_tensor(&tensors[0], param(vector, "diagonal")? as i64, true),
+        "triu" => triangular_tensor(&tensors[0], param(vector, "diagonal")? as i64, false),
         "matmul" => tensors[0].matmul(&tensors[1]),
         "mse_loss" => {
             let loss = vm::mse_loss(&tensors[0], &tensors[1])?;
@@ -793,6 +853,78 @@ fn clamp_tensor(tensor: &Tensor, min: Elem, max: Elem) -> Result<Tensor> {
             .iter()
             .map(|value| field::normalize(*value).clamp(min, max))
             .collect(),
+    )
+}
+
+fn squeeze_tensor(tensor: &Tensor, dim: usize) -> Result<Tensor> {
+    let mut shape = tensor.shape().to_vec();
+    if dim >= shape.len() || shape[dim] != 1 || shape.len() == 1 {
+        return Err(TvmError::InvalidReceipt("invalid conformance squeeze"));
+    }
+    shape.remove(dim);
+    Tensor::from_vec_with_scale(
+        shape,
+        tensor.dtype(),
+        tensor.scale(),
+        tensor.as_slice().to_vec(),
+    )
+}
+
+fn unsqueeze_tensor(tensor: &Tensor, dim: usize) -> Result<Tensor> {
+    let mut shape = tensor.shape().to_vec();
+    if dim > shape.len() {
+        return Err(TvmError::InvalidReceipt("invalid conformance unsqueeze"));
+    }
+    shape.insert(dim, 1);
+    Tensor::from_vec_with_scale(
+        shape,
+        tensor.dtype(),
+        tensor.scale(),
+        tensor.as_slice().to_vec(),
+    )
+}
+
+fn slice_tensor(tensor: &Tensor, dim: usize, start: usize, end: usize) -> Result<Tensor> {
+    if dim >= tensor.shape().len() || start > end || end > tensor.shape()[dim] || start == end {
+        return Err(TvmError::InvalidReceipt("invalid conformance slice"));
+    }
+    let mut shape = tensor.shape().to_vec();
+    shape[dim] = end - start;
+    let mut data = Vec::with_capacity(shape.iter().product());
+    for index in 0..shape.iter().product() {
+        let mut coords = unravel_index(&shape, index)?;
+        coords[dim] += start;
+        data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
+    }
+    Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn triangular_tensor(tensor: &Tensor, diagonal: i64, lower: bool) -> Result<Tensor> {
+    if tensor.shape().len() != 2 {
+        return Err(TvmError::InvalidReceipt("invalid conformance triangular"));
+    }
+    let rows = tensor.shape()[0];
+    let cols = tensor.shape()[1];
+    let mut data = Vec::with_capacity(tensor.len());
+    for row in 0..rows {
+        for col in 0..cols {
+            let keep = if lower {
+                (col as i64) <= (row as i64).saturating_add(diagonal)
+            } else {
+                (col as i64) >= (row as i64).saturating_add(diagonal)
+            };
+            data.push(if keep {
+                tensor.as_slice()[row * cols + col]
+            } else {
+                0
+            });
+        }
+    }
+    Tensor::from_vec_with_scale(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.scale(),
+        data,
     )
 }
 
