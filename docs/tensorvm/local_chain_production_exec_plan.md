@@ -5,7 +5,13 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest completed feature: Iteration 17, role-owned live counter checker hardening, is implemented,
+- Latest completed feature: Iteration 18, UVPoW retargeting and explicit zero-receipt fallback mode, is
+  implemented and validated as `af33fe1` (`Add UVPoW retarget fallback mode`). Blocks
+  now carry an explicit production kind, validators derive the expected difficulty target from parent block
+  history and consensus parameters, zero selected receipts produce a PoW-skip fallback block instead of
+  masquerading as useful PoW, and `tvmd node block` exposes block kind, expected target, retarget params,
+  and fallback evidence fields.
+- Previous completed feature: Iteration 17, role-owned live counter checker hardening, is implemented,
   validated, and pushed as `d4a6182d19bb1e1ea1f63174d8df7eb657cd6dd4`
   (`Harden role-owned local checker evidence`) on `origin/main`. The local Docker checker now requires
   hard evidence that at least one miner role reports positive live receipt/tensor submissions and at least
@@ -57,12 +63,75 @@ feature-sized iterations are summarized after validation and push, and older det
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
 | Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
 | Role-owned live work before proposal | Implemented/pushed | `e18d5b3`; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Rerun full Docker checker after `/health` blocker clears |
-| Canonical useful-verification block validity | Partially implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce; strict vote validation checks state root, beacon, PoW, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, retargeting, and fallback |
+| Canonical useful-verification block validity | Retarget/fallback implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce plus explicit production kind; strict vote validation checks state root, beacon, parent-derived target, useful-PoW or fallback mode, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, timeout rotation, and full fallback reward economics |
 | Checker evidence | Updated/pushed | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; `d4a6182` adds exact role-owned miner/validator live counter gates | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
 ## Recent Iterations
+
+### Iteration 18: UVPoW Retargeting and Zero-Receipt Fallback Mode
+
+Feature capability:
+Remove the fixed global useful-PoW target shortcut and stop treating empty selected receipt sets as normal
+useful work. Validators now derive each block target from parent block history and configured retarget
+parameters, and zero-receipt blocks use an explicit PoW-skip fallback production kind.
+
+Checkpoint before edits:
+- Canonical owner: `ChainEngine`, `chain::blocks`, `ChainParams`, and `TensorBlock` own target derivation,
+  fallback mode validity, block admission, and finality preconditions.
+- Adapter callers: validator runtime, P2P, storage, and status pass through canonical block payloads and
+  display evidence; they do not decide fallback validity.
+- Old shortcut removed: `useful_pow_difficulty_target()` as a fixed production and validation policy; empty
+  blockspace no longer claims normal useful-PoW.
+- Regression tests: retarget boundary changes target, non-boundary heights reuse parent target, zero
+  receipts produce explicit fallback, and useful/fallback kinds cannot be swapped across empty/nonempty
+  canonical blockspace.
+- Local synthetic disabled behavior: public/mainnet-style profiles still have no synthetic jobs; zero
+  selected receipts use fallback liveness, not synthetic work.
+- Producer/non-producer behavior: validators produce blocks; all nodes validate target and production kind
+  through the same block admission path.
+- Structured evidence source: `tvmd node block` reports `block_kind`, `pow_skip_fallback`,
+  `fallback_valid`, `expected_difficulty_target`, retarget params, `pow_required`, raw PoW fields, selected
+  receipts, checks root, and finality fields.
+- Finality source: signed validator `BlockVote`s through `SubmitBlockVote`, unchanged.
+- Wire-size and codec boundary: block payloads add a one-byte production-kind field; fixed block codec,
+  block log, P2P wire fixtures, and chain-state parameter persistence were updated.
+
+Implementation summary:
+- Added consensus difficulty parameters to `ChainParams` and persisted them in `chain.state`.
+- Added `BlockProductionKind::{UsefulVerificationPow, PowSkipFallback}` to block headers and hash/Pow
+  domains, with fixed payload codec and P2P fixture updates.
+- Replaced the fixed target helper with parent-history retargeting using configured target block time,
+  epoch length, maximum ratio, and target floor/ceiling.
+- Production emits fallback blocks with nonce zero when canonical blockspace selects no receipts; validation
+  rejects useful-PoW blocks with empty selection, fallback blocks with nonempty selection, wrong dynamic
+  targets, and fallback blocks with nonzero nonce.
+- Block status now distinguishes useful-PoW from fallback and reports expected target/retarget fields.
+
+Validation:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `cargo test -p tensor_vm --lib block -- --nocapture`: 34 filtered block/codec/storage/P2P tests passed.
+- `cargo test -p tensor_vm --lib`: 312 library tests passed.
+- `cargo test -p tensor_vm --test tvmd_cli`: 8 integration tests passed.
+- `cargo test -p tensor_vm`: 312 library tests, 1 local CPU Compose test, 8 `tvmd_cli` integration tests,
+  28 `tvmd_runtime` integration tests, and doctests passed.
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `git diff --check`
+
+Push evidence:
+- Feature commit `af33fe1` (`Add UVPoW retarget fallback mode`) is recorded for push with this evidence
+  update.
+
+Out of scope:
+- Timeout-based stake rotation after withheld useful-PoW proposals; this slice implements deterministic
+  zero-receipt fallback eligibility.
+- Full reduced proposer reward policy for fallback blocks.
+- Exact historical parent snapshots and child-state apply theorem.
+- Full Docker checker rerun while the standing gateway `/health` timeout blocker remains unresolved.
 
 ### Iteration 17: Role-Owned Live Counter Checker Hardening
 
