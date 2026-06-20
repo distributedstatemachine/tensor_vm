@@ -5,13 +5,13 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 53, proposer reward delay cleanup, implemented, validated, and pushed; evidence
-  commit pending.
+- Active feature: Iteration 53, proposer reward delay cleanup, implemented, validated, and pushed.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
   magic/version bytes, rank, axis, output scale, shape, per-channel signed 64-bit scales, and row-major
   int8 payload bytes. Iteration 52 feature commit `1b86f7f` and evidence commit `0387246` are pushed.
+  Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -19,13 +19,13 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 53 evidence, then select the next goal-aligned implementation slice.
+- Next action: select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 52 first command: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 53 first command: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
