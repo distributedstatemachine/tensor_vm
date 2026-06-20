@@ -58,6 +58,10 @@ Iteration 75 added deterministic diagnostic block-check challenge generation in 
 focused chain and node payload tests cover deriving an observed malformed block from a produced useful
 block, applying the signed challenge through the shared command/payload path, and delaying the challenger
 reward.
+Iteration 76 added the bounded observed-invalid-block cache and `NewObservedBlockCheckChallengePayload`
+wire/node path; focused p2p, chain, node payload, and pending-retry tests cover carrying the observed
+malformed block without replacing the canonical block list and resolving the challenge through delayed
+pending challenger rewards.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

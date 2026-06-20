@@ -251,6 +251,10 @@ impl Chain {
         challenges::install_diagnostic_observed_block(self, diagnostic)
     }
 
+    pub fn cache_observed_invalid_block(&mut self, block: TensorBlock) -> Result<()> {
+        challenges::cache_observed_invalid_block(self, block)
+    }
+
     pub fn release_matured_proposer_rewards(&mut self) -> Result<Vec<ChainEvent>> {
         self.apply_command(ChainCommand::ReleaseMaturedProposerRewards)
     }

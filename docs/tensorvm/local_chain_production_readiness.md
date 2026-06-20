@@ -416,8 +416,9 @@ Required fix:
   separately verify mature release into spendable balances instead of immediate bounty credit. The shared
   p2p/node payload path, status counters, chain-owned full reward-maturity delay for challenge bounties,
   conditional checker gate for future-maturity challenge reward claims, and deterministic local diagnostic
-  bad-block challenge generation now exist; network-wide live propagation still needs an observed-invalid
-  block cache or a wire payload that carries the observed malformed block.
+  bad-block challenge generation now exist. Receivers can now cache bounded observed malformed blocks from a
+  p2p challenge payload without replacing their canonical block list; the remaining gap is checker-triggered
+  live diagnostic emission and a fresh Docker proof of the full scenario.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.

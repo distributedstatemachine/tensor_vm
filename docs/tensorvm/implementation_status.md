@@ -9,11 +9,11 @@ blockspace, selected receipts are marked included once, and block votes validate
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
-child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics, deterministic
-bad-block challenge propagation over the live network, multi-validator proposer competition/fork-choice
+child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics,
+checker-triggered live diagnostic bad-block emission, multi-validator proposer competition/fork-choice
 policy, and a fresh full Docker proof of live validator proposer/block-assembly networking after the
-current `/health` blocker clears. Deterministic local bad-block challenge construction now exists as a
-diagnostic chain helper. See
+current `/health` blocker clears. Deterministic local bad-block challenge construction and observed-block
+p2p propagation support now exist as diagnostic chain/node helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -172,10 +172,12 @@ diagnostic chain helper. See
 - Deterministic diagnostic bad-block challenge generation through `Chain::deterministic_bad_block_check_challenge`,
   which derives an observed malformed block and signed challenge from a produced useful block's canonical
   selected-receipt opening without changing normal malformed-block admission rules
-- Bounded network-visible block-check challenge payloads over the shared p2p/node event path, with
-  challenge-id consistency checks, Merkle-proof sibling bounds before allocation, pending retry while the
-  challenged block is missing, canonical application through `ChainCommand::SubmitBlockCheckChallenge`,
-  persistence on challenge mutation, and runtime/checker status counters for ingested/applied challenges
+- Bounded network-visible block-check challenge payloads over the shared p2p/node event path, including an
+  observed-malformed-block payload that caches the challenged block outside canonical chain state before
+  applying the signed challenge. The path has challenge-id consistency checks, Merkle-proof sibling bounds
+  before allocation, pending retry while the challenged block or parent context is missing, canonical
+  application through `ChainCommand::SubmitBlockCheckChallenge`, persistence on challenge mutation, and
+  runtime/checker status counters for ingested/applied challenges
 - Profile-neutral `ChainCommand`, `ChainEvent`, and `ChainEngine` facade types through the internal
   `chain::engine` boundary
 - `ChainEngine` command dispatch, event emission, and view accessors through the internal

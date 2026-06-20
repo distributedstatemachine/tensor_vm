@@ -25,6 +25,13 @@ pub enum P2pMessage {
         challenger: Address,
         payload: Vec<u8>,
     },
+    NewObservedBlockCheckChallengePayload {
+        challenge_id: Hash,
+        block_hash: Hash,
+        challenger: Address,
+        observed_block_payload: Vec<u8>,
+        challenge_payload: Vec<u8>,
+    },
     NewJob(Hash),
     NewJobPayload {
         job_id: Hash,

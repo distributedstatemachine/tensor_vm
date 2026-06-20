@@ -297,6 +297,9 @@ pub fn apply_network_block_check_challenge_payload(
         .blocks
         .iter()
         .any(|block| block.hash() == challenge.block_hash)
+        && !chain
+            .observed_invalid_blocks
+            .contains_key(&challenge.block_hash)
     {
         return NetworkPayloadApply::Pending;
     }
@@ -304,6 +307,70 @@ pub fn apply_network_block_check_challenge_payload(
         .apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
         .map(|_| NetworkPayloadApply::Applied)
         .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
+pub fn apply_network_observed_block_check_challenge_payload(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    block_hash: Hash,
+    challenger: Hash,
+    observed_block_payload: &[u8],
+    challenge_payload: &[u8],
+) -> NetworkPayloadApply {
+    if challenge_id == [0; 32] || block_hash == [0; 32] || challenger == [0; 32] {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(observed_block) = decode_block_payload(observed_block_payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if observed_block.hash() != block_hash {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(challenge) = decode_block_check_challenge_payload(challenge_payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if challenge.receipt_id == [0; 32]
+        || block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id) != challenge_id
+        || challenge.block_hash != block_hash
+        || challenge.challenger != challenger
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if let Some(existing) = chain.state().block_check_challenges().get(&challenge_id) {
+        return if existing.block_hash == challenge.block_hash
+            && existing.receipt_id == challenge.receipt_id
+            && existing.challenger == challenge.challenger
+            && existing.expected_check_leaf == challenge.expected_check_leaf
+            && existing.observed_check_leaf == challenge.observed_check_leaf
+        {
+            NetworkPayloadApply::Applied
+        } else {
+            NetworkPayloadApply::Invalid
+        };
+    }
+    if observed_block.height > chain.state().height().saturating_add(1) {
+        return NetworkPayloadApply::Pending;
+    }
+    let parent_known = observed_block.height == 0 && observed_block.parent_hash == [0; 32]
+        || chain.blocks.iter().any(|block| {
+            block.height.saturating_add(1) == observed_block.height
+                && block.hash() == observed_block.parent_hash
+        });
+    if !parent_known {
+        return NetworkPayloadApply::Pending;
+    }
+    if !chain.observed_invalid_blocks.contains_key(&block_hash)
+        && let Err(_error) = chain.cache_observed_invalid_block(observed_block)
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    apply_network_block_check_challenge_payload(
+        chain,
+        challenge_id,
+        block_hash,
+        challenger,
+        challenge_payload,
+    )
 }
 
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
@@ -739,7 +806,7 @@ mod tests {
         (chain, audit_id, auditor)
     }
 
-    fn block_check_challenge_chain() -> (Chain, BlockCheckChallenge, Hash) {
+    fn block_check_challenge_chain() -> (Chain, BlockCheckChallenge, Hash, Vec<u8>) {
         let beacon = hash_bytes(b"test", &[b"network-block-check-challenge-beacon"]);
         let params = ChainParams {
             agreement_quorum: 1,
@@ -803,17 +870,32 @@ mod tests {
         chain
             .install_diagnostic_observed_block(&diagnostic)
             .unwrap();
+        assert!(
+            chain
+                .blocks()
+                .iter()
+                .any(|stored| stored.hash() == block.hash())
+        );
+        assert!(
+            !chain
+                .blocks()
+                .iter()
+                .any(|stored| stored.hash() == diagnostic.observed_block.hash())
+        );
+        let observed_block_payload = encode_block_payload(&diagnostic.observed_block);
         let challenge = diagnostic.challenge;
         let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
-        (chain, challenge, challenge_id)
+        (chain, challenge, challenge_id, observed_block_payload)
     }
 
     #[test]
     fn block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges() {
-        let (chain, challenge, challenge_id) = block_check_challenge_chain();
+        let (chain, challenge, challenge_id, _observed_block_payload) =
+            block_check_challenge_chain();
         let payload = encode_block_check_challenge_payload(&challenge);
         let mut missing_block = chain.clone();
         missing_block.pop_block_for_testing();
+        missing_block.observed_invalid_blocks.clear();
         assert_eq!(
             apply_network_block_check_challenge_payload(
                 &mut missing_block,
@@ -948,6 +1030,65 @@ mod tests {
                 challenge.block_hash,
                 challenge.challenger,
                 &encode_block_check_challenge_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn observed_block_check_challenge_payload_caches_observation_and_applies() {
+        let (chain, challenge, challenge_id, observed_block_payload) =
+            block_check_challenge_chain();
+        let challenge_payload = encode_block_check_challenge_payload(&challenge);
+        let mut apply_chain = chain.clone();
+        apply_chain.observed_invalid_blocks.clear();
+
+        assert_eq!(
+            apply_network_block_check_challenge_payload(
+                &mut apply_chain.clone(),
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &challenge_payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+        assert_eq!(
+            apply_network_observed_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &observed_block_payload,
+                &challenge_payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert!(
+            apply_chain
+                .state()
+                .block_check_challenges()
+                .contains_key(&challenge_id)
+        );
+        assert_eq!(
+            apply_network_observed_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                hash_bytes(b"test", &[b"wrong-observed-challenge-block"]),
+                challenge.challenger,
+                &observed_block_payload,
+                &challenge_payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_observed_block_check_challenge_payload(
+                &mut apply_chain,
+                challenge_id,
+                challenge.block_hash,
+                challenge.challenger,
+                &[1, 2, 3],
+                &challenge_payload,
             ),
             NetworkPayloadApply::Invalid
         );

@@ -3,7 +3,8 @@ use super::{
     NetworkPayloadError, PendingNetworkPayloads,
     payload_application::{
         apply_network_attestation_payload, apply_network_block_check_challenge_payload,
-        apply_network_block_vote_payload, apply_network_job_payload, apply_network_receipt_payload,
+        apply_network_block_vote_payload, apply_network_job_payload,
+        apply_network_observed_block_check_challenge_payload, apply_network_receipt_payload,
         apply_network_validator_audit_report_payload,
     },
     payload_processor,
@@ -124,6 +125,45 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                             block_hash,
                             challenger,
                             payload,
+                        );
+                    }
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
+            P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id,
+                block_hash,
+                challenger,
+                observed_block_payload,
+                challenge_payload,
+            } => {
+                ingested.block_announcements = ingested.block_announcements.saturating_add(1);
+                ingested.block_check_challenges = ingested.block_check_challenges.saturating_add(1);
+                if challenge_id == [0; 32] || block_hash == [0; 32] || challenger == [0; 32] {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_observed_block_check_challenge_payload(
+                    context.chain(),
+                    challenge_id,
+                    block_hash,
+                    challenger,
+                    &observed_block_payload,
+                    &challenge_payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.block_check_challenges_applied =
+                            ingested.block_check_challenges_applied.saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {
+                        pending_payloads.queue_observed_block_check_challenge(
+                            challenge_id,
+                            block_hash,
+                            challenger,
+                            observed_block_payload,
+                            challenge_payload,
                         );
                     }
                     NetworkPayloadApply::Invalid => {
@@ -287,7 +327,9 @@ fn is_block_announcement(message: &P2pMessage) -> bool {
 fn is_block_payload(message: &P2pMessage) -> bool {
     matches!(
         message,
-        P2pMessage::NewBlockPayload { .. } | P2pMessage::NewBlockCheckChallengePayload { .. }
+        P2pMessage::NewBlockPayload { .. }
+            | P2pMessage::NewBlockCheckChallengePayload { .. }
+            | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
     )
 }
 

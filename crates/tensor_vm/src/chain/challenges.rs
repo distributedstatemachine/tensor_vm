@@ -6,6 +6,7 @@ use crate::merkle::{build_proof, merkle_root, verify_proof};
 use crate::types::{Address, Hash, hash_bytes, sign};
 
 const CHALLENGER_REWARD_BPS: u64 = 5_000;
+const MAX_OBSERVED_INVALID_BLOCKS: usize = 64;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DeterministicBlockCheckChallenge {
@@ -125,20 +126,33 @@ pub fn install_diagnostic_observed_block(
     chain: &mut Chain,
     diagnostic: &DeterministicBlockCheckChallenge,
 ) -> Result<()> {
-    let block_height = diagnostic.observed_block.height;
-    if let Some(position) = chain
+    cache_observed_invalid_block(chain, diagnostic.observed_block.clone())
+}
+
+pub fn cache_observed_invalid_block(chain: &mut Chain, block: TensorBlock) -> Result<()> {
+    let block_hash = block.hash();
+    if block_hash == [0; 32] {
+        return Err(TvmError::InvalidReceipt("observed block hash is zero"));
+    }
+    if chain
         .blocks
         .iter()
-        .position(|block| block.height == block_height)
+        .any(|canonical| canonical.hash() == block_hash)
     {
-        chain.blocks[position] = diagnostic.observed_block.clone();
-    } else {
-        return Err(TvmError::InvalidReceipt("diagnostic block height missing"));
+        return Err(TvmError::InvalidReceipt("observed block is canonical"));
     }
-    chain.state.block_selected_receipts.insert(
-        diagnostic.observed_block.hash(),
-        diagnostic.selected_receipts.clone(),
-    );
+    let parent_known = chain.blocks.iter().any(|canonical| {
+        canonical.height.saturating_add(1) == block.height && canonical.hash() == block.parent_hash
+    }) || block.height == 0 && block.parent_hash == [0; 32];
+    if !parent_known {
+        return Err(TvmError::InvalidReceipt("observed block parent unknown"));
+    }
+    if chain.observed_invalid_blocks.len() >= MAX_OBSERVED_INVALID_BLOCKS
+        && let Some(oldest) = chain.observed_invalid_blocks.keys().next().copied()
+    {
+        chain.observed_invalid_blocks.remove(&oldest);
+    }
+    chain.observed_invalid_blocks.insert(block_hash, block);
     Ok(())
 }
 
@@ -158,11 +172,7 @@ pub fn submit_block_check(
     if challenge.expected_check_leaf == challenge.observed_check_leaf {
         return Err(TvmError::InvalidReceipt("challenge evidence agrees"));
     }
-    let block = chain
-        .blocks
-        .iter()
-        .find(|block| block.hash() == challenge.block_hash)
-        .cloned()
+    let block = challenged_block(chain, &challenge.block_hash)
         .ok_or(TvmError::InvalidReceipt("unknown challenged block"))?;
     let challenge_window_blocks = chain
         .params
@@ -245,6 +255,15 @@ pub fn submit_block_check(
         penalty_until_height: record.penalty_until_height,
         reason: record.reason,
     })
+}
+
+fn challenged_block(chain: &Chain, block_hash: &Hash) -> Option<TensorBlock> {
+    chain
+        .blocks
+        .iter()
+        .find(|block| block.hash() == *block_hash)
+        .cloned()
+        .or_else(|| chain.observed_invalid_blocks.get(block_hash).cloned())
 }
 
 fn apply_block_check_resolution(

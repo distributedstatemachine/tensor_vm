@@ -119,8 +119,10 @@ pub(super) fn send_response_for_protocol(
     protocol: RequestResponseProtocol,
     channel: libp2p::request_response::ResponseChannel<P2pMessage>,
     response: P2pMessage,
-) -> Result<(), P2pMessage> {
-    request_response_behaviour_mut(swarm, protocol).send_response(channel, response)
+) -> Result<(), Box<P2pMessage>> {
+    request_response_behaviour_mut(swarm, protocol)
+        .send_response(channel, response)
+        .map_err(Box::new)
 }
 
 fn response_for_request(

@@ -27,7 +27,8 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::NewBlockPayload { .. }
         | P2pMessage::NewBlockVotePayload { .. }
         | P2pMessage::NewBlockCheckChallenge(_)
-        | P2pMessage::NewBlockCheckChallengePayload { .. } => Some(GossipTopic::Blocks),
+        | P2pMessage::NewBlockCheckChallengePayload { .. }
+        | P2pMessage::NewObservedBlockCheckChallengePayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
         P2pMessage::NewReceipt(_) | P2pMessage::NewReceiptPayload { .. } => {
             Some(GossipTopic::Receipts)
@@ -72,6 +73,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewBlockVotePayload { .. }
         | P2pMessage::NewBlockCheckChallenge(_)
         | P2pMessage::NewBlockCheckChallengePayload { .. }
+        | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
         | P2pMessage::NewJob(_)
         | P2pMessage::NewJobPayload { .. }
         | P2pMessage::NewReceipt(_)
@@ -161,6 +163,20 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             write_hash(&mut out, block_hash);
             write_hash(&mut out, challenger);
             write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewObservedBlockCheckChallengePayload {
+            challenge_id,
+            block_hash,
+            challenger,
+            observed_block_payload,
+            challenge_payload,
+        } => {
+            out.push(24);
+            write_hash(&mut out, challenge_id);
+            write_hash(&mut out, block_hash);
+            write_hash(&mut out, challenger);
+            write_bytes(&mut out, observed_block_payload);
+            write_bytes(&mut out, challenge_payload);
         }
         P2pMessage::NewJob(hash) => {
             out.push(2);
@@ -342,6 +358,33 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 block_hash,
                 challenger,
                 payload,
+            }
+        }
+        24 => {
+            let challenge_id = reader.read_hash()?;
+            let block_hash = reader.read_hash()?;
+            let challenger = reader.read_hash()?;
+            let observed_block_payload = reader.read_bytes_with_max(BLOCK_PAYLOAD_LEN)?;
+            let challenge_payload =
+                reader.read_bytes_with_max(BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN)?;
+            let observed_block = decode_block_payload(&observed_block_payload)?;
+            let challenge = decode_block_check_challenge_payload(&challenge_payload)?;
+            if observed_block.hash() != block_hash
+                || block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id)
+                    != challenge_id
+                || challenge.block_hash != block_hash
+                || challenge.challenger != challenger
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "observed block check challenge payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id,
+                block_hash,
+                challenger,
+                observed_block_payload,
+                challenge_payload,
             }
         }
         2 => P2pMessage::NewJob(reader.read_hash()?),
@@ -753,6 +796,16 @@ mod tests {
         );
         let challenge = wire_test_challenge(b"p2p-roundtrip-challenge");
         let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
+        let observed_block = wire_test_block(b"p2p-roundtrip-observed-block", 4);
+        let observed_block_payload = encode_block_payload(&observed_block);
+        let observed_challenge = wire_test_challenge_for_block(
+            b"p2p-roundtrip-observed-challenge",
+            observed_block.hash(),
+        );
+        let observed_challenge_id = block_check_challenge_id(
+            &observed_challenge.block_hash,
+            &observed_challenge.receipt_id,
+        );
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -775,6 +828,13 @@ mod tests {
                 block_hash: challenge.block_hash,
                 challenger: challenge.challenger,
                 payload: encode_block_check_challenge_payload(&challenge),
+            },
+            P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id: observed_challenge_id,
+                block_hash: observed_challenge.block_hash,
+                challenger: observed_challenge.challenger,
+                observed_block_payload,
+                challenge_payload: encode_block_check_challenge_payload(&observed_challenge),
             },
             P2pMessage::NewJob(h),
             P2pMessage::NewJobPayload {
@@ -990,6 +1050,15 @@ mod tests {
         let challenge = wire_test_challenge(b"challenge-payload");
         let challenge_id = block_check_challenge_id(&challenge.block_hash, &challenge.receipt_id);
         let payload = encode_block_check_challenge_payload(&challenge);
+        let observed_block = wire_test_block(b"observed-challenge-payload", 11);
+        let observed_block_payload = encode_block_payload(&observed_block);
+        let observed_challenge =
+            wire_test_challenge_for_block(b"observed-challenge-payload", observed_block.hash());
+        let observed_challenge_id = block_check_challenge_id(
+            &observed_challenge.block_hash,
+            &observed_challenge.receipt_id,
+        );
+        let observed_challenge_payload = encode_block_check_challenge_payload(&observed_challenge);
 
         assert_eq!(
             decode_block_check_challenge_payload(&payload).unwrap(),
@@ -1061,6 +1130,44 @@ mod tests {
             ))
             .is_err()
         );
+
+        assert_eq!(
+            decode_message(&encode_message(
+                &P2pMessage::NewObservedBlockCheckChallengePayload {
+                    challenge_id: observed_challenge_id,
+                    block_hash: observed_challenge.block_hash,
+                    challenger: observed_challenge.challenger,
+                    observed_block_payload: observed_block_payload.clone(),
+                    challenge_payload: observed_challenge_payload.clone(),
+                }
+            ))
+            .unwrap(),
+            P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id: observed_challenge_id,
+                block_hash: observed_challenge.block_hash,
+                challenger: observed_challenge.challenger,
+                observed_block_payload: observed_block_payload.clone(),
+                challenge_payload: observed_challenge_payload.clone(),
+            }
+        );
+        let wrong_observed_block =
+            encode_message(&P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id: observed_challenge_id,
+                block_hash: hash_bytes(b"test", &[b"wrong-observed-block"]),
+                challenger: observed_challenge.challenger,
+                observed_block_payload: observed_block_payload.clone(),
+                challenge_payload: observed_challenge_payload.clone(),
+            });
+        assert!(decode_message(&wrong_observed_block).is_err());
+        let wrong_observed_challenge =
+            encode_message(&P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id,
+                block_hash: observed_challenge.block_hash,
+                challenger: observed_challenge.challenger,
+                observed_block_payload,
+                challenge_payload: payload,
+            });
+        assert!(decode_message(&wrong_observed_challenge).is_err());
     }
 
     #[test]
@@ -1355,6 +1462,28 @@ mod tests {
             None
         );
         assert_eq!(
+            gossip_topic_for_message(&P2pMessage::NewObservedBlockCheckChallengePayload {
+                challenge_id: h,
+                block_hash: h,
+                challenger: address(b"mapping-observed-challenge-validator"),
+                observed_block_payload: vec![1, 2, 3],
+                challenge_payload: vec![4, 5, 6],
+            }),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(
+                &P2pMessage::NewObservedBlockCheckChallengePayload {
+                    challenge_id: h,
+                    block_hash: h,
+                    challenger: address(b"mapping-observed-challenge-validator"),
+                    observed_block_payload: vec![1, 2, 3],
+                    challenge_payload: vec![4, 5, 6],
+                }
+            ),
+            None
+        );
+        assert_eq!(
             gossip_topic_for_message(&P2pMessage::NewJob(h)),
             Some(GossipTopic::Jobs)
         );
@@ -1557,9 +1686,13 @@ mod tests {
     }
 
     fn wire_test_challenge(label: &[u8]) -> BlockCheckChallenge {
+        wire_test_challenge_for_block(label, hash_bytes(b"test", &[label, b"block"]))
+    }
+
+    fn wire_test_challenge_for_block(label: &[u8], block_hash: Hash) -> BlockCheckChallenge {
         BlockCheckChallenge::new(BlockCheckChallengeInput {
             challenger: address(b"wire-challenge-validator"),
-            block_hash: hash_bytes(b"test", &[label, b"block"]),
+            block_hash,
             receipt_id: hash_bytes(b"test", &[label, b"receipt"]),
             expected_check_leaf: hash_bytes(b"test", &[label, b"expected"]),
             observed_check_leaf: hash_bytes(b"test", &[label, b"observed"]),

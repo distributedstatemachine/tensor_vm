@@ -1328,12 +1328,21 @@ fn required_slashable_bond(
     quotient.saturating_add(1).min(u64::MAX as u128) as u64
 }
 
-#[derive(Clone, Debug, Eq, PartialEq)]
+#[derive(Clone, Debug)]
 pub struct Chain {
     pub(crate) params: ChainParams,
     pub(crate) state: ChainState,
     pub(crate) blocks: Vec<TensorBlock>,
+    pub(crate) observed_invalid_blocks: BTreeMap<Hash, TensorBlock>,
 }
+
+impl PartialEq for Chain {
+    fn eq(&self, other: &Self) -> bool {
+        self.params == other.params && self.state == other.state && self.blocks == other.blocks
+    }
+}
+
+impl Eq for Chain {}
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(crate) struct ChainParts {
@@ -1348,6 +1357,7 @@ impl Chain {
             params: parts.params,
             state: parts.state,
             blocks: parts.blocks,
+            observed_invalid_blocks: BTreeMap::new(),
         }
     }
 }

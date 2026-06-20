@@ -119,6 +119,18 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     chain
         .install_diagnostic_observed_block(&diagnostic)
         .unwrap();
+    assert!(
+        chain
+            .blocks()
+            .iter()
+            .any(|stored| stored.hash() == block.hash())
+    );
+    assert!(
+        !chain
+            .blocks()
+            .iter()
+            .any(|stored| stored.hash() == diagnostic.observed_block.hash())
+    );
 
     let events = chain
         .submit_block_check_challenge(diagnostic.challenge.clone())
