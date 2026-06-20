@@ -3,8 +3,8 @@ use crate::hash::hex;
 use crate::jobs::PrimitiveType;
 use crate::types::Address;
 use tensor_vm_explorer::{
-    ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview, ExplorerReceipt,
-    ExplorerSummary, ExplorerValidator,
+    ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview,
+    ExplorerPendingReward, ExplorerReceipt, ExplorerSummary, ExplorerValidator,
 };
 
 pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
@@ -160,6 +160,66 @@ pub(super) fn explorer_receipts(chain: &Chain, limit: usize) -> Vec<ExplorerRece
         .collect()
 }
 
+pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<ExplorerPendingReward> {
+    let mut rewards = Vec::new();
+    for (block_height, reward) in chain.state().pending_proposer_rewards() {
+        rewards.push(ExplorerPendingReward {
+            ledger: "proposer".to_owned(),
+            claim_id: block_height.to_string(),
+            subject_id: block_height.to_string(),
+            beneficiary: hex(&reward.proposer),
+            amount: reward.amount,
+            claimable_at_height: reward.claimable_at_height,
+            voided_by_challenge: reward.voided_by_challenge,
+        });
+    }
+    for (claim_id, reward) in chain.state().pending_receipt_rewards() {
+        rewards.push(ExplorerPendingReward {
+            ledger: match reward.kind {
+                crate::chain::ReceiptRewardKind::Miner => "receipt_miner",
+                crate::chain::ReceiptRewardKind::Validator => "receipt_validator",
+            }
+            .to_owned(),
+            claim_id: hex(claim_id),
+            subject_id: hex(&reward.receipt_id),
+            beneficiary: hex(&reward.beneficiary),
+            amount: reward.amount,
+            claimable_at_height: reward.claimable_at_height,
+            voided_by_challenge: reward.voided_by_challenge,
+        });
+    }
+    for (claim_id, reward) in chain.state().pending_challenge_rewards() {
+        rewards.push(ExplorerPendingReward {
+            ledger: "challenge".to_owned(),
+            claim_id: hex(claim_id),
+            subject_id: hex(&reward.challenge_id),
+            beneficiary: hex(&reward.challenger),
+            amount: reward.amount,
+            claimable_at_height: reward.claimable_at_height,
+            voided_by_challenge: reward.voided_by_challenge,
+        });
+    }
+    for (claim_id, reward) in chain.state().pending_credit_rewards() {
+        rewards.push(ExplorerPendingReward {
+            ledger: "credit".to_owned(),
+            claim_id: hex(claim_id),
+            subject_id: hex(claim_id),
+            beneficiary: hex(&reward.beneficiary),
+            amount: reward.amount,
+            claimable_at_height: reward.claimable_at_height,
+            voided_by_challenge: false,
+        });
+    }
+    rewards.sort_by(|left, right| {
+        left.claimable_at_height
+            .cmp(&right.claimable_at_height)
+            .then_with(|| left.ledger.cmp(&right.ledger))
+            .then_with(|| left.claim_id.cmp(&right.claim_id))
+    });
+    rewards.truncate(limit);
+    rewards
+}
+
 pub(super) fn explorer_jobs(chain: &Chain, limit: usize) -> Vec<ExplorerJob> {
     chain
         .state()
@@ -207,6 +267,7 @@ pub(super) fn explorer_overview(
         miners: explorer_miners(chain),
         validators: explorer_validators(chain),
         receipts: explorer_receipts(chain, receipt_limit),
+        pending_rewards: explorer_pending_rewards(chain, receipt_limit),
         jobs: explorer_jobs(chain, job_limit),
     }
 }

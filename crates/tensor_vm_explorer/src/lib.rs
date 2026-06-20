@@ -67,6 +67,32 @@ impl ExplorerSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerPendingReward {
+    pub ledger: String,
+    pub claim_id: String,
+    pub subject_id: String,
+    pub beneficiary: String,
+    pub amount: u64,
+    pub claimable_at_height: u64,
+    pub voided_by_challenge: bool,
+}
+
+impl ExplorerPendingReward {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"ledger\":\"{}\",\"claim_id\":\"{}\",\"subject_id\":\"{}\",\"beneficiary\":\"{}\",\"amount\":{},\"claimable_at_height\":{},\"voided_by_challenge\":{}}}",
+            escape_json(&self.ledger),
+            escape_json(&self.claim_id),
+            escape_json(&self.subject_id),
+            escape_json(&self.beneficiary),
+            self.amount,
+            self.claimable_at_height,
+            self.voided_by_challenge
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerBlock {
     pub height: u64,
     pub epoch: u64,
@@ -229,18 +255,20 @@ pub struct ExplorerOverview {
     pub miners: Vec<ExplorerMiner>,
     pub validators: Vec<ExplorerValidator>,
     pub receipts: Vec<ExplorerReceipt>,
+    pub pending_rewards: Vec<ExplorerPendingReward>,
     pub jobs: Vec<ExplorerJob>,
 }
 
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
             json_array(&self.validators, ExplorerValidator::to_json),
             json_array(&self.receipts, ExplorerReceipt::to_json),
+            json_array(&self.pending_rewards, ExplorerPendingReward::to_json),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
     }
@@ -636,6 +664,17 @@ mod tests {
                 .to_json()
                 .contains("\"pending_credit_reward_count\":1")
         );
+        let pending = ExplorerPendingReward {
+            ledger: "receipt".to_owned(),
+            claim_id: "claim".to_owned(),
+            subject_id: "receipt".to_owned(),
+            beneficiary: "miner".to_owned(),
+            amount: 7,
+            claimable_at_height: 11,
+            voided_by_challenge: false,
+        };
+        assert!(pending.to_json().contains("\"claimable_at_height\":11"));
+        assert!(pending.to_json().contains("\"voided_by_challenge\":false"));
         assert!(summary.to_json().contains("\"model_count\":1"));
         assert!(summary.to_json().contains("\"attestation_count\":30"));
         let receipts = receipts_json(&[ExplorerReceipt {

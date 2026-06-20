@@ -5,13 +5,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 64, exact field `div` admission, implemented, validated, committed, and
-  pushed.
-- Current status: the frozen IR registry now admits exact field-only modular-inverse `div` alongside
-  exact Tier-A rank-2 matrix-contraction `einsum`, dynamic-output exact Tier-B `split`, and the current
-  exact replay surface. `TensorGraph` consensus validation enforces field dtype and scale `0`, exact
-  replay rejects zero divisors, conformance vectors include `div` evidence, and graph verification rejects
-  otherwise-valid receipts when profile evidence is absent.
+- Active feature: Iteration 65, structured delayed-reward maturity evidence, implemented and validated;
+  commit/push pending.
+- Current status: delayed proposer, receipt, challenge, and credit rewards are already state-rooted pending
+  claims, but status/explorer evidence mostly exposes counts. The local readiness checker still needs
+  structured maturity evidence for proving pending-until-height and release-after-height behavior without
+  indirect counter workarounds.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -19,7 +18,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 65 feature/evidence, then select the next goal-aligned slice.
 
 ## Readiness Matrix
 
@@ -41,41 +40,40 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 64: Exact Field `div` Admission
+### Iteration 65: Structured Delayed-Reward Maturity Evidence
 
-Feature capability: admit the exact field-only `div` subset from `upow.md` §4.7-§4.9. The admitted
-subset is conservative: both inputs must be `field` tensors with scale `0`, standard broadcast rules apply,
-and every divisor element must be nonzero. Fixed-point reciprocal division remains deferred.
+Feature capability: expose state-rooted pending reward claim maturity details through status/explorer
+surfaces so local checkers can prove delayed rewards directly instead of inferring them from aggregate
+counts.
 
 Readiness requirements covered:
-- `upow.md` §4.7: `div` over field dtype is exact modular inverse; fixed-point reciprocal remains Tier C.
-- `upow.md` §4.9: v0 admits exact Tier-B elementwise arithmetic with canonical `F_p` semantics.
-- `upow.md` §3.3 and §16: every admitted op spelling needs deterministic conformance vectors and CPU
-  profile evidence before receipts are accepted.
+- `mvp_spec.md` §20.3, §20.4, and §25.5: receipt and proposer rewards are pending until the
+  reward-settlement delay plus challenge window closes.
+- `mvp_spec.md` §35 and `local_chain_production_readiness.md` acceptance gate: local evidence must prove
+  live pending reward claims and later mature release into spendable balances.
+- `upow.md` §12.1: miner, validator, and challenger rewards derived from verifier-dependent evidence are
+  pending claims before spendability.
 
-Canonical owner: `ir::frozen_op_registry`, `TensorGraph::validate`, and `TensorGraph::execute_exact` own
-admitted vocabulary, dtype/scale restrictions, shape inference, and exact replay.
-Adapter callers: receipt verifiers, role runtimes, RPC/status surfaces, and checkers only observe graph
-validation/execution outcomes.
-Old shortcut being removed: `div` existed in exact Tier-B vocabulary but was non-admitted because
-fixed-point reciprocal semantics were not specified.
-Regression test that proves the shortcut is gone: focused IR, conformance, and graph verifier tests for
-field `div`, plus rejection tests for zero divisors and fixed-point `div`.
-Behavior with local synthetic block production disabled: unchanged; this is deterministic IR execution and
-receipt-admission metadata only.
-Behavior for producer and non-producer roles: unchanged; all roles consume the same conformance-gated graph
-verification path.
-Structured evidence source: IR tests, conformance vector/profile tests, graph verifier tests, status docs,
-and coverage docs.
+Canonical owner: chain state remains the owner of pending reward ledgers and maturity heights.
+Adapter callers: service status, explorer overview, checkers, and public evidence tools may observe but not
+mutate delayed reward claims.
+Old shortcut being removed: checker/evidence paths can no longer rely only on pending-reward counts to infer
+that delay semantics are active.
+Regression test that proves the shortcut is gone: focused status/RPC/explorer tests assert claimable-height
+details are exported for pending proposer, receipt, challenge, and credit reward claims.
+Behavior with local synthetic block production disabled: unchanged; this is read-only evidence over chain
+state.
+Behavior for producer and non-producer roles: unchanged; all roles persist and report the same rooted
+pending reward state.
+Structured evidence source: service status fields and explorer overview JSON.
 Finality source: unchanged stake-weighted block votes.
-Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes; only local API/status JSON
+and key-value status output change.
 
 Narrow validation commands:
-- `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_field_div`
-- `cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_div`
-- `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
-- `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
-- `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_field_div_receipt`
+- `cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract`
+- `cargo test -p tensor_vm rpc::tests::routes::explorer_routes_return_chain_state`
+- `cargo test -p tensor_vm app::operator_checks::operator_status_reports_are_parseable`
 Broad validation commands before commit:
 - `cargo fmt --check --all`
 - `git diff --check`
@@ -84,36 +82,31 @@ Broad validation commands before commit:
 - `cargo test --workspace --release`
 - `cargo test -p tensor_vm local_testnet --release`
 - `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
-Expected observable evidence: a consensus-admitted graph with broadcast field `div` validates and
-exact-executes using modular inverses, fixed-point `div` and division by zero reject, conformance profile
-gating rejects receipts when `div` evidence is absent, and the registry-derived admitted-op guard remains
-green.
-Out of scope: fixed-point reciprocal division, `pow`, `sqrt`, transcendental references, CUDA conformance
-evidence, and role-runtime arbitrary graph production.
-Split trigger: split smaller only if field `div` requires changing tensor dtype semantics, canonical JSON,
-graph refs, or shared-codec formats.
+Expected observable evidence: status and explorer outputs include bounded pending claim samples with
+claim IDs, beneficiaries, amounts, claimable heights, and voided status where applicable.
+Out of scope: changing consensus reward maturity, adding new reward ledgers, public deployment evidence, and
+full Docker checker execution while `/health` remains blocked.
+Split trigger: split smaller only if the evidence surface requires a new API route or storage format change.
 
 Implementation summary:
-- Admitted `div` in the frozen registry only for exact field tensors.
-- Added consensus validation and shape inference that require field dtype and scale `0`.
-- Added exact broadcast replay through modular inverse multiplication, with zero divisors rejected.
-- Added deterministic conformance vector/profile coverage for the admitted `div` spelling.
-- Added graph verifier profile-gating coverage for a `div` receipt.
+- Added bounded service-status claim samples for pending proposer, receipt, challenge, and credit rewards.
+- Added typed explorer overview pending reward samples with ledger, claim id, subject, beneficiary, amount,
+  maturity height, and voided status.
+- Added focused coverage for service-status claim maturity fields, explorer overview credit-claim samples,
+  and explorer JSON serialization.
 - Updated implementation status, coverage matrix, tarpaulin status, and this execution plan.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_field_div` passed.
-- Focused IR rejection: `cargo test -p tensor_vm ir::tests::graph_validation_rejects_unsupported_div`
+- Focused explorer JSON:
+  `cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract` passed.
+- Focused RPC:
+  `cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes`
   passed.
-- Focused conformance guard:
-  `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+- Focused service status:
+  `cargo test -p tensor_vm app::status::tests::service_status_exports_pending_reward_claim_maturity_details`
   passed.
-- Focused CPU profile: `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors`
-  passed.
-- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_field_div_receipt`
-  passed.
-- TensorVM crate: `cargo test -p tensor_vm` passed 398 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm` passed 399 library tests plus integration tests.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
@@ -121,10 +114,16 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `1ef3552` (`Admit exact field div IR replay`) pushed `1a2442e..1ef3552 main -> main`
-  to `github.com:distributedstatemachine/tensor_vm.git`.
 
 ## Recent Iterations
+
+### Iteration 64: Exact Field `div` Admission
+
+Admitted exact field-only modular-inverse `div` with field dtype/scale validation, broadcast shape
+inference, zero-divisor rejection, conformance vector/profile evidence, and graph verifier profile gating.
+Validation passed focused IR/conformance/verifier tests, `cargo test -p tensor_vm`, formatting/whitespace,
+clippy, workspace release, and first/final Gate 0. Tarpaulin remained blocked. Feature commit `1ef3552`
+and evidence commit `d62bae3` are pushed.
 
 ### Iteration 63: Exact Tier-A Matrix-Contraction `einsum` Admission
 

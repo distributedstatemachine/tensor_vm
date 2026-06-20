@@ -128,6 +128,10 @@ blocker clears. See
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
   and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
   challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
+  Service status now exports bounded pending proposer, receipt, challenge, and credit reward claim samples
+  with maturity heights, and explorer overview JSON carries typed pending reward claim samples with
+  beneficiary, amount, claimable height, and voided status so local checkers can prove reward delay from
+  structured state instead of count-only workarounds.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.

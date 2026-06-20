@@ -1,7 +1,7 @@
 use std::{collections::BTreeMap, path::Path};
 
 use super::{KeyValueReport, KeyValueReportWriter};
-use crate::{NodeStore, hash::hex};
+use crate::{Chain, NodeStore, chain::ReceiptRewardKind, hash::hex};
 
 pub fn hex_hash_list(hashes: &[[u8; 32]]) -> String {
     if hashes.is_empty() {
@@ -258,9 +258,215 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         "pending_credit_reward_count",
         chain.state().pending_credit_rewards().len(),
     );
+    report.field(
+        "pending_proposer_reward_claims",
+        pending_proposer_reward_claims(&chain, 16),
+    );
+    report.field(
+        "pending_receipt_reward_claims",
+        pending_receipt_reward_claims(&chain, 16),
+    );
+    report.field(
+        "pending_challenge_reward_claims",
+        pending_challenge_reward_claims(&chain, 16),
+    );
+    report.field(
+        "pending_credit_reward_claims",
+        pending_credit_reward_claims(&chain, 16),
+    );
     report.field("model_count", chain.state().model_states().len());
     report.field("bootstrap_peer_count", bootstrap_peer_count);
     report.field("node_store_ready", true);
     report.field("status_source", "node_store");
     Ok(report.finish())
+}
+
+fn pending_proposer_reward_claims(chain: &Chain, limit: usize) -> String {
+    let claims = chain
+        .state()
+        .pending_proposer_rewards()
+        .iter()
+        .take(limit)
+        .map(|(block_height, reward)| {
+            format!(
+                "{}:{}:{}:{}:{}",
+                block_height,
+                hex(&reward.proposer),
+                reward.amount,
+                reward.claimable_at_height,
+                reward.voided_by_challenge
+            )
+        })
+        .collect::<Vec<_>>();
+    compact_claims(claims)
+}
+
+fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
+    let claims = chain
+        .state()
+        .pending_receipt_rewards()
+        .iter()
+        .take(limit)
+        .map(|(claim_id, reward)| {
+            format!(
+                "{}:{}:{}:{}:{}:{}:{}",
+                hex(claim_id),
+                hex(&reward.receipt_id),
+                receipt_reward_kind_label(reward.kind),
+                hex(&reward.beneficiary),
+                reward.amount,
+                reward.claimable_at_height,
+                reward.voided_by_challenge
+            )
+        })
+        .collect::<Vec<_>>();
+    compact_claims(claims)
+}
+
+fn pending_challenge_reward_claims(chain: &Chain, limit: usize) -> String {
+    let claims = chain
+        .state()
+        .pending_challenge_rewards()
+        .iter()
+        .take(limit)
+        .map(|(claim_id, reward)| {
+            format!(
+                "{}:{}:{}:{}:{}:{}:{}",
+                hex(claim_id),
+                hex(&reward.challenge_id),
+                hex(&reward.receipt_id),
+                hex(&reward.challenger),
+                reward.amount,
+                reward.claimable_at_height,
+                reward.voided_by_challenge
+            )
+        })
+        .collect::<Vec<_>>();
+    compact_claims(claims)
+}
+
+fn pending_credit_reward_claims(chain: &Chain, limit: usize) -> String {
+    let claims = chain
+        .state()
+        .pending_credit_rewards()
+        .iter()
+        .take(limit)
+        .map(|(claim_id, reward)| {
+            format!(
+                "{}:{}:{}:{}",
+                hex(claim_id),
+                hex(&reward.beneficiary),
+                reward.amount,
+                reward.claimable_at_height
+            )
+        })
+        .collect::<Vec<_>>();
+    compact_claims(claims)
+}
+
+fn compact_claims(claims: Vec<String>) -> String {
+    if claims.is_empty() {
+        "none".to_owned()
+    } else {
+        claims.join(";")
+    }
+}
+
+fn receipt_reward_kind_label(kind: ReceiptRewardKind) -> &'static str {
+    match kind {
+        ReceiptRewardKind::Miner => "miner",
+        ReceiptRewardKind::Validator => "validator",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chain::{
+        ChainCommand, ChainEngine, ChainParams, PendingChallengeReward, PendingReceiptReward,
+        ReceiptRewardKind,
+    };
+    use crate::types::{address, hash_bytes};
+    use std::time::{SystemTime, UNIX_EPOCH};
+
+    #[test]
+    fn service_status_exports_pending_reward_claim_maturity_details() {
+        let beacon = hash_bytes(b"test", &[b"status-pending-rewards"]);
+        let mut chain = Chain::with_params(
+            ChainParams {
+                reward_settlement_delay_epochs: 1,
+                challenge_window_epochs: 1,
+                epoch_length: 2,
+                ..ChainParams::default()
+            },
+            beacon,
+        );
+        let proposer = address(b"status-proposer");
+        let miner = address(b"status-miner");
+        let validator = address(b"status-validator");
+        let challenger = address(b"status-challenger");
+        chain
+            .register_validator(proposer, chain.params().validator_min_stake)
+            .unwrap();
+        chain
+            .produce_block_with_rewards(proposer, 1_000, 40, 10)
+            .unwrap();
+        let receipt_claim = hash_bytes(b"test", &[b"status-receipt-claim"]);
+        chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+            claim_id: receipt_claim,
+            receipt_id: hash_bytes(b"test", &[b"status-receipt"]),
+            beneficiary: miner,
+            amount: 25,
+            kind: ReceiptRewardKind::Miner,
+            claimable_at_height: 8,
+            voided_by_challenge: false,
+        });
+        let challenge_claim = hash_bytes(b"test", &[b"status-challenge-claim"]);
+        chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+            claim_id: challenge_claim,
+            challenge_id: hash_bytes(b"test", &[b"status-challenge"]),
+            block_hash: chain.blocks().last().unwrap().hash(),
+            receipt_id: hash_bytes(b"test", &[b"status-challenge-receipt"]),
+            challenger,
+            amount: 35,
+            claimable_at_height: 9,
+            voided_by_challenge: true,
+        });
+        chain
+            .apply_command(ChainCommand::CreditReward {
+                address: validator,
+                amount: 45,
+            })
+            .unwrap();
+
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-status-reward-claims-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = NodeStore::open(data_dir.clone());
+        store.persist_chain(&chain).unwrap();
+
+        let status = service_status(data_dir.to_str().unwrap()).unwrap();
+        let fields = KeyValueReport::parse_strict(&status).unwrap();
+        assert_ne!(fields.value("pending_proposer_reward_claims"), Some("none"));
+        assert!(
+            fields
+                .value("pending_receipt_reward_claims")
+                .unwrap()
+                .contains(":miner:")
+        );
+        assert!(
+            fields
+                .value("pending_challenge_reward_claims")
+                .unwrap()
+                .contains(":true")
+        );
+        assert_ne!(fields.value("pending_credit_reward_claims"), Some("none"));
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
 }

@@ -456,6 +456,22 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
             .any(|reward| reward.beneficiary == user && reward.amount == 100)
     );
     assert_eq!(rpc.faucet.as_ref().unwrap().balance(), 900);
+    let overview = rpc.handle(&RpcRequest {
+        method: "GET".to_owned(),
+        path: "/explorer/overview".to_owned(),
+        body: Vec::new(),
+    });
+    assert_eq!(overview.status, 200);
+    let overview = response_json(&overview);
+    let pending_rewards = overview["pending_rewards"]
+        .as_array()
+        .expect("overview must include pending reward claim samples");
+    assert!(pending_rewards.iter().any(|reward| {
+        reward["ledger"].as_str() == Some("credit")
+            && reward["beneficiary"].as_str() == Some(hex(&user).as_str())
+            && reward["amount"].as_u64() == Some(100)
+            && reward["claimable_at_height"].as_u64().is_some()
+    }));
 
     let duplicate = rpc.handle_mut(&RpcRequest {
         method: "POST".to_owned(),
