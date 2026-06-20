@@ -541,6 +541,74 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
 }
 
 #[test]
+fn detection_probability_evidence_uses_live_jobs_and_params() {
+    let beacon = hash_bytes(b"test", &[b"detection-probability-evidence"]);
+    let params = ChainParams {
+        replication_factor: 2,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 4,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let tensor_job = MatmulJob::synthetic(0, 0, 32, 8, 16, &beacon, 20);
+    chain.submit_job(JobState::TensorOp(tensor_job));
+    let weights = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let linear_job = LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+        model_id: hash_bytes(b"test", &[b"detection-model"]),
+        step: 0,
+        batch_seed: hash_bytes(b"test", &[b"detection-batch"]),
+        weight_root_before: weights.commitment_root(),
+        input_shape: vec![2, 2],
+        weight_shape: vec![2, 2],
+        target_shape: vec![2, 2],
+        lr: 1,
+        deadline_block: 20,
+    });
+    chain.submit_job(JobState::LinearTrainingStep(linear_job));
+
+    let evidence = chain.state().detection_probability_evidence(chain.params());
+    assert_eq!(evidence.mechanism_count, 8);
+    assert!(evidence.live_subject_count >= 2);
+
+    let full_freivalds = evidence
+        .mechanisms
+        .iter()
+        .find(|mechanism| mechanism.mechanism == "full_freivalds")
+        .unwrap();
+    assert_eq!(full_freivalds.sample_numerator, 1);
+    assert_eq!(full_freivalds.sample_denominator, crate::field::MODULUS);
+    assert_eq!(full_freivalds.detection_probability_bps, 10_000);
+    assert_eq!(full_freivalds.false_accept_probability_bps, 0);
+    assert_eq!(full_freivalds.live_subject_count, 1);
+
+    let row_sampling = evidence
+        .mechanisms
+        .iter()
+        .find(|mechanism| mechanism.mechanism == "row_sampling_sparse_audit")
+        .unwrap();
+    assert_eq!(row_sampling.sample_numerator, 16);
+    assert_eq!(row_sampling.sample_denominator, 32);
+    assert_eq!(row_sampling.detection_probability_bps, 5_000);
+    assert_eq!(row_sampling.false_accept_probability_bps, 5_000);
+
+    let audit = evidence
+        .mechanisms
+        .iter()
+        .find(|mechanism| mechanism.mechanism == "validator_audit")
+        .unwrap();
+    assert_eq!(audit.detection_probability_bps, 2_500);
+    assert_eq!(audit.false_accept_probability_bps, 7_500);
+
+    let data_availability = evidence
+        .mechanisms
+        .iter()
+        .find(|mechanism| mechanism.mechanism == "data_availability_replication")
+        .unwrap();
+    assert_eq!(data_availability.detection_probability_bps, 9_975);
+    assert_eq!(data_availability.false_accept_probability_bps, 25);
+}
+
+#[test]
 fn block_transition_releases_matured_rewards_without_manual_command() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {

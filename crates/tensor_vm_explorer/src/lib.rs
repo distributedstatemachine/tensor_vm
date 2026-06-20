@@ -173,6 +173,57 @@ impl ExplorerFraudPathEconomicCalibrationSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerDetectionProbabilityEvidence {
+    pub mechanism: String,
+    pub source: String,
+    pub sample_numerator: u64,
+    pub sample_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub false_accept_probability_bps: u64,
+    pub live_subject_count: usize,
+}
+
+impl ExplorerDetectionProbabilityEvidence {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"mechanism\":\"{}\",\"source\":\"{}\",\"sample_numerator\":{},\"sample_denominator\":{},\"detection_probability_bps\":{},\"false_accept_probability_bps\":{},\"live_subject_count\":{}}}",
+            escape_json(&self.mechanism),
+            escape_json(&self.source),
+            self.sample_numerator,
+            self.sample_denominator,
+            self.detection_probability_bps,
+            self.false_accept_probability_bps,
+            self.live_subject_count
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerDetectionProbabilityEvidenceSummary {
+    pub mechanism_count: usize,
+    pub minimum_detection_probability_bps: u64,
+    pub maximum_false_accept_probability_bps: u64,
+    pub live_subject_count: usize,
+    pub mechanisms: Vec<ExplorerDetectionProbabilityEvidence>,
+}
+
+impl ExplorerDetectionProbabilityEvidenceSummary {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"mechanism_count\":{},\"minimum_detection_probability_bps\":{},\"maximum_false_accept_probability_bps\":{},\"live_subject_count\":{},\"mechanisms\":{}}}",
+            self.mechanism_count,
+            self.minimum_detection_probability_bps,
+            self.maximum_false_accept_probability_bps,
+            self.live_subject_count,
+            json_array(
+                &self.mechanisms,
+                ExplorerDetectionProbabilityEvidence::to_json
+            )
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerBlock {
     pub height: u64,
     pub epoch: u64,
@@ -378,6 +429,7 @@ pub struct ExplorerOverview {
     pub pending_rewards: Vec<ExplorerPendingReward>,
     pub validator_audit_economic_calibration: ExplorerValidatorAuditEconomicCalibration,
     pub fraud_path_economic_calibration: ExplorerFraudPathEconomicCalibrationSummary,
+    pub detection_probability_evidence: ExplorerDetectionProbabilityEvidenceSummary,
     pub randomness_binding_evidence: ExplorerRandomnessBindingEvidence,
     pub jobs: Vec<ExplorerJob>,
 }
@@ -385,7 +437,7 @@ pub struct ExplorerOverview {
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"randomness_binding_evidence\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"detection_probability_evidence\":{},\"randomness_binding_evidence\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
@@ -394,6 +446,7 @@ impl ExplorerOverview {
             json_array(&self.pending_rewards, ExplorerPendingReward::to_json),
             self.validator_audit_economic_calibration.to_json(),
             self.fraud_path_economic_calibration.to_json(),
+            self.detection_probability_evidence.to_json(),
             self.randomness_binding_evidence.to_json(),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
@@ -801,6 +854,31 @@ mod tests {
         };
         assert!(pending.to_json().contains("\"claimable_at_height\":11"));
         assert!(pending.to_json().contains("\"voided_by_challenge\":false"));
+        let detection = ExplorerDetectionProbabilityEvidenceSummary {
+            mechanism_count: 1,
+            minimum_detection_probability_bps: 5_000,
+            maximum_false_accept_probability_bps: 5_000,
+            live_subject_count: 2,
+            mechanisms: vec![ExplorerDetectionProbabilityEvidence {
+                mechanism: "row_sampling_sparse_audit".to_owned(),
+                source: "live_tensorop_job_rows".to_owned(),
+                sample_numerator: 16,
+                sample_denominator: 32,
+                detection_probability_bps: 5_000,
+                false_accept_probability_bps: 5_000,
+                live_subject_count: 2,
+            }],
+        };
+        assert!(
+            detection
+                .to_json()
+                .contains("\"mechanism\":\"row_sampling_sparse_audit\"")
+        );
+        assert!(
+            detection
+                .to_json()
+                .contains("\"false_accept_probability_bps\":5000")
+        );
         let randomness = ExplorerRandomnessBindingEvidence {
             beacon_source: "local_finalized_chain_beacon_v1".to_owned(),
             drand_round_mapping: "not_configured_local_finalized_beacon".to_owned(),

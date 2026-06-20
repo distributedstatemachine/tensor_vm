@@ -33,7 +33,8 @@ use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
     AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
-    ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
+    ChainState, DataUnavailabilitySlashRecord, DetectionProbabilityEvidence,
+    DetectionProbabilityEvidenceSummary, HardwareClass, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
     RandomnessBindingEvidence, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState,
     RewardAllocation, RewardClaimKey, RewardClaimLedger, RewardClaimView, RewardState,

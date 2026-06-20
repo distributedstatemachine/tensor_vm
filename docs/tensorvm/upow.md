@@ -540,12 +540,15 @@ TensorBlock {
 > fraud-path view covers implemented validator-audit, miner data-unavailability, and block-check/proposer
 > clawback paths with aggregate worst-required-bond and all-path pass/fail status; delayed, non-voided
 > receipt and proposer rewards are treated as slashable/voidable escrow, and fraud proceeds are counted
-> only after the claim is actually spendable.
+> only after the claim is actually spendable. Chain state also exposes structured detection-probability
+> evidence for full-output Freivalds, sparse row-sampling audits, LinearTrainingStep random-linear checks,
+> exact graph replay, replicated data availability, validator audits, data-unavailability evidence, and
+> block-check challenges, derived from current params, live job shapes, and chain-state counters.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.
-> Measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remain TODO before
-> claiming the full §12 economics invariant.
+> Deployed-run measured detection records, remaining fraud paths, and broader invalid-output slashing remain
+> TODO before claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 
@@ -641,7 +644,8 @@ This section is non-normative guidance on how the spec components partition into
   probability, current pending validator reward exposure, implemented miner data-unavailability and
   block-check/proposer clawback paths, required slashable bonds, aggregate worst-required-bond, and
   pass/fail invariants. Reward maturity includes an explicit fraud-window hold before spendability;
-  measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remain
+  status/explorer now expose structured detection-probability evidence for implemented verifier and fraud
+  mechanisms. Deployed-run measurements, remaining fraud paths, and broader invalid-output slashing remain
   open (§12.2).
 - [ ] Reward concentration / anti-monopoly curve for TensorWork.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).

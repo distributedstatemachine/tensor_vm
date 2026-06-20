@@ -510,6 +510,9 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
     chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
+        0, 0, 32, 8, 16, &beacon, 20,
+    )));
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
         claim_id: hash_bytes(b"test", &[b"rpc-audit-validator-claim"]),
         receipt_id: hash_bytes(b"test", &[b"rpc-audit-receipt"]),
@@ -579,6 +582,30 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
             && path["required_slashable_bond"].as_u64() == Some(0)
             && path["invariant_holds"].as_bool() == Some(true)
     }));
+
+    let detection = &overview["detection_probability_evidence"];
+    assert_eq!(detection["mechanism_count"].as_u64(), Some(8));
+    let mechanisms = detection["mechanisms"].as_array().unwrap();
+    let row_sampling = mechanisms
+        .iter()
+        .find(|mechanism| mechanism["mechanism"].as_str() == Some("row_sampling_sparse_audit"))
+        .unwrap();
+    assert_eq!(
+        row_sampling["detection_probability_bps"].as_u64(),
+        Some(5_000)
+    );
+    assert_eq!(
+        row_sampling["false_accept_probability_bps"].as_u64(),
+        Some(5_000)
+    );
+    let validator_audit = mechanisms
+        .iter()
+        .find(|mechanism| mechanism["mechanism"].as_str() == Some("validator_audit"))
+        .unwrap();
+    assert_eq!(
+        validator_audit["detection_probability_bps"].as_u64(),
+        Some(2_000)
+    );
 
     let randomness = &overview["randomness_binding_evidence"];
     assert_eq!(

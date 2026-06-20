@@ -104,6 +104,10 @@ and RPC tests cover claim-maturity-sensitive fraud exposure.
 Iteration 91 added an explicit fraud-window reward hold to `ChainParams::reward_maturity_delay_blocks`.
 Focused params and reward tests cover challenge/audit hold selection and prove pending miner rewards do
 not become spendable fraud proceeds before that hold expires.
+Iteration 92 added chain-owned detection probability evidence. Focused chain, status, RPC, and explorer
+tests cover per-mechanism detection bps, false-accept bps, sample sizes, source labels, and live subject
+counts for Freivalds, row-sampling, random-linear, graph replay, data availability, validator-audit, and
+block-check paths.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

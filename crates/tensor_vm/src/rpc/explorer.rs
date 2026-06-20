@@ -3,7 +3,8 @@ use crate::hash::hex;
 use crate::jobs::PrimitiveType;
 use crate::types::Address;
 use tensor_vm_explorer::{
-    ExplorerAccount, ExplorerBlock, ExplorerFraudPathEconomicCalibration,
+    ExplorerAccount, ExplorerBlock, ExplorerDetectionProbabilityEvidence,
+    ExplorerDetectionProbabilityEvidenceSummary, ExplorerFraudPathEconomicCalibration,
     ExplorerFraudPathEconomicCalibrationSummary, ExplorerJob, ExplorerMiner, ExplorerOverview,
     ExplorerPendingReward, ExplorerRandomnessBindingEvidence, ExplorerReceipt, ExplorerSummary,
     ExplorerValidator, ExplorerValidatorAuditEconomicCalibration,
@@ -227,6 +228,31 @@ pub(super) fn explorer_fraud_path_economic_calibration(
     }
 }
 
+pub(super) fn explorer_detection_probability_evidence(
+    chain: &Chain,
+) -> ExplorerDetectionProbabilityEvidenceSummary {
+    let evidence = chain.state().detection_probability_evidence(chain.params());
+    ExplorerDetectionProbabilityEvidenceSummary {
+        mechanism_count: evidence.mechanism_count,
+        minimum_detection_probability_bps: evidence.minimum_detection_probability_bps,
+        maximum_false_accept_probability_bps: evidence.maximum_false_accept_probability_bps,
+        live_subject_count: evidence.live_subject_count,
+        mechanisms: evidence
+            .mechanisms
+            .into_iter()
+            .map(|mechanism| ExplorerDetectionProbabilityEvidence {
+                mechanism: mechanism.mechanism.to_owned(),
+                source: mechanism.source.to_owned(),
+                sample_numerator: mechanism.sample_numerator,
+                sample_denominator: mechanism.sample_denominator,
+                detection_probability_bps: mechanism.detection_probability_bps,
+                false_accept_probability_bps: mechanism.false_accept_probability_bps,
+                live_subject_count: mechanism.live_subject_count,
+            })
+            .collect(),
+    }
+}
+
 pub(super) fn explorer_randomness_binding_evidence(
     chain: &Chain,
 ) -> ExplorerRandomnessBindingEvidence {
@@ -306,6 +332,7 @@ pub(super) fn explorer_overview(
         pending_rewards: explorer_pending_rewards(chain, receipt_limit),
         validator_audit_economic_calibration: explorer_validator_audit_economic_calibration(chain),
         fraud_path_economic_calibration: explorer_fraud_path_economic_calibration(chain),
+        detection_probability_evidence: explorer_detection_probability_evidence(chain),
         randomness_binding_evidence: explorer_randomness_binding_evidence(chain),
         jobs: explorer_jobs(chain, job_limit),
     }

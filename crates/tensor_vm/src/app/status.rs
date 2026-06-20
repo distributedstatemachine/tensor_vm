@@ -327,6 +327,47 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         );
         report.field(&format!("{prefix}_invariant_holds"), path.invariant_holds);
     }
+    let detection_evidence = chain.state().detection_probability_evidence(chain.params());
+    report.field(
+        "detection_probability_mechanism_count",
+        detection_evidence.mechanism_count,
+    );
+    report.field(
+        "detection_probability_minimum_detection_bps",
+        detection_evidence.minimum_detection_probability_bps,
+    );
+    report.field(
+        "detection_probability_maximum_false_accept_bps",
+        detection_evidence.maximum_false_accept_probability_bps,
+    );
+    report.field(
+        "detection_probability_live_subject_count",
+        detection_evidence.live_subject_count,
+    );
+    for mechanism in detection_evidence.mechanisms {
+        let prefix = format!("detection_probability_{}", mechanism.mechanism);
+        report.field(&format!("{prefix}_source"), mechanism.source);
+        report.field(
+            &format!("{prefix}_sample_numerator"),
+            mechanism.sample_numerator,
+        );
+        report.field(
+            &format!("{prefix}_sample_denominator"),
+            mechanism.sample_denominator,
+        );
+        report.field(
+            &format!("{prefix}_detection_probability_bps"),
+            mechanism.detection_probability_bps,
+        );
+        report.field(
+            &format!("{prefix}_false_accept_probability_bps"),
+            mechanism.false_accept_probability_bps,
+        );
+        report.field(
+            &format!("{prefix}_live_subject_count"),
+            mechanism.live_subject_count,
+        );
+    }
     let randomness = chain.state().randomness_binding_evidence();
     report.field("randomness_beacon_source", randomness.beacon_source);
     report.field(
@@ -533,10 +574,11 @@ fn claim_key_label(key: RewardClaimKey) -> String {
 mod tests {
     use super::*;
     use crate::chain::{
-        ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, PendingChallengeReward,
-        PendingReceiptReward, RANDOMNESS_BEACON_SOURCE, ReceiptRewardKind,
+        ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, JobState,
+        PendingChallengeReward, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE, ReceiptRewardKind,
         VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
     };
+    use crate::jobs::MatmulJob;
     use crate::types::{address, hash_bytes};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -640,6 +682,9 @@ mod tests {
         chain
             .produce_block_with_rewards(proposer, 1_000, 400, 100)
             .unwrap();
+        chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
+            0, 0, 32, 8, 16, &beacon, 20,
+        )));
         chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
             claim_id: hash_bytes(b"test", &[b"status-audit-validator-claim"]),
             receipt_id: hash_bytes(b"test", &[b"status-audit-receipt"]),
@@ -732,6 +777,27 @@ mod tests {
         assert_eq!(
             fields.value("fraud_path_economic_block_check_invariant_holds"),
             Some("true")
+        );
+        assert_eq!(
+            fields.value("detection_probability_mechanism_count"),
+            Some("8")
+        );
+        assert_eq!(
+            fields.value("detection_probability_full_freivalds_detection_probability_bps"),
+            Some("10000")
+        );
+        assert_eq!(
+            fields
+                .value("detection_probability_row_sampling_sparse_audit_detection_probability_bps"),
+            Some("5000")
+        );
+        assert_eq!(
+            fields.value("detection_probability_validator_audit_detection_probability_bps"),
+            Some("5000")
+        );
+        assert_eq!(
+            fields.value("detection_probability_data_unavailability_detection_probability_bps"),
+            Some("10000")
         );
 
         let _ = std::fs::remove_dir_all(data_dir);

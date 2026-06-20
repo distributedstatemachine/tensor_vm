@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 91 complete - explicit fraud-window reward delay evidence.
+- Active feature: Iteration 92 complete - live detection probability evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -16,8 +16,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue full multi-branch fork-tree work, measured economics, or rerun the full Docker
-  scenario after the `/health` blocker clears.
+- Next action: continue full multi-branch fork-tree work, remaining fraud-path/slashing work, or rerun the
+  full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -34,61 +34,67 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit and fraud-path calibration | Add measured detection probabilities, remaining fraud paths, and broader invalid-output slashing |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements, remaining fraud paths, and broader invalid-output slashing |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 91: Explicit Fraud-Window Reward Delay Evidence
+### Iteration 92: Live Detection Probability Evidence
 
-Feature capability: make reward maturity expose the consensus fraud-window hold directly, so economics
-does not depend on a mature-claim workaround when reasoning about data-unavailability or audit exposure.
+Feature capability: expose chain-owned detection probability evidence for implemented verification and
+fraud paths using current params, live job shapes, and chain-state counters.
 
-Canonical owner: `ChainParams` owns reward maturity windows; `ChainState` only evaluates pending claims
-against canonical height and claimability.
-Adapter callers: status/explorer continue to read chain-owned pending claims and economic calibration.
-Old shortcut being removed: tests can inject already-mature fraud rewards and rely on calibration filtering
-to make immature rewards harmless, instead of proving normal settled rewards stay delayed for the fraud
-window.
-Regression test that proves the shortcut is gone: focused params/reward tests prove receipt reward
-claimability includes the explicit fraud hold and that normal pending rewards have zero spendable fraud
-proceeds before the hold expires.
-Behavior with local synthetic block production disabled: delay is derived from chain params and block
-height, independent of synthetic block production.
-Behavior for producer and non-producer roles: producers enqueue delayed claims during settlement; peers
-replay the same claimable heights from chain transition.
-Structured evidence source: `ChainParams::reward_maturity_delay_blocks`, pending reward ledgers,
-`ChainState::fraud_path_economic_calibration`, service status, and explorer overview JSON.
-Finality source: canonical block height and configured challenge/audit windows; adapter clocks and checker
-counters do not affect spendability.
-Wire-size and codec boundary: no p2p, block, storage, or request codec change; additive params/test/doc
-evidence only unless status fields prove necessary.
+Canonical owner: `ChainState` derives detection evidence from `ChainParams`, current jobs/receipts, and
+implemented fraud-path state.
+Adapter callers: status and explorer/RPC render the derived view; runtime, p2p, storage, and checkers read
+the same chain-owned evidence.
+Old shortcut being removed: economics readiness currently reports configured path probabilities and prose
+study helpers separately, but operators cannot inspect one structured live view tying Freivalds,
+row-sampling, random-linear, data-availability, audit, and block-check detection inputs to current state.
+Regression test that proves the shortcut is gone: focused chain/status/explorer tests prove the derived
+view reports live TensorOp row-sampling bounds, full-output Freivalds false-accept bounds, linear
+random-linear bounds, configured audit sampling, data-availability replication, and block-check detection.
+Behavior with local synthetic block production disabled: evidence is derived from admitted jobs and params;
+if no live job of a type exists, counts are zero and configured verifier bounds remain explicit.
+Behavior for producer and non-producer roles: producers and non-producers replay the same jobs, receipts,
+params, and challenges, so they expose identical detection evidence after sync.
+Structured evidence source: `ChainState::detection_probability_evidence`, service status fields, and
+explorer overview JSON.
+Finality source: canonical chain state and finalized/admitted job data only; no adapter clocks or checker
+local counters feed the evidence.
+Wire-size and codec boundary: no p2p, block, storage, request, or consensus codec change; additive
+status/explorer response fields only.
 
-Files/modules likely touched: `chain/state.rs`, chain reward/params tests, docs, and this plan.
+Files/modules likely touched: `chain/state.rs`, status, explorer overview structs/RPC mapping, focused
+tests, docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Tests/checkers/docs to add or update: focused params/reward tests and concise economics docs.
-Narrow validation commands: `cargo test -p tensor_vm reward --quiet` and
-`cargo test -p tensor_vm params --quiet`.
+Tests/checkers/docs to add or update: focused chain/status/explorer tests and economics docs.
+Narrow validation commands: `cargo test -p tensor_vm detection --quiet`,
+`cargo test -p tensor_vm status --quiet`, and
+`cargo test -p tensor_vm explorer_overview_exports --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: normally settled rewards remain pending until the canonical fraud-window hold
-has passed, while economic calibration reports zero spendable fraud proceeds before claimability.
-Out of scope: new fraud paths, measured detection probability studies, Docker rerun, or codec changes.
-Split trigger: if delaying rewards requires block/storage schema changes or broad settlement rewrites,
-split that from this params/evidence slice.
+Expected observable evidence: operators can inspect per-mechanism probability bps, false-accept bps,
+sample sizes, source labels, and live sample counts without combining prose and study helpers manually.
+Out of scope: external drand/VRF, new slashing paths, Docker rerun, or codec changes.
+Split trigger: if this requires changing consensus admission or adding new fraud-path state, split that
+from the additive evidence surface.
 
 Implementation summary:
-- Added `ChainParams::fraud_reward_hold_blocks` and made receipt reward maturity explicitly cover the
-  challenge window plus the active validator-audit window before spendability.
-- Updated reward economics regression coverage so data-unavailability exposure uses delayed pending miner
-  rewards rather than a mature-claim workaround.
-- Updated `upow.md`, implementation status, coverage matrix, tarpaulin notes, and this plan.
+- Added `ChainState::detection_probability_evidence` for implemented verifier and fraud mechanisms,
+  including Freivalds, sparse row-sampling, LinearTrainingStep random-linear checks, graph exact replay,
+  data availability, validator audits, data-unavailability evidence, and block-check challenges.
+- Service status and explorer overview now expose per-mechanism source labels, sample sizes, detection bps,
+  false-accept bps, and live subject counts.
+- Updated `upow.md`, readiness, implementation status, coverage matrix, tarpaulin notes, and this plan.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm reward --quiet` and `cargo test -p tensor_vm params --quiet` passed.
+- Focused: `cargo test -p tensor_vm detection --quiet`, `cargo test -p tensor_vm status --quiet`,
+  `cargo test -p tensor_vm explorer_overview_exports --quiet`, and
+  `cargo test -p tensor_vm_explorer --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 421 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 422 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -96,6 +102,13 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 91: Explicit Fraud-Window Reward Delay Evidence
+
+`ChainParams::fraud_reward_hold_blocks` now makes receipt reward maturity explicitly cover the challenge
+window plus active audit window before spendability. Reward economics regression coverage uses delayed
+pending miner rewards rather than a mature-claim workaround. Validation passed focused reward/params,
+full crate, clippy, workspace release, and first/final Gate 0. Commit `31bcc49` is pushed to `origin/main`.
 
 ### Iteration 90: Chain-Owned Randomness Binding Evidence
 
@@ -176,12 +189,14 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 91 on June 20, 2026:
+Latest full validation is Iteration 92 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm reward --quiet
-cargo test -p tensor_vm params --quiet
+cargo test -p tensor_vm detection --quiet
+cargo test -p tensor_vm status --quiet
+cargo test -p tensor_vm explorer_overview_exports --quiet
+cargo test -p tensor_vm_explorer --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

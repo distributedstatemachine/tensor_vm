@@ -1,3 +1,4 @@
+use crate::field;
 use crate::ir::TensorGraph;
 use crate::jobs::{
     GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob,
@@ -5,7 +6,9 @@ use crate::jobs::{
 };
 use crate::merkle::MerkleProof;
 use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
-use crate::verify::{FreivaldsParams, ValidatorAttestation, VerificationResult};
+use crate::verify::{
+    FreivaldsParams, ValidatorAttestation, VerificationResult, row_sample_detection_probability,
+};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -394,6 +397,26 @@ pub struct FraudPathEconomicCalibrationSummary {
     pub all_invariants_hold: bool,
     pub max_required_slashable_bond: u64,
     pub worst_path: &'static str,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetectionProbabilityEvidence {
+    pub mechanism: &'static str,
+    pub source: &'static str,
+    pub sample_numerator: u64,
+    pub sample_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub false_accept_probability_bps: u64,
+    pub live_subject_count: usize,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DetectionProbabilityEvidenceSummary {
+    pub mechanisms: Vec<DetectionProbabilityEvidence>,
+    pub mechanism_count: usize,
+    pub minimum_detection_probability_bps: u64,
+    pub maximum_false_accept_probability_bps: u64,
+    pub live_subject_count: usize,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1506,6 +1529,156 @@ impl ChainState {
         }
     }
 
+    pub fn detection_probability_evidence(
+        &self,
+        params: &ChainParams,
+    ) -> DetectionProbabilityEvidenceSummary {
+        let tensor_job_rows = self
+            .jobs
+            .values()
+            .filter_map(|job| match job {
+                JobState::TensorOp(job) => Some(job.m),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let tensor_job_count = tensor_job_rows.len();
+        let max_tensor_rows = tensor_job_rows.iter().copied().max().unwrap_or_default();
+        let row_sample_bps = probability_bps(row_sample_detection_probability(
+            max_tensor_rows,
+            usize::from(max_tensor_rows > 0),
+            params.freivalds.audit_rows.min(max_tensor_rows),
+        ));
+        let freivalds_false_accept_bps = freivalds_false_accept_bps(params.freivalds.full_rounds);
+        let freivalds_detection_bps = 10_000_u64.saturating_sub(freivalds_false_accept_bps);
+        let linear_job_count = self
+            .jobs
+            .values()
+            .filter(|job| matches!(job, JobState::LinearTrainingStep(_)))
+            .count();
+        let graph_job_count = self
+            .jobs
+            .values()
+            .filter(|job| matches!(job, JobState::GraphExecution(_)))
+            .count();
+        let audit_denominator = params.validator_audit_sample_denominator.max(1);
+        let audit_numerator = params
+            .validator_audit_sample_numerator
+            .min(audit_denominator);
+        let data_availability_probability_bps =
+            replication_availability_bps(params.replication_factor, 9_500);
+        let fraud_calibration = self.fraud_path_economic_calibration(params);
+        let block_check_subjects = self
+            .pending_proposer_rewards
+            .values()
+            .filter(|reward| !reward.voided_by_challenge)
+            .count()
+            .saturating_add(self.block_check_challenges.len());
+        let mut mechanisms = vec![
+            DetectionProbabilityEvidence {
+                mechanism: "full_freivalds",
+                source: "params.freivalds.full_rounds+field_modulus",
+                sample_numerator: params.freivalds.full_rounds.max(1) as u64,
+                sample_denominator: field::MODULUS,
+                detection_probability_bps: freivalds_detection_bps,
+                false_accept_probability_bps: freivalds_false_accept_bps,
+                live_subject_count: tensor_job_count,
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "row_sampling_sparse_audit",
+                source: "live_tensorop_job_rows+params.freivalds.audit_rows",
+                sample_numerator: params.freivalds.audit_rows.min(max_tensor_rows) as u64,
+                sample_denominator: max_tensor_rows as u64,
+                detection_probability_bps: row_sample_bps,
+                false_accept_probability_bps: 10_000_u64.saturating_sub(row_sample_bps),
+                live_subject_count: tensor_job_count,
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "linear_random_linear",
+                source: "field_modulus+linear_training_jobs",
+                sample_numerator: 1,
+                sample_denominator: field::MODULUS,
+                detection_probability_bps: freivalds_detection_bps,
+                false_accept_probability_bps: freivalds_false_accept_bps,
+                live_subject_count: linear_job_count,
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "graph_exact_replay",
+                source: "registered_graph_jobs",
+                sample_numerator: 1,
+                sample_denominator: 1,
+                detection_probability_bps: 10_000,
+                false_accept_probability_bps: 0,
+                live_subject_count: graph_job_count,
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "data_availability_replication",
+                source: "params.replication_factor+95pct_per_replica_target",
+                sample_numerator: params.replication_factor as u64,
+                sample_denominator: 10_000,
+                detection_probability_bps: data_availability_probability_bps,
+                false_accept_probability_bps: 10_000_u64
+                    .saturating_sub(data_availability_probability_bps),
+                live_subject_count: self.receipts.len(),
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "validator_audit",
+                source: "params.validator_audit_sample_rate",
+                sample_numerator: audit_numerator,
+                sample_denominator: audit_denominator,
+                detection_probability_bps: bps_from_ratio(audit_numerator, audit_denominator),
+                false_accept_probability_bps: 10_000_u64
+                    .saturating_sub(bps_from_ratio(audit_numerator, audit_denominator)),
+                live_subject_count: self.validator_audit_assignments.len(),
+            },
+            DetectionProbabilityEvidence {
+                mechanism: "block_check",
+                source: "implemented_block_check_challenge_path",
+                sample_numerator: 1,
+                sample_denominator: 1,
+                detection_probability_bps: 10_000,
+                false_accept_probability_bps: 0,
+                live_subject_count: block_check_subjects,
+            },
+        ];
+        for path in fraud_calibration.paths {
+            if path.path == "validator_audit" || path.path == "block_check" {
+                continue;
+            }
+            mechanisms.push(DetectionProbabilityEvidence {
+                mechanism: path.path,
+                source: "fraud_path_economic_calibration",
+                sample_numerator: path.detection_numerator,
+                sample_denominator: path.detection_denominator,
+                detection_probability_bps: path.detection_probability_bps,
+                false_accept_probability_bps: 10_000_u64
+                    .saturating_sub(path.detection_probability_bps),
+                live_subject_count: path.at_risk_reward_claim_count,
+            });
+        }
+        let mechanism_count = mechanisms.len();
+        let minimum_detection_probability_bps = mechanisms
+            .iter()
+            .map(|evidence| evidence.detection_probability_bps)
+            .min()
+            .unwrap_or_default();
+        let maximum_false_accept_probability_bps = mechanisms
+            .iter()
+            .map(|evidence| evidence.false_accept_probability_bps)
+            .max()
+            .unwrap_or_default();
+        let live_subject_count = mechanisms
+            .iter()
+            .map(|evidence| evidence.live_subject_count)
+            .sum();
+        DetectionProbabilityEvidenceSummary {
+            mechanisms,
+            mechanism_count,
+            minimum_detection_probability_bps,
+            maximum_false_accept_probability_bps,
+            live_subject_count,
+        }
+    }
+
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {
         &self.model_states
     }
@@ -1513,6 +1686,37 @@ impl ChainState {
     pub fn rewards(&self) -> &RewardState {
         &self.rewards
     }
+}
+
+fn bps_from_ratio(numerator: u64, denominator: u64) -> u64 {
+    let denominator = denominator.max(1);
+    ((numerator.min(denominator) as u128) * 10_000 / denominator as u128).min(u64::MAX as u128)
+        as u64
+}
+
+fn probability_bps(probability: f64) -> u64 {
+    (probability.clamp(0.0, 1.0) * 10_000.0).round() as u64
+}
+
+fn freivalds_false_accept_bps(rounds: usize) -> u64 {
+    let mut denominator = 1_u128;
+    for _ in 0..rounds.max(1) {
+        denominator = denominator.saturating_mul(field::MODULUS as u128);
+    }
+    (10_000_u128 / denominator).min(u64::MAX as u128) as u64
+}
+
+fn replication_availability_bps(replicas: usize, per_replica_availability_bps: u64) -> u64 {
+    if replicas == 0 {
+        return 0;
+    }
+    let unavailable_bps =
+        10_000_u128.saturating_sub(per_replica_availability_bps.min(10_000) as u128);
+    let mut all_unavailable_scaled = 10_000_u128;
+    for _ in 0..replicas {
+        all_unavailable_scaled = all_unavailable_scaled.saturating_mul(unavailable_bps) / 10_000;
+    }
+    10_000_u64.saturating_sub(all_unavailable_scaled.min(10_000) as u64)
 }
 
 fn required_slashable_bond(
