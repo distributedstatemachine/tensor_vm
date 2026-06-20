@@ -79,7 +79,7 @@ enums, numeric block fields, and empty-field rejection.
 | 2 | Validators verify block-eligible matmul jobs with full-output Freivalds or bounded equivalent | `verify::full_freivalds` and validator tests | Locally met |
 | 3 | Row-sampled checks are audits unless bounds are documented | Row-sampling probability/study tests | Locally met |
 | 4 | Blocks are produced by validators winning useful-verification PoW over deterministic settled-receipt blockspace | Chain, service-block, checker, and node payload-admission tests cover validator proposers, useful PoW, canonical settled-receipt blockspace, and network-visible block payload admission | Locally met |
-| 5 | Rewards use verified settled TensorWork | Settlement and reward allocation tests | Locally met |
+| 5 | Rewards use verified settled TensorWork | Settlement and reward allocation tests, delayed reward maturity tests, challenge reward tests, and local mandatory-audit report/slash tests including network-visible audit-report payload ingestion | Locally met for the reference path; full auditor-selection policy, appeals, and bond calibration remain incomplete |
 | 6 | Validation randomness is unbiasable after receipt roots are committed | Finalized-randomness seed tests and study utilities | Locally met |
 | 7 | Invalid tensor outputs are rejected in dense and sparse corruption tests | TensorOp verifier corruption tests | Locally met |
 | 8 | LinearTrainingStep validates forward/backward/error/update structure | Linear verifier, VM, and job tests | Locally met |

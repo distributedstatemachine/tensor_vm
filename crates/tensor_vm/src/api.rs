@@ -33,6 +33,12 @@ pub enum P2pMessage {
         attestation_id: Hash,
         payload: Vec<u8>,
     },
+    NewValidatorAuditReport(Hash),
+    NewValidatorAuditReportPayload {
+        audit_id: Hash,
+        auditor: Address,
+        payload: Vec<u8>,
+    },
     RequestTensorChunk {
         tensor_id: Hash,
         chunk_index: u64,

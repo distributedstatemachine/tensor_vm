@@ -3,7 +3,8 @@ use crate::{NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService};
 use super::{
     ServiceRuntimeConfig, chain_announcement_checkpoint, fetch_validator_role_missing_tensors,
     publish_new_chain_announcements, runtime_role_wallet_registration,
-    submit_validator_role_attestation, submit_validator_role_block_vote,
+    submit_validator_role_attestation, submit_validator_role_audit_report,
+    submit_validator_role_block_vote, validator_role_audit_observation,
     validator_role_work_observation,
 };
 
@@ -93,6 +94,48 @@ pub fn tick_validator_role_work_once(
                 observation.unattested_receipts,
                 observation.artifact_ready_receipts,
                 observation.artifact_missing_receipts,
+            );
+            status_changed = true;
+        }
+    }
+    let audit_observation = validator_role_audit_observation(&server.gateway().node, validator);
+    let audit_to_submit = audit_observation
+        .artifact_ready_audits
+        .iter()
+        .next()
+        .copied();
+    if runtime_state.record_validator_audit_observation(
+        audit_observation.assigned_audits,
+        audit_observation.unreported_audits,
+        audit_observation.artifact_ready_audits,
+        audit_observation.artifact_missing_audits,
+    ) {
+        status_changed = true;
+    }
+    if let Some(audit_id) = audit_to_submit {
+        let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
+        if let Some(submission) =
+            submit_validator_role_audit_report(&mut server.gateway_mut().node, validator, audit_id)?
+        {
+            publish_new_chain_announcements(
+                p2p_service,
+                &announcement_checkpoint,
+                &server.gateway().node.chain,
+            )?;
+            store
+                .persist_chain(&server.gateway().node.chain)
+                .map_err(|error| {
+                    format!("failed to persist validator audit report state: {error}")
+                })?;
+            runtime_state
+                .record_validator_audit_report_submission(submission.audit_reports_submitted);
+            let audit_observation =
+                validator_role_audit_observation(&server.gateway().node, validator);
+            runtime_state.record_validator_audit_observation(
+                audit_observation.assigned_audits,
+                audit_observation.unreported_audits,
+                audit_observation.artifact_ready_audits,
+                audit_observation.artifact_missing_audits,
             );
             status_changed = true;
         }

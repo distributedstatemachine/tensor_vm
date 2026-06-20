@@ -83,6 +83,30 @@ pub fn format_role_runtime_report(
         snapshot.validator_attestations_submitted,
     );
     report.field(
+        "validator_audit_work_ready",
+        snapshot.validator_audit_work_ready,
+    );
+    report.field(
+        "validator_assigned_audits_seen",
+        snapshot.validator_assigned_audits_seen,
+    );
+    report.field(
+        "validator_unreported_audits",
+        snapshot.validator_unreported_audits,
+    );
+    report.field(
+        "validator_audit_artifact_ready",
+        snapshot.validator_audit_artifact_ready,
+    );
+    report.field(
+        "validator_audit_artifact_missing",
+        snapshot.validator_audit_artifact_missing,
+    );
+    report.field(
+        "validator_audit_reports_submitted",
+        snapshot.validator_audit_reports_submitted,
+    );
+    report.field(
         "validator_block_votes_submitted",
         snapshot.validator_block_votes_submitted,
     );
@@ -201,6 +225,14 @@ pub fn format_role_runtime_report(
         "network_attestation_payloads_applied",
         network_events.attestation_payloads_applied,
     );
+    report.field(
+        "network_validator_audit_reports_ingested",
+        network_events.validator_audit_reports,
+    );
+    report.field(
+        "network_validator_audit_reports_applied",
+        network_events.validator_audit_reports_applied,
+    );
     report.field("network_peer_events_ingested", network_events.peers);
     report.field("network_invalid_events", network_events.invalid_events);
     report.finish()
@@ -289,6 +321,30 @@ pub fn write_role_runtime_status(
         snapshot.validator_attestations_submitted,
     );
     report.field(
+        "role_validator_audit_work_ready",
+        snapshot.validator_audit_work_ready,
+    );
+    report.field(
+        "role_validator_assigned_audits_seen",
+        snapshot.validator_assigned_audits_seen,
+    );
+    report.field(
+        "role_validator_unreported_audits",
+        snapshot.validator_unreported_audits,
+    );
+    report.field(
+        "role_validator_audit_artifact_ready",
+        snapshot.validator_audit_artifact_ready,
+    );
+    report.field(
+        "role_validator_audit_artifact_missing",
+        snapshot.validator_audit_artifact_missing,
+    );
+    report.field(
+        "role_validator_audit_reports_submitted",
+        snapshot.validator_audit_reports_submitted,
+    );
+    report.field(
         "role_validator_block_votes_submitted",
         snapshot.validator_block_votes_submitted,
     );
@@ -356,6 +412,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_network_attestation_payloads_applied",
         network_events.attestation_payloads_applied,
+    );
+    report.field(
+        "role_network_validator_audit_reports_ingested",
+        network_events.validator_audit_reports,
+    );
+    report.field(
+        "role_network_validator_audit_reports_applied",
+        network_events.validator_audit_reports_applied,
     );
     report.field("role_network_peer_events_ingested", network_events.peers);
     report.field("role_network_invalid_events", network_events.invalid_events);

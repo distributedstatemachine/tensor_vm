@@ -1,4 +1,6 @@
-use crate::chain::{BlockProductionKind, BlockVote, JobState, ReceiptState, TensorBlock};
+use crate::chain::{
+    BlockProductionKind, BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+};
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
@@ -9,6 +11,7 @@ use crate::verify::{ValidatorAttestation, VerificationResult};
 pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 1 + 8 * 6 + 32 * 11;
 pub(crate) const BLOCK_VOTE_PAYLOAD_LEN: usize = 32 * 3 + 8 * 2;
 pub(crate) const ATTESTATION_PAYLOAD_LEN: usize = 32 * 5 + 8 + 3;
+pub(crate) const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = 32 * 4 + 2;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub(crate) enum CodecError {
@@ -372,6 +375,36 @@ pub(crate) fn decode_attestation_payload_from(
         stake: read_u64(input, offset)?,
         signature: read_hash(input, offset)?,
     })
+}
+
+pub(crate) fn encode_validator_audit_report_payload(report: &ValidatorAuditReport) -> Vec<u8> {
+    let mut out = Vec::with_capacity(VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN);
+    write_hash(&mut out, &report.audit_id);
+    write_hash(&mut out, &report.auditor);
+    out.push(verification_result_tag(report.canonical_result));
+    out.push(u8::from(report.canonical_data_availability_passed));
+    write_hash(&mut out, &report.checks_root);
+    write_hash(&mut out, &report.signature);
+    out
+}
+
+pub(crate) fn decode_validator_audit_report_payload(
+    input: &[u8],
+) -> Result<ValidatorAuditReport, CodecError> {
+    let mut offset = 0;
+    let report = ValidatorAuditReport {
+        audit_id: read_hash(input, &mut offset)?,
+        auditor: read_hash(input, &mut offset)?,
+        canonical_result: verification_result_from_tag(read_u8(input, &mut offset)?)
+            .ok_or(CodecError::UnknownVerificationResult)?,
+        canonical_data_availability_passed: read_bool(input, &mut offset)?,
+        checks_root: read_hash(input, &mut offset)?,
+        signature: read_hash(input, &mut offset)?,
+    };
+    if offset != input.len() {
+        return Err(CodecError::TrailingBytes);
+    }
+    Ok(report)
 }
 
 fn write_hash(out: &mut Vec<u8>, hash: &Hash) {

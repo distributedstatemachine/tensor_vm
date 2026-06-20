@@ -3,7 +3,7 @@ use crate::{
     PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
     encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
-    encode_job_payload, encode_receipt_payload,
+    encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
     localnet::produce_synthetic_cpu_work_with_profile,
     node::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
@@ -184,6 +184,7 @@ pub struct ChainAnnouncementCheckpoint {
     jobs: BTreeSet<Hash>,
     receipts: BTreeSet<Hash>,
     attestations: BTreeSet<Hash>,
+    validator_audit_reports: BTreeSet<(Hash, Address)>,
     block_votes: BTreeSet<(Hash, Address)>,
 }
 
@@ -192,6 +193,12 @@ pub fn chain_announcement_checkpoint(chain: &Chain) -> ChainAnnouncementCheckpoi
         jobs: chain.state().jobs().keys().copied().collect(),
         receipts: chain.state().receipts().keys().copied().collect(),
         attestations: attestation_announcement_hashes(chain).collect(),
+        validator_audit_reports: chain
+            .state()
+            .validator_audit_results()
+            .values()
+            .map(|result| (result.audit_id, result.auditor))
+            .collect(),
         block_votes: block_vote_announcement_keys(chain).collect(),
     }
 }
@@ -250,6 +257,35 @@ pub fn publish_new_chain_announcements(
             p2p_service
                 .publish_gossip(P2pMessage::NewAttestation(attestation_id))
                 .map_err(|error| format!("failed to publish attestation gossip: {error}"))?;
+        }
+    }
+    for result in chain.state().validator_audit_results().values() {
+        let key = (result.audit_id, result.auditor);
+        if !before.validator_audit_reports.contains(&key) {
+            p2p_service
+                .publish_gossip(P2pMessage::NewValidatorAuditReportPayload {
+                    audit_id: result.audit_id,
+                    auditor: result.auditor,
+                    payload: encode_validator_audit_report_payload(
+                        &crate::chain::ValidatorAuditReport {
+                            audit_id: result.audit_id,
+                            auditor: result.auditor,
+                            canonical_result: result.canonical_result,
+                            canonical_data_availability_passed: result
+                                .canonical_data_availability_passed,
+                            checks_root: result.checks_root,
+                            signature: result.signature,
+                        },
+                    ),
+                })
+                .map_err(|error| {
+                    format!("failed to publish validator audit report payload gossip: {error}")
+                })?;
+            p2p_service
+                .publish_gossip(P2pMessage::NewValidatorAuditReport(result.audit_id))
+                .map_err(|error| {
+                    format!("failed to publish validator audit report gossip: {error}")
+                })?;
         }
     }
     for (block_hash, votes) in chain.state().block_votes() {

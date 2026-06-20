@@ -4,6 +4,7 @@ use super::{
     payload_application::{
         apply_network_attestation_payload, apply_network_block_vote_payload,
         apply_network_job_payload, apply_network_receipt_payload,
+        apply_network_validator_audit_report_payload,
     },
     payload_processor,
 };
@@ -156,6 +157,42 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewValidatorAuditReport(audit_id) => {
+                ingested.validator_audit_reports =
+                    ingested.validator_audit_reports.saturating_add(1);
+                if audit_id == [0; 32] {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                }
+            }
+            P2pMessage::NewValidatorAuditReportPayload {
+                audit_id,
+                auditor,
+                payload,
+            } => {
+                ingested.validator_audit_reports =
+                    ingested.validator_audit_reports.saturating_add(1);
+                if audit_id == [0; 32] || auditor == [0; 32] {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_validator_audit_report_payload(
+                    context.chain(),
+                    audit_id,
+                    auditor,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.validator_audit_reports_applied =
+                            ingested.validator_audit_reports_applied.saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {
+                        pending_payloads.queue_validator_audit_report(audit_id, auditor, payload);
+                    }
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::PeerInfo { address } => {
                 ingested.peers = ingested.peers.saturating_add(1);
                 if address == [0; 32] {
@@ -216,11 +253,16 @@ mod tests {
     };
     use super::*;
     use crate::{
-        chain::Chain,
-        p2p::{encode_attestation_payload, encode_job_payload, encode_receipt_payload},
+        chain::{Chain, ChainParams, JobState, ValidatorAuditReport},
+        jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
+        p2p::{
+            encode_attestation_payload, encode_job_payload, encode_receipt_payload,
+            encode_validator_audit_report_payload,
+        },
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
-        types::{Hash, hash_bytes},
+        types::{Hash, address, hash_bytes},
+        verify::{AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult},
     };
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
@@ -231,6 +273,66 @@ mod tests {
         let scheduler = JobScheduler::with_small_shape((8, 8, 8));
         testnet.run_matmul_round(&scheduler);
         testnet
+    }
+
+    fn audit_report_chain() -> (Chain, Hash, Hash) {
+        let beacon = hash_bytes(b"test", &[b"ingest-audit-report-beacon"]);
+        let params = ChainParams {
+            agreement_quorum: 1,
+            validator_audit_sample_numerator: 1,
+            validator_audit_sample_denominator: 1,
+            validator_audit_window_blocks: 3,
+            freivalds: FreivaldsParams {
+                validators_per_job: 1,
+                minimum_validators: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(params, beacon);
+        let miner = address(b"ingest-audit-miner");
+        let auditor = address(b"ingest-audit-auditor");
+        chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(auditor, 10_000).unwrap();
+        let validators: Vec<_> = (0..4)
+            .map(|i| address(format!("ingest-audit-validator-{i}").as_bytes()))
+            .collect();
+        for validator in &validators {
+            chain.register_validator(*validator, 10_000).unwrap();
+        }
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+        let assigned = JobScheduler::default()
+            .assign_validators(
+                &chain,
+                receipt.receipt_id,
+                &chain.validator_assignment_seed(&receipt.receipt_id),
+            )
+            .validators[0];
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                assigned,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[b"ingest-audit-attestation"]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+        chain.produce_block(validators[0], 1_000).unwrap();
+        let audit_id = *chain
+            .state()
+            .validator_audit_assignments()
+            .keys()
+            .next()
+            .expect("audit assignment should exist");
+        (chain, audit_id, auditor)
     }
 
     struct TestNetworkEventContext {
@@ -560,5 +662,42 @@ mod tests {
         assert_eq!(ingested.attestation_payloads_applied, 1);
         assert_eq!(ingested.invalid_events, 3);
         assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn network_event_driver_applies_validator_audit_report_payloads_for_non_producers() {
+        let (chain, audit_id, auditor) = audit_report_chain();
+        let report = ValidatorAuditReport::new(
+            audit_id,
+            auditor,
+            VerificationResult::Valid,
+            true,
+            hash_bytes(b"test", &[b"ingest-audit-canonical"]),
+        );
+        let mut context = TestNetworkEventContext {
+            chain,
+            applied_payloads: Vec::new(),
+            applied_blocks: 0,
+        };
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewValidatorAuditReportPayload {
+                audit_id,
+                auditor,
+                payload: encode_validator_audit_report_payload(&report),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.events, 1);
+        assert_eq!(ingested.validator_audit_reports, 1);
+        assert_eq!(ingested.validator_audit_reports_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert!(context.chain.state().validator_audit_results()[&audit_id].passed);
     }
 }

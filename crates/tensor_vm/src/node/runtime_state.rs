@@ -20,6 +20,8 @@ pub struct NetworkEventIngest {
     pub attestations: usize,
     pub attestation_payloads: usize,
     pub attestation_payloads_applied: usize,
+    pub validator_audit_reports: usize,
+    pub validator_audit_reports_applied: usize,
     pub peers: usize,
     pub invalid_events: usize,
     pub applied_blocks: usize,
@@ -31,6 +33,7 @@ impl NetworkEventIngest {
             || self.job_payloads_applied > 0
             || self.receipt_payloads_applied > 0
             || self.attestation_payloads_applied > 0
+            || self.validator_audit_reports_applied > 0
             || self.block_payloads_applied > 0
             || self.block_votes_applied > 0
             || self.invalid_events > 0
@@ -68,6 +71,12 @@ impl NetworkEventIngest {
         self.attestation_payloads_applied = self
             .attestation_payloads_applied
             .saturating_add(other.attestation_payloads_applied);
+        self.validator_audit_reports = self
+            .validator_audit_reports
+            .saturating_add(other.validator_audit_reports);
+        self.validator_audit_reports_applied = self
+            .validator_audit_reports_applied
+            .saturating_add(other.validator_audit_reports_applied);
         self.peers = self.peers.saturating_add(other.peers);
         self.invalid_events = self.invalid_events.saturating_add(other.invalid_events);
         self.applied_blocks = self.applied_blocks.saturating_add(other.applied_blocks);
@@ -89,7 +98,12 @@ pub struct NodeRuntimeState {
     validator_unattested_receipts: BTreeSet<Hash>,
     validator_artifact_ready_receipts: BTreeSet<Hash>,
     validator_artifact_missing_receipts: BTreeSet<Hash>,
+    validator_assigned_audits_seen: BTreeSet<Hash>,
+    validator_unreported_audits: BTreeSet<Hash>,
+    validator_audit_artifact_ready: BTreeSet<Hash>,
+    validator_audit_artifact_missing: BTreeSet<Hash>,
     validator_attestations_submitted: usize,
+    validator_audit_reports_submitted: usize,
     validator_block_votes_submitted: usize,
     validator_remote_tensor_fetch_attempts: usize,
     validator_remote_tensor_fetch_successes: usize,
@@ -163,8 +177,32 @@ impl NodeRuntimeState {
         !self.validator_artifact_ready_receipts.is_empty()
     }
 
+    pub fn validator_assigned_audits_seen(&self) -> usize {
+        self.validator_assigned_audits_seen.len()
+    }
+
+    pub fn validator_unreported_audits(&self) -> usize {
+        self.validator_unreported_audits.len()
+    }
+
+    pub fn validator_audit_artifact_ready(&self) -> usize {
+        self.validator_audit_artifact_ready.len()
+    }
+
+    pub fn validator_audit_artifact_missing(&self) -> usize {
+        self.validator_audit_artifact_missing.len()
+    }
+
+    pub fn validator_audit_work_ready(&self) -> bool {
+        !self.validator_audit_artifact_ready.is_empty()
+    }
+
     pub fn validator_attestations_submitted(&self) -> usize {
         self.validator_attestations_submitted
+    }
+
+    pub fn validator_audit_reports_submitted(&self) -> usize {
+        self.validator_audit_reports_submitted
     }
 
     pub fn validator_block_votes_submitted(&self) -> usize {
@@ -247,10 +285,34 @@ impl NodeRuntimeState {
         changed
     }
 
+    pub fn record_validator_audit_observation(
+        &mut self,
+        assigned_audits: BTreeSet<Hash>,
+        unreported_audits: BTreeSet<Hash>,
+        artifact_ready_audits: BTreeSet<Hash>,
+        artifact_missing_audits: BTreeSet<Hash>,
+    ) -> bool {
+        let changed = self.validator_assigned_audits_seen != assigned_audits
+            || self.validator_unreported_audits != unreported_audits
+            || self.validator_audit_artifact_ready != artifact_ready_audits
+            || self.validator_audit_artifact_missing != artifact_missing_audits;
+        self.validator_assigned_audits_seen = assigned_audits;
+        self.validator_unreported_audits = unreported_audits;
+        self.validator_audit_artifact_ready = artifact_ready_audits;
+        self.validator_audit_artifact_missing = artifact_missing_audits;
+        changed
+    }
+
     pub fn record_validator_attestation_submission(&mut self, attestations_submitted: usize) {
         self.validator_attestations_submitted = self
             .validator_attestations_submitted
             .saturating_add(attestations_submitted);
+    }
+
+    pub fn record_validator_audit_report_submission(&mut self, audit_reports_submitted: usize) {
+        self.validator_audit_reports_submitted = self
+            .validator_audit_reports_submitted
+            .saturating_add(audit_reports_submitted);
     }
 
     pub fn record_validator_block_vote_submission(&mut self, block_votes_submitted: usize) {

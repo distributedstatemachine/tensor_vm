@@ -3,6 +3,7 @@ use std::collections::BTreeSet;
 use crate::{
     BlockVote, Chain, ChainCommand, ChainEngine, JobScheduler, JobState, ReceiptState, RpcNode,
     SyntheticLocalJobSource,
+    chain::ValidatorAuditReport,
     hash::hex,
     jobs::LinearTrainingStepOutput,
     roles::{ReferenceValidatorRole, RoleReceiptArtifacts, RoleReceiptBundle},
@@ -15,6 +16,14 @@ pub struct ValidatorRoleWorkObservation {
     pub unattested_receipts: BTreeSet<Hash>,
     pub artifact_ready_receipts: BTreeSet<Hash>,
     pub artifact_missing_receipts: BTreeSet<Hash>,
+}
+
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ValidatorRoleAuditObservation {
+    pub assigned_audits: BTreeSet<Hash>,
+    pub unreported_audits: BTreeSet<Hash>,
+    pub artifact_ready_audits: BTreeSet<Hash>,
+    pub artifact_missing_audits: BTreeSet<Hash>,
 }
 
 pub fn validator_role_work_observation(
@@ -43,6 +52,47 @@ pub fn validator_role_work_observation(
     observation
 }
 
+pub fn validator_role_audit_observation(
+    node: &RpcNode,
+    auditor: Address,
+) -> ValidatorRoleAuditObservation {
+    let mut observation = ValidatorRoleAuditObservation::default();
+    if !node.chain.state().validators().contains_key(&auditor) {
+        return observation;
+    }
+    for (audit_id, assignment) in node.chain.state().validator_audit_assignments() {
+        if assignment.validator == auditor {
+            continue;
+        }
+        observation.assigned_audits.insert(*audit_id);
+        if node
+            .chain
+            .state()
+            .validator_audit_results()
+            .contains_key(audit_id)
+            || node
+                .chain
+                .state()
+                .validator_audit_slashes()
+                .contains_key(audit_id)
+            || node.chain.state().height() > assignment.deadline_height
+        {
+            continue;
+        }
+        observation.unreported_audits.insert(*audit_id);
+        if let Some(receipt) = node.chain.state().receipts().get(&assignment.receipt_id) {
+            if role_receipt_bundle_from_local_tensors(node, receipt).is_some() {
+                observation.artifact_ready_audits.insert(*audit_id);
+            } else {
+                observation.artifact_missing_audits.insert(*audit_id);
+            }
+        } else {
+            observation.artifact_missing_audits.insert(*audit_id);
+        }
+    }
+    observation
+}
+
 fn validator_has_attested_for_receipt(chain: &Chain, validator: Address, receipt_id: Hash) -> bool {
     chain
         .state()
@@ -58,6 +108,11 @@ fn validator_has_attested_for_receipt(chain: &Chain, validator: Address, receipt
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ValidatorRoleAttestationSubmission {
     pub attestations_submitted: usize,
+}
+
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ValidatorRoleAuditReportSubmission {
+    pub audit_reports_submitted: usize,
 }
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
@@ -145,6 +200,88 @@ pub fn submit_validator_role_attestation(
         })?;
     Ok(Some(ValidatorRoleAttestationSubmission {
         attestations_submitted: 1,
+    }))
+}
+
+pub fn submit_validator_role_audit_report(
+    node: &mut RpcNode,
+    auditor: Address,
+    audit_id: Hash,
+) -> std::result::Result<Option<ValidatorRoleAuditReportSubmission>, String> {
+    let Some(validator_state) = node.chain.state().validators().get(&auditor) else {
+        return Ok(None);
+    };
+    let validator_stake = validator_state.stake;
+    let Some(assignment) = node
+        .chain
+        .state()
+        .validator_audit_assignments()
+        .get(&audit_id)
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    if assignment.validator == auditor
+        || node
+            .chain
+            .state()
+            .validator_audit_results()
+            .contains_key(&audit_id)
+        || node
+            .chain
+            .state()
+            .validator_audit_slashes()
+            .contains_key(&audit_id)
+        || node.chain.state().height() > assignment.deadline_height
+    {
+        return Ok(None);
+    }
+    let Some(receipt) = node
+        .chain
+        .state()
+        .receipts()
+        .get(&assignment.receipt_id)
+        .cloned()
+    else {
+        return Ok(None);
+    };
+    let Some(job) = node.chain.state().jobs().get(&receipt.job_id()).cloned() else {
+        return Ok(None);
+    };
+    let Some(bundle) = role_receipt_bundle_from_local_tensors(node, &receipt) else {
+        return Ok(None);
+    };
+    let validation_seed = node.chain.validation_seed(&assignment.receipt_id, &auditor);
+    let canonical = ReferenceValidatorRole::new(auditor, validator_stake)
+        .verify_receipt(
+            &job,
+            &bundle,
+            &validation_seed,
+            &node.chain.params().freivalds,
+        )
+        .map_err(|error| {
+            format!(
+                "validator role failed to audit receipt {}: {error}",
+                hex(&assignment.receipt_id)
+            )
+        })?;
+    let report = ValidatorAuditReport::new(
+        audit_id,
+        auditor,
+        canonical.result,
+        canonical.data_availability_passed,
+        canonical.checks_root,
+    );
+    node.chain
+        .apply_command(ChainCommand::SubmitValidatorAuditReport(report))
+        .map_err(|error| {
+            format!(
+                "validator role failed to submit audit report {}: {error}",
+                hex(&audit_id)
+            )
+        })?;
+    Ok(Some(ValidatorRoleAuditReportSubmission {
+        audit_reports_submitted: 1,
     }))
 }
 

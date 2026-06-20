@@ -194,7 +194,10 @@ The local bundle is useful and should remain the first operational target:
   records now also exist in the local reference when audit sampling is configured: assignment delays the
   audited validator's pending receipt reward through the audit deadline, and a missed or contradicted audit
   slashes that validator once, voids the delayed validator reward, credits treasury, and persists/exposes
-  audit counts. Runtime audit workers, appeal paths, and full bond calibration remain open economics work.
+  audit counts. Registered validator roles now observe local audit assignments, submit signed audit
+  reports through the shared chain command path, gossip bounded audit-report payloads, let non-producers
+  apply or retry those payloads through node ingest, and expose submitted plus network-applied audit-report
+  counters. Full auditor-selection policy, appeal paths, and bond calibration remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

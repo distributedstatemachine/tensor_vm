@@ -67,8 +67,10 @@ pub use validator_fetch::{
     fetch_validator_role_missing_tensors, validator_remote_tensor_response,
 };
 pub use validator_role::{
-    ValidatorRoleAttestationSubmission, ValidatorRoleBlockProposal,
+    ValidatorRoleAttestationSubmission, ValidatorRoleAuditObservation,
+    ValidatorRoleAuditReportSubmission, ValidatorRoleBlockProposal,
     ValidatorRoleBlockVoteSubmission, ValidatorRoleWorkObservation,
-    submit_validator_role_attestation, submit_validator_role_block_proposal,
-    submit_validator_role_block_vote, validator_role_work_observation,
+    submit_validator_role_attestation, submit_validator_role_audit_report,
+    submit_validator_role_block_proposal, submit_validator_role_block_vote,
+    validator_role_audit_observation, validator_role_work_observation,
 };

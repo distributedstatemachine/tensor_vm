@@ -116,6 +116,11 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
 - Network block-vote catch-up now accepts decoded `BlockVote` payloads through
   `ChainCommand::SubmitBlockVote`, persists vote-only state changes, rejects conflicting duplicate
   validator votes, and exposes ingested/applied block-vote counters for service and role runtimes.
+- Network validator-audit catch-up now accepts bounded signed validator audit report payloads through
+  `ChainCommand::SubmitValidatorAuditReport`, queues reports whose assignments or dependencies are not yet
+  available, rejects conflicting duplicate reports, publishes locally submitted reports over p2p gossip,
+  and exposes validator-submitted plus network-ingested/applied audit-report counters for service and role
+  runtimes.
 - `CpuReferenceMinerRole`, `ReferenceValidatorRole`, and `RoleReceiptBundle` boundaries for CPU role work,
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine

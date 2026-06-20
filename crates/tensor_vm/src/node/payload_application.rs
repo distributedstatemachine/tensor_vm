@@ -3,7 +3,7 @@ use crate::{
     chain::{BlockAdmission, Chain, ChainCommand, ChainEngine},
     p2p::{
         decode_attestation_payload, decode_block_payload, decode_block_vote_payload,
-        decode_job_payload, decode_receipt_payload,
+        decode_job_payload, decode_receipt_payload, decode_validator_audit_report_payload,
     },
     types::{Hash, hash_bytes},
     verify::ValidatorAttestation,
@@ -206,6 +206,56 @@ pub fn apply_network_attestation_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+pub fn apply_network_validator_audit_report_payload(
+    chain: &mut Chain,
+    audit_id: Hash,
+    auditor: Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if audit_id == [0; 32] || auditor == [0; 32] {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(report) = decode_validator_audit_report_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if report.audit_id != audit_id || report.auditor != auditor {
+        return NetworkPayloadApply::Invalid;
+    }
+    if let Some(existing) = chain.state().validator_audit_results().get(&audit_id) {
+        return if existing.auditor == report.auditor
+            && existing.canonical_result == report.canonical_result
+            && existing.canonical_data_availability_passed
+                == report.canonical_data_availability_passed
+            && existing.checks_root == report.checks_root
+            && existing.signature == report.signature
+        {
+            NetworkPayloadApply::Applied
+        } else {
+            NetworkPayloadApply::Invalid
+        };
+    }
+    let Some(assignment) = chain.state().validator_audit_assignments().get(&audit_id) else {
+        return NetworkPayloadApply::Pending;
+    };
+    if !chain.state().validators().contains_key(&auditor)
+        || !chain
+            .state()
+            .attestations()
+            .get(&assignment.receipt_id)
+            .is_some_and(|items| {
+                items
+                    .iter()
+                    .any(|attestation| attestation.validator == assignment.validator)
+            })
+    {
+        return NetworkPayloadApply::Pending;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitValidatorAuditReport(report))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
     hash_bytes(
         b"tensor-vm-attestation-announcement-v1",
@@ -224,14 +274,16 @@ mod tests {
     use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
     use super::*;
     use crate::{
-        chain::{BlockVote, JobState, ReceiptState},
+        chain::{BlockVote, ChainParams, JobState, ReceiptState, ValidatorAuditReport},
+        jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
             encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
-            encode_job_payload, encode_receipt_payload,
+            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
         },
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
-        types::sign,
+        types::{address, sign},
+        verify::{AttestationStatement, FreivaldsParams, ValidatorAttestation, VerificationResult},
     };
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
@@ -560,6 +612,163 @@ mod tests {
                 &mut testnet.chain.clone(),
                 conflicting_id,
                 &encode_attestation_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+    }
+
+    fn audit_report_chain() -> (Chain, Hash, Hash) {
+        let beacon = hash_bytes(b"test", &[b"network-audit-report-beacon"]);
+        let params = ChainParams {
+            agreement_quorum: 1,
+            validator_audit_sample_numerator: 1,
+            validator_audit_sample_denominator: 1,
+            validator_audit_window_blocks: 3,
+            freivalds: FreivaldsParams {
+                validators_per_job: 1,
+                minimum_validators: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(params, beacon);
+        let miner = address(b"network-audit-miner");
+        let auditor = address(b"network-audit-auditor");
+        chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(auditor, 10_000).unwrap();
+        let validators: Vec<_> = (0..4)
+            .map(|i| address(format!("network-audit-validator-{i}").as_bytes()))
+            .collect();
+        for validator in &validators {
+            chain.register_validator(*validator, 10_000).unwrap();
+        }
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+        let assigned = JobScheduler::default()
+            .assign_validators(
+                &chain,
+                receipt.receipt_id,
+                &chain.validator_assignment_seed(&receipt.receipt_id),
+            )
+            .validators[0];
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                assigned,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[b"network-audit-attestation"]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+        chain.produce_block(validators[0], 1_000).unwrap();
+        let audit_id = *chain
+            .state()
+            .validator_audit_assignments()
+            .keys()
+            .next()
+            .expect("audit assignment should exist");
+        (chain, audit_id, auditor)
+    }
+
+    #[test]
+    fn validator_audit_report_payload_application_reports_pending_applied_and_invalid_edges() {
+        let (chain, audit_id, auditor) = audit_report_chain();
+        let report = ValidatorAuditReport::new(
+            audit_id,
+            auditor,
+            VerificationResult::Valid,
+            true,
+            hash_bytes(b"test", &[b"network-audit-canonical"]),
+        );
+        let payload = encode_validator_audit_report_payload(&report);
+
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut Chain::new(hash_bytes(b"test", &[b"missing-audit-assignment"])),
+                audit_id,
+                auditor,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+
+        let mut apply_chain = chain.clone();
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut apply_chain,
+                audit_id,
+                auditor,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert!(apply_chain.state().validator_audit_results()[&audit_id].passed);
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut apply_chain,
+                audit_id,
+                auditor,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+
+        let conflicting = ValidatorAuditReport::new(
+            audit_id,
+            auditor,
+            VerificationResult::Invalid,
+            true,
+            hash_bytes(b"test", &[b"network-audit-conflict"]),
+        );
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut apply_chain,
+                audit_id,
+                auditor,
+                &encode_validator_audit_report_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut chain.clone(),
+                [0; 32],
+                auditor,
+                &payload
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut chain.clone(),
+                audit_id,
+                [0; 32],
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut chain.clone(),
+                hash_bytes(b"test", &[b"wrong-audit-id"]),
+                auditor,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_audit_report_payload(
+                &mut chain.clone(),
+                audit_id,
+                auditor,
+                &[1, 2, 3],
             ),
             NetworkPayloadApply::Invalid
         );

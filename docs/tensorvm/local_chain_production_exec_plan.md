@@ -5,11 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 28, validator mandatory-audit slashing.
-- Current status: Iteration 28 is implemented and pushed as `99d819c` on June 20, 2026. The narrow
-  local-reference validator audit path now has deterministic audit assignments, signed audit results,
-  delayed audited-validator receipt rewards, once-only validator slashing for missed or contradicted audits,
-  and state-rooted observable evidence.
+- Active feature: Iteration 29, network-visible validator audit reports.
+- Current status: Iteration 29 implementation and validation completed after the required Gate 0 release
+  local-testnet command passed first on June 20, 2026. Validator audit reports now have a shared validator
+  role, p2p payload, node-ingest, retry, publication, and runtime-status path.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -17,8 +16,7 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice; runtime audit workers, appeal paths, and full bond
-  calibration remain open.
+- Next action: commit and push the audit-report payload/runtime slice, then record commit/push evidence.
 
 ## Readiness Matrix
 
@@ -34,47 +32,116 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, and configured validator mandatory-audit reward delay/slashing exist; full bond calibration and appeal-safe security are not complete | Add runtime audit workers, appeal paths, and broader invariant calibration |
+| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, configured validator mandatory-audit reward delay/slashing, and network-visible validator audit reports exist; full bond calibration and appeal-safe security are not complete | Add auditor-selection policy, appeal paths, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 28: Validator Mandatory-Audit Slashing
+### Iteration 29: Network-Visible Validator Audit Reports
 
-Implemented and pushed as `99d819c` (`Add validator audit reward slashing`):
-- Chain state now stores validator audit assignments, signed reports/results, and slash records; state root
-  and chain-state storage commit/persist all three collections.
-- Canonical block application samples submitted attestations from finalized-beacon-bound randomness when
-  audit sampling is configured. Assignment IDs are deterministic from receipt id and audited validator.
-- Assignment explicitly delays the audited validator's pending receipt reward through the audit deadline.
-  A missed audit or contradictory signed audit result slashes the audited validator once, credits treasury,
-  voids that delayed validator reward before spendability, and exposes status/RPC/explorer counts.
-- Architecture checkpoint: `chain` owns assignment, result admission, stake mutation, reward voiding, roots,
-  and persistence; runtime/RPC/checkers are adapters. Producer and non-producer roles recompute the same
-  deterministic transition during block validation/application. No new P2P family is included in this slice.
-- Parallel subagents mapped readiness obligations, chain/state/root/storage/status ownership, and adjacent
-  tests. They warned not to overclaim full economics.
-- Out of scope remains runtime validator audit workers, P2P/RPC propagation of audit payloads, transcript
-  disputes, appeals, challenge gossip, full bond/gain-from-fraud calibration, Tier-C/general IR audit
-  security, and Docker readiness while gateway `/health` remains blocked.
+Feature capability:
+Registered validator roles observe state-rooted validator audit assignments, submit signed audit reports
+through `ChainCommand::SubmitValidatorAuditReport`, publish those reports over the shared p2p gossip payload
+path, and non-producers apply or retry the payload through the same node-ingest boundary as jobs, receipts,
+attestations, blocks, and block votes. Runtime status exposes submitted and network-applied audit-report
+counters.
 
-Validation evidence so far:
-- Required Gate 0 first executable: `cargo test -p tensor_vm local_testnet --release` passed on
-  June 20, 2026 before implementation.
-- `cargo test -p tensor_vm --lib chain::tests::attestations -- --nocapture` passed.
-- `cargo test -p tensor_vm --lib chain::tests::root_hashes -- --nocapture` passed.
-- `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture` passed.
-- `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture` passed.
-- `cargo test -p tensor_vm_explorer --lib` passed.
-- `cargo test -p tensor_vm` passed after adding explicit audit reward delay/voiding.
+Readiness requirements covered:
+- `upow.md` §12.2 and §14: lazy-validator mandatory audits should be live protocol evidence, not only
+  direct chain tests.
+- `goal.md` interprocess boundary: audit report mutations must cross libp2p/node paths before affecting
+  another node.
+- Local readiness: role-owned validators should perform their own audit work and shared node ingest should
+  carry the resulting consensus payloads.
 
-Final validation before commit:
-- `cargo fmt --check --all`: passed.
-- `git diff --check`: passed.
-- Final `cargo test -p tensor_vm local_testnet --release`: passed.
-- `cargo clippy --workspace --all-targets -- -D warnings`: passed.
-- `cargo test --workspace --release`: passed.
-- `cargo tarpaulin --workspace --offline`: blocked because `cargo-tarpaulin` is not installed.
+Files/modules likely touched:
+- `crates/tensor_vm/src/api.rs`, `crates/tensor_vm/src/codec.rs`, `crates/tensor_vm/src/p2p.rs`,
+  `crates/tensor_vm/src/p2p/wire.rs`
+- `crates/tensor_vm/src/node/{payload_application,payload_processor,pending_payloads,message_ingest,runtime_state}.rs`
+- `crates/tensor_vm/src/app/{network,validator_role,runtime_validator,runtime_status_snapshot,runtime_status,status}.rs`
+- focused p2p/node/runtime tests and docs/exec plan
+
+Parallel subagents run:
+- `readiness-mapper`: confirmed runtime/network audit workers as the next local-readiness slice and marked
+  full auditor-selection, transcript disputes, appeal-safe slashing, and bond/gain calibration as overclaim
+  boundaries.
+- `tensorvm-codebase-explorer`: mapped p2p codec, node apply/retry, publication, runtime status, and
+  validator-role submission paths.
+- `tensorvm-test-coverage-explorer`: mapped codec, ingest, pending retry, validator role, and status tests.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns implementation because p2p payload types, runtime counters, and validator role
+  tests share cross-cutting types and would collide if split across writers.
+- Subagents remain read-only support.
+
+Tests/checkers/docs to add or update:
+- P2P wire roundtrip/malformed/mismatch/topic tests for validator audit report payloads.
+- Node payload application and pending retry tests proving unknown assignments pend, later apply, and
+  conflicting duplicates reject.
+- Validator role/runtime tests proving a registered validator submits a signed audit report from an
+  assignment and increments a new status counter.
+- Runtime/node status tests for audit report ingest/apply/submission counters.
+- Docs/exec plan status updates naming remaining gaps: auditor-selection policy, full appeal paths, and
+  bond calibration.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm --lib p2p::wire -- --nocapture`
+- `cargo test -p tensor_vm --lib node::pending_payloads -- --nocapture`
+- `cargo test -p tensor_vm --lib node::payload_application -- --nocapture`
+- `cargo test -p tensor_vm --lib node::message_ingest -- --nocapture`
+- `cargo test -p tensor_vm --test tvmd_runtime validator_role -- --nocapture`
+- `cargo test -p tensor_vm --test tvmd_runtime network_payloads -- --nocapture`
+
+Broad validation commands before commit:
+- Passed: `cargo fmt --check --all`
+- Passed: `git diff --check`
+- Passed first and again after implementation: `cargo test -p tensor_vm local_testnet --release`
+- Passed: `cargo test -p tensor_vm` (341 lib tests, local CPU Compose integration, 8 `tvmd_cli` tests,
+  29 `tvmd_runtime` tests)
+- Passed: `cargo clippy --workspace --all-targets -- -D warnings`
+- Passed: `cargo test --workspace --release` (14 `experiments` tests, 341 `tensor_vm` lib tests, local
+  CPU Compose integration, 8 `tvmd_cli` tests, 29 `tvmd_runtime` tests, 1 `tensor_vm_explorer` lib test,
+  2 explorer binary tests)
+- Blocked as expected: `cargo tarpaulin --workspace --offline` failed with `error: no such command:
+  tarpaulin`.
+
+Expected observable evidence:
+- A locally submitted validator audit report is published as a bounded p2p payload.
+- A non-producer can ingest the report, apply it through the chain command, and persist the same
+  audit-result/slash state.
+- Out-of-order audit reports are queued until their assignment exists, then retried and applied.
+- Runtime status reports validator audit reports submitted and network audit reports ingested/applied.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` remains the owner of audit assignment, report validation, reward voiding, and
+  slashing. `node` owns payload admission/retry. Runtime only observes and submits.
+- Adapter callers: validator role loop, p2p gossip, RPC/status, and checkers.
+- Old shortcut being removed: audit reports could only be applied by direct local chain calls in tests or
+  adapters, with no shared network payload or role-owned worker path.
+- Regression test that proves the shortcut is gone: a validator-role test submits a report from an
+  assignment, and node-ingest tests show non-producers apply/retry audit report payloads with local producer
+  disabled.
+- Behavior with local synthetic block production disabled: inbound audit report payloads still apply
+  through `ChainCommand::SubmitValidatorAuditReport`; missed-audit slashes still occur only on canonical
+  block application.
+- Behavior for producer and non-producer roles: both ingest and apply identical signed report payloads;
+  only registered validators with local audit evidence submit outbound reports.
+- Structured evidence source: p2p codec tests, node-ingest/retry tests, validator-role/runtime status tests,
+  state-rooted audit result/slash state.
+- Finality source: unchanged; signed block votes finalize blocks. Audit report admission is pre-block
+  consensus state carried by the shared payload path.
+- Wire-size and codec boundary: extend the existing bounded p2p/storage codec family with one audit-report
+  payload; do not introduce a second block/job/receipt/attestation codec.
+
+Out of scope:
+- Full auditor-selection protocol; assignments still identify the audited validator, and any registered
+  validator may submit one local report in this reference slice.
+- Full transcript disputes, appeal-safe slashing, challenge gossip, and bond/gain-from-fraud calibration.
+- Docker readiness while gateway `/health` remains blocked.
+
+Split trigger:
+Split if adding a separate audit gossip topic cascades into public evidence topic-count updates; otherwise
+reuse the attestation gossip topic to keep this as one feature-sized runtime/payload slice.
 
 ## Recent Iterations
 

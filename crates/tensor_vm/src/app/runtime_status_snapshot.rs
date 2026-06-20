@@ -42,6 +42,12 @@ pub struct RuntimeStatusSnapshot {
     pub(super) validator_remote_tensor_fetch_bytes: usize,
     pub(super) validator_remote_tensors_inserted: usize,
     pub(super) validator_attestations_submitted: usize,
+    pub(super) validator_audit_work_ready: bool,
+    pub(super) validator_assigned_audits_seen: usize,
+    pub(super) validator_unreported_audits: usize,
+    pub(super) validator_audit_artifact_ready: usize,
+    pub(super) validator_audit_artifact_missing: usize,
+    pub(super) validator_audit_reports_submitted: usize,
     pub(super) validator_block_votes_submitted: usize,
 }
 
@@ -105,6 +111,12 @@ impl RuntimeStatusSnapshot {
             validator_remote_tensor_fetch_bytes: state.validator_remote_tensor_fetch_bytes(),
             validator_remote_tensors_inserted: state.validator_remote_tensors_inserted(),
             validator_attestations_submitted: state.validator_attestations_submitted(),
+            validator_audit_work_ready: state.validator_audit_work_ready(),
+            validator_assigned_audits_seen: state.validator_assigned_audits_seen(),
+            validator_unreported_audits: state.validator_unreported_audits(),
+            validator_audit_artifact_ready: state.validator_audit_artifact_ready(),
+            validator_audit_artifact_missing: state.validator_audit_artifact_missing(),
+            validator_audit_reports_submitted: state.validator_audit_reports_submitted(),
             validator_block_votes_submitted: state.validator_block_votes_submitted(),
         }
     }

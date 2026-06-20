@@ -482,8 +482,11 @@ TensorBlock {
 > audit assignments, signed audit results, and validator audit slash records when audit sampling is
 > configured. Audit assignment delays the audited validator's pending receipt reward through the audit
 > deadline; a missed audit or contradictory audit result slashes that validator once, credits treasury, and
-> voids that delayed validator reward. Runtime audit workers, appeal paths, full bond calibration, and
-> broader invalid-output slashing remain TODO before claiming the full §12 economics invariant.
+> voids that delayed validator reward. Registered validator roles now observe local audit assignments,
+> submit signed audit reports through the shared chain command path, gossip bounded audit-report payloads,
+> and expose submitted plus network-applied report counters. Full auditor-selection policy, appeal paths,
+> full bond calibration, and broader invalid-output slashing remain TODO before claiming the full §12
+> economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 

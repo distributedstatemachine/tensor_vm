@@ -11,6 +11,7 @@ pub struct PendingNetworkPayloads {
     block_votes: BTreeMap<(Hash, Hash), Vec<u8>>,
     receipts: BTreeMap<Hash, Vec<u8>>,
     attestations: BTreeMap<Hash, Vec<u8>>,
+    validator_audit_reports: BTreeMap<(Hash, Hash), Vec<u8>>,
 }
 
 impl PendingNetworkPayloads {
@@ -20,6 +21,7 @@ impl PendingNetworkPayloads {
             && self.block_votes.is_empty()
             && self.receipts.is_empty()
             && self.attestations.is_empty()
+            && self.validator_audit_reports.is_empty()
     }
 
     pub fn pending_job_count(&self) -> usize {
@@ -45,6 +47,10 @@ impl PendingNetworkPayloads {
         self.attestations.len()
     }
 
+    pub fn pending_validator_audit_report_count(&self) -> usize {
+        self.validator_audit_reports.len()
+    }
+
     pub fn queue_receipt(&mut self, receipt_id: Hash, payload: Vec<u8>) {
         self.receipts.entry(receipt_id).or_insert(payload);
     }
@@ -61,6 +67,17 @@ impl PendingNetworkPayloads {
 
     pub fn queue_attestation(&mut self, attestation_id: Hash, payload: Vec<u8>) {
         self.attestations.entry(attestation_id).or_insert(payload);
+    }
+
+    pub fn queue_validator_audit_report(
+        &mut self,
+        audit_id: Hash,
+        auditor: Hash,
+        payload: Vec<u8>,
+    ) {
+        self.validator_audit_reports
+            .entry((audit_id, auditor))
+            .or_insert(payload);
     }
 
     pub fn retry_with<P: NetworkPayloadProcessor + ?Sized>(
@@ -176,6 +193,32 @@ impl PendingNetworkPayloads {
                     }
                 }
             }
+            for (audit_id, auditor) in self
+                .validator_audit_reports
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+            {
+                let payload = self
+                    .validator_audit_reports
+                    .get(&(audit_id, auditor))
+                    .expect("queued validator audit report payload must exist")
+                    .clone();
+                match processor.apply_validator_audit_report(audit_id, auditor, &payload) {
+                    NetworkPayloadApply::Applied => {
+                        self.validator_audit_reports.remove(&(audit_id, auditor));
+                        ingested.validator_audit_reports_applied =
+                            ingested.validator_audit_reports_applied.saturating_add(1);
+                        progressed = true;
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        self.validator_audit_reports.remove(&(audit_id, auditor));
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                        progressed = true;
+                    }
+                }
+            }
             if !progressed {
                 break;
             }
@@ -192,9 +235,11 @@ mod tests {
         block_result: NetworkBlockPayloadApply,
         receipt_result: NetworkPayloadApply,
         attestation_result: NetworkPayloadApply,
+        validator_audit_report_result: NetworkPayloadApply,
         block_attempts: usize,
         receipt_attempts: usize,
         attestation_attempts: usize,
+        validator_audit_report_attempts: usize,
     }
 
     impl NetworkPayloadProcessor for RetryProcessor {
@@ -234,6 +279,17 @@ mod tests {
             self.attestation_attempts = self.attestation_attempts.saturating_add(1);
             self.attestation_result
         }
+
+        fn apply_validator_audit_report(
+            &mut self,
+            _audit_id: Hash,
+            _auditor: Hash,
+            _payload: &[u8],
+        ) -> NetworkPayloadApply {
+            self.validator_audit_report_attempts =
+                self.validator_audit_report_attempts.saturating_add(1);
+            self.validator_audit_report_result
+        }
     }
 
     impl RetryProcessor {
@@ -245,9 +301,11 @@ mod tests {
                 block_result: NetworkBlockPayloadApply::Pending,
                 receipt_result,
                 attestation_result,
+                validator_audit_report_result: NetworkPayloadApply::Pending,
                 block_attempts: 0,
                 receipt_attempts: 0,
                 attestation_attempts: 0,
+                validator_audit_report_attempts: 0,
             }
         }
     }
@@ -295,6 +353,7 @@ mod tests {
         let mut pending = PendingNetworkPayloads::default();
         pending.queue_receipt([5; 32], vec![50]);
         pending.queue_attestation([6; 32], vec![60]);
+        pending.queue_validator_audit_report([7; 32], [8; 32], vec![70]);
         let mut processor =
             RetryProcessor::new(NetworkPayloadApply::Pending, NetworkPayloadApply::Pending);
 
@@ -303,8 +362,10 @@ mod tests {
         assert!(!ingested.has_activity());
         assert_eq!(pending.pending_receipt_count(), 1);
         assert_eq!(pending.pending_attestation_count(), 1);
+        assert_eq!(pending.pending_validator_audit_report_count(), 1);
         assert_eq!(processor.receipt_attempts, 1);
         assert_eq!(processor.attestation_attempts, 1);
+        assert_eq!(processor.validator_audit_report_attempts, 1);
     }
 
     #[test]
@@ -313,6 +374,7 @@ mod tests {
             block_payloads: Vec<Vec<u8>>,
             receipt_payloads: Vec<Vec<u8>>,
             attestation_payloads: Vec<Vec<u8>>,
+            validator_audit_report_payloads: Vec<Vec<u8>>,
         }
 
         impl NetworkPayloadProcessor for PayloadCapturingProcessor {
@@ -352,6 +414,16 @@ mod tests {
                 self.attestation_payloads.push(payload.to_vec());
                 NetworkPayloadApply::Applied
             }
+
+            fn apply_validator_audit_report(
+                &mut self,
+                _audit_id: Hash,
+                _auditor: Hash,
+                payload: &[u8],
+            ) -> NetworkPayloadApply {
+                self.validator_audit_report_payloads.push(payload.to_vec());
+                NetworkPayloadApply::Applied
+            }
         }
 
         let mut pending = PendingNetworkPayloads::default();
@@ -359,18 +431,23 @@ mod tests {
         pending.queue_receipt([7; 32], vec![71]);
         pending.queue_attestation([8; 32], vec![80]);
         pending.queue_attestation([8; 32], vec![81]);
+        pending.queue_validator_audit_report([9; 32], [10; 32], vec![90]);
+        pending.queue_validator_audit_report([9; 32], [10; 32], vec![91]);
         let mut processor = PayloadCapturingProcessor {
             block_payloads: Vec::new(),
             receipt_payloads: Vec::new(),
             attestation_payloads: Vec::new(),
+            validator_audit_report_payloads: Vec::new(),
         };
 
         let ingested = pending.retry_with(&mut processor);
 
         assert_eq!(ingested.receipt_payloads_applied, 1);
         assert_eq!(ingested.attestation_payloads_applied, 1);
+        assert_eq!(ingested.validator_audit_reports_applied, 1);
         assert_eq!(processor.receipt_payloads, vec![vec![70]]);
         assert_eq!(processor.attestation_payloads, vec![vec![80]]);
+        assert_eq!(processor.validator_audit_report_payloads, vec![vec![90]]);
         assert!(pending.is_empty());
     }
 }

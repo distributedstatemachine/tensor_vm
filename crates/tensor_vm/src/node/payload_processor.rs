@@ -1,6 +1,7 @@
 use super::payload_application::{
     apply_network_attestation_payload, apply_network_block_payload,
     apply_network_block_vote_payload, apply_network_job_payload, apply_network_receipt_payload,
+    apply_network_validator_audit_report_payload,
 };
 use crate::{chain::Chain, types::Hash};
 
@@ -43,6 +44,13 @@ pub trait NetworkPayloadProcessor {
     fn apply_receipt(&mut self, receipt_id: Hash, payload: &[u8]) -> NetworkPayloadApply;
 
     fn apply_attestation(&mut self, attestation_id: Hash, payload: &[u8]) -> NetworkPayloadApply;
+
+    fn apply_validator_audit_report(
+        &mut self,
+        audit_id: Hash,
+        auditor: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply;
 }
 
 pub trait NetworkEventContext {
@@ -98,6 +106,15 @@ impl NetworkPayloadProcessor for ChainNetworkPayloadProcessor<'_> {
     fn apply_attestation(&mut self, attestation_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_attestation_payload(self.chain, attestation_id, payload)
     }
+
+    fn apply_validator_audit_report(
+        &mut self,
+        audit_id: Hash,
+        auditor: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_validator_audit_report_payload(self.chain, audit_id, auditor, payload)
+    }
 }
 
 pub(super) struct ContextNetworkPayloadProcessor<'a, C: NetworkEventContext + ?Sized> {
@@ -138,6 +155,20 @@ impl<C: NetworkEventContext + ?Sized> NetworkPayloadProcessor
 
     fn apply_attestation(&mut self, attestation_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_attestation_payload(self.context.chain(), attestation_id, payload)
+    }
+
+    fn apply_validator_audit_report(
+        &mut self,
+        audit_id: Hash,
+        auditor: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_validator_audit_report_payload(
+            self.context.chain(),
+            audit_id,
+            auditor,
+            payload,
+        )
     }
 }
 

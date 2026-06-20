@@ -1,8 +1,9 @@
 use super::*;
 use tensor_vm::app::{
     ValidatorRemoteTensorResponse, fetch_validator_role_missing_tensors,
-    submit_validator_role_attestation, submit_validator_role_block_proposal,
-    submit_validator_role_block_vote, validator_remote_tensor_response,
+    submit_validator_role_attestation, submit_validator_role_audit_report,
+    submit_validator_role_block_proposal, submit_validator_role_block_vote,
+    validator_remote_tensor_response, validator_role_audit_observation,
     validator_role_work_observation,
 };
 
@@ -205,6 +206,104 @@ fn validator_role_block_vote_submission_finalizes_only_through_votes() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn validator_role_audit_report_submission_observes_assignments_and_skips_duplicates() {
+    let params = ChainParams {
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 3,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(
+        params,
+        hash_bytes(b"test", &[b"validator-role-audit-report"]),
+    );
+    let miner = address(b"validator-role-audit-miner");
+    let proposer = address(b"validator-role-audit-proposer");
+    register_miner(&mut chain, miner);
+    register_validator(&mut chain, proposer);
+    let validators: Vec<_> = (0..5)
+        .map(|index| address(format!("validator-role-audit-validator-{index}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        register_validator(&mut chain, *validator);
+    }
+    let scheduler = JobScheduler::with_small_shape((2, 2, 2));
+    let job = scheduler.generate_small_matmul(
+        chain.state().epoch(),
+        chain.state().height(),
+        &chain.state().finalized_randomness(),
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().receipt_submission_window),
+    );
+    let job_state = tensor_vm::JobState::TensorOp(job);
+    chain
+        .apply_command(ChainCommand::SubmitJob(job_state.clone()))
+        .unwrap();
+    let bundle = CpuReferenceMinerRole::new(miner)
+        .execute_job(&job_state, chain.state().height(), 1)
+        .unwrap();
+    let receipt_id = bundle.receipt_id();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(bundle.receipt.clone()))
+        .unwrap();
+    let assignment = JobScheduler::with_small_shape((8, 8, 8)).assign_validators(
+        &chain,
+        receipt_id,
+        &chain.validator_assignment_seed(&receipt_id),
+    );
+    let audited = assignment.validators[0];
+    let auditor = validators
+        .iter()
+        .copied()
+        .find(|validator| *validator != audited)
+        .expect("separate auditor should be available");
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    insert_bundle_tensors(&mut node, &bundle);
+    submit_validator_role_attestation(&mut node, audited, receipt_id)
+        .unwrap()
+        .expect("assigned validator should attest before audit assignment");
+    node.chain.produce_block(proposer, 1_000).unwrap();
+    let audit_id = *node
+        .chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("audit assignment should be created");
+
+    let observation = validator_role_audit_observation(&node, auditor);
+    assert_eq!(observation.assigned_audits, BTreeSet::from([audit_id]));
+    assert_eq!(observation.unreported_audits, BTreeSet::from([audit_id]));
+    assert_eq!(
+        observation.artifact_ready_audits,
+        BTreeSet::from([audit_id])
+    );
+    assert!(observation.artifact_missing_audits.is_empty());
+
+    let submission = submit_validator_role_audit_report(&mut node, auditor, audit_id)
+        .unwrap()
+        .expect("registered auditor should submit report");
+    assert_eq!(submission.audit_reports_submitted, 1);
+    assert!(node.chain.state().validator_audit_results()[&audit_id].passed);
+    assert!(
+        submit_validator_role_audit_report(&mut node, auditor, audit_id)
+            .unwrap()
+            .is_none()
+    );
+    let observation = validator_role_audit_observation(&node, auditor);
+    assert!(observation.unreported_audits.is_empty());
+    assert!(observation.artifact_ready_audits.is_empty());
 }
 
 #[test]

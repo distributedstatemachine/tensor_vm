@@ -14,10 +14,11 @@ pub use service::{TensorVmLibp2pService, TensorVmLibp2pServiceInfo, spawn_libp2p
 pub use wire::{
     decode_attestation_payload, decode_block_payload, decode_block_vote_payload,
     decode_job_payload, decode_message, decode_receipt_payload, decode_tensor_payload,
-    encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
-    encode_gossipsub_message, encode_job_payload, encode_message, encode_receipt_payload,
-    encode_tensor_payload, gossip_topic_for_message, gossipsub_ident_topic,
-    request_response_protocol_for_message, request_response_stream_protocol,
+    decode_validator_audit_report_payload, encode_attestation_payload, encode_block_payload,
+    encode_block_vote_payload, encode_gossipsub_message, encode_job_payload, encode_message,
+    encode_receipt_payload, encode_tensor_payload, encode_validator_audit_report_payload,
+    gossip_topic_for_message, gossipsub_ident_topic, request_response_protocol_for_message,
+    request_response_stream_protocol,
 };
 
 pub const LIBP2P_PROTOCOL_PREFIX: &str = "/tensorchain/1";

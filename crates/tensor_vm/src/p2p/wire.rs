@@ -1,5 +1,5 @@
 use crate::api::P2pMessage;
-use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock};
+use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
 use crate::tensor::{DType, Tensor};
@@ -16,6 +16,7 @@ pub(super) const MAX_TENSOR_VALUES: usize = 1_000_000;
 const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
 const BLOCK_PAYLOAD_LEN: usize = codec::TENSOR_BLOCK_PAYLOAD_LEN;
 const BLOCK_VOTE_PAYLOAD_LEN: usize = codec::BLOCK_VOTE_PAYLOAD_LEN;
+const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = codec::VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN;
 
 pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
     match message {
@@ -30,6 +31,8 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         P2pMessage::NewAttestation(_) | P2pMessage::NewAttestationPayload { .. } => {
             Some(GossipTopic::Attestations)
         }
+        P2pMessage::NewValidatorAuditReport(_)
+        | P2pMessage::NewValidatorAuditReportPayload { .. } => Some(GossipTopic::Attestations),
         P2pMessage::PeerInfo { .. } => Some(GossipTopic::Peers),
         P2pMessage::RequestTensorChunk { .. }
         | P2pMessage::TensorChunkResponse { .. }
@@ -69,6 +72,8 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewReceiptPayload { .. }
         | P2pMessage::NewAttestation(_)
         | P2pMessage::NewAttestationPayload { .. }
+        | P2pMessage::NewValidatorAuditReport(_)
+        | P2pMessage::NewValidatorAuditReportPayload { .. }
         | P2pMessage::PeerInfo { .. } => None,
     }
 }
@@ -166,6 +171,20 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
         } => {
             out.push(15);
             write_hash(&mut out, attestation_id);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewValidatorAuditReport(audit_id) => {
+            out.push(20);
+            write_hash(&mut out, audit_id);
+        }
+        P2pMessage::NewValidatorAuditReportPayload {
+            audit_id,
+            auditor,
+            payload,
+        } => {
+            out.push(21);
+            write_hash(&mut out, audit_id);
+            write_hash(&mut out, auditor);
             write_bytes(&mut out, payload);
         }
         P2pMessage::RequestTensorChunk {
@@ -295,6 +314,23 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             attestation_id: reader.read_hash()?,
             payload: reader.read_bytes_with_max(codec::ATTESTATION_PAYLOAD_LEN)?,
         },
+        20 => P2pMessage::NewValidatorAuditReport(reader.read_hash()?),
+        21 => {
+            let audit_id = reader.read_hash()?;
+            let auditor = reader.read_hash()?;
+            let payload = reader.read_bytes_with_max(VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN)?;
+            let report = decode_validator_audit_report_payload(&payload)?;
+            if report.audit_id != audit_id || report.auditor != auditor {
+                return Err(TvmError::InvalidReceipt(
+                    "validator audit report payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewValidatorAuditReportPayload {
+                audit_id,
+                auditor,
+                payload,
+            }
+        }
         5 => P2pMessage::RequestTensorChunk {
             tensor_id: reader.read_hash()?,
             chunk_index: reader.read_u64()?,
@@ -422,6 +458,15 @@ pub fn encode_attestation_payload(attestation: &ValidatorAttestation) -> Vec<u8>
 pub fn decode_attestation_payload(input: &[u8]) -> TvmResult<ValidatorAttestation> {
     codec::decode_attestation_payload(input)
         .map_err(|error| p2p_codec_error(error, "trailing attestation payload bytes"))
+}
+
+pub fn encode_validator_audit_report_payload(report: &ValidatorAuditReport) -> Vec<u8> {
+    codec::encode_validator_audit_report_payload(report)
+}
+
+pub fn decode_validator_audit_report_payload(input: &[u8]) -> TvmResult<ValidatorAuditReport> {
+    codec::decode_validator_audit_report_payload(input)
+        .map_err(|error| p2p_codec_error(error, "trailing validator audit report payload bytes"))
 }
 
 fn p2p_codec_error(error: CodecError, trailing_error: &'static str) -> TvmError {
@@ -566,7 +611,7 @@ fn dtype_from_tag(tag: u8) -> TvmResult<DType> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock};
+    use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
     use crate::codec;
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
@@ -639,6 +684,13 @@ mod tests {
             b"test-attestation-announcement",
             &[&attestation.validator, &attestation.receipt_id],
         );
+        let audit_report = ValidatorAuditReport::new(
+            hash_bytes(b"test", &[b"audit-id"]),
+            address(b"audit-reporter"),
+            VerificationResult::Valid,
+            true,
+            hash_bytes(b"test", &[b"audit-checks"]),
+        );
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -669,6 +721,12 @@ mod tests {
             P2pMessage::NewAttestationPayload {
                 attestation_id,
                 payload: encode_attestation_payload(&attestation),
+            },
+            P2pMessage::NewValidatorAuditReport(audit_report.audit_id),
+            P2pMessage::NewValidatorAuditReportPayload {
+                audit_id: audit_report.audit_id,
+                auditor: audit_report.auditor,
+                payload: encode_validator_audit_report_payload(&audit_report),
             },
             P2pMessage::RequestTensorChunk {
                 tensor_id: h,
@@ -783,6 +841,61 @@ mod tests {
             payload,
         });
         assert!(decode_message(&wrong_validator).is_err());
+    }
+
+    #[test]
+    fn validator_audit_report_payloads_roundtrip_and_reject_malformed_edges() {
+        let report = ValidatorAuditReport::new(
+            hash_bytes(b"test", &[b"audit-payload-id"]),
+            address(b"audit-payload-auditor"),
+            VerificationResult::Invalid,
+            false,
+            hash_bytes(b"test", &[b"audit-payload-checks"]),
+        );
+        let payload = encode_validator_audit_report_payload(&report);
+        assert_eq!(
+            decode_validator_audit_report_payload(&payload).unwrap(),
+            report
+        );
+        assert_eq!(
+            decode_message(&encode_message(
+                &P2pMessage::NewValidatorAuditReportPayload {
+                    audit_id: report.audit_id,
+                    auditor: report.auditor,
+                    payload: payload.clone(),
+                }
+            ))
+            .unwrap(),
+            P2pMessage::NewValidatorAuditReportPayload {
+                audit_id: report.audit_id,
+                auditor: report.auditor,
+                payload: payload.clone(),
+            }
+        );
+
+        let mut wrong_audit = encode_message(&P2pMessage::NewValidatorAuditReportPayload {
+            audit_id: report.audit_id,
+            auditor: report.auditor,
+            payload: payload.clone(),
+        });
+        wrong_audit[1] ^= 0x55;
+        assert!(decode_message(&wrong_audit).is_err());
+
+        let mut wrong_auditor = encode_message(&P2pMessage::NewValidatorAuditReportPayload {
+            audit_id: report.audit_id,
+            auditor: report.auditor,
+            payload: payload.clone(),
+        });
+        wrong_auditor[33] ^= 0x55;
+        assert!(decode_message(&wrong_auditor).is_err());
+
+        assert!(decode_validator_audit_report_payload(&payload[..payload.len() - 1]).is_err());
+        let mut trailing = payload;
+        trailing.push(0);
+        assert!(decode_validator_audit_report_payload(&trailing).is_err());
+        let mut unknown_result = encode_validator_audit_report_payload(&report);
+        unknown_result[64] = 255;
+        assert!(decode_validator_audit_report_payload(&unknown_result).is_err());
     }
 
     #[test]
