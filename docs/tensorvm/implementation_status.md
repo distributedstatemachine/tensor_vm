@@ -133,7 +133,9 @@ blocker clears. See
   Slashed validators can submit signed, bounded mandatory-audit appeal records through the shared chain
   command path; those records are tied to an existing audit slash, accepted only from the slashed
   validator before the audit appeal deadline, committed in the state root, and persisted in chain-state
-  snapshots. Appeal adjudication/refund mechanics remain open.
+  snapshots. Audit slashes now keep the affected validator's voided pending receipt reward claim held
+  through that appeal deadline before it can be pruned without credit. Appeal adjudication outcome mechanics
+  remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable

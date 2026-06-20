@@ -264,10 +264,14 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
             reward.receipt_id == receipt.receipt_id
                 && reward.beneficiary == assigned
                 && reward.kind == ReceiptRewardKind::Validator
-        });
-    assert!(
-        voided_validator_claim.is_none(),
-        "slashed mature validator reward should be swept without credit during block apply"
+        })
+        .expect("slashed validator reward should remain pending through appeal deadline");
+    assert!(voided_validator_claim.voided_by_challenge);
+    assert_eq!(
+        voided_validator_claim.claimable_at_height,
+        slash
+            .slashed_at_height
+            .saturating_add(chain.params().validator_audit_window_blocks.max(1))
     );
     let release_events = chain.release_matured_receipt_rewards().unwrap();
     assert!(!release_events.iter().any(|event| matches!(
@@ -278,6 +282,14 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         } if *beneficiary == assigned
     )));
     assert_eq!(chain.state().rewards().balance(&assigned), 0);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .all(|reward| reward.beneficiary != assigned || reward.receipt_id != receipt.receipt_id),
+        "voided validator reward should be pruned without credit once appeal hold matures"
+    );
 
     chain.produce_block(validators[0], 1_012).unwrap();
     assert_eq!(chain.state().validator_audit_slashes().len(), 1);
@@ -594,6 +606,12 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         })
         .expect("contradicted validator reward should stay pending until release");
     assert!(voided_validator_claim.voided_by_challenge);
+    assert_eq!(
+        voided_validator_claim.claimable_at_height,
+        slash
+            .slashed_at_height
+            .saturating_add(chain.params().validator_audit_window_blocks.max(1))
+    );
     assert_eq!(
         chain.submit_validator_audit_report(ValidatorAuditReport::new(
             audit_id,

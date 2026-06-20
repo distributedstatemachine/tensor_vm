@@ -209,12 +209,13 @@ The local bundle is useful and should remain the first operational target:
   records now also exist in the local reference when audit sampling is configured: assignment names a
   deterministic registered auditor distinct from the audited validator, delays the audited validator's
   pending receipt reward through the audit deadline, and a missed or contradicted audit slashes that
-  validator once, voids the delayed validator reward, credits treasury, and persists/exposes audit counts.
+  validator once, voids the delayed validator reward, holds the voided claim through the appeal deadline
+  before pruning without credit, credits treasury, and persists/exposes audit counts.
   Registered validator roles now observe only their assigned local audit work, submit signed audit reports
   through the shared chain command path, gossip bounded audit-report payloads, let non-producers apply or
   retry those payloads through node ingest, and expose submitted plus network-applied audit-report
   counters. Slashed audited validators can now submit signed, bounded appeal records that are rooted and
-  persisted with the audit slash state. Appeal adjudication/refund mechanics and bond calibration remain
+  persisted with the audit slash state. Appeal adjudication outcome mechanics and bond calibration remain
   open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.

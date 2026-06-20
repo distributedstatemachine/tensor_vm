@@ -686,6 +686,7 @@ fn apply_block_to_parent_state(
         &mut child_state,
         block_height,
         reward_context.validator_audit_slash_amount,
+        reward_context.validator_audit_window_blocks,
     );
     assign_validator_audits(
         &mut child_state,
@@ -723,6 +724,7 @@ fn apply_missed_validator_audit_slashes(
     child_state: &mut ChainState,
     block_height: u64,
     slash_amount: u64,
+    audit_window_blocks: u64,
 ) {
     let assignments = child_state
         .validator_audit_assignments
@@ -749,7 +751,13 @@ fn apply_missed_validator_audit_slashes(
         validator.stake = validator.stake.saturating_sub(actual_slash);
         validator.reputation -= 10;
         validator.missed_assignments = validator.missed_assignments.saturating_add(1);
-        void_validator_audit_reward(child_state, &assignment.receipt_id, &assignment.validator);
+        let reward_hold_until_height = block_height.saturating_add(audit_window_blocks.max(1));
+        void_validator_audit_reward(
+            child_state,
+            &assignment.receipt_id,
+            &assignment.validator,
+            reward_hold_until_height,
+        );
         child_state.rewards.credit_treasury(actual_slash);
         child_state.validator_audit_slashes.insert(
             assignment.audit_id,
@@ -861,12 +869,14 @@ fn void_validator_audit_reward(
     child_state: &mut ChainState,
     receipt_id: &Hash,
     validator: &Address,
+    claimable_at_height: u64,
 ) {
     for reward in child_state.pending_receipt_rewards.values_mut() {
         if reward.receipt_id == *receipt_id
             && reward.beneficiary == *validator
             && reward.kind == ReceiptRewardKind::Validator
         {
+            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
             reward.voided_by_challenge = true;
         }
     }

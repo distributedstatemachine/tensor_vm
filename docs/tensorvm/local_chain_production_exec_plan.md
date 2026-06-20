@@ -5,12 +5,13 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 71, chain-owned validator audit appeals.
+- Active feature: Iteration 72, validator audit reward hold-through appeal window.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
   challenger reward claims. Mandatory validator audits now include deterministic chain-owned auditor
-  selection, report authorization, and signed state-rooted appeal records for existing audit slashes.
+  selection, report authorization, signed state-rooted appeal records, and pending validator-reward holds
+  through the audit appeal deadline after a slash.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -18,7 +19,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with appeal adjudication/refund mechanics, live parameter calibration,
+- Next action: continue with appeal adjudication outcome mechanics, live parameter calibration,
   deterministic live bad-block generation, or Docker `/health`.
 
 ## Readiness Matrix
@@ -36,52 +37,62 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 70 auditor selection implemented locally | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable `study::economic_invariant_study` | Add audit appeal records and live parameter calibration |
+| Economics and slashing invariant | Partial; Iteration 72 audit reward holds in progress | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable `study::economic_invariant_study` | Add appeal outcome mechanics and live parameter calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 71: Chain-Owned Validator Audit Appeals
+### Iteration 72: Validator Audit Reward Hold-Through Appeal Window
 
-Feature capability: validators slashed by a mandatory audit can submit a signed, bounded appeal that is
-state-rooted, persisted, and tied to the existing audit slash record.
+Feature capability: when a mandatory validator audit slash voids the audited validator's pending receipt
+reward, the reward claim remains in the state-rooted pending ledger until the audit appeal deadline instead
+of being swept at the pre-audit maturity height.
 
 Readiness requirements covered:
-- `upow.md` §12.2 and `mvp_spec.md` §26: hard slashing needs battle-tested appeal/challenge flow evidence.
-- `coverage_matrix.md` criterion 5: appeals are the remaining local economics gap after assigned auditors.
+- `mvp_spec.md` §16, §20.3, and §26: challengeable verifier-dependent rewards stay pending through the
+  relevant challenge/appeal window and voided claims prune only after maturity.
+- `upow.md` §12.1 and §12.2: reward finality is separate from spendability, and hard slashing needs
+  battle-tested appeal/challenge flow evidence.
+- `coverage_matrix.md` criterion 5: audit appeals need a direct reward lifecycle rather than refund
+  reconstruction.
 
-Canonical owner: chain audit/slash state and command validation.
-Adapter callers: none in this slice; future p2p/runtime appeal gossip must call the same command.
-Old shortcut being removed: audit slashes currently have no canonical dispute marker.
-Regression test that proves the shortcut is gone: focused chain test accepts exactly one signed validator
-appeal for an existing slash and rejects unknown, wrong-signer, duplicate, and expired appeals.
-Behavior with local synthetic block production disabled: appeal submission is independent of producers.
-Behavior for producer and non-producer roles: no role-specific path yet; future network ingestion must
-apply the same command.
-Structured evidence source: `ChainState::validator_audit_appeals()` and the state root/storage snapshot.
-Finality source: appeal records do not alter block finality in this slice.
-Wire-size and codec boundary: no wire format in this slice; reason text is bounded before state insertion.
+Canonical owner: chain audit slash transition and pending receipt reward ledger.
+Adapter callers: none; runtime and p2p paths observe the existing pending reward view.
+Old workaround being removed: audit-slash reward handling can no longer sweep the voided validator reward
+before the appeal deadline, which would force future adjudication to reconstruct or refund a disappeared
+claim.
+Regression test that proves the workaround is gone: focused audit test confirms the slashed validator's
+voided receipt reward remains pending with `claimable_at_height >= slash_height + audit_window`, then
+sweeps without credit only after that height.
+Behavior with local synthetic block production disabled: the mutation is part of chain audit slashing and
+does not depend on producers.
+Behavior for producer and non-producer roles: all nodes applying the same audit slash transition see the
+same pending reward hold.
+Structured evidence source: `ChainState::pending_receipt_rewards()` and unified pending reward claim view.
+Finality source: reward hold does not alter block finality.
+Wire-size and codec boundary: no wire changes.
 
-Files/modules likely touched: chain state/validation/commands/roots/tests, storage snapshot tests,
-status/coverage/readiness docs, exec plan.
-Narrow validation commands: focused audit/root/storage tests.
+Files/modules likely touched: chain audit validation/tests and economics/readiness docs.
+Narrow validation commands: focused validator-audit reward tests.
 Broad validation commands before commit: fmt, diff check, full crate, clippy, workspace release, final Gate 0,
 tarpaulin attempt.
-Out of scope: adjudication/refund mechanics, p2p appeal gossip, data-unavailability appeals, live parameter
+Out of scope: appeal adjudication outcomes, p2p appeal gossip, data-unavailability appeals, live parameter
 calibration, Docker `/health`.
-Split trigger: if state persistence or root integration forces network codec changes, split network gossip
-into a later iteration.
+Split trigger: if the hold needs new state fields instead of updating existing reward maturity, split
+schema/root/storage work into a separate iteration.
 
 Implementation summary:
-- Added signed `ValidatorAuditAppeal` submissions and persisted `ValidatorAuditAppealRecord` state.
-- Accepted appeals only for existing audit slashes, from the slashed validator, before a bounded deadline.
-- Committed appeal records in the state root and persisted them through chain-state snapshots.
-- Updated audit, root, storage, and economics/readiness docs while leaving adjudication/refund mechanics
-  out of scope.
+- Extended validator-audit slash reward handling so both contradictory-report and missed-audit slashes
+  void the affected validator receipt reward and push its `claimable_at_height` through the audit appeal
+  deadline.
+- Updated focused audit tests to prove the voided claim remains pending during the appeal hold and then
+  prunes without credit after maturity.
+- Updated economics/readiness docs to describe appeal outcome mechanics as the remaining gap instead of
+  refund reconstruction.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused tests passed for audit appeal admission/rejection, audit state roots, and chain-state persistence.
+- Focused tests passed for validator audit reward holds, audit state roots, and chain-state persistence.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 401 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -90,9 +101,15 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `09b2a49` (`Record validator audit appeals`) is pushed to `main`.
 
 ## Recent Iterations
+
+### Iteration 71: Chain-Owned Validator Audit Appeals
+
+Validators slashed by a mandatory audit can submit a signed, bounded appeal tied to an existing audit slash.
+Appeal records are state-rooted and persisted; adjudication outcome mechanics remain open. Validation
+passed focused audit/root/storage tests, full crate, clippy, workspace release, and first/final Gate 0;
+tarpaulin remained blocked. Feature commit `09b2a49` and evidence commit `af2c377` are pushed.
 
 ### Iteration 70: Chain-Owned Validator Auditor Selection
 
@@ -102,79 +119,12 @@ Validation passed focused audit/root/storage/node/role tests, full crate, clippy
 first/final Gate 0; tarpaulin remained blocked. Feature commit `79b4d12` and evidence commit `94767bd`
 are pushed.
 
-### Iteration 69: Full Challenge-Reward Maturity Delay
+### Iterations 69-68: Challenge Reward Delay And Evidence
 
-Feature capability: successful block-check challenger rewards must use the chain's full
-`reward_maturity_delay_blocks()` rule instead of the shorter proposer-throttle/challenge-window height.
-
-Readiness requirements covered:
-- `mvp_spec.md` §20.7: challengers receive pending claims that release only after maturity.
-- `upow.md` §12.1: verifier-dependent rewards are pending consensus claims before spendability.
-
-Canonical owner: chain challenge transition and pending challenge reward ledger.
-Old shortcut being removed: challenger bounty maturity cannot be derived from proposer throttle height.
-Validation plan: focused chain/node challenge tests, formatting/whitespace, final Gate 0, tarpaulin attempt.
-
-Implementation summary:
-- Changed block-check challenge resolution so challenger bounty claims mature at
-  `challenged_at_height + ChainParams::reward_maturity_delay_blocks()`.
-- Kept proposer throttling on the challenge-window penalty height, making penalty duration distinct from
-  reward spendability.
-- Updated chain and network payload tests plus readiness/status/coverage docs.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused challenge tests passed through `cargo test -p tensor_vm --quiet` after locking the new maturity
-  assertion.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 400 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
-  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `7595b0e` (`Delay challenge rewards by maturity rule`) is pushed to `main`.
-
-### Iteration 68: Local Checker Challenge-Reward Evidence
-
-Feature capability: when the local run observes block-check challenge payload ingestion/application, require
-future-maturity, non-voided pending challenge reward claim evidence from the chain-owned reward view.
-
-Readiness requirements covered:
-- `mvp_spec.md` §20.7 and §25.5: successful checks-root challengers receive delayed pending claims.
-- `local_chain_production_readiness.md` checker gap: pending challenger rewards must be observable instead
-  of inferred from challenge counters.
-
-Canonical owner: chain state and `ChainState::pending_reward_claims()`.
-Adapter caller: local CPU checker reads explorer overview `pending_rewards`.
-Old shortcut being removed: challenge-payload counters no longer stand alone as reward evidence when present.
-Out of scope: deterministic live bad-block generation, appeal policy, and Docker `/health` resolution.
-Validation plan: shell syntax, compose artifact test, focused status/RPC tests, formatting/whitespace,
-`cargo test -p tensor_vm --quiet`, clippy, workspace release, final Gate 0, tarpaulin attempt.
-
-Implementation summary:
-- Added checker parsing for pending challenge reward count and future-maturity challenge claims.
-- Added a conditional failure when pending challenge rewards or applied live block-check challenges exist
-  without future-maturity pending challenge reward evidence.
-- Added output fields for challenge reward claims and block-check challenge counters.
-- Updated local compose artifact coverage and status/coverage/readiness docs.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Shell syntax: `bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh` passed.
-- Focused compose artifact:
-  `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`
-  passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 400 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
-  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `53eaa9e` (`Gate challenge reward evidence in local checker`) is pushed to `main`.
+Block-check challenger bounties now use the full reward maturity rule, while the local checker requires
+future-maturity pending challenge reward evidence whenever challenge payloads are observed. Validation
+passed focused challenge/checker tests, full crate, clippy, workspace release, and first/final Gate 0;
+tarpaulin remained blocked. Feature commits `7595b0e` and `53eaa9e` are pushed.
 
 ### Iteration 67: Chain-Owned Reward Claim View
 
@@ -237,7 +187,7 @@ and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and
 
 ## Validation Evidence
 
-Latest full validation is Iteration 71 on June 20, 2026:
+Latest full validation is Iteration 72 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release

@@ -298,7 +298,16 @@ pub(super) fn apply_validator_audit_slash(
     if reason == "validator missed mandatory audit" {
         validator.missed_assignments = validator.missed_assignments.saturating_add(1);
     }
-    void_validator_audit_reward(chain, &assignment.receipt_id, &assignment.validator);
+    let reward_hold_until_height = chain
+        .state
+        .height
+        .saturating_add(chain.params.validator_audit_window_blocks.max(1));
+    void_validator_audit_reward(
+        chain,
+        &assignment.receipt_id,
+        &assignment.validator,
+        reward_hold_until_height,
+    );
     chain.state.rewards.credit_treasury(amount);
     let record = ValidatorAuditSlashRecord {
         audit_id: assignment.audit_id,
@@ -316,12 +325,18 @@ pub(super) fn apply_validator_audit_slash(
     record
 }
 
-fn void_validator_audit_reward(chain: &mut Chain, receipt_id: &Hash, validator: &Address) {
+fn void_validator_audit_reward(
+    chain: &mut Chain,
+    receipt_id: &Hash,
+    validator: &Address,
+    claimable_at_height: u64,
+) {
     for reward in chain.state.pending_receipt_rewards.values_mut() {
         if reward.receipt_id == *receipt_id
             && reward.beneficiary == *validator
             && reward.kind == ReceiptRewardKind::Validator
         {
+            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
             reward.voided_by_challenge = true;
         }
     }
