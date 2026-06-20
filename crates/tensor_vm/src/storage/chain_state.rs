@@ -1144,6 +1144,8 @@ mod tests {
         submit_block_vote, submit_job, submit_receipt, transfer,
     };
     use super::*;
+    use crate::chain::{ChainCommand, ChainEngine};
+    use crate::ir::canonical_matmul_graph;
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
         PrimitiveType, TensorOpReceipt,
@@ -1173,6 +1175,13 @@ mod tests {
         let mut chain = Chain::with_params(params, beacon);
         let miner = address(b"durable-miner");
         let validator = address(b"durable-validator");
+        let arbitrary_graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: arbitrary_graph.graph_id(),
+                bytes: arbitrary_graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
         chain
             .register_miner_with_profile_and_operator(
                 miner,

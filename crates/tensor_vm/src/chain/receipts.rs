@@ -1,7 +1,29 @@
 use super::{Chain, JobState, ReceiptRandomnessAnchor, ReceiptState, validation};
 use crate::error::{Result, TvmError};
+use crate::ir::{GraphId, TensorGraph};
 use crate::jobs::{LinearTrainingStepReceipt, TensorOpReceipt};
 use crate::types::Hash;
+
+pub fn register_program_body(chain: &mut Chain, graph_id: GraphId, bytes: Vec<u8>) -> Result<()> {
+    let graph = TensorGraph::from_canonical_json_bytes(&bytes)?;
+    let validated_graph_id = graph.validate_for_consensus()?;
+    if validated_graph_id != graph_id {
+        return Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"));
+    }
+    if graph.canonical_json().as_bytes() != bytes.as_slice() {
+        return Err(TvmError::InvalidReceipt(
+            "noncanonical tensor ir graph body",
+        ));
+    }
+    if let Some(existing) = chain.state.program_bodies.get(&graph_id) {
+        if existing.as_slice() != bytes.as_slice() {
+            return Err(TvmError::InvalidReceipt("conflicting tensor ir graph body"));
+        }
+        return Ok(());
+    }
+    chain.state.program_bodies.insert(graph_id, bytes);
+    Ok(())
+}
 
 pub fn submit_job(chain: &mut Chain, job: JobState) {
     let graph = job.tensor_ir_graph();

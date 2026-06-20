@@ -1,4 +1,5 @@
 use super::*;
+use crate::canonical_matmul_graph;
 
 #[test]
 fn chain_engine_applies_profile_neutral_commands() {
@@ -300,6 +301,99 @@ fn chain_engine_applies_profile_neutral_commands() {
     );
     assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 97);
     assert_eq!(chain.state().rewards().treasury(), 3);
+}
+
+#[test]
+fn chain_engine_registers_valid_canonical_program_body_without_job() {
+    let beacon = hash_bytes(b"test", &[b"chain-engine-program-body"]);
+    let mut chain = Chain::new(beacon);
+    let graph = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+    let graph_id = graph.graph_id();
+    let bytes = graph.canonical_json().into_bytes();
+
+    assert_eq!(
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: bytes.clone(),
+            })
+            .unwrap(),
+        vec![ChainEvent::ProgramBodyRegistered { graph_id }]
+    );
+    assert_eq!(
+        chain.state().program_body(&graph_id),
+        Some(bytes.as_slice())
+    );
+    assert!(chain.state().jobs().is_empty());
+
+    assert_eq!(
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: bytes.clone(),
+            })
+            .unwrap(),
+        vec![ChainEvent::ProgramBodyRegistered { graph_id }]
+    );
+    assert_eq!(chain.state().program_bodies().len(), 1);
+}
+
+#[test]
+fn chain_engine_rejects_invalid_or_conflicting_program_bodies() {
+    let beacon = hash_bytes(b"test", &[b"chain-engine-program-body-reject"]);
+    let mut chain = Chain::new(beacon);
+    let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+    let graph_id = graph.graph_id();
+    let bytes = graph.canonical_json().into_bytes();
+
+    assert_eq!(
+        chain.apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: hash_bytes(b"test", &[b"wrong-graph-id"]),
+            bytes: bytes.clone(),
+        }),
+        Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"))
+    );
+
+    let mut noncanonical = bytes.clone();
+    noncanonical.push(b'\n');
+    assert_ne!(noncanonical, bytes);
+    assert_eq!(
+        chain.apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: noncanonical,
+        }),
+        Err(TvmError::InvalidReceipt(
+            "noncanonical tensor ir graph body"
+        ))
+    );
+
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: bytes.clone(),
+        })
+        .unwrap();
+    chain
+        .state
+        .program_bodies
+        .insert(graph_id, b"stale".to_vec());
+    assert_eq!(
+        chain.apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: bytes.clone(),
+        }),
+        Err(TvmError::InvalidReceipt("conflicting tensor ir graph body"))
+    );
+    let conflicting = canonical_matmul_graph(2, 2, 3, DType::FieldElement)
+        .canonical_json()
+        .into_bytes();
+    assert_eq!(
+        chain.apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: conflicting,
+        }),
+        Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"))
+    );
 }
 
 #[test]

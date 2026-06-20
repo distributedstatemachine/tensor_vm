@@ -3,6 +3,7 @@ use super::state::{
 };
 use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::Result;
+use crate::ir::GraphId;
 use crate::types::{Address, Hash};
 use crate::verify::ValidatorAttestation;
 
@@ -53,6 +54,10 @@ pub enum ChainCommand {
         amount: u64,
     },
     ClaimReward(Address),
+    RegisterProgramBody {
+        graph_id: GraphId,
+        bytes: Vec<u8>,
+    },
     SubmitJob(JobState),
     SubmitReceipt(ReceiptState),
     SubmitAttestation(ValidatorAttestation),
@@ -143,6 +148,9 @@ pub enum ChainEvent {
         claim_id: Hash,
         beneficiary: Address,
         amount: u64,
+    },
+    ProgramBodyRegistered {
+        graph_id: GraphId,
     },
     BlockProduced {
         height: u64,

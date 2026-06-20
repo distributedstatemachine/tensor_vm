@@ -36,10 +36,13 @@ The local reference now includes a content-addressed Tensor IR foundation for `u
 verifier-class metadata for every frozen op, Tier-C vocabulary gating, explicit non-admission of
 index-consistency ops, and canonical graph constructors for the current TensorOp matmul and
 LinearTrainingStep primitives. The current fixed job structs derive their receipt `program_hash` from the
-validated graph ID. Submitted current jobs also register their canonical graph body bytes in chain state
-keyed by graph ID; the registry is committed in the state root, persisted by the node-store snapshot, and
-servable through the existing `RequestProgram`/`ProgramResponse` libp2p request-response path. The IR
-module now also exposes a deterministic exact interpreter foundation for validated, consensus-admitted
+validated graph ID. Submitted current jobs register their canonical graph body bytes in chain state keyed
+by graph ID, and arbitrary user-submitted canonical graph bodies can now be registered directly through
+`ChainCommand::RegisterProgramBody` after parsing, consensus validation, graph-id matching, and
+byte-for-byte canonical encoding checks. The registry is committed in the state root, persisted by the
+node-store snapshot, hydrated into the runtime program server at startup, and servable through the existing
+`RequestProgram`/`ProgramResponse` libp2p request-response path. The IR module now also exposes a
+deterministic exact interpreter foundation for validated, consensus-admitted
 graphs over the currently implemented tensor runtime ops (`matmul`, `add`, `sub`, `mul`, `scalar_mul`,
 `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, and `neg`). Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
@@ -58,6 +61,9 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
 `jobs::tests::linear_receipt_commits_to_learning_step`,
 `chain::tests::chain_engine_applies_profile_neutral_commands`,
+`chain::tests::chain_engine_registers_valid_canonical_program_body_without_job`,
+`chain::tests::chain_engine_rejects_invalid_or_conflicting_program_bodies`,
+`app::runtime_services::tests::startup_program_hydration_registers_state_rooted_program_bodies`,
 `storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`, and
 `p2p::service::tests::libp2p_service_fetches_registered_program_body`.
 
@@ -75,10 +81,10 @@ unavailable or missing an op. Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: chain admission/fetch for user-submitted arbitrary graph bodies,
-conformance vectors and executable verifiers for the wider admitted registry that is not yet executable by
-the exact interpreter, index-consistency proofs for `gather`/`scatter`/`embedding`, and CUDA conformance
-evidence when `cuda-kernels` is not compiled in this environment. Tier-C,
+Remaining Tensor IR/conformance gaps: arbitrary graph-backed job/receipt admission and role execution,
+const-blob fetching, conformance vectors and executable verifiers for the wider admitted registry that is
+not yet executable by the exact interpreter, index-consistency proofs for `gather`/`scatter`/`embedding`,
+and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment. Tier-C,
 index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are still
 gated out of consensus when their verifier class is deferred.
 

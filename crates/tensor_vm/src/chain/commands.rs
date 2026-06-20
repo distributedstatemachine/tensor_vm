@@ -1,6 +1,6 @@
 use super::{
     BlockAdmission, Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, ChainState,
-    PendingCreditReward, ReceiptState, TensorBlock, accounts, challenges, settlement,
+    PendingCreditReward, ReceiptState, TensorBlock, accounts, challenges, receipts, settlement,
 };
 use crate::challenge::ChallengeOutcome;
 use crate::error::{Result, TvmError};
@@ -49,6 +49,10 @@ impl ChainEngine for Chain {
                 let amount = self.state.rewards.balance(&address);
                 accounts::claim_reward(self, address)?;
                 Ok(vec![ChainEvent::RewardClaimed { address, amount }])
+            }
+            ChainCommand::RegisterProgramBody { graph_id, bytes } => {
+                receipts::register_program_body(self, graph_id, bytes)?;
+                Ok(vec![ChainEvent::ProgramBodyRegistered { graph_id }])
             }
             ChainCommand::SubmitJob(job) => {
                 let job_id = job.job_id();

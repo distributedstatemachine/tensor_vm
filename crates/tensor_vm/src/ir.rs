@@ -5,6 +5,7 @@ use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
 use crate::tensor::{DType, Tensor};
 use crate::types::{Hash, hash_bytes};
+use serde_json::Value as JsonValue;
 
 pub type GraphId = Hash;
 
@@ -171,6 +172,12 @@ pub fn op_spec(name: &str) -> Option<&'static OpSpec> {
 }
 
 impl TensorGraph {
+    pub fn from_canonical_json_bytes(bytes: &[u8]) -> Result<Self> {
+        let value: JsonValue = serde_json::from_slice(bytes)
+            .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir graph json"))?;
+        parse_tensor_graph_json(&value)
+    }
+
     pub fn canonical_json(&self) -> String {
         let inputs = join_json(self.inputs.iter().map(canonical_tensor_spec_json));
         let params = join_json(self.params.iter().map(canonical_param_spec_json));
@@ -1069,6 +1076,204 @@ fn dtype_name(dtype: DType) -> &'static str {
         DType::Fixed32 => "fixed32",
         DType::FieldElement => "field",
     }
+}
+
+fn parse_tensor_graph_json(value: &JsonValue) -> Result<TensorGraph> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir graph json"))?;
+    Ok(TensorGraph {
+        ir_version: json_u64(object.get("ir_version"), "invalid tensor ir version")?,
+        inputs: json_array(object.get("inputs"), "invalid tensor ir inputs")?
+            .iter()
+            .map(parse_tensor_spec_json)
+            .collect::<Result<Vec<_>>>()?,
+        params: json_array(object.get("params"), "invalid tensor ir params")?
+            .iter()
+            .map(parse_param_spec_json)
+            .collect::<Result<Vec<_>>>()?,
+        ops: json_array(object.get("ops"), "invalid tensor ir ops")?
+            .iter()
+            .map(parse_op_json)
+            .collect::<Result<Vec<_>>>()?,
+        outputs: json_array(object.get("outputs"), "invalid tensor ir outputs")?
+            .iter()
+            .map(parse_graph_output_json)
+            .collect::<Result<Vec<_>>>()?,
+    })
+}
+
+fn parse_tensor_spec_json(value: &JsonValue) -> Result<TensorSpec> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir tensor spec"))?;
+    Ok(TensorSpec {
+        name: json_string(object.get("name"), "invalid tensor ir tensor name")?.to_owned(),
+        shape: json_array(object.get("shape"), "invalid tensor ir tensor shape")?
+            .iter()
+            .map(|value| json_i64(Some(value), "invalid tensor ir tensor shape"))
+            .collect::<Result<Vec<_>>>()?,
+        dtype: dtype_from_name(json_string(
+            object.get("dtype"),
+            "invalid tensor ir tensor dtype",
+        )?)
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir tensor dtype"))?,
+        scale: json_i64(object.get("scale"), "invalid tensor ir tensor scale")?,
+    })
+}
+
+fn parse_param_spec_json(value: &JsonValue) -> Result<ParamSpec> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir param"))?;
+    Ok(ParamSpec {
+        name: json_string(object.get("name"), "invalid tensor ir param name")?.to_owned(),
+        type_name: json_string(object.get("type"), "invalid tensor ir param type")?.to_owned(),
+    })
+}
+
+fn parse_op_json(value: &JsonValue) -> Result<OpNode> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir op"))?;
+    let kwargs = object
+        .get("kwargs")
+        .and_then(JsonValue::as_object)
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir kwargs"))?
+        .iter()
+        .map(|(key, value)| Ok((key.clone(), parse_value_json(value)?)))
+        .collect::<Result<BTreeMap<_, _>>>()?;
+    Ok(OpNode {
+        id: json_u64(object.get("id"), "invalid tensor ir op id")? as usize,
+        op: json_string(object.get("op"), "invalid tensor ir op name")?.to_owned(),
+        args: json_array(object.get("args"), "invalid tensor ir op args")?
+            .iter()
+            .map(parse_ref_json)
+            .collect::<Result<Vec<_>>>()?,
+        kwargs,
+        out: json_array(object.get("out"), "invalid tensor ir op outputs")?
+            .iter()
+            .map(parse_tensor_spec_json)
+            .collect::<Result<Vec<_>>>()?,
+    })
+}
+
+fn parse_graph_output_json(value: &JsonValue) -> Result<GraphOutput> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir graph output"))?;
+    Ok(GraphOutput {
+        name: json_string(object.get("name"), "invalid tensor ir output name")?.to_owned(),
+        value: parse_ref_json(
+            object
+                .get("ref")
+                .ok_or(TvmError::InvalidReceipt("invalid tensor ir output ref"))?,
+        )?,
+    })
+}
+
+fn parse_value_json(value: &JsonValue) -> Result<IrValue> {
+    if value
+        .as_object()
+        .and_then(|object| object.get("kind"))
+        .is_some()
+    {
+        Ok(IrValue::Ref(parse_ref_json(value)?))
+    } else {
+        Ok(IrValue::Literal(parse_literal_json(value)?))
+    }
+}
+
+fn parse_ref_json(value: &JsonValue) -> Result<IrRef> {
+    let object = value
+        .as_object()
+        .ok_or(TvmError::InvalidReceipt("invalid tensor ir ref"))?;
+    match json_string(object.get("kind"), "invalid tensor ir ref kind")? {
+        "input" => Ok(IrRef::Input {
+            name: json_string(object.get("name"), "invalid tensor ir input ref")?.to_owned(),
+        }),
+        "op" => Ok(IrRef::Op {
+            id: json_u64(object.get("id"), "invalid tensor ir op ref")? as usize,
+            idx: json_u64(object.get("idx"), "invalid tensor ir op ref")? as usize,
+        }),
+        "param" => Ok(IrRef::Param {
+            name: json_string(object.get("name"), "invalid tensor ir param ref")?.to_owned(),
+        }),
+        "const" => Ok(IrRef::Const {
+            value: parse_literal_json(
+                object
+                    .get("value")
+                    .ok_or(TvmError::InvalidReceipt("invalid tensor ir const ref"))?,
+            )?,
+        }),
+        "const_blob" => Ok(IrRef::ConstBlob {
+            uri: json_string(object.get("uri"), "invalid tensor ir const blob")?.to_owned(),
+            shape: json_array(object.get("shape"), "invalid tensor ir const blob")?
+                .iter()
+                .map(|value| json_i64(Some(value), "invalid tensor ir const blob"))
+                .collect::<Result<Vec<_>>>()?,
+            dtype: dtype_from_name(json_string(
+                object.get("dtype"),
+                "invalid tensor ir const blob",
+            )?)
+            .ok_or(TvmError::InvalidReceipt("invalid tensor ir const blob"))?,
+        }),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir ref kind")),
+    }
+}
+
+fn parse_literal_json(value: &JsonValue) -> Result<IrLiteral> {
+    match value {
+        JsonValue::Bool(value) => Ok(IrLiteral::Bool(*value)),
+        JsonValue::Number(value) => {
+            if let Some(value) = value.as_i64() {
+                Ok(IrLiteral::Int(value))
+            } else if let Some(value) = value.as_u64() {
+                Ok(IrLiteral::Uint(value))
+            } else {
+                Err(TvmError::InvalidReceipt("invalid tensor ir literal"))
+            }
+        }
+        JsonValue::String(value) => {
+            if value.len() == 16 && value.chars().all(|ch| ch.is_ascii_hexdigit()) {
+                u64::from_str_radix(value, 16)
+                    .map(IrLiteral::Field)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir field literal"))
+            } else {
+                Ok(IrLiteral::String(value.clone()))
+            }
+        }
+        JsonValue::Array(values) => values
+            .iter()
+            .map(parse_literal_json)
+            .collect::<Result<Vec<_>>>()
+            .map(IrLiteral::List),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir literal")),
+    }
+}
+
+fn json_array<'a>(value: Option<&'a JsonValue>, error: &'static str) -> Result<&'a Vec<JsonValue>> {
+    value
+        .and_then(JsonValue::as_array)
+        .ok_or(TvmError::InvalidReceipt(error))
+}
+
+fn json_string<'a>(value: Option<&'a JsonValue>, error: &'static str) -> Result<&'a str> {
+    value
+        .and_then(JsonValue::as_str)
+        .ok_or(TvmError::InvalidReceipt(error))
+}
+
+fn json_i64(value: Option<&JsonValue>, error: &'static str) -> Result<i64> {
+    value
+        .and_then(JsonValue::as_i64)
+        .ok_or(TvmError::InvalidReceipt(error))
+}
+
+fn json_u64(value: Option<&JsonValue>, error: &'static str) -> Result<u64> {
+    value
+        .and_then(JsonValue::as_u64)
+        .ok_or(TvmError::InvalidReceipt(error))
 }
 
 fn canonical_tensor_spec_json(spec: &TensorSpec) -> String {

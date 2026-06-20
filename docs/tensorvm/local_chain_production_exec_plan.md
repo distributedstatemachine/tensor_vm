@@ -5,8 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 41 is complete.
-- Current status: Iteration 41 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 42, state-rooted arbitrary Tensor IR graph-body admission and fetch.
+- Current status: Iteration 42 implementation and validation passed locally on June 20, 2026; feature
+  commit/push evidence is pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,15 +15,16 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with chain admission/fetch for user-submitted arbitrary graph bodies, wider
-  admitted-registry executor/verifier coverage, full VRF/drand commit-reveal lifecycle, multi-validator
-  proposer competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
+- Next action: commit, push, and record evidence for Iteration 42; then continue with arbitrary
+  graph-backed jobs/receipts, wider admitted-registry executor/verifier coverage, full VRF/drand
+  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, or the Docker
+  `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 41: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 42: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -30,13 +32,79 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | Iteration 37 split proposal gating from synthetic job production and added `validator_proposer_tick_runs_without_synthetic_producer_gate` | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial, generic exact interpreter foundation implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job graph bodies in state/storage/P2P, `TensorGraph::execute_exact` for the currently implemented exact tensor ops | Add user-submitted graph body admission/fetch and wider admitted-registry executor coverage |
+| Tensor IR graph language | Partial, graph-body admission/fetch foundation implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job and arbitrary canonical graph bodies in state/storage/runtime program serving, `TensorGraph::execute_exact` for currently implemented exact tensor ops | Add arbitrary graph-backed jobs/receipts and wider admitted-registry executor coverage |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Add broader admitted-registry vectors, generic interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; Iteration 39 anchors admitted receipt assignment/validation seeds to persisted receipt-time beacon state | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; full reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 42: State-Rooted Arbitrary Tensor IR Graph-Body Admission
+
+Feature capability: arbitrary user-submitted canonical Tensor IR graph bodies can enter canonical chain
+state independently of the current fixed job constructors, survive node-store persistence, and be hydrated
+into the runtime program server for the existing bounded `RequestProgram`/`ProgramResponse` fetch path.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` owns graph-body admission into the state-rooted program registry; `ir` owns
+  parsing, canonical encoding, graph ID, and consensus validation.
+- Adapter callers: job sources, RPC/CLI/P2P adapters, and tests can submit through
+  `ChainCommand::RegisterProgramBody`; runtime startup hydrates the P2P program server from chain state.
+- Old shortcut being removed: graph bodies no longer require a fixed `TensorOp` or `LinearTrainingStep`
+  job submission before they can be state-rooted and fetchable.
+- Regression tests: `chain_engine_registers_valid_canonical_program_body_without_job`,
+  `chain_engine_rejects_invalid_or_conflicting_program_bodies`,
+  `startup_program_hydration_registers_state_rooted_program_bodies`, and the chain-state roundtrip test.
+- Synthetic production disabled: unchanged; direct graph-body admission does not depend on synthetic jobs or
+  local block production.
+- Producer/non-producer roles: both load the same persisted graph registry; runtime program serving is
+  hydrated from canonical chain state at startup.
+- Structured evidence source: `ChainEvent::ProgramBodyRegistered`, state-rooted `program_bodies`, graph ID,
+  canonical graph bytes, node-store snapshot, and P2P program response bytes.
+- Finality source: unchanged stake-weighted block votes.
+- Wire-size and codec boundary: no new wire format; existing bounded `RequestProgram`/`ProgramResponse`
+  request-response codec remains the fetch boundary.
+
+Implementation target:
+- Parse Tensor IR graph JSON bytes back into `TensorGraph`.
+- Add `ChainCommand::RegisterProgramBody` and `ChainEvent::ProgramBodyRegistered`.
+- Require graph ID match, consensus validation, and byte-for-byte canonical graph encoding before state
+  admission.
+- Keep matching duplicate submissions idempotent and reject malformed, noncanonical, or mismatched bodies.
+- Hydrate runtime P2P program serving from persisted chain `program_bodies` at startup.
+- Update coverage/status/tarpaulin docs and this execution plan.
+
+Validation target:
+- Focused: `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture`,
+  `cargo test -p tensor_vm --lib ir::tests -- --nocapture`,
+  `cargo test -p tensor_vm --lib app::runtime_services::tests -- --nocapture`, and
+  `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`.
+- Broad: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and final
+  `cargo test -p tensor_vm local_testnet --release`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline`.
+
+Validation completed locally:
+- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused tests passed:
+  - `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture`
+  - `cargo test -p tensor_vm --lib ir::tests -- --nocapture`
+  - `cargo test -p tensor_vm --lib app::runtime_services::tests -- --nocapture`
+  - `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`
+  (358 library tests plus integration tests), `cargo clippy --workspace --all-targets -- -D warnings`,
+  and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
+- Feature commit: pending.
+- Push result: pending.
+
+Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt production through
+`TensorGraph::execute_exact`, const-blob fetching, generic graph P2P gossip, full admitted-registry exact
+replay/verifier coverage, and CUDA generic graph execution.
+
+## Recent Iterations
 
 ### Iteration 41: Generic Exact-IR Interpreter Foundation
 
@@ -87,59 +155,9 @@ Validation completed locally:
 - Feature commit: `6b7260c` (`Add exact Tensor IR interpreter foundation`).
 - Push result: `72816da..6b7260c  main -> main` on `origin/main`.
 
-Out of scope: chain admission of user-submitted arbitrary graph bodies, role/runtime execution of arbitrary
-graph jobs, const-blob fetching, full admitted-registry exact replay, Tier-C consensus admission, and CUDA
-generic graph execution.
-
-## Recent Iterations
-
-### Iteration 40: Reduced Delayed Fallback Proposer Rewards
-
-Feature capability: empty `PowSkipFallback` blocks can now carry a reduced proposer reward claim instead
-of relying on a runtime workaround that skipped rewards entirely. The fallback claim is state-rooted and
-delayed like other proposer rewards, but it is additionally blocked until a later useful block includes
-settled receipt blockspace.
-
-Architecture shortcut answers:
-- Canonical owner: `chain` owns fallback reward delay and release.
-- Adapter callers: validator role now submits a reduced rewarded fallback block command instead of
-  bypassing reward creation for empty blockspace.
-- Old shortcut removed: runtime no longer treats fallback production as automatically unrewarded.
-- Regression test: `fallback_proposer_reward_waits_for_useful_successor`.
-- Synthetic production disabled: unchanged; fallback reward release still requires later useful blockspace.
-- Producer/non-producer roles: both recompute the pending fallback claim through block state roots and
-  node-store snapshots.
-- Structured evidence source: `PendingProposerReward::requires_useful_successor`, reward root, storage
-  roundtrip, focused chain tests.
-- Finality source: unchanged stake-weighted block votes.
-- Wire-size and codec boundary: no new p2p payloads; node-store chain-state snapshot encoding extended.
-
-Implemented locally:
-- Added `requires_useful_successor` to pending proposer rewards and included it in reward roots and
-  node-store snapshot encoding.
-- Block application now unlocks blocked fallback proposer rewards only when selected useful receipts are
-  included by a later block.
-- Reward release skips blocked fallback claims while still pruning voided claims without credit.
-- Validator role fallback proposals now use a reduced proposer reward instead of bypassing reward creation.
-- Updated readiness/status docs to describe reduced delayed fallback reward behavior while keeping the full
-  stake-weighted fallback rotation policy gap open.
-
-Validation completed locally:
-- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
-- Focused tests passed:
-  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`
-  - `cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`
-  - `cargo test -p tensor_vm --lib chain::tests -- --nocapture`
-  - `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
-- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
-- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
-  `error: no such command: tarpaulin`.
-- Feature commit: `6cea749` (`Delay fallback proposer rewards`).
-- Push result: `41edc0e..6cea749  main -> main` on `origin/main`.
-
-Out of scope: full stake-weighted fallback proposer rotation/timeout policy, multi-validator fork-choice,
-full reward-claim object unification, and full Docker rerun while `/health` remains blocked.
+Out of scope: arbitrary graph-backed jobs/receipts, role/runtime execution of arbitrary graph jobs,
+const-blob fetching, full admitted-registry exact replay, Tier-C consensus admission, and CUDA generic
+graph execution.
 
 ## Decision Log
 
@@ -154,8 +172,8 @@ full reward-claim object unification, and full Docker rerun while `/health` rema
 - `tvmd` is an adapter/process launcher, not a hidden consensus orchestrator.
 - Current v0 admits exact Tier-A/B ops only. Tier-C vocabulary may exist in the registry but must be gated
   out of consensus until canonical references and verifiers exist.
-- Current-job graph bodies are stored as canonical JSON bytes after graph validation; generic arbitrary-IR
-  decoding/execution remains a separate future slice.
+- Current-job and arbitrary canonical graph bodies are stored as canonical JSON bytes after graph
+  validation; arbitrary graph-backed jobs/receipts and role execution remain a separate future slice.
 - Split configured validator block proposal from local synthetic job production: `local_block_proposer`
   controls configured validator proposal duty, while `local_synthetic_producer` controls profile-gated
   deterministic local job publication.
@@ -164,21 +182,24 @@ full reward-claim object unification, and full Docker rerun while `/health` rema
 
 Latest current-iteration evidence:
 - Starting branch state: `## main...origin/main`.
-- Iteration 41 required Gate 0 first and final Gate 0:
+- Iteration 42 required Gate 0 first and final Gate 0:
   `cargo test -p tensor_vm local_testnet --release` passed.
-- Iteration 41 focused validation:
+- Iteration 42 focused validation:
+  - `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture`: 4 command tests passed.
   - `cargo test -p tensor_vm --lib ir::tests -- --nocapture`: 10 IR tests passed.
-- Iteration 41 broad validation:
+  - `cargo test -p tensor_vm --lib app::runtime_services::tests -- --nocapture`: 1 runtime-services test passed.
+  - `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`: 1 storage test passed.
+- Iteration 42 broad validation:
   - `cargo fmt --check --all`: passed.
   - `git diff --check`: passed.
-  - `cargo test -p tensor_vm`: passed with 355 library tests, 1 local CPU Compose integration test, 8
+  - `cargo test -p tensor_vm`: passed with 358 library tests, 1 local CPU Compose integration test, 8
     `tvmd_cli` integration tests, 31 `tvmd_runtime` integration tests, and doc-test targets.
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
-  - `cargo test --workspace --release`: passed with 14 `experiments`, 355 `tensor_vm`, 1 local CPU
+  - `cargo test --workspace --release`: passed with 14 `experiments`, 358 `tensor_vm`, 1 local CPU
     Compose, 8 `tvmd_cli`, 31 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
-- Iteration 41 feature commit: `6b7260c` (`Add exact Tensor IR interpreter foundation`).
-- Iteration 41 push result: `72816da..6b7260c  main -> main` on `origin/main`.
+- Iteration 42 feature commit: pending.
+- Iteration 42 push result: pending.
 
 Latest unresolved full-gate blocker:
 
@@ -196,6 +217,9 @@ error: no such command: `tarpaulin`
 
 ## Archive
 
+- Iteration 40, `6cea749 Delay fallback proposer rewards`: empty `PowSkipFallback` blocks now create reduced
+  delayed proposer claims that require a later useful block before release; reward roots and node-store
+  snapshots include the `requires_useful_successor` flag.
 - Iteration 35, `f53700c Bind reward root to pending claims`: block `reward_root` now commits spendable
   rewards plus pending proposer, receipt, challenge, and credit ledgers; old spendable-only roots are
   rejected. Evidence update was followed by Iteration 36.

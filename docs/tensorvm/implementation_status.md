@@ -29,16 +29,20 @@ blocker clears. See
   class: full Freivalds, random-linear, exact deterministic replay, canonical-reference-required, or
   index-consistency-required. `gather`, `scatter`, and `embedding` are present only as non-admitted
   index-consistency-gated vocabulary. Current TensorOp and LinearTrainingStep receipts bind their
-  `program_hash` to the validated IR `graph_id`. Current job admission also stores the canonical graph
-  body bytes in chain state keyed by graph ID, commits them in the state root, persists them through the
-  chain-state snapshot, and lets the existing libp2p `RequestProgram`/`ProgramResponse` path serve
-  registered graph bodies. `TensorGraph::execute_exact` now provides a deterministic interpreter
+  `program_hash` to the validated IR `graph_id`. Current job admission stores the canonical graph body
+  bytes in chain state keyed by graph ID. Arbitrary user-submitted canonical graph bodies can also be
+  registered directly through `ChainCommand::RegisterProgramBody`, which parses the JSON IR, validates it
+  for consensus admission, checks that the submitted graph ID matches the validated graph, rejects
+  noncanonical byte encodings, and treats matching duplicate submissions as idempotent. Registered graph
+  bodies are committed in the state root, persisted through the chain-state snapshot, hydrated into the
+  runtime program server at startup, and served by the existing libp2p
+  `RequestProgram`/`ProgramResponse` path. `TensorGraph::execute_exact` now provides a deterministic interpreter
   foundation for validated, consensus-admitted graphs over the currently implemented exact tensor ops:
   `matmul`, `add`, `sub`, `mul`, `scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`,
   and `neg`. The interpreter validates bound tensors and field-scalar params, resolves input/op/param/const
   refs, returns named output tensors, records per-op output commitment roots, and derives a Merkle
   `trace_root`; Tier-C/deferred ops and admitted registry ops that do not yet have exact replay
-  implementation fail closed. User-submitted arbitrary graph body admission, chain/runtime receipt
+  implementation fail closed. Arbitrary graph-backed job/receipt admission, chain/runtime receipt
   production through this interpreter, const-blob fetching, and the wider admitted-registry executor remain
   open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp

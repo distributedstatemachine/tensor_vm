@@ -1,8 +1,9 @@
 use super::{RuntimeP2pReport, ServiceRuntimeConfig, p2p_identity_report};
 use crate::{
     Faucet, Libp2pControlPlaneConfig, NodeStore, RpcGateway, RpcHttpServer, RpcNode, RpcPolicy,
-    TensorVmLibp2pService, spawn_libp2p_service,
+    TensorVmLibp2pService, spawn_libp2p_service, types::Hash,
 };
+use std::collections::BTreeMap;
 
 pub struct RuntimeServices {
     pub store: NodeStore,
@@ -76,6 +77,9 @@ pub fn start_runtime_services(
     let idle_timeout_seconds = p2p_config.idle_connection_timeout_seconds;
     let p2p_service = spawn_libp2p_service(p2p_config)
         .map_err(|error| format!("failed to start mandatory libp2p service: {error}"))?;
+    hydrate_program_store(chain.state().program_bodies(), |graph_id, body| {
+        p2p_service.register_program(graph_id, body)
+    });
     let p2p_info = p2p_service.info();
     let p2p_metadata = RuntimeP2pMetadata {
         peer_id: p2p_service.peer_id().to_string(),
@@ -108,4 +112,35 @@ pub fn start_runtime_services(
         p2p_service,
         p2p_metadata,
     })
+}
+
+fn hydrate_program_store(
+    program_bodies: &BTreeMap<Hash, Vec<u8>>,
+    mut register: impl FnMut(Hash, Vec<u8>),
+) {
+    for (graph_id, body) in program_bodies {
+        register(*graph_id, body.clone());
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{DType, canonical_matmul_graph};
+
+    #[test]
+    fn startup_program_hydration_registers_state_rooted_program_bodies() {
+        let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        let graph_id = graph.graph_id();
+        let graph_body = graph.canonical_json().into_bytes();
+        let mut program_bodies = BTreeMap::new();
+        program_bodies.insert(graph_id, graph_body.clone());
+        let mut registered = BTreeMap::new();
+
+        hydrate_program_store(&program_bodies, |graph_id, body| {
+            registered.insert(graph_id, body);
+        });
+
+        assert_eq!(registered.get(&graph_id), Some(&graph_body));
+    }
 }
