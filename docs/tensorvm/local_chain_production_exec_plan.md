@@ -5,7 +5,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 58, economic invariant assessment, implemented and validated.
+- Active feature: Iteration 59, exact `clamp` Tier-B admission, implemented and validated.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
@@ -19,7 +19,8 @@ feature-sized iterations are summarized after validation and push, and older det
   admitted registry spelling that aliases `reduce_sum` at execution time. Iteration 57 adds a
   registry-derived guard so every consensus-admitted frozen op spelling must have conformance vector and
   CPU profile evidence. Iteration 58 adds a reusable study helper and tests for the `expected cost of
-  getting caught > reward from faking work` invariant.
+  getting caught > reward from faking work` invariant. Iteration 59 adds exact `clamp` replay,
+  conformance coverage, and graph verifier profile gating for the v0 Tier-B selection/shaping surface.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -27,7 +28,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 58, then select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 59, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -41,13 +42,108 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
-| Per-op `F_p` conformance vectors | Partial; Iteration 57 registry guard implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `sum`/`mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, Iteration 54 comparison/selection vectors, Iteration 56 `sum` vector, Iteration 57 registry-derived admitted-op guard, CPU pass profile, and default CUDA non-admission | Add CUDA conformance evidence |
+| Tensor IR graph language | Partial; Iteration 59 exact `clamp` implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, Iteration 52 admitted flat `uint8` packed quantize/dequantize replay, and Iteration 59 exact field-order `clamp` | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
+| Per-op `F_p` conformance vectors | Partial; Iteration 59 exact `clamp` implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `sum`/`mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, Iteration 54 comparison/selection vectors, Iteration 56 `sum` vector, Iteration 57 registry-derived admitted-op guard, CPU pass profile, default CUDA non-admission, and Iteration 59 exact field-order `clamp` vector | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; useful and fallback proposer claims both use full reward maturity; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch; executable `study::economic_invariant_study` strict expected-slash-cost assessment | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, live parameter calibration, and broader invariant enforcement |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 59: Exact `clamp` Tier-B Admission
+
+Feature capability: add `clamp` to the frozen v0 Tier-B exact selection/shaping op surface with canonical
+field-order semantics, exact interpreter replay, conformance vectors, and profile gating. This closes one
+explicit `upow.md` §4.7 Tier-B selection op that was listed in the spec but absent from the local registry.
+
+Readiness requirements covered:
+- `upow.md` §4.7-§4.9: exact Tier-B selection/shaping ops admitted only when their canonical `F_p`
+  semantics and exact replay exist.
+- `upow.md` §3.3 and §16: admitted ops must have deterministic conformance vectors and CPU profile
+  evidence before receipts can depend on them.
+- `mvp_spec.md` §35: validators reject jobs whose admitted ops lack conformance evidence.
+
+Canonical owner: `ir::frozen_op_registry` owns admission vocabulary and exact graph replay; `conformance`
+owns vectors/profile evidence; `verify` consumes the required-op profile.
+Adapter callers: receipt verifiers, CPU/CUDA profile reporting, and graph receipt validation observe the
+registry/conformance result but do not maintain separate `clamp` policy.
+Old shortcut being removed: `clamp` existed only in `upow.md` as Tier-B vocabulary and could not be used by
+consensus-admitted exact graph replay.
+Regression test that proves the shortcut is gone: exact interpreter and conformance tests execute a graph
+using `clamp`, and the admitted-op conformance guard fails if `clamp` lacks vector/profile evidence.
+Behavior with local synthetic block production disabled: unchanged; this is deterministic IR execution and
+receipt-admission metadata only.
+Behavior for producer and non-producer roles: unchanged; all roles use the same registry and conformance
+profile when validating graph receipts.
+Structured evidence source: IR exact interpreter tests, conformance vector/profile tests, and
+status/coverage docs.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
+
+Parallel subagents:
+- Not spawned because the available subagent tool is restricted to explicit user requests; parent owns this
+  single-writer IR/conformance/docs slice.
+
+Implementation workstreams:
+- Add `clamp` to the frozen registry as an admitted exact Tier-B op with required `min` and `max` kwargs.
+- Add exact interpreter support and shape/dtype validation for field-order clamping.
+- Add a deterministic conformance vector plus CPU profile execution for `clamp`.
+- Add focused IR/conformance tests and update status/coverage/tarpaulin docs after validation.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_clamp`
+- `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+- `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_admitted_ops`
+- `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_clamp_receipt`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: `clamp` appears in the frozen admitted registry, exact graph replay returns
+field-order clamped output, conformance profile includes `clamp`, and graph receipt verification accepts a
+valid `clamp` graph only with matching conformance evidence.
+
+Out of scope: `div`/`pow`, squeeze/unsqueeze/slice/split/tril/triu, Tier-C op admission, CUDA pass
+generation, low-level packed tensor storage APIs, and arbitrary role-runtime graph job production.
+
+Split trigger: split smaller only if `clamp` requires changing canonical JSON/ref encoding, stored chain
+state, or shared codecs.
+
+Implementation summary:
+- Added `clamp` to the frozen consensus-admitted Tier-B registry with required `min` and `max` kwargs and
+  exact deterministic replay semantics.
+- Added exact interpreter typing/execution for field-order `clamp`, including invalid reversed-bound
+  rejection while preserving tensor shape, dtype, and scale metadata.
+- Added a deterministic conformance vector for `clamp`, CPU reference execution support, and graph
+  verifier coverage that rejects a valid clamp graph when the conformance profile does not admit `clamp`.
+- Updated implementation status and coverage docs so exact IR, conformance, and graph verifier evidence
+  include field-order `clamp`.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 filtered library tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_clamp` passed.
+- Focused admitted-op guard:
+  `cargo test -p tensor_vm conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`
+  passed.
+- Focused CPU profile:
+  `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_admitted_ops` passed.
+- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_clamp_receipt` passed.
+- Formatting and diff hygiene: `cargo fmt --check --all` and `git diff --check` passed.
+- Package suite: `cargo test -p tensor_vm` passed 386 library tests, 1 `local_cpu_compose` integration
+  test, 8 `tvmd_cli` integration tests, 31 `tvmd_runtime` integration tests, and doc-tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed 14 `experiments` tests, 386 `tensor_vm`
+  library tests, `tensor_vm` integration tests, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
+  and workspace doc-tests.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is
+  not installed (`error: no such command: tarpaulin`).
 
 ### Iteration 58: Economic Invariant Assessment
 

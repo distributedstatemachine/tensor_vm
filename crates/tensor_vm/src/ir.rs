@@ -511,6 +511,7 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "le" => compare_tensors(&args, |lhs, rhs| lhs <= rhs)?,
         "eq" => compare_tensors(&args, |lhs, rhs| lhs == rhs)?,
         "where" => where_tensor(&args)?,
+        "clamp" => clamp_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "cast" => cast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "concat" => concat_tensors(&args, &op.kwargs)?,
         "stack" => stack_tensors(&args, &op.kwargs)?,
@@ -752,6 +753,24 @@ fn where_tensor(values: &[RuntimeValue]) -> Result<Tensor> {
         data.push(broadcast_value(selected, &shape, index)?);
     }
     Tensor::from_vec_with_scale(shape, when_true.dtype(), when_true.scale(), data)
+}
+
+fn clamp_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let min = field_kwarg(kwargs, "min")?;
+    let max = field_kwarg(kwargs, "max")?;
+    if min > max {
+        return Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"));
+    }
+    Tensor::from_vec_with_scale(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.scale(),
+        tensor
+            .as_slice()
+            .iter()
+            .map(|value| field::normalize(*value).clamp(min, max))
+            .collect(),
+    )
 }
 
 fn full_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -1793,6 +1812,15 @@ fn infer_outputs(
                 scale: args[1].scale,
             }
         }
+        "clamp" => {
+            let arg = one_arg(args)?;
+            let min = field_kwarg(kwargs, "min")?;
+            let max = field_kwarg(kwargs, "max")?;
+            if min > max {
+                return Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"));
+            }
+            arg.clone()
+        }
         "cast" => {
             let arg = one_arg(args)?;
             let dtype = dtype_kwarg(kwargs, "dtype")?;
@@ -2569,7 +2597,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 43] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -2817,6 +2845,16 @@ const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "clamp",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["min", "max"],
+        required_kwargs: &["min", "max"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
@@ -4111,6 +4149,58 @@ mod tests {
             Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![1, 1, 1, 13, 14, 15]).unwrap()
         );
         assert_eq!(execution.op_traces.len(), 8);
+    }
+
+    #[test]
+    fn exact_interpreter_executes_clamp() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![6], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "clamp".to_owned(),
+                args: vec![input_ref("x")],
+                kwargs: BTreeMap::from([
+                    ("min".to_owned(), IrValue::Literal(IrLiteral::Field(2))),
+                    ("max".to_owned(), IrValue::Literal(IrLiteral::Field(5))),
+                ]),
+                out: vec![tensor_spec("clamped", vec![6], DType::FieldElement, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "clamped".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        graph.validate_for_consensus().unwrap();
+
+        let p = field::MODULUS;
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([(
+                    "x".to_owned(),
+                    Tensor::from_vec(vec![6], DType::FieldElement, vec![0, 2, 4, 5, 7, p - 1])
+                        .unwrap(),
+                )]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["clamped"],
+            Tensor::from_vec(vec![6], DType::FieldElement, vec![2, 2, 4, 5, 5, 5]).unwrap()
+        );
+        assert_eq!(execution.op_traces.len(), 1);
+
+        let mut bad_bounds = graph;
+        bad_bounds.ops[0].kwargs = BTreeMap::from([
+            ("min".to_owned(), IrValue::Literal(IrLiteral::Field(5))),
+            ("max".to_owned(), IrValue::Literal(IrLiteral::Field(2))),
+        ]);
+        assert_eq!(
+            bad_bounds.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"))
+        );
     }
 
     #[test]

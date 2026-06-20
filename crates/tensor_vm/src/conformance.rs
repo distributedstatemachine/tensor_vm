@@ -452,6 +452,16 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2, 3],
         ),
         vector(
+            "field-clamp-field-order-v1",
+            "clamp",
+            "B",
+            &[&[6]],
+            &[("min", 2), ("max", 5)],
+            &[&[0, 2, 4, 5, 7, p - 1]],
+            &[2, 2, 4, 5, 5, 5],
+            &[6],
+        ),
+        vector(
             "field-matmul-wraparound-v1",
             "matmul",
             "A",
@@ -621,6 +631,7 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "le" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs <= rhs),
         "eq" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs == rhs),
         "where" => where_tensor(&tensors[0], &tensors[1], &tensors[2]),
+        "clamp" => clamp_tensor(&tensors[0], param(vector, "min")?, param(vector, "max")?),
         "matmul" => tensors[0].matmul(&tensors[1]),
         "mse_loss" => {
             let loss = vm::mse_loss(&tensors[0], &tensors[1])?;
@@ -767,6 +778,22 @@ fn where_tensor(cond: &Tensor, when_true: &Tensor, when_false: &Tensor) -> Resul
         data.push(broadcast_value(selected, &shape, index)?);
     }
     Tensor::from_vec_with_scale(shape, when_true.dtype(), when_true.scale(), data)
+}
+
+fn clamp_tensor(tensor: &Tensor, min: Elem, max: Elem) -> Result<Tensor> {
+    if min > max {
+        return Err(TvmError::InvalidReceipt("invalid conformance clamp"));
+    }
+    Tensor::from_vec_with_scale(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.scale(),
+        tensor
+            .as_slice()
+            .iter()
+            .map(|value| field::normalize(*value).clamp(min, max))
+            .collect(),
+    )
 }
 
 fn broadcast_shape(shapes: &[&[usize]]) -> Result<Vec<usize>> {
