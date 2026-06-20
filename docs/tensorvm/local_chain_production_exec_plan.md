@@ -5,8 +5,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 63, exact Tier-A contraction `einsum` admission, implemented and validated;
-  commit/push pending.
+- Active feature: Iteration 63, exact Tier-A contraction `einsum` admission, implemented, validated,
+  committed, and pushed.
 - Current status: the frozen IR registry now admits exact Tier-A rank-2 matrix-contraction `einsum` plus
   dynamic-output exact Tier-B `split`. `TensorGraph` consensus validation enforces the admitted `einsum`
   equation subset, exact replay executes it through canonical field matmul/transpose paths, conformance
@@ -19,7 +19,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 63 evidence.
+- Next action: select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -107,6 +107,8 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `0efedcc` (`Admit exact einsum contractions`) pushed `1019527..0efedcc main -> main`
+  to `github.com:distributedstatemachine/tensor_vm.git`.
 
 ## Recent Iterations
 
