@@ -32,7 +32,15 @@ blocker clears. See
   `program_hash` to the validated IR `graph_id`. Current job admission also stores the canonical graph
   body bytes in chain state keyed by graph ID, commits them in the state root, persists them through the
   chain-state snapshot, and lets the existing libp2p `RequestProgram`/`ProgramResponse` path serve
-  registered graph bodies.
+  registered graph bodies. `TensorGraph::execute_exact` now provides a deterministic interpreter
+  foundation for validated, consensus-admitted graphs over the currently implemented exact tensor ops:
+  `matmul`, `add`, `sub`, `mul`, `scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`,
+  and `neg`. The interpreter validates bound tensors and field-scalar params, resolves input/op/param/const
+  refs, returns named output tensors, records per-op output commitment roots, and derives a Merkle
+  `trace_root`; Tier-C/deferred ops and admitted registry ops that do not yet have exact replay
+  implementation fail closed. User-submitted arbitrary graph body admission, chain/runtime receipt
+  production through this interpreter, const-blob fetching, and the wider admitted-registry executor remain
+  open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep (`add`, `sub`, `mul`, `scalar_mul`, `transpose`, `reduce_sum`, `matmul`, and
   `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA

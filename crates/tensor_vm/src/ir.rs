@@ -1,8 +1,9 @@
 use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::{Result, TvmError};
-use crate::field::Elem;
-use crate::tensor::DType;
+use crate::field::{self, Elem};
+use crate::merkle::merkle_root;
+use crate::tensor::{DType, Tensor};
 use crate::types::{Hash, hash_bytes};
 
 pub type GraphId = Hash;
@@ -129,10 +130,36 @@ pub struct TensorGraph {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrExecutionInputs {
+    pub tensors: BTreeMap<String, Tensor>,
+    pub field_params: BTreeMap<String, Elem>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrOpTrace {
+    pub op_id: usize,
+    pub output_roots: Vec<Hash>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrExecution {
+    pub graph_id: GraphId,
+    pub outputs: BTreeMap<String, Tensor>,
+    pub op_traces: Vec<IrOpTrace>,
+    pub trace_root: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 struct ValueShape {
     shape: Vec<i64>,
     dtype: DType,
     scale: i64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+enum RuntimeValue {
+    Tensor(Tensor),
+    Field(Elem),
 }
 
 pub fn frozen_op_registry() -> &'static [OpSpec] {
@@ -163,6 +190,68 @@ impl TensorGraph {
     pub fn validate_for_consensus(&self) -> Result<GraphId> {
         self.validate(true)?;
         Ok(self.graph_id())
+    }
+
+    pub fn execute_exact(&self, inputs: &IrExecutionInputs) -> Result<IrExecution> {
+        let graph_id = self.validate_for_consensus()?;
+        validate_execution_inputs(self, inputs)?;
+
+        let mut op_outputs = Vec::<Vec<RuntimeValue>>::new();
+        let mut op_traces = Vec::with_capacity(self.ops.len());
+        let mut trace_leaves = Vec::with_capacity(self.ops.len());
+
+        for op in &self.ops {
+            let args = op
+                .args
+                .iter()
+                .map(|arg| {
+                    resolve_runtime_ref(arg, &inputs.tensors, &inputs.field_params, &op_outputs)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            let outputs = execute_op(op, args)?;
+            let output_roots = outputs
+                .iter()
+                .map(|value| match value {
+                    RuntimeValue::Tensor(tensor) => Ok(tensor.commitment_root()),
+                    RuntimeValue::Field(_) => Err(TvmError::InvalidReceipt(
+                        "tensor ir op produced scalar output",
+                    )),
+                })
+                .collect::<Result<Vec<_>>>()?;
+            trace_leaves.push(trace_op_leaf(op.id, &output_roots));
+            op_traces.push(IrOpTrace {
+                op_id: op.id,
+                output_roots,
+            });
+            op_outputs.push(outputs);
+        }
+
+        let mut outputs = BTreeMap::new();
+        for output in &self.outputs {
+            let value = resolve_runtime_ref(
+                &output.value,
+                &inputs.tensors,
+                &inputs.field_params,
+                &op_outputs,
+            )?;
+            match value {
+                RuntimeValue::Tensor(tensor) => {
+                    outputs.insert(output.name.clone(), tensor);
+                }
+                RuntimeValue::Field(_) => {
+                    return Err(TvmError::InvalidReceipt(
+                        "tensor ir graph output resolves to scalar",
+                    ));
+                }
+            }
+        }
+
+        Ok(IrExecution {
+            graph_id,
+            outputs,
+            op_traces,
+            trace_root: merkle_root(&trace_leaves),
+        })
     }
 
     pub fn validate(&self, require_consensus_admitted: bool) -> Result<()> {
@@ -237,6 +326,221 @@ impl TensorGraph {
         }
         Ok(())
     }
+}
+
+fn validate_execution_inputs(graph: &TensorGraph, inputs: &IrExecutionInputs) -> Result<()> {
+    for spec in &graph.inputs {
+        let tensor = inputs
+            .tensors
+            .get(&spec.name)
+            .ok_or(TvmError::InvalidReceipt(
+                "missing tensor ir execution input",
+            ))?;
+        if tensor.dtype() != spec.dtype
+            || tensor_shape_matches_spec(tensor.shape(), &spec.shape).is_err()
+        {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir execution input mismatch",
+            ));
+        }
+    }
+    for name in inputs.tensors.keys() {
+        if !graph.inputs.iter().any(|spec| spec.name == *name) {
+            return Err(TvmError::InvalidReceipt(
+                "unknown tensor ir execution input",
+            ));
+        }
+    }
+
+    for spec in &graph.params {
+        if spec.type_name != "field_scalar" {
+            return Err(TvmError::InvalidReceipt(
+                "unsupported tensor ir execution param type",
+            ));
+        }
+        if !inputs.field_params.contains_key(&spec.name) {
+            return Err(TvmError::InvalidReceipt(
+                "missing tensor ir execution param",
+            ));
+        }
+    }
+    for name in inputs.field_params.keys() {
+        if !graph.params.iter().any(|spec| spec.name == *name) {
+            return Err(TvmError::InvalidReceipt(
+                "unknown tensor ir execution param",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn tensor_shape_matches_spec(shape: &[usize], spec: &[i64]) -> Result<()> {
+    if shape.len() != spec.len() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir execution shape mismatch",
+        ));
+    }
+    for (actual, declared) in shape.iter().zip(spec) {
+        if *declared >= 0 && *actual as i64 != *declared {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir execution shape mismatch",
+            ));
+        }
+    }
+    Ok(())
+}
+
+fn resolve_runtime_ref(
+    value: &IrRef,
+    inputs: &BTreeMap<String, Tensor>,
+    params: &BTreeMap<String, Elem>,
+    op_outputs: &[Vec<RuntimeValue>],
+) -> Result<RuntimeValue> {
+    match value {
+        IrRef::Input { name } => {
+            inputs
+                .get(name)
+                .cloned()
+                .map(RuntimeValue::Tensor)
+                .ok_or(TvmError::InvalidReceipt(
+                    "unknown tensor ir execution input",
+                ))
+        }
+        IrRef::Op { id, idx } => op_outputs
+            .get(*id)
+            .and_then(|outputs| outputs.get(*idx))
+            .cloned()
+            .ok_or(TvmError::InvalidReceipt(
+                "unknown tensor ir execution op ref",
+            )),
+        IrRef::Param { name } => params
+            .get(name)
+            .copied()
+            .map(|value| RuntimeValue::Field(field::normalize(value)))
+            .ok_or(TvmError::InvalidReceipt(
+                "unknown tensor ir execution param",
+            )),
+        IrRef::Const { value } => literal_runtime_value(value),
+        IrRef::ConstBlob { .. } => Err(TvmError::InvalidReceipt(
+            "tensor ir const_blob execution requires external fetch",
+        )),
+    }
+}
+
+fn literal_runtime_value(value: &IrLiteral) -> Result<RuntimeValue> {
+    match value {
+        IrLiteral::Field(value) => Ok(RuntimeValue::Field(*value)),
+        IrLiteral::Int(value) if *value >= 0 => Ok(RuntimeValue::Field(*value as Elem)),
+        IrLiteral::Uint(value) => Ok(RuntimeValue::Field(*value as Elem)),
+        IrLiteral::List(values) => values
+            .iter()
+            .map(literal_field)
+            .collect::<Result<Vec<_>>>()
+            .and_then(|data| Tensor::from_vec(vec![data.len()], DType::FieldElement, data))
+            .map(RuntimeValue::Tensor),
+        _ => Err(TvmError::InvalidReceipt(
+            "unsupported tensor ir execution literal",
+        )),
+    }
+}
+
+fn literal_field(value: &IrLiteral) -> Result<Elem> {
+    match value {
+        IrLiteral::Field(value) => Ok(*value),
+        IrLiteral::Int(value) if *value >= 0 => Ok(*value as Elem),
+        IrLiteral::Uint(value) => Ok(*value as Elem),
+        _ => Err(TvmError::InvalidReceipt(
+            "unsupported tensor ir tensor literal",
+        )),
+    }
+}
+
+fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>> {
+    let output = match op.op.as_str() {
+        "matmul" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            lhs.matmul(rhs)?
+        }
+        "add" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            lhs.add(rhs)?
+        }
+        "sub" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            lhs.sub(rhs)?
+        }
+        "mul" => {
+            let [lhs, rhs] = two_tensor_values(&args)?;
+            lhs.mul(rhs)?
+        }
+        "scalar_mul" => {
+            let (tensor, scalar) = tensor_and_scalar_values(&args)?;
+            tensor.scalar_mul(scalar)?
+        }
+        "transpose" => one_tensor_value(&args)?.transpose()?,
+        "sum" | "reduce_sum" => {
+            let axis = optional_usize_kwarg(&op.kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+                "tensor ir execution requires explicit reduction dim",
+            ))?;
+            one_tensor_value(&args)?.reduce_sum(axis)?
+        }
+        "identity" => one_tensor_value(&args)?.clone(),
+        "neg" => {
+            let tensor = one_tensor_value(&args)?;
+            Tensor::from_vec(
+                tensor.shape().to_vec(),
+                tensor.dtype(),
+                tensor
+                    .as_slice()
+                    .iter()
+                    .map(|value| field::sub(0, *value))
+                    .collect(),
+            )?
+        }
+        _ => {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir op is not executable by exact interpreter",
+            ));
+        }
+    };
+    Ok(vec![RuntimeValue::Tensor(output)])
+}
+
+fn one_tensor_value(values: &[RuntimeValue]) -> Result<&Tensor> {
+    match values {
+        [RuntimeValue::Tensor(tensor)] => Ok(tensor),
+        _ => Err(TvmError::InvalidReceipt(
+            "tensor ir expected tensor argument",
+        )),
+    }
+}
+
+fn two_tensor_values(values: &[RuntimeValue]) -> Result<[&Tensor; 2]> {
+    match values {
+        [RuntimeValue::Tensor(lhs), RuntimeValue::Tensor(rhs)] => Ok([lhs, rhs]),
+        _ => Err(TvmError::InvalidReceipt(
+            "tensor ir expected tensor arguments",
+        )),
+    }
+}
+
+fn tensor_and_scalar_values(values: &[RuntimeValue]) -> Result<(&Tensor, Elem)> {
+    match values {
+        [RuntimeValue::Tensor(tensor), RuntimeValue::Field(scalar)] => Ok((tensor, *scalar)),
+        _ => Err(TvmError::InvalidReceipt(
+            "tensor ir expected tensor and scalar arguments",
+        )),
+    }
+}
+
+fn trace_op_leaf(op_id: usize, output_roots: &[Hash]) -> Hash {
+    let mut encoded = Vec::with_capacity(16 + output_roots.len() * 32);
+    encoded.extend_from_slice(&(op_id as u64).to_le_bytes());
+    encoded.extend_from_slice(&(output_roots.len() as u64).to_le_bytes());
+    for root in output_roots {
+        encoded.extend_from_slice(root);
+    }
+    hash_bytes(b"tensor-vm-ir-trace-op-v1", &[&encoded])
 }
 
 pub fn canonical_matmul_graph(m: usize, k: usize, n: usize, dtype: DType) -> TensorGraph {
@@ -1394,6 +1698,233 @@ mod tests {
 
         assert!(graph.validate(false).is_ok());
         assert!(graph.validate_for_consensus().is_err());
+    }
+
+    #[test]
+    fn exact_interpreter_executes_hand_built_graph_and_commits_trace() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::FieldElement, 0),
+                tensor_spec("rhs", vec![2, 2], DType::FieldElement, 0),
+                tensor_spec("bias", vec![2, 2], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "matmul".to_owned(),
+                    args: vec![input_ref("lhs"), input_ref("rhs")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("product", vec![2, 2], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "add".to_owned(),
+                    args: vec![op_ref(0), input_ref("bias")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("biased", vec![2, 2], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 2,
+                    op: "reduce_sum".to_owned(),
+                    args: vec![op_ref(1)],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![tensor_spec("row_sum", vec![2], DType::FieldElement, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "biased".to_owned(),
+                    value: op_ref(1),
+                },
+                GraphOutput {
+                    name: "row_sum".to_owned(),
+                    value: op_ref(2),
+                },
+            ],
+        };
+        let lhs = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let rhs = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let bias = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![9, 10, 11, 12]).unwrap();
+        let expected_biased = lhs.matmul(&rhs).unwrap().add(&bias).unwrap();
+        let expected_row_sum = expected_biased.reduce_sum(1).unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    ("lhs".to_owned(), lhs),
+                    ("rhs".to_owned(), rhs),
+                    ("bias".to_owned(), bias),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(execution.graph_id, graph.graph_id());
+        assert_eq!(execution.outputs["biased"], expected_biased);
+        assert_eq!(execution.outputs["row_sum"], expected_row_sum);
+        assert_eq!(execution.op_traces.len(), 3);
+        assert_eq!(
+            execution.op_traces[1].output_roots[0],
+            expected_biased.commitment_root()
+        );
+        assert_eq!(
+            execution.op_traces[2].output_roots[0],
+            expected_row_sum.commitment_root()
+        );
+        let trace_leaves: Vec<_> = execution
+            .op_traces
+            .iter()
+            .map(|trace| trace_op_leaf(trace.op_id, &trace.output_roots))
+            .collect();
+        assert_eq!(execution.trace_root, merkle_root(&trace_leaves));
+        assert_eq!(
+            execution.trace_root,
+            graph
+                .execute_exact(&IrExecutionInputs {
+                    tensors: BTreeMap::from([
+                        (
+                            "lhs".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4])
+                                .unwrap()
+                        ),
+                        (
+                            "rhs".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8])
+                                .unwrap()
+                        ),
+                        (
+                            "bias".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![9, 10, 11, 12])
+                                .unwrap()
+                        ),
+                    ]),
+                    field_params: BTreeMap::new(),
+                })
+                .unwrap()
+                .trace_root
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_supports_field_scalar_params() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 2], DType::FieldElement, 0)],
+            params: vec![ParamSpec {
+                name: "scale".to_owned(),
+                type_name: "field_scalar".to_owned(),
+            }],
+            ops: vec![OpNode {
+                id: 0,
+                op: "scalar_mul".to_owned(),
+                args: vec![input_ref("x"), param_ref("scale")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("scaled", vec![2, 2], DType::FieldElement, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "scaled".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        let tensor = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let expected = tensor.scalar_mul(7).unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), tensor)]),
+                field_params: BTreeMap::from([("scale".to_owned(), 7)]),
+            })
+            .unwrap();
+
+        assert_eq!(execution.outputs["scaled"], expected);
+
+        let missing_param = graph.execute_exact(&IrExecutionInputs {
+            tensors: BTreeMap::from([(
+                "x".to_owned(),
+                Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap(),
+            )]),
+            field_params: BTreeMap::new(),
+        });
+        assert!(missing_param.is_err());
+    }
+
+    #[test]
+    fn exact_interpreter_rejects_deferred_or_unimplemented_ops() {
+        let mut softmax = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        softmax.ops[0].op = "softmax".to_owned();
+        softmax.ops[0].args = vec![input_ref("a")];
+        softmax.ops[0]
+            .kwargs
+            .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)));
+        softmax.ops[0].out[0] = tensor_spec("softmax", vec![2, 3], DType::FieldElement, 0);
+        softmax.outputs[0].value = op_ref(0);
+        let err = softmax
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "a".to_owned(),
+                        Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
+                            .unwrap(),
+                    ),
+                    (
+                        "b".to_owned(),
+                        Tensor::from_vec(
+                            vec![3, 4],
+                            DType::FieldElement,
+                            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap_err();
+        assert_eq!(
+            err,
+            TvmError::InvalidReceipt("tensor ir op is not consensus admitted")
+        );
+
+        let mut reshape = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        reshape.ops[0].op = "reshape".to_owned();
+        reshape.ops[0].args = vec![input_ref("a")];
+        reshape.ops[0].kwargs.insert(
+            "shape".to_owned(),
+            IrValue::Literal(IrLiteral::List(vec![
+                IrLiteral::Uint(3),
+                IrLiteral::Uint(2),
+            ])),
+        );
+        reshape.ops[0].out[0] = tensor_spec("reshaped", vec![3, 2], DType::FieldElement, 0);
+        let err = reshape
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "a".to_owned(),
+                        Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
+                            .unwrap(),
+                    ),
+                    (
+                        "b".to_owned(),
+                        Tensor::from_vec(
+                            vec![3, 4],
+                            DType::FieldElement,
+                            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap_err();
+        assert_eq!(
+            err,
+            TvmError::InvalidReceipt("tensor ir op is not executable by exact interpreter")
+        );
     }
 
     #[test]
