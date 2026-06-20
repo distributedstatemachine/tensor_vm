@@ -5,8 +5,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 65, structured delayed-reward maturity evidence, implemented and validated;
-  commit/push pending.
+- Active feature: Iteration 65, structured delayed-reward maturity evidence, implemented, validated,
+  committed, and pushed.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are already state-rooted pending
   claims, but status/explorer evidence mostly exposes counts. The local readiness checker still needs
   structured maturity evidence for proving pending-until-height and release-after-height behavior without
@@ -18,7 +18,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 65 feature/evidence, then select the next goal-aligned slice.
+- Next action: select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -114,6 +114,8 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `aa627d8` (`Expose delayed reward maturity evidence`) pushed `d62bae3..aa627d8 main
+  -> main` to `github.com:distributedstatemachine/tensor_vm.git`.
 
 ## Recent Iterations
 
