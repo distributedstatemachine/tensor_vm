@@ -5,8 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 32 is complete.
-- Current status: Iteration 32 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 33, Tier-B verifier coverage contract and index-op gating.
+- Current status: Iteration 33 implementation and validation are complete locally; feature commit/push is
+  pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,14 +15,13 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: commit and push Iteration 33, then record commit/push evidence.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 32: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 33: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`, Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -35,6 +35,78 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Recent Iterations
+
+### Iteration 33: Tier-B Verifier Coverage Contract And Index-Op Gating
+
+Feature capability: add a machine-readable verifier/soundness classification to the frozen Tensor IR
+registry so the local reference explicitly distinguishes Freivalds-covered Tier-A ops, random-linear
+Tier-B relations, exact deterministic Tier-B replay checks, deferred canonical-reference ops, and
+index-consistency-gated ops. This narrows the `upow.md` §7 TODO without claiming generic arbitrary-IR
+execution or admitting `gather`/`scatter`/`embedding`.
+
+Readiness requirements covered: `upow.md` §4.7-§4.9 and §7 require explicit admitted-op and verifier
+coverage boundaries; `mvp_spec.md` §14 and §35 criteria 8-9 require LinearTrainingStep random-linear
+error/update checks and sparse-corruption rejection; `goal.md` names L2 random-linear coverage enumeration
+and index-consistency handling as a known v0 gap.
+
+Files/modules likely touched: `crates/tensor_vm/src/ir.rs`, possibly `crates/tensor_vm/src/lib.rs`,
+`crates/tensor_vm/src/verify.rs` tests, `docs/tensorvm/upow.md`, `docs/tensorvm/coverage_matrix.md`,
+`docs/tensorvm/implementation_status.md`, `docs/tensorvm/tarpaulin_report.md`, and this exec plan.
+
+Parallel subagents: readiness mapper, codebase explorer, and test-coverage explorer launched in parallel
+before implementation.
+
+Tests/checkers/docs to add or update: IR registry classification tests for every frozen op,
+index-consistency gating tests for `gather`/`scatter`/`embedding`, focused LinearTrainingStep
+random-linear report coverage if needed, coverage/status docs, and the `upow.md` TODO language.
+
+Validation: focused `ir`, `verify`, and `conformance` library tests; `cargo fmt --check --all`,
+`git diff --check`, final Gate 0, `cargo test -p tensor_vm`, clippy, release workspace tests, and
+tarpaulin if available.
+
+Architecture shortcut answers:
+- Canonical owner: Tensor IR registry metadata in `ir.rs` and existing verifier functions in `verify.rs`;
+  consensus admission still flows through `TensorGraph::validate_for_consensus`.
+- Adapter callers: current job/conformance gates and docs/status evidence; no shell/checker source of
+  truth.
+- Old shortcut being removed: Tier-B and index-op verifier status is implicit in prose and
+  `consensus_admitted` booleans instead of an executable coverage contract.
+- Regression test: every frozen op must have an explicit verifier class; admitted ops cannot use deferred
+  or index-consistency-required verifier classes; `gather`, `scatter`, and `embedding` remain
+  non-admitted.
+- Synthetic production disabled: verifier classification is independent of local synthetic jobs and still
+  guards graph validation/conformance.
+- Producer/non-producer behavior: unchanged; this slice affects receipt/graph validity metadata, not role
+  production policy.
+- Structured evidence source: typed `OpSpec`/registry fields and focused Rust tests.
+- Finality source: unchanged stake-weighted block votes; no finality or block admission behavior changes.
+- Wire-size and codec boundary: unchanged; no new wire payloads or unbounded reads.
+
+Out of scope: generic arbitrary-IR job admission/execution, admitting `gather`/`scatter`/`embedding`,
+designing index-consistency proofs, fraud-proof bisection, CUDA coverage for the broader registry,
+public deployment evidence, or Docker full-gate rerun.
+
+Implemented locally:
+- Added `IrVerificationClass` to each frozen `OpSpec` so op verifier coverage is executable metadata
+  instead of prose.
+- Added non-admitted `scatter` vocabulary alongside `gather` and `embedding`; all three are explicitly
+  classified as `IndexConsistencyRequired`.
+- Added registry tests proving every frozen op has a verifier class, admitted ops do not use deferred
+  verifier classes, Tier-A admitted ops use full Freivalds, selected Tier-B relations are classified as
+  random-linear, and index ops remain non-admitted.
+- Updated `upow.md`, coverage matrix, implementation status, and tarpaulin report while preserving the
+  boundary that generic arbitrary-IR execution and full Tier-B verifier coverage remain incomplete.
+
+Validation completed locally:
+- Required Gate 0 first and final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+- Focused tests passed: `cargo test -p tensor_vm --lib ir::tests -- --nocapture`, `cargo test -p
+  tensor_vm --lib conformance::tests -- --nocapture`, and `cargo test -p tensor_vm --lib
+  linear_training_verifier -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
 
 ### Iteration 32: Validator Proposer Settled-Work Readiness Evidence
 

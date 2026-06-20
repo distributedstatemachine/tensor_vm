@@ -357,7 +357,13 @@ draw r; check  <r, Y - f(X)>  == 0   over F_p
 
 This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used for Tier B ops that are not bilinear.
 
-> TODO: enumerate exactly which Tier-B ops admit a sound random-linear check vs. which fall through to §8. (`gather`/`scatter`/`embedding` need index-consistency arguments, not just linear checks.)
+> Status: the frozen IR registry now carries an executable verifier classification for every current op.
+> Tier-A `matmul` uses full Freivalds; affine/reduction Tier-B relations used by the current
+> LinearTrainingStep verifier (`add`/`sub`, scalar multiplication, `sum`/`mean`) are classified as
+> random-linear-checkable; exact but non-affine structural/pointwise Tier-B ops require deterministic
+> replay or a future generic verifier; and `gather`/`scatter`/`embedding` are present only as
+> non-admitted index-consistency-gated vocabulary. Generic arbitrary-IR execution and a full verifier for
+> every exact Tier-B op remain TODO.
 
 ---
 
@@ -562,7 +568,10 @@ This section is non-normative guidance on how the spec components partition into
   vectors exist and gate those receipt verifiers; broader admitted-op and CUDA/Tier-C coverage remains
   blocking for full §3.3 safety.
 - [ ] Exact `F_p` choice and fixed-point scale discipline (range, rescale-after-mul rounding, saturation).
-- [ ] Which Tier-B ops have *sound* random-linear checks vs. must use fraud proofs; index-consistency proofs for `gather`/`scatter`/`embedding` (§7).
+- [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
+  frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
+  index-consistency proofs exist; generic arbitrary-IR execution and full verifier coverage for every
+  exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).

@@ -33,7 +33,8 @@ deployment gate.
 
 The local reference now includes a content-addressed Tensor IR foundation for `upow.md` §4:
 `ir::TensorGraph` canonical JSON encoding, `graph_id`, frozen op-registry metadata, structural validation,
-Tier-C vocabulary gating, and canonical graph constructors for the current TensorOp matmul and
+verifier-class metadata for every frozen op, Tier-C vocabulary gating, explicit non-admission of
+index-consistency ops, and canonical graph constructors for the current TensorOp matmul and
 LinearTrainingStep primitives. The current fixed job structs derive their receipt `program_hash` from the
 validated graph ID. Submitted current jobs also register their canonical graph body bytes in chain state
 keyed by graph ID; the registry is committed in the state root, persisted by the node-store snapshot, and
@@ -42,6 +43,8 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::graph_validation_rejects_bad_structure`,
 `ir::tests::graph_validation_rejects_op_metadata_mismatches`,
 `ir::tests::tier_c_vocabulary_is_carried_but_not_consensus_admitted`,
+`ir::tests::frozen_registry_declares_verifier_class_for_every_op`,
+`ir::tests::index_ops_require_index_consistency_and_are_not_consensus_admitted`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
 `jobs::tests::linear_receipt_commits_to_learning_step`,
@@ -64,10 +67,11 @@ unavailable or missing an op. Focused evidence:
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: generic arbitrary-IR execution, user-submitted arbitrary graph body
-admission/fetch, conformance vectors for the wider admitted registry that is not yet executable by a
-generic interpreter, and CUDA conformance evidence when `cuda-kernels` is not compiled in this
-environment. Tier-C and transcendental/order-dependent ops remain registry vocabulary only and are still
-gated out of consensus.
+admission/fetch, conformance vectors and executable verifiers for the wider admitted registry that is not
+yet executable by a generic interpreter, index-consistency proofs for `gather`/`scatter`/`embedding`, and
+CUDA conformance evidence when `cuda-kernels` is not compiled in this environment. Tier-C,
+index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are still
+gated out of consensus when their verifier class is deferred.
 
 ## Local CPU Compose Gate
 
@@ -126,8 +130,8 @@ continues finalizing blocks after restart.
 | 5 | Rewards are distributed by verified settled TensorWork. | Miner and validator receipt rewards are pending claims until maturity, proposer rewards are delayed, successful block-check challenger bounties become pending challenge reward claims before spendability, and configured mandatory validator audits delay the audited validator's reward until the audit deadline while missed or contradictory audits void that delayed reward. Validator-owned useful block proposals now enter the delayed proposer reward ledger before any spendable proposer balance is credited, and runtime coverage releases that claim only after its maturity height through `ChainCommand::ReleaseMaturedProposerRewards`; empty fallback proposals remain unrewarded. Registered validator roles now submit signed audit reports and non-producers ingest/retry those bounded p2p payloads; block-check challenge payloads now make the existing challenge clawback/pending-bounty path reachable through shared network ingestion. Full auditor-selection policy, appeals, and bond calibration remain outside the local economics invariant. Evidence: `chain::tests::chain_settles_valid_tensorwork_and_rewards_participants`, `chain::tests::produced_blocks_delay_receipt_rewards_from_inclusion_height`, `chain::tests::block_check_challenge_voids_pending_reward_and_throttles_proposer`, `chain::tests::reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury`, `chain::tests::matured_proposer_reward_releases_after_challenge_window`, `chain::tests::validator_audit_result_slashes_contradicted_attestation_and_voids_reward`, `p2p::tests::validator_audit_report_payloads_roundtrip_and_reject_malformed_edges`, `p2p::wire::tests::block_check_challenge_payloads_roundtrip_and_reject_malformed_edges`, `node::tests::validator_audit_report_payload_application_reports_pending_applied_and_invalid_edges`, `node::payload_application::tests::block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges`, `node::tests::network_event_driver_applies_validator_audit_report_payloads_for_non_producers`, `pending_payloads::tests::pending_payloads_retry_keeps_pending_payloads`, `tvmd` binary `tests::producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks`, `tvmd` binary `tests::validator_role_audit_report_submission_observes_assignments_and_skips_duplicates`, `storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`, and `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`. |
 | 6 | Validation randomness is unbiasable after receipt roots are committed. | `chain::Chain::validation_seed`, `study::assess_randomness`, `chain::tests::validation_seed_is_bound_to_finalized_randomness_and_receipt` |
 | 7 | Invalid tensor outputs are rejected in dense and sparse corruption tests. | `verify::tests::tensor_op_verifier_rejects_bad_output`, `verify::tests::full_freivalds_accepts_honest_and_rejects_corruption` |
-| 8 | LinearTrainingStep receipts validate forward/backward/error/update structure. | `verify::verify_linear_training_step`, `verify::tests::linear_training_verifier_rejects_metadata_and_commitment_mismatches`, `vm::tests::linear_backward_and_sgd_match_equations`, `jobs::tests::linear_receipt_commits_to_learning_step` |
-| 9 | Sparse corruptions in `dY` and `W_next` are rejected with stated probability. | `verify::tests::linear_training_verifier_rejects_sparse_error_poisoning`, `verify::tests::linear_training_verifier_rejects_sparse_weight_poisoning` |
+| 8 | LinearTrainingStep receipts validate forward/backward/error/update structure. | `verify::verify_linear_training_step`, `verify::tests::linear_training_verifier_rejects_metadata_and_commitment_mismatches`, `ir::tests::frozen_registry_declares_verifier_class_for_every_op`, `vm::tests::linear_backward_and_sgd_match_equations`, `jobs::tests::linear_receipt_commits_to_learning_step` |
+| 9 | Sparse corruptions in `dY` and `W_next` are rejected with stated probability. | Current LinearTrainingStep verification uses random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`; registry metadata now distinguishes random-linear Tier-B relations from deterministic replay and deferred index-consistency ops. Evidence: `verify::tests::linear_training_verifier_rejects_sparse_error_poisoning`, `verify::tests::linear_training_verifier_rejects_sparse_weight_poisoning`, `ir::tests::frozen_registry_declares_verifier_class_for_every_op`, and `ir::tests::index_ops_require_index_consistency_and_are_not_consensus_admitted`. |
 | 10 | Honest miners produce identical output roots. | `runtime::tests::gpu_backend_reports_device_and_requires_cuda_kernels`, `runtime::tests::cpu_and_gpu_backends_match_canonical_matmul`, `runtime::tests::cpu_and_gpu_backends_match_linear_step`, `runtime::tests::cuda_kernel_matches_canonical_field_matmul_edges`, and `runtime::tests::cuda_kernels_match_canonical_linear_tensor_ops` under `--features cuda-kernels`, `chain::tests::redundant_agreement_quorum_is_required_before_settlement`, `scheduler::tests::miner_assignment_prefers_operator_separation`, `scheduler::tests::miner_assignment_falls_back_when_operator_diversity_is_insufficient` |
 | 11 | Validators spend materially less compute than full recomputation. | `study::matmul_verification_cost_study`, `study::tests::matmul_verification_cost_is_lower_than_execution_for_mvp_shape`, `telemetry::estimated_verification_to_execution_ratio` |
 | 12 | Tensor data availability exceeds 95% during active and retention windows. | `validator::tests::validator_attests_unavailable_when_server_lacks_tensor_roots`, `tensor_server::tests::tensor_server_retains_through_deadline_and_prunes_afterward`, `telemetry::data_availability_rate`; public-network measurement remains deployment-gated |

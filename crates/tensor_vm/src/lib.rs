@@ -61,9 +61,9 @@ pub use conformance::{
 pub use error::{Result, TvmError};
 pub use faucet::Faucet;
 pub use ir::{
-    GraphId, GraphOutput, IrArity, IrLiteral, IrOpTier, IrRef, IrValue, OpNode, OpSpec, ParamSpec,
-    TensorGraph, TensorSpec, canonical_linear_training_step_graph, canonical_matmul_graph,
-    frozen_op_registry, op_spec,
+    GraphId, GraphOutput, IrArity, IrLiteral, IrOpTier, IrRef, IrValue, IrVerificationClass,
+    OpNode, OpSpec, ParamSpec, TensorGraph, TensorSpec, canonical_linear_training_step_graph,
+    canonical_matmul_graph, frozen_op_registry, op_spec,
 };
 pub use jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,

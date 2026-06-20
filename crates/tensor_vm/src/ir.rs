@@ -20,6 +20,15 @@ pub enum IrArity {
     Variadic,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrVerificationClass {
+    FullFreivalds,
+    RandomLinear,
+    ExactDeterministicReplay,
+    IndexConsistencyRequired,
+    CanonicalReferenceRequired,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpSpec {
     pub name: &'static str,
@@ -28,6 +37,7 @@ pub struct OpSpec {
     pub output_count: usize,
     pub allowed_kwargs: &'static [&'static str],
     pub required_kwargs: &'static [&'static str],
+    pub verification: IrVerificationClass,
     pub consensus_admitted: bool,
 }
 
@@ -563,6 +573,12 @@ fn infer_outputs(
             }
             args[0].clone()
         }
+        "scatter" => {
+            if args.len() != 3 {
+                return Err(TvmError::InvalidReceipt("tensor ir op arity mismatch"));
+            }
+            args[0].clone()
+        }
         "gt" | "lt" | "ge" | "le" | "eq" => {
             let [lhs, rhs] = two_args(args)?;
             same_tensor(lhs, rhs)?;
@@ -864,7 +880,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -872,6 +888,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::FullFreivalds,
         consensus_admitted: true,
     },
     OpSpec {
@@ -881,6 +898,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["equation"],
         required_kwargs: &["equation"],
+        verification: IrVerificationClass::FullFreivalds,
         consensus_admitted: false,
     },
     OpSpec {
@@ -890,6 +908,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -899,6 +918,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -908,6 +928,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -917,6 +938,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -926,6 +948,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -935,6 +958,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dims"],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -944,6 +968,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -953,6 +978,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -962,6 +988,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -971,6 +998,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["shape"],
         required_kwargs: &["shape"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -980,6 +1008,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["shape"],
         required_kwargs: &["shape"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -989,6 +1018,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -998,6 +1028,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::RandomLinear,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1007,6 +1038,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1016,6 +1048,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1025,6 +1058,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1034,6 +1068,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1043,6 +1078,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1052,6 +1088,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1061,6 +1098,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1070,6 +1108,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1079,6 +1118,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1088,6 +1128,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1097,6 +1138,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dtype"],
         required_kwargs: &["dtype"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1106,6 +1148,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1115,6 +1158,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1124,6 +1168,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["shape", "value", "dtype"],
         required_kwargs: &["shape", "value", "dtype"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1133,6 +1178,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["start", "end", "step", "dtype"],
         required_kwargs: &["start", "end", "step", "dtype"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
     OpSpec {
@@ -1142,6 +1188,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1151,6 +1198,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1160,6 +1208,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1169,6 +1218,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1178,6 +1228,17 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::IndexConsistencyRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "scatter",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(3),
+        output_count: 1,
+        allowed_kwargs: &["dim"],
+        required_kwargs: &["dim"],
+        verification: IrVerificationClass::IndexConsistencyRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1187,6 +1248,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 1,
         allowed_kwargs: &[],
         required_kwargs: &[],
+        verification: IrVerificationClass::IndexConsistencyRequired,
         consensus_admitted: false,
     },
     OpSpec {
@@ -1196,6 +1258,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 37] = [
         output_count: 2,
         allowed_kwargs: &["k", "dim"],
         required_kwargs: &["k", "dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
 ];
@@ -1268,6 +1331,67 @@ mod tests {
         graph.outputs[0].value = op_ref(0);
 
         assert!(op_spec("softmax").is_some());
+        assert!(graph.validate(false).is_ok());
+        assert!(graph.validate_for_consensus().is_err());
+    }
+
+    #[test]
+    fn frozen_registry_declares_verifier_class_for_every_op() {
+        let mut names = BTreeSet::new();
+        for spec in frozen_op_registry() {
+            assert!(names.insert(spec.name), "duplicate op {}", spec.name);
+            if spec.consensus_admitted {
+                assert!(
+                    !matches!(
+                        spec.verification,
+                        IrVerificationClass::CanonicalReferenceRequired
+                            | IrVerificationClass::IndexConsistencyRequired
+                    ),
+                    "admitted op {} must have an implemented verifier class",
+                    spec.name
+                );
+            }
+            if spec.tier == IrOpTier::A && spec.consensus_admitted {
+                assert_eq!(spec.verification, IrVerificationClass::FullFreivalds);
+            }
+        }
+
+        for name in ["add", "sub", "scalar_mul", "sum", "reduce_sum", "mean"] {
+            assert_eq!(
+                op_spec(name).unwrap().verification,
+                IrVerificationClass::RandomLinear,
+                "{name} should have random-linear coverage"
+            );
+        }
+        assert_eq!(
+            op_spec("mul").unwrap().verification,
+            IrVerificationClass::ExactDeterministicReplay
+        );
+    }
+
+    #[test]
+    fn index_ops_require_index_consistency_and_are_not_consensus_admitted() {
+        for name in ["gather", "scatter", "embedding"] {
+            let spec = op_spec(name).expect("index op vocabulary must be present");
+            assert_eq!(
+                spec.verification,
+                IrVerificationClass::IndexConsistencyRequired
+            );
+            assert!(!spec.consensus_admitted);
+        }
+
+        let mut graph = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        graph
+            .inputs
+            .push(tensor_spec("index", vec![2, 3], DType::Int64, 0));
+        graph.ops[0].op = "gather".to_owned();
+        graph.ops[0].args = vec![input_ref("a"), input_ref("index")];
+        graph.ops[0]
+            .kwargs
+            .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)));
+        graph.ops[0].out[0] = tensor_spec("gathered", vec![2, 3], DType::FieldElement, 0);
+        graph.outputs[0].value = op_ref(0);
+
         assert!(graph.validate(false).is_ok());
         assert!(graph.validate_for_consensus().is_err());
     }

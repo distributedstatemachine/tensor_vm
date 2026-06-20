@@ -23,11 +23,14 @@ live invalid-block challenge generation, and live validator proposer/block-assem
 - Content-addressed Tensor IR foundation with typed tensor specs, params, refs, ops, graph outputs,
   canonical JSON encoding, `graph_id = SHA256(canonical_json(graph))`, frozen v0 op-registry metadata,
   structural validation, Tier-C vocabulary that is carried but rejected for consensus admission, and
-  canonical TensorOp/LinearTrainingStep graph constructors. Current TensorOp and LinearTrainingStep
-  receipts bind their `program_hash` to the validated IR `graph_id`. Current job admission also stores the
-  canonical graph body bytes in chain state keyed by graph ID, commits them in the state root, persists
-  them through the chain-state snapshot, and lets the existing libp2p `RequestProgram`/`ProgramResponse`
-  path serve registered graph bodies.
+  canonical TensorOp/LinearTrainingStep graph constructors. Each frozen op now declares its verifier
+  class: full Freivalds, random-linear, exact deterministic replay, canonical-reference-required, or
+  index-consistency-required. `gather`, `scatter`, and `embedding` are present only as non-admitted
+  index-consistency-gated vocabulary. Current TensorOp and LinearTrainingStep receipts bind their
+  `program_hash` to the validated IR `graph_id`. Current job admission also stores the canonical graph
+  body bytes in chain state keyed by graph ID, commits them in the state root, persists them through the
+  chain-state snapshot, and lets the existing libp2p `RequestProgram`/`ProgramResponse` path serve
+  registered graph bodies.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep (`add`, `sub`, `mul`, `scalar_mul`, `transpose`, `reduce_sum`, `matmul`, and
   `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA
@@ -41,7 +44,9 @@ live invalid-block challenge generation, and live validator proposer/block-assem
   data withholding, collusion thresholds, TensorWork concentration, verification cost, and zero-work
   liveness fallback
 - LinearTrainingStep execution and verification
-- Random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`
+- Random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`, backed by registry-level
+  verifier classification that distinguishes random-linear relations from exact replay and deferred
+  index-consistency ops
 - Sparse-corruption rejection tests for TensorOp outputs, `dY`, and `W_next`
 - Receipt digest/signature checks and trace-root recomputation
 - Validator attestations with registered-stake quorum enforcement and deterministic assigned-validator
