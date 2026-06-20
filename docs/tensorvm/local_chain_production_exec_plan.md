@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 30, validator proposer delayed-reward evidence.
-- Current status: implemented and validated locally; commit/push evidence still needs to be recorded.
+- Active feature: none; Iteration 30 is complete.
+- Current status: Iteration 30 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,7 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit, push, record evidence, and push the evidence update.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -33,24 +34,27 @@ feature-sized iterations are summarized after validation and push, and older det
 | Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, configured validator mandatory-audit reward delay/slashing, and network-visible validator audit reports exist; full bond calibration and appeal-safe security are not complete | Add auditor-selection policy, appeal paths, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
-## Active Feature Iteration
+## Recent Iterations
 
 ### Iteration 30: Validator Proposer Delayed-Reward Evidence
 
-Implemented locally: validator runtime status now separates useful settled-receipt block proposals from
-empty fallback blocks, useful validator-owned proposals use `ChainCommand::ProduceRewardedBlock` to create
-pending proposer reward claims instead of spendable balances, fallback proposals remain unrewarded, and the
-local checker requires useful proposal, proposed-receipt, and pending proposer reward evidence.
+Implemented and pushed as `5664acb` (`Delay validator proposer rewards`).
 
-Architecture shortcut answers: `chain` remains the canonical owner of block production, selection, checks
-roots, fallback classification, delayed rewards, and finality. Runtime/status/checker code only records and
-checks structured evidence around chain events. The removed shortcut was accepting any timed
-`role_produced_blocks` count, including empty fallback blocks, as useful proposer evidence. Regression
-coverage is in runtime role tests, runtime-state/status tests, CLI status tests, and the local CPU checker
-fixture. Signed block votes remain the finality source; proposal counters and pending rewards do not imply
-finality. No p2p wire format changed.
+Summary:
+- Validator runtime status separates useful settled-receipt block proposals from empty fallback proposals.
+- Useful validator-owned proposals use `ChainCommand::ProduceRewardedBlock` to create pending proposer
+  reward claims instead of spendable balances; fallback proposals remain unrewarded.
+- The local checker requires useful proposal, proposed-receipt, and pending proposer reward evidence.
+- `chain` remains the canonical owner of block production, fallback classification, delayed rewards, and
+  finality; runtime/status/checker code only records structured evidence.
 
-## Recent Iterations
+Validation:
+- Required Gate 0 first and final Gate 0 passed.
+- Focused runtime-state, runtime-role, CLI status, local CPU Compose, and explorer-schema tests passed.
+- `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
+- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
+- Push result: `6dfd688..5664acb  main -> main`.
 
 ### Iteration 29: Network-Visible Validator Audit Reports
 
@@ -192,8 +196,8 @@ Latest current-iteration evidence:
     Compose, 8 `tvmd_cli`, 29 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 30 feature commit: pending.
-- Iteration 30 push result: pending.
+- Iteration 30 feature commit: `5664acb` (`Delay validator proposer rewards`).
+- Iteration 30 push result: `6dfd688..5664acb  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
