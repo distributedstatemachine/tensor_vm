@@ -5,21 +5,26 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 24, per-op `F_p` conformance vector gate.
+- Active feature: none. The next feature-sized slice is graph-body propagation/storage or the next
+  highest-priority v0 gap from the readiness matrix.
 - Current status: Gate 0 for the Iteration 24 resumed work passed first on June 20, 2026. Iteration 24 is
-  implemented and validated locally except for the standing missing `cargo-tarpaulin` tool blocker; commit
-  and push are in progress.
-- Latest completed feature: Iteration 23, delayed receipt reward finality, is implemented and pushed as
+  implemented, validated locally except for the standing missing `cargo-tarpaulin` tool blocker, and pushed
+  as `f4d4491`.
+- Latest completed feature: Iteration 24, per-op `F_p` conformance vector gate, is implemented and pushed
+  as `f4d4491` (`Add Fp conformance vector gate`). The crate now has deterministic current-job `F_p`
+  vectors, a stable suite hash, CPU reference conformance reporting, default-build CUDA non-admission, and
+  TensorOp/LinearTrainingStep verifier gates.
+- Previous completed feature: Iteration 23, delayed receipt reward finality, is implemented and pushed as
   `388c4d6` (`Delay receipt reward finality`). Miner and validator receipt rewards now settle into
   state-rooted pending claims, block inclusion delays claim maturity through the reward-settlement delay
   plus challenge window, challenge success voids pending receipt rewards, and release only credits mature
   non-void claims.
-- Previous completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
+- Earlier completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
   as `8e17789` (`Add content addressed tensor IR`). The crate now has a chain-owned Tensor IR foundation
   with canonical JSON graph IDs, frozen op-registry metadata, structural validation, Tier-C consensus
   gating, canonical TensorOp and LinearTrainingStep graph constructors, and current receipt `program_hash`
   binding to IR `graph_id`.
-- Earlier completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
+- Older completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
   implemented and pushed as `62e5600` (`Add delayed proposer reward challenges`). `TensorBlock` now carries
   proposer reward amounts, rewarded block production creates `PendingProposerReward` records, matured
   proposer rewards are released only after the challenge window, and successful local block-check
@@ -32,8 +37,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 24, then start graph-body propagation/storage or the next
-  highest-priority v0 gap from the readiness matrix.
+- Next action: start graph-body propagation/storage or the next highest-priority v0 gap from the readiness
+  matrix.
 
 ## Readiness Matrix
 
@@ -141,6 +146,11 @@ Validation:
 - `git diff --check` passed.
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
+
+Push evidence:
+- Feature commit: `f4d4491` (`Add Fp conformance vector gate`).
+- Remote/branch: `origin/main`.
+- Push result: `94c8007..f4d4491  main -> main`.
 
 Expected observable evidence:
 - A stable conformance suite hash commits the exact vector set and expected outputs.
@@ -527,6 +537,22 @@ Latest current-iteration evidence:
 - Iteration 23 feature commit/push:
   - Feature commit: `388c4d6` (`Delay receipt reward finality`).
   - Push result: `c08f340..388c4d6  main -> main` on `origin/main`.
+- Iteration 24 validation before commit:
+  - `cargo test -p tensor_vm local_testnet --release`: passed first and again after changes.
+  - `cargo test -p tensor_vm --lib conformance -- --nocapture`: passed.
+  - `cargo test -p tensor_vm --lib runtime -- --nocapture`: passed.
+  - `cargo test -p tensor_vm --lib verify::tests -- --nocapture`: passed.
+  - `cargo test -p tensor_vm --lib jobs -- --nocapture`: passed.
+  - `cargo fmt --check --all`: passed.
+  - `cargo test -p tensor_vm --lib`: 332 tests passed.
+  - `cargo test -p tensor_vm`: passed.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
+  - `cargo test --workspace --release`: passed.
+  - `git diff --check`: passed.
+  - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
+- Iteration 24 feature commit/push:
+  - Feature commit: `f4d4491` (`Add Fp conformance vector gate`).
+  - Push result: `94c8007..f4d4491  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
