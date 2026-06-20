@@ -6,8 +6,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Current State
 
 - Active feature: Iteration 48, exact unary Tier-B IR replay and conformance.
-- Current status: Iteration 48 implementation and validation complete locally on June 20, 2026; commit/push
-  evidence pending.
+- Current status: Iteration 48 implementation and validation complete locally on June 20, 2026; feature
+  commit `46050d2` created; push evidence pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -114,7 +114,9 @@ Out of scope: exact quantization, fixed-point rescale/round-half-even semantics 
 current field/integer tensors, Tier-C/transcendental admission, runtime role changes, codec changes,
 VRF/drand, fork-choice, and Docker `/health`.
 
-Commit evidence: pending.
+Commit evidence:
+- Feature commit: `46050d2` (`Add exact unary IR conformance`).
+- Evidence/push commit: pending.
 
 ## Recent Iterations
 
