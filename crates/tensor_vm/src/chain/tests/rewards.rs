@@ -528,6 +528,100 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
 }
 
 #[test]
+fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
+    let beacon = hash_bytes(b"test", &[b"receipt-reward-block-transition-release"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        epoch_length: 1,
+        challenge_window_epochs: 1,
+        pow_timeout_blocks: 0,
+        ..ChainParams::default()
+    };
+    let mut producer = Chain::with_params(params.clone(), beacon);
+    let proposer = address(b"receipt-reward-transition-proposer");
+    let miner = address(b"reward-blockspace-miner");
+    producer
+        .register_validator(proposer, producer.params().validator_min_stake)
+        .unwrap();
+    let receipt_id = add_settled_receipt_for_blockspace(&mut producer, &beacon);
+    let claim_id = hash_bytes(b"test", &[b"receipt-reward-transition-claim"]);
+    producer.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id,
+        receipt_id,
+        beneficiary: miner,
+        amount: 1_000,
+        kind: ReceiptRewardKind::Miner,
+        claimable_at_height: 0,
+        voided_by_challenge: false,
+    });
+
+    let mut peer = Chain::with_params(params, beacon);
+    peer.register_validator(proposer, peer.params().validator_min_stake)
+        .unwrap();
+    let peer_receipt_id = add_settled_receipt_for_blockspace(&mut peer, &beacon);
+    assert_eq!(peer_receipt_id, receipt_id);
+    peer.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id,
+        receipt_id,
+        beneficiary: miner,
+        amount: 1_000,
+        kind: ReceiptRewardKind::Miner,
+        claimable_at_height: 0,
+        voided_by_challenge: false,
+    });
+
+    let block0 = producer
+        .produce_block_with_rewards(proposer, 1_000, 80, 20)
+        .unwrap();
+    assert!(producer.state().included_receipts().contains(&receipt_id));
+    let claimable_at_height = producer
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        claimable_at_height,
+        block0
+            .height
+            .saturating_add(producer.params().reward_maturity_delay_blocks())
+    );
+    assert_eq!(producer.state().rewards().balance(&miner), 0);
+
+    peer.apply_command(ChainCommand::SubmitBlock(block0))
+        .unwrap();
+    assert_eq!(peer.state().rewards().balance(&miner), 0);
+    assert_eq!(peer.state(), producer.state());
+
+    while producer.state().height() <= claimable_at_height {
+        add_settled_receipt_for_blockspace(&mut producer, &beacon);
+        add_settled_receipt_for_blockspace(&mut peer, &beacon);
+        let timestamp = producer.blocks().last().map_or(1_012, |block| {
+            block
+                .timestamp
+                .saturating_add(producer.params().block_time_seconds.max(1))
+        });
+        let block = producer
+            .produce_block_with_rewards(proposer, timestamp, 80, 20)
+            .unwrap();
+        peer.apply_command(ChainCommand::SubmitBlock(block))
+            .unwrap();
+    }
+
+    assert_eq!(producer.state().rewards().balance(&miner), 1_000);
+    assert!(
+        producer
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .all(|reward| reward.receipt_id != receipt_id)
+    );
+    assert_eq!(peer.state().rewards().balance(&miner), 1_000);
+    assert_eq!(peer.state(), producer.state());
+}
+
+#[test]
 fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
     let beacon = hash_bytes(b"test", &[b"reward-voided-proposer-sweep"]);
     let params = ChainParams {

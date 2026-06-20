@@ -134,7 +134,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   Challenge bounty spendability is separate from proposer penalty duration.
   Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
-  shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
+  shared chain transition instead of requiring adapter-side release workarounds; focused producer/peer
+  regression coverage now proves included receipt rewards release through canonical block application
+  without a manual release command. Voided proposer, receipt,
   and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
   challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
   Slashed validators can submit signed, bounded mandatory-audit appeal records through the shared chain

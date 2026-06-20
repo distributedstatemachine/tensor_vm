@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 81 complete and pushed.
+- Active feature: Iteration 82 complete; commit/push pending.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,8 +31,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with the next non-Docker consensus gap or rerun the full Docker scenario after the
-  `/health` blocker clears.
+- Next action: commit and push Iteration 82 evidence, then continue with the next non-Docker consensus gap.
 
 ## Readiness Matrix
 
@@ -53,6 +52,64 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 82: Chain-Owned Delayed Receipt Reward Release
+
+Feature capability: receipt rewards stay in the state-rooted pending ledger until canonical block
+transition release conditions are satisfied, and block application itself releases matured receipt claims on
+producer and non-producer peers.
+
+Readiness requirements covered: `upow.md` §12.1 and `mvp_spec.md` §20.3/§25 reward-finality delay.
+
+Canonical owner: `chain::commands::release_all_matured_rewards` owns release, with `chain::blocks`
+invoking it during canonical child-state construction after inclusion/slash updates.
+Adapter callers: manual release commands remain test/operator entry points, while runtime, status,
+explorer, p2p, RPC, and checker paths observe the chain-owned pending/spendable ledgers.
+Old shortcut being removed: treating reward delay as adapter-side/manual post-processing after block
+application rather than consensus-owned child-state transition behavior.
+Regression test that proves the shortcut is gone: focused reward tests produce/apply blocks on a producer
+and peer, show included receipt rewards remain pending before maturity, then release automatically through a
+later block transition with matching state roots and balances.
+Behavior with local synthetic block production disabled: no receipt reward becomes spendable until a valid
+local or inbound canonical block transition reaches the claim maturity condition.
+Behavior for producer and non-producer roles: producers and non-producers execute the same child-state
+release sweep when producing or admitting a block.
+Structured evidence source: `PendingReceiptReward`, `included_receipts`, `reward_root`,
+`RewardState::balance`, and block child-state equality across producer/peer.
+Finality source: unchanged; spendability is gated by claim maturity and inclusion, while BFT finality stays
+separate from admission.
+Wire-size and codec boundary: no wire change; existing block/state codecs carry the ledgers and roots.
+
+Files/modules likely touched: `chain/tests/rewards.rs`, status/coverage/Tarpaulin docs, and this exec plan.
+Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
+Parallelizable implementation workstreams: read-only discovery and validation only.
+Tests/checkers/docs to add or update: focused reward transition regression and docs status wording.
+Narrow validation commands: `cargo test -p tensor_vm reward --quiet`.
+Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
+workspace release, tarpaulin attempt.
+Expected observable evidence: delayed receipt rewards remain pending before maturity and become spendable
+only through a canonical block transition shared by producer and peer.
+Out of scope: Docker rerun, fork choice, transcript disputes, and reward parameter calibration.
+Split trigger: if release semantics need storage schema or wire changes, split persistence/codec from the
+release-rule proof.
+
+Implementation summary:
+- Added a focused producer/peer regression proving a pending included receipt reward is not credited before
+  maturity and is later released by canonical block child-state application on both nodes without a manual
+  release command.
+- Updated status, coverage, and Tarpaulin docs to record chain-owned delayed receipt reward release
+  evidence.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm reward --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 412 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
 
 ### Iteration 81: Inclusion-Gated Receipt Reward Release
 
@@ -119,92 +176,13 @@ Validation evidence:
   tarpaulin`.
 - Feature commit: `1647a47` (`Gate receipt rewards on inclusion`) is pushed to `origin/main`.
 
+## Recent Iterations
+
 ### Iteration 80: PoW-Skip Fallback Timeout Enforcement
 
-Feature capability: non-genesis zero-receipt `PowSkipFallback` blocks are valid only after the parent block
-has aged at least `pow_timeout_blocks * block_time_seconds`; useful UVPoW blocks are not delayed.
-
-Readiness requirements covered: `upow.md` §11 and `mvp_spec.md` §20.1/AC14 zero-receipt fallback policy.
-
-Canonical owner: `chain::blocks` validates fallback timeout, proposer eligibility, canonical empty
-blockspace, roots, and state transition together.
-Adapter callers: `ChainCommand::ProduceBlock`, rewarded production, network block payload admission,
-block status validation, and challenge helpers all use the same chain validator.
-Old shortcut being removed: any selected fallback validator could immediately produce or admit consecutive
-empty fallback blocks as soon as canonical blockspace was empty.
-Regression test that proves the shortcut is gone: focused chain tests reject an early second fallback and
-reject an inbound early fallback payload, then accept the same path after the configured timeout.
-Behavior with local synthetic block production disabled: inbound early fallback blocks are rejected by
-chain validation; useful receipt blocks remain available when settled blockspace exists.
-Behavior for producer and non-producer roles: producers must wait before empty fallback; non-producers
-apply the same timeout to received fallback payloads.
-Structured evidence source: `TensorBlock.timestamp`, parent block timestamp, `ChainParams::pow_timeout_blocks`,
-`ChainParams::block_time_seconds`, and typed chain validation errors.
-Finality source: unchanged; fallback admission is still separate from explicit block-vote finality.
-Wire-size and codec boundary: no wire change; the existing bounded `TensorBlock` codec already carries
-timestamps and production kind.
-
-Files/modules likely touched: `chain/blocks.rs`, chain block/reward/retarget tests, coverage/status/readiness
-docs, and this exec plan.
-Parallel subagents to run: none; user asked not to use subagents unless explicitly requested.
-Parallelizable implementation workstreams: read-only discovery and validation only; implementation is a
-single chain boundary.
-Tests/checkers/docs to add or update: focused fallback timeout tests plus docs status for AC14.
-Narrow validation commands: `cargo test -p tensor_vm fallback --quiet`, `cargo test -p tensor_vm retarget --quiet`.
-Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
-workspace release, tarpaulin attempt.
-Expected observable evidence: genesis fallback remains possible, useful blocks remain undelayed, and a
-non-genesis empty fallback before timeout is rejected for producers and non-producers.
-Out of scope: multi-branch fork choice, validator withholding penalties, wall-clock scheduler changes, full
-Docker rerun until `/health`, and fraud-proof transcripts.
-Split trigger: if fallback timeout requires side-branch fork choice or runtime clock orchestration, split
-that from this chain validation rule.
-
-Implementation summary:
-- Added `PowSkipFallback` timeout validation in `chain::blocks`: height-zero fallback remains allowed, but
-  later empty fallback blocks must wait `pow_timeout_blocks * block_time_seconds` after the parent.
-- Updated block status so `fallback_valid` mirrors chain validation and `fallback_timeout_elapsed` exposes
-  the timestamp condition as structured evidence.
-- Updated pure zero-work fixtures to respect timeout timing without changing useful UVPoW behavior.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm fallback --quiet`, `cargo test -p tensor_vm retarget --quiet`,
-  `cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks --quiet`,
-  and `cargo test -p tensor_vm --test tvmd_runtime service_init_recovers_torn_snapshot_and_block_log_from_chain_state --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 411 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `f5a0aa2` (`Enforce fallback pow timeout`) is pushed to `origin/main`.
-
-## Recent Iterations
-
-### Iteration 77: Live Diagnostic Observed Bad-Block Challenge Emission
-
-Validator proposers now gossip one deterministic observed malformed-block challenge after useful proposal
-gossip; receivers apply it through the normal delayed pending challenger reward path. The local checker now
-requires applied diagnostic challenge counters plus future-maturity challenge reward claims. Validation
-passed focused challenge/message/compose tests, full crate, clippy, workspace release, and first/final Gate
-0; tarpaulin remained blocked. Feature commit `06be27e` is pushed.
-
-### Iteration 76: Network-Visible Observed Bad-Block Challenges
-
-Observed malformed blocks now propagate through bounded p2p tag 24, cache outside canonical chain state,
-and resolve through `ChainCommand::SubmitBlockCheckChallenge`, preserving delayed challenger reward claims.
-Validation passed focused challenge/wire tests, full crate, clippy, workspace release, and first/final Gate
-0; tarpaulin remained blocked. Feature commit `40f14d5` is pushed.
-
-### Iteration 75: Deterministic Bad-Block Challenge Generation
-
-Deterministic bad-block challenge fixtures now derive from useful blocks without admitting malformed blocks
-through consensus validation. Validation passed focused challenge tests, full crate, clippy, workspace
-release, and first/final Gate 0; tarpaulin remained blocked. Feature commit `8787912` is pushed.
-
-## Recent Iterations
+Non-genesis empty fallback blocks now require the configured timeout after the parent, while useful UVPoW
+blocks remain undelayed. Validation passed focused fallback/retarget/runtime tests, full crate, clippy,
+workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit `f5a0aa2` is pushed.
 
 ### Iteration 74: Validator Audit Appeal Reward-Delay Resolution
 
@@ -221,6 +199,13 @@ configured audit sampling, slash amount, and current non-voided pending validato
 Validation passed focused chain/status/RPC tests, full crate, clippy, workspace release, and first/final
 Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit `8dbb654` are pushed.
 
+### Iterations 75-77: Diagnostic Block-Check Challenge Path
+
+Deterministic bad-block challenge fixtures, bounded observed malformed-block p2p/cache handling, and live
+validator-proposer diagnostic emission are implemented and pushed in commits `8787912`, `40f14d5`, and
+`06be27e`; validation passed focused challenge/wire/runtime tests, full crate, clippy, workspace release,
+and first/final Gate 0, with tarpaulin still blocked.
+
 ## Decision Log
 
 - `upow.md` is canonical; `mvp_spec.md` wins where `upow.md` is silent. Stale readiness/exec text should be
@@ -235,14 +220,11 @@ Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit
 
 ## Validation Evidence
 
-Latest full validation is Iteration 80 on June 20, 2026:
+Latest full validation is Iteration 82 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm fallback --quiet
-cargo test -p tensor_vm retarget --quiet
-cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks --quiet
-cargo test -p tensor_vm --test tvmd_runtime service_init_recovers_torn_snapshot_and_block_log_from_chain_state --quiet
+cargo test -p tensor_vm reward --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

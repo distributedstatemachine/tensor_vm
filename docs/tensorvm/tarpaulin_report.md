@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 77 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 82 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 77 coverage could not
-be regenerated. Iterations 78 through 81 rechecked the same command and hit the same missing-binary blocker.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 82 coverage could not
+be regenerated. Iterations 78 through 82 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -75,6 +75,9 @@ cover producer and non-producer rejection of early empty fallback blocks while p
 Iteration 81 added inclusion-gated receipt reward release. Focused reward and settlement tests cover
 height-mature settled receipt claims staying pending before blockspace inclusion, inclusion extending
 claim maturity from the block height, and spendable release only after the inclusion-based maturity height.
+Iteration 82 added chain-owned delayed receipt reward release evidence. Focused reward tests cover producer
+and peer block transitions releasing included matured receipt rewards through canonical child-state
+application, without a manual adapter-side release command.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

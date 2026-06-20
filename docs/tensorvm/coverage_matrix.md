@@ -202,6 +202,10 @@ continues finalizing blocks after restart.
 
 ## Non-Local Gaps
 
+Reward-delay evidence note: `chain::tests::block_transition_releases_matured_receipt_rewards_without_manual_command`
+now proves included receipt rewards are released by canonical block child-state application on both producer
+and non-producer peers, rather than by an adapter-side/manual release workaround.
+
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul plus
   linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.
   Miner CLI startup reports CPU reference readiness for `--device cpu` and rejects `--device cuda:N`
