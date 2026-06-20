@@ -108,6 +108,9 @@ Iteration 92 added chain-owned detection probability evidence. Focused chain, st
 tests cover per-mechanism detection bps, false-accept bps, sample sizes, source labels, and live subject
 counts for Freivalds, row-sampling, random-linear, graph replay, data availability, validator-audit, and
 block-check paths.
+Iteration 93 added late invalid-output delayed reward voiding. Focused settlement tests cover assigned
+`Invalid` attestations contesting already settled receipts, voiding pending miner and validator receipt
+claims before maturity, and preventing mature release from crediting spendable rewards.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

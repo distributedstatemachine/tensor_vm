@@ -92,6 +92,22 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
             }
         }
     }
+    if attestation.result == VerificationResult::Invalid
+        && chain
+            .state
+            .challenged_receipts
+            .insert(attestation.receipt_id)
+    {
+        chain.state.settled_receipts.remove(&attestation.receipt_id);
+        if let Some(miner) = chain.state.miners.get_mut(&receipt_miner) {
+            miner.reputation -= 1;
+        }
+        for reward in chain.state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == attestation.receipt_id {
+                reward.voided_by_challenge = true;
+            }
+        }
+    }
     chain
         .state
         .attestations

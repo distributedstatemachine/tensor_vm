@@ -157,11 +157,14 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   and proposer claims as slashable/voidable escrow and counts reward-from-fraud only after the claim is
   spendable. Reward maturity now exposes an explicit fraud-window hold so normal receipt rewards remain
   delayed through the configured challenge window and active audit window before spendability.
+  Late assigned invalid-output attestations now contest already settled receipts by removing the receipt
+  from the settled set, marking it challenged, and voiding delayed pending receipt reward claims before
+  any mature release can credit spendable balances.
   `ChainState::detection_probability_evidence` now derives structured verifier/fraud-path detection
   evidence from current params, live TensorOp and LinearTrainingStep job shapes, graph-job counts, and
   chain-state fraud counters; service status and explorer overview expose per-mechanism detection bps,
   false-accept bps, sample sizes, source labels, and live subject counts. Deployed-run measurements,
-  remaining fraud paths, and broader invalid-output slashing remain open.
+  remaining fraud paths, and broader invalid-output stake slashing remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable

@@ -230,9 +230,12 @@ The local bundle is useful and should remain the first operational target:
   slashable bonds, aggregate worst-required-bond, and pass/fail invariant status. Proposer rewards now
   carry an extra proposer-specific maturity hold, and the fraud-path calibration treats held receipt and
   proposer claims as slashable/voidable escrow while counting fraud proceeds only after claimability.
+  Late assigned invalid-output attestations now contest already settled receipts in chain validation:
+  the receipt leaves the settled set, enters the challenged set, and delayed miner plus validator receipt
+  rewards are voided before maturity instead of requiring spendable-balance clawback.
   Chain state, service status, and explorer overview now also expose structured detection-probability
   evidence for the implemented verifier and fraud mechanisms. Deployed-run measured detection records,
-  remaining fraud paths, and broader invalid-output slashing remain open economics work.
+  remaining fraud paths, and broader invalid-output stake slashing remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

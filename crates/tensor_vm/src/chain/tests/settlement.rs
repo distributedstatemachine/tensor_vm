@@ -429,6 +429,134 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
 }
 
 #[test]
+fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
+    let beacon = hash_bytes(b"test", &[b"invalid-output-delay"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 3,
+            minimum_validators: 2,
+            minimum_stake_numerator: 2,
+            minimum_stake_denominator: 3,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"delayed-invalid-output-miner");
+    chain.register_miner(miner, 100).unwrap();
+    for i in 0..8 {
+        chain
+            .register_validator(
+                address(format!("delayed-invalid-output-validator-{i}").as_bytes()),
+                10_000,
+            )
+            .unwrap();
+    }
+
+    let job = MatmulJob::synthetic(0, 0, 8, 8, 8, &beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"delayed-invalid-output-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let assigned =
+        JobScheduler::default().assign_validators(&chain, receipt.receipt_id, &assignment_seed);
+    let validators = assigned.validators;
+    assert_eq!(validators.len(), 3);
+    for validator in validators.iter().take(2) {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                *validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: report.result,
+                    checks_root: report.checks_root,
+                    data_availability_passed: report.data_availability_passed,
+                },
+            ))
+            .unwrap();
+    }
+    assert!(chain.has_attestation_quorum(&receipt.receipt_id));
+    chain.settle_epoch(1_000, 500);
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height;
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id && !reward.voided_by_challenge)
+    );
+
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validators[2],
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Invalid,
+                checks_root: hash_bytes(b"test", &[b"delayed-invalid-output"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    assert!(
+        !chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        chain
+            .state()
+            .challenged_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .filter(|reward| reward.receipt_id == receipt.receipt_id)
+            .all(|reward| reward.voided_by_challenge)
+    );
+    chain.set_position_for_testing(claimable_at_height, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    for validator in validators.iter().take(2) {
+        assert_eq!(chain.state().rewards().balance(validator), 0);
+    }
+}
+
+#[test]
 fn quorum_and_agreement_helpers_reject_unknown_receipts() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);

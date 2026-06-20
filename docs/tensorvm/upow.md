@@ -519,7 +519,10 @@ TensorBlock {
 > An assigned validator's unavailable-data attestation marks the receipt non-finalizable, and the next
 > canonical block child-state transition records a `DataUnavailabilitySlashRecord`, reduces the miner stake
 > once for that receipt, and credits treasury. If receipt rewards were already pending, the unavailable-data
-> evidence voids those delayed claims before spendability. The local reference also state-roots validator
+> evidence voids those delayed claims before spendability. A late assigned `Invalid` attestation likewise
+> contests an already settled receipt, removes it from the settled set, marks it challenged, and voids the
+> delayed miner and validator receipt reward claims before release instead of relying on spendable-balance
+> clawback. The local reference also state-roots validator
 > audit assignments, signed audit results, and validator audit slash records when audit sampling is
 > configured. Base receipt-reward maturity now exposes a canonical fraud hold covering the challenge
 > window and, when active, the audit window, so miner and validator receipt rewards remain delayed before
@@ -547,8 +550,8 @@ TensorBlock {
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.
-> Deployed-run measured detection records, remaining fraud paths, and broader invalid-output slashing remain
-> TODO before claiming the full §12 economics invariant.
+> Deployed-run measured detection records, remaining fraud paths, and broader invalid-output stake slashing
+> remain TODO before claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 
