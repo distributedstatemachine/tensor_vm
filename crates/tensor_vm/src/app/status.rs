@@ -244,6 +244,41 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
             .map(|slash| slash.amount)
             .sum::<u64>(),
     );
+    let audit_economics = chain
+        .state()
+        .validator_audit_economic_calibration(chain.params());
+    report.field(
+        "validator_audit_economic_detection_numerator",
+        audit_economics.detection_numerator,
+    );
+    report.field(
+        "validator_audit_economic_detection_denominator",
+        audit_economics.detection_denominator,
+    );
+    report.field(
+        "validator_audit_economic_detection_probability_bps",
+        audit_economics.detection_probability_bps,
+    );
+    report.field(
+        "validator_audit_economic_slashable_bond",
+        audit_economics.slashable_bond,
+    );
+    report.field(
+        "validator_audit_economic_reward_from_fraud",
+        audit_economics.reward_from_fraud,
+    );
+    report.field(
+        "validator_audit_economic_at_risk_reward_claim_count",
+        audit_economics.at_risk_validator_reward_claim_count,
+    );
+    report.field(
+        "validator_audit_economic_required_slashable_bond",
+        audit_economics.required_slashable_bond,
+    );
+    report.field(
+        "validator_audit_economic_invariant_holds",
+        audit_economics.invariant_holds,
+    );
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
     report.field(
@@ -482,6 +517,77 @@ mod tests {
                 .contains(":true")
         );
         assert_ne!(fields.value("pending_credit_reward_claims"), Some("none"));
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn service_status_exports_validator_audit_economic_calibration() {
+        let beacon = hash_bytes(b"test", &[b"status-audit-economics"]);
+        let mut chain = Chain::with_params(
+            ChainParams {
+                validator_audit_sample_numerator: 1,
+                validator_audit_sample_denominator: 2,
+                validator_audit_slash_amount: 101,
+                ..ChainParams::default()
+            },
+            beacon,
+        );
+        chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+            claim_id: hash_bytes(b"test", &[b"status-audit-validator-claim"]),
+            receipt_id: hash_bytes(b"test", &[b"status-audit-receipt"]),
+            beneficiary: address(b"status-audit-validator"),
+            amount: 50,
+            kind: ReceiptRewardKind::Validator,
+            claimable_at_height: 10,
+            voided_by_challenge: false,
+        });
+
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-status-audit-economics-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = NodeStore::open(data_dir.clone());
+        store.persist_chain(&chain).unwrap();
+
+        let status = service_status(data_dir.to_str().unwrap()).unwrap();
+        let fields = KeyValueReport::parse_strict(&status).unwrap();
+        assert_eq!(
+            fields.value("validator_audit_economic_detection_numerator"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_detection_denominator"),
+            Some("2")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_detection_probability_bps"),
+            Some("5000")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_slashable_bond"),
+            Some("101")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_reward_from_fraud"),
+            Some("50")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_at_risk_reward_claim_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_required_slashable_bond"),
+            Some("101")
+        );
+        assert_eq!(
+            fields.value("validator_audit_economic_invariant_holds"),
+            Some("true")
+        );
 
         let _ = std::fs::remove_dir_all(data_dir);
     }

@@ -120,8 +120,9 @@ pub use study::{
 pub use tensor::{DType, Layout, Tensor, TensorDescriptor, TensorOpening};
 pub use tensor_server::TensorServer;
 pub use tensor_vm_explorer::{
-    ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview, ExplorerReceipt,
-    ExplorerSummary, ExplorerValidator,
+    ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview,
+    ExplorerPendingReward, ExplorerReceipt, ExplorerSummary, ExplorerValidator,
+    ExplorerValidatorAuditEconomicCalibration,
 };
 pub use testnet::{
     LocalTestnet, PublicDeploymentServicePlan, PublicEvidenceAuditorRecord,

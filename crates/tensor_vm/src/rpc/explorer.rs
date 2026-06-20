@@ -5,6 +5,7 @@ use crate::types::Address;
 use tensor_vm_explorer::{
     ExplorerAccount, ExplorerBlock, ExplorerJob, ExplorerMiner, ExplorerOverview,
     ExplorerPendingReward, ExplorerReceipt, ExplorerSummary, ExplorerValidator,
+    ExplorerValidatorAuditEconomicCalibration,
 };
 
 pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
@@ -178,6 +179,24 @@ pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<Explo
         .collect()
 }
 
+pub(super) fn explorer_validator_audit_economic_calibration(
+    chain: &Chain,
+) -> ExplorerValidatorAuditEconomicCalibration {
+    let calibration = chain
+        .state()
+        .validator_audit_economic_calibration(chain.params());
+    ExplorerValidatorAuditEconomicCalibration {
+        detection_numerator: calibration.detection_numerator,
+        detection_denominator: calibration.detection_denominator,
+        detection_probability_bps: calibration.detection_probability_bps,
+        slashable_bond: calibration.slashable_bond,
+        reward_from_fraud: calibration.reward_from_fraud,
+        at_risk_validator_reward_claim_count: calibration.at_risk_validator_reward_claim_count,
+        required_slashable_bond: calibration.required_slashable_bond,
+        invariant_holds: calibration.invariant_holds,
+    }
+}
+
 fn reward_claim_key_label(key: RewardClaimKey) -> String {
     match key {
         RewardClaimKey::BlockHeight(height) => height.to_string(),
@@ -233,6 +252,7 @@ pub(super) fn explorer_overview(
         validators: explorer_validators(chain),
         receipts: explorer_receipts(chain, receipt_limit),
         pending_rewards: explorer_pending_rewards(chain, receipt_limit),
+        validator_audit_economic_calibration: explorer_validator_audit_economic_calibration(chain),
         jobs: explorer_jobs(chain, job_limit),
     }
 }

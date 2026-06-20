@@ -1,5 +1,7 @@
 use super::*;
-use crate::chain::{Chain, ChainParams, HardwareClass, JobState};
+use crate::chain::{
+    Chain, ChainParams, HardwareClass, JobState, PendingReceiptReward, ReceiptRewardKind,
+};
 use crate::faucet::Faucet;
 use crate::hash::hex;
 use crate::jobs::{

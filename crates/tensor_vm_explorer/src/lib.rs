@@ -93,6 +93,34 @@ impl ExplorerPendingReward {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerValidatorAuditEconomicCalibration {
+    pub detection_numerator: u64,
+    pub detection_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub slashable_bond: u64,
+    pub reward_from_fraud: u64,
+    pub at_risk_validator_reward_claim_count: usize,
+    pub required_slashable_bond: u64,
+    pub invariant_holds: bool,
+}
+
+impl ExplorerValidatorAuditEconomicCalibration {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"detection_numerator\":{},\"detection_denominator\":{},\"detection_probability_bps\":{},\"slashable_bond\":{},\"reward_from_fraud\":{},\"at_risk_validator_reward_claim_count\":{},\"required_slashable_bond\":{},\"invariant_holds\":{}}}",
+            self.detection_numerator,
+            self.detection_denominator,
+            self.detection_probability_bps,
+            self.slashable_bond,
+            self.reward_from_fraud,
+            self.at_risk_validator_reward_claim_count,
+            self.required_slashable_bond,
+            self.invariant_holds
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerBlock {
     pub height: u64,
     pub epoch: u64,
@@ -256,19 +284,21 @@ pub struct ExplorerOverview {
     pub validators: Vec<ExplorerValidator>,
     pub receipts: Vec<ExplorerReceipt>,
     pub pending_rewards: Vec<ExplorerPendingReward>,
+    pub validator_audit_economic_calibration: ExplorerValidatorAuditEconomicCalibration,
     pub jobs: Vec<ExplorerJob>,
 }
 
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
             json_array(&self.validators, ExplorerValidator::to_json),
             json_array(&self.receipts, ExplorerReceipt::to_json),
             json_array(&self.pending_rewards, ExplorerPendingReward::to_json),
+            self.validator_audit_economic_calibration.to_json(),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
     }

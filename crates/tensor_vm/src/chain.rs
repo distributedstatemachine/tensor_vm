@@ -37,7 +37,8 @@ pub use state::{
     ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardClaimKey,
     RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock,
     Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAssignment,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorAuditEconomicCalibration, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 

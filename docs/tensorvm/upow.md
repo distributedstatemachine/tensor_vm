@@ -511,10 +511,14 @@ TensorBlock {
 > once, credits treasury, voids that delayed validator reward, and holds the voided pending claim through
 > the audit appeal deadline before it can be pruned without credit. A slashed validator can now submit a
 > signed, bounded appeal that is tied to the audit slash, state-rooted, and persisted for later adjudication.
+> Chain state also exposes a live validator-audit economic calibration view from the configured audit
+> sampling probability, slash amount, and current non-voided pending validator receipt reward exposure,
+> including the required slashable bond for the strict `bond * P(detection) > reward_from_fraud`
+> invariant and whether the current parameters satisfy it.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters. Appeal
-> adjudication outcome mechanics, full bond calibration, and broader invalid-output slashing remain TODO
+> adjudication outcome mechanics, broader bond calibration, and broader invalid-output slashing remain TODO
 > before claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
@@ -605,7 +609,9 @@ This section is non-normative guidance on how the spec components partition into
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
-- [ ] Economic calibration: bond ≥ gain-from-fraud given measured detection probabilities (§12.2).
+- [~] Economic calibration: live validator-audit calibration now reports the configured audit detection
+  probability, current pending validator reward exposure, required slashable bond, and pass/fail invariant;
+  broader bond calibration across all fraud paths and measured detection probabilities remains open (§12.2).
 - [ ] Reward concentration / anti-monopoly curve for TensorWork.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [ ] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with `const_blob` inputs (availability of the blob during a dispute).

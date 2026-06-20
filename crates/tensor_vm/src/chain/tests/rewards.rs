@@ -375,6 +375,77 @@ fn pending_reward_claim_view_covers_all_ledgers() {
 }
 
 #[test]
+fn validator_audit_economic_calibration_uses_live_at_risk_validator_rewards() {
+    let beacon = hash_bytes(b"test", &[b"audit-economic-calibration"]);
+    let params = ChainParams {
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 4,
+        validator_audit_slash_amount: 200,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let validator = address(b"audit-economic-validator");
+    let miner = address(b"audit-economic-miner");
+    let receipt = hash_bytes(b"test", &[b"audit-economic-receipt"]);
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"audit-economic-validator-claim-a"]),
+        receipt_id: receipt,
+        beneficiary: validator,
+        amount: 40,
+        kind: ReceiptRewardKind::Validator,
+        claimable_at_height: 9,
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"audit-economic-validator-claim-b"]),
+        receipt_id: hash_bytes(b"test", &[b"audit-economic-receipt-b"]),
+        beneficiary: validator,
+        amount: 80,
+        kind: ReceiptRewardKind::Validator,
+        claimable_at_height: 10,
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"audit-economic-voided-validator-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"audit-economic-voided-receipt"]),
+        beneficiary: validator,
+        amount: 10_000,
+        kind: ReceiptRewardKind::Validator,
+        claimable_at_height: 11,
+        voided_by_challenge: true,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"audit-economic-miner-claim"]),
+        receipt_id: receipt,
+        beneficiary: miner,
+        amount: 10_000,
+        kind: ReceiptRewardKind::Miner,
+        claimable_at_height: 11,
+        voided_by_challenge: false,
+    });
+
+    let calibration = chain
+        .state()
+        .validator_audit_economic_calibration(chain.params());
+    assert_eq!(calibration.detection_numerator, 1);
+    assert_eq!(calibration.detection_denominator, 4);
+    assert_eq!(calibration.detection_probability_bps, 2_500);
+    assert_eq!(calibration.slashable_bond, 200);
+    assert_eq!(calibration.reward_from_fraud, 80);
+    assert_eq!(calibration.at_risk_validator_reward_claim_count, 2);
+    assert_eq!(calibration.required_slashable_bond, 321);
+    assert!(!calibration.invariant_holds);
+
+    let empty = Chain::new(beacon);
+    let empty_calibration = empty
+        .state()
+        .validator_audit_economic_calibration(empty.params());
+    assert_eq!(empty_calibration.reward_from_fraud, 0);
+    assert_eq!(empty_calibration.required_slashable_bond, 0);
+    assert!(empty_calibration.invariant_holds);
+}
+
+#[test]
 fn block_transition_releases_matured_rewards_without_manual_command() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {

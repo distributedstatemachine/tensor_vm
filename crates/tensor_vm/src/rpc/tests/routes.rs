@@ -492,6 +492,53 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
 }
 
 #[test]
+fn explorer_overview_exports_validator_audit_economic_calibration() {
+    let beacon = hash_bytes(b"test", &[b"rpc-audit-economics"]);
+    let mut chain = Chain::with_params(
+        ChainParams {
+            validator_audit_sample_numerator: 1,
+            validator_audit_sample_denominator: 5,
+            validator_audit_slash_amount: 300,
+            ..ChainParams::default()
+        },
+        beacon,
+    );
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"rpc-audit-validator-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"rpc-audit-receipt"]),
+        beneficiary: address(b"rpc-audit-validator"),
+        amount: 60,
+        kind: ReceiptRewardKind::Validator,
+        claimable_at_height: 10,
+        voided_by_challenge: false,
+    });
+    let rpc = RpcNode::new(chain);
+
+    let overview = rpc.handle(&RpcRequest {
+        method: "GET".to_owned(),
+        path: "/explorer/overview".to_owned(),
+        body: Vec::new(),
+    });
+    assert_eq!(overview.status, 200);
+    let overview = response_json(&overview);
+    let calibration = &overview["validator_audit_economic_calibration"];
+    assert_eq!(calibration["detection_numerator"].as_u64(), Some(1));
+    assert_eq!(calibration["detection_denominator"].as_u64(), Some(5));
+    assert_eq!(
+        calibration["detection_probability_bps"].as_u64(),
+        Some(2_000)
+    );
+    assert_eq!(calibration["slashable_bond"].as_u64(), Some(300));
+    assert_eq!(calibration["reward_from_fraud"].as_u64(), Some(60));
+    assert_eq!(
+        calibration["at_risk_validator_reward_claim_count"].as_u64(),
+        Some(1)
+    );
+    assert_eq!(calibration["required_slashable_bond"].as_u64(), Some(301));
+    assert_eq!(calibration["invariant_holds"].as_bool(), Some(false));
+}
+
+#[test]
 fn mutable_rpc_applies_transactions_and_queues_submissions() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut rpc = RpcNode::new(Chain::new(beacon));

@@ -332,6 +332,18 @@ pub struct RewardClaimView {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditEconomicCalibration {
+    pub detection_numerator: u64,
+    pub detection_denominator: u64,
+    pub detection_probability_bps: u64,
+    pub slashable_bond: u64,
+    pub reward_from_fraud: u64,
+    pub at_risk_validator_reward_claim_count: usize,
+    pub required_slashable_bond: u64,
+    pub invariant_holds: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceiptRandomnessAnchor {
     pub receipt_id: Hash,
     pub beacon_round: u64,
@@ -1239,6 +1251,50 @@ impl ChainState {
         claims
     }
 
+    pub fn validator_audit_economic_calibration(
+        &self,
+        params: &ChainParams,
+    ) -> ValidatorAuditEconomicCalibration {
+        let detection_denominator = params.validator_audit_sample_denominator.max(1);
+        let detection_numerator = params
+            .validator_audit_sample_numerator
+            .min(detection_denominator);
+        let at_risk_validator_rewards = self
+            .pending_receipt_rewards
+            .values()
+            .filter(|reward| {
+                reward.kind == ReceiptRewardKind::Validator && !reward.voided_by_challenge
+            })
+            .collect::<Vec<_>>();
+        let reward_from_fraud = at_risk_validator_rewards
+            .iter()
+            .map(|reward| reward.amount)
+            .max()
+            .unwrap_or_default();
+        let required_slashable_bond = required_slashable_bond(
+            reward_from_fraud,
+            detection_numerator,
+            detection_denominator,
+        );
+        let invariant_holds = reward_from_fraud == 0
+            || (detection_numerator > 0
+                && (params.validator_audit_slash_amount as u128)
+                    .saturating_mul(detection_numerator as u128)
+                    > (reward_from_fraud as u128).saturating_mul(detection_denominator as u128));
+        ValidatorAuditEconomicCalibration {
+            detection_numerator,
+            detection_denominator,
+            detection_probability_bps: ((detection_numerator as u128) * 10_000
+                / detection_denominator as u128)
+                .min(u64::MAX as u128) as u64,
+            slashable_bond: params.validator_audit_slash_amount,
+            reward_from_fraud,
+            at_risk_validator_reward_claim_count: at_risk_validator_rewards.len(),
+            required_slashable_bond,
+            invariant_holds,
+        }
+    }
+
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {
         &self.model_states
     }
@@ -1246,6 +1302,22 @@ impl ChainState {
     pub fn rewards(&self) -> &RewardState {
         &self.rewards
     }
+}
+
+fn required_slashable_bond(
+    reward_from_fraud: u64,
+    detection_numerator: u64,
+    detection_denominator: u64,
+) -> u64 {
+    if reward_from_fraud == 0 {
+        return 0;
+    }
+    if detection_numerator == 0 {
+        return u64::MAX;
+    }
+    let quotient = (reward_from_fraud as u128).saturating_mul(detection_denominator as u128)
+        / detection_numerator as u128;
+    quotient.saturating_add(1).min(u64::MAX as u128) as u64
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

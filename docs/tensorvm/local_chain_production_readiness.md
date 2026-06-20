@@ -215,8 +215,10 @@ The local bundle is useful and should remain the first operational target:
   through the shared chain command path, gossip bounded audit-report payloads, let non-producers apply or
   retry those payloads through node ingest, and expose submitted plus network-applied audit-report
   counters. Slashed audited validators can now submit signed, bounded appeal records that are rooted and
-  persisted with the audit slash state. Appeal adjudication outcome mechanics and bond calibration remain
-  open economics work.
+  persisted with the audit slash state. Chain state, service status, and explorer overview now expose live
+  validator-audit economic calibration for the configured sampling probability, slash amount, at-risk
+  pending validator reward exposure, required slashable bond, and pass/fail invariant. Appeal adjudication
+  outcome mechanics and broader bond calibration remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 
