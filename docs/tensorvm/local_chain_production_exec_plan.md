@@ -5,7 +5,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 62, dynamic-output exact `split` admission, implemented and validated locally.
+- Active feature: Iteration 62, dynamic-output exact `split` admission, implemented, validated, committed,
+  and pushed.
 - Current status: the frozen IR registry admits exact Tier-B `split` with dynamic output count
   `len(sizes)`. `TensorGraph` consensus validation enforces that count, exact replay copies row-major
   segments into one output tensor per split size, conformance vectors include multi-output `split`
@@ -17,7 +18,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 62, then select the next goal-aligned implementation slice.
+- Next action: select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -100,6 +101,8 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `903cf9b` (`Admit dynamic split IR replay`) pushed `8c297d9..903cf9b main -> main` to
+  `github.com:distributedstatemachine/tensor_vm.git`.
 
 Expected observable evidence: a consensus-admitted graph with `split(sizes, dim)` validates, exact execution
 returns one tensor per split segment, graph receipts can reference both output indices, conformance profile
