@@ -470,7 +470,10 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         beneficiary: address(b"fraud-path-miner"),
         amount: 7,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 0,
+        claimable_at_height: chain
+            .state()
+            .height()
+            .saturating_add(chain.params().fraud_reward_hold_blocks()),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -497,8 +500,8 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .fraud_path_economic_calibration(chain.params());
     assert_eq!(calibration.path_count, 3);
     assert!(calibration.all_invariants_hold);
-    assert_eq!(calibration.worst_path, "data_unavailability");
-    assert_eq!(calibration.max_required_slashable_bond, 8);
+    assert_eq!(calibration.worst_path, "block_check");
+    assert_eq!(calibration.max_required_slashable_bond, 0);
 
     let validator_audit = calibration
         .paths
@@ -519,9 +522,9 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .unwrap();
     assert_eq!(data_unavailability.detection_probability_bps, 10_000);
     assert_eq!(data_unavailability.slashable_bond, 150);
-    assert_eq!(data_unavailability.reward_from_fraud, 7);
+    assert_eq!(data_unavailability.reward_from_fraud, 0);
     assert_eq!(data_unavailability.at_risk_reward_claim_count, 2);
-    assert_eq!(data_unavailability.required_slashable_bond, 8);
+    assert_eq!(data_unavailability.required_slashable_bond, 0);
     assert!(data_unavailability.invariant_holds);
 
     let block_check = calibration

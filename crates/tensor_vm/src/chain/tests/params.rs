@@ -23,6 +23,7 @@ fn audit_sampling_extends_reward_maturity_and_tensor_retention() {
         ..ChainParams::default()
     };
     assert_eq!(inactive.validator_audit_reward_hold_blocks(), 0);
+    assert_eq!(inactive.fraud_reward_hold_blocks(), 7);
     assert_eq!(inactive.reward_maturity_delay_blocks(), 7);
     assert_eq!(inactive.proposer_reward_hold_blocks(), 7);
     assert_eq!(inactive.proposer_reward_maturity_delay_blocks(), 14);
@@ -33,6 +34,7 @@ fn audit_sampling_extends_reward_maturity_and_tensor_retention() {
         ..inactive
     };
     assert_eq!(active.validator_audit_reward_hold_blocks(), 11);
+    assert_eq!(active.fraud_reward_hold_blocks(), 11);
     assert_eq!(active.reward_maturity_delay_blocks(), 11);
     assert_eq!(active.proposer_reward_maturity_delay_blocks(), 18);
     assert_eq!(active.tensor_retention_window_blocks(), 11);

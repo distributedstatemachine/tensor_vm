@@ -155,7 +155,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   paths; service status and explorer overview render required slashable bonds, aggregate
   worst-required-bond, and pass/fail invariants. Fraud-path calibration treats delayed non-voided receipt
   and proposer claims as slashable/voidable escrow and counts reward-from-fraud only after the claim is
-  spendable.
+  spendable. Reward maturity now exposes an explicit fraud-window hold so normal receipt rewards remain
+  delayed through the configured challenge window and active audit window before spendability.
   Measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,

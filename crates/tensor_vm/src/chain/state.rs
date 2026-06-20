@@ -94,7 +94,7 @@ fn default_difficulty_floor_target() -> Hash {
 impl ChainParams {
     pub fn reward_maturity_delay_blocks(&self) -> u64 {
         self.base_reward_maturity_delay_blocks()
-            .max(self.validator_audit_reward_hold_blocks())
+            .max(self.fraud_reward_hold_blocks())
     }
 
     pub fn proposer_reward_maturity_delay_blocks(&self) -> u64 {
@@ -120,6 +120,11 @@ impl ChainParams {
         } else {
             self.validator_audit_window_blocks.max(1)
         }
+    }
+
+    pub fn fraud_reward_hold_blocks(&self) -> u64 {
+        self.challenge_window_blocks()
+            .max(self.validator_audit_reward_hold_blocks())
     }
 
     pub fn challenge_window_blocks(&self) -> u64 {

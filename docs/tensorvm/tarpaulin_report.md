@@ -101,6 +101,9 @@ head stability, and network payload application of a better competing head.
 Iteration 89 changed receipt-path economic calibration to treat immature pending miner and validator
 receipt rewards as slashable/voidable escrow rather than immediate fraud proceeds. Focused reward, status,
 and RPC tests cover claim-maturity-sensitive fraud exposure.
+Iteration 91 added an explicit fraud-window reward hold to `ChainParams::reward_maturity_delay_blocks`.
+Focused params and reward tests cover challenge/audit hold selection and prove pending miner rewards do
+not become spendable fraud proceeds before that hold expires.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:
