@@ -5,12 +5,13 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest in-progress feature: Iteration 17, role-owned live counter checker hardening, changes the local
-  Docker checker from presence-only role-counter validation to hard evidence that at least one miner role
-  reports positive live receipt/tensor submissions and at least one validator role reports positive live
-  attestation submissions. This consumes existing structured `tvmd node status` fields; it does not move
-  consensus logic into the shell checker.
-- Latest completed feature: Iteration 16, role-owned live work before validator proposal, is implemented,
+- Latest completed feature: Iteration 17, role-owned live counter checker hardening, is implemented,
+  validated, and pushed as `d4a6182d19bb1e1ea1f63174d8df7eb657cd6dd4`
+  (`Harden role-owned local checker evidence`) on `origin/main`. The local Docker checker now requires
+  hard evidence that at least one miner role reports positive live receipt/tensor submissions and at least
+  one validator role reports positive live attestation submissions. This consumes existing structured
+  `tvmd node status` fields; it does not move consensus logic into the shell checker.
+- Previous completed feature: Iteration 16, role-owned live work before validator proposal, is implemented,
   validated, and pushed as `e18d5b3d5e87ee3d0eb71266bb1f50b11ce42171`
   (`Publish local jobs before role-owned work`) on `origin/main`. The scheduled local producer now
   publishes synthetic jobs only. Receipts and attestations are left to miner/validator role paths before
@@ -49,15 +50,15 @@ feature-sized iterations are summarized after validation and push, and older det
 | Capability | Status | Current evidence | Next action |
 | --- | --- | --- | --- |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Keep one transition engine while replacing block validity |
-| Role-owned miner receipts | Checker hardening in progress | Miner role submits receipts through `ChainCommand::SubmitReceipt` and publishes receipt announcements; Iteration 17 working tree makes the Docker checker fail unless live miner receipt/tensor counters are positive | Rerun full Docker checker after `/health` blocker clears |
-| Role-owned validator attestations | Checker hardening in progress | Validator role verifies assigned receipts, fetches missing tensors remotely, and submits attestations; Iteration 17 working tree makes the Docker checker fail unless live validator attestation counters are positive | Keep as input path for canonical blockspace and rerun full Docker checker after `/health` blocker clears |
+| Role-owned miner receipts | Checker hardening implemented/pushed | Miner role submits receipts through `ChainCommand::SubmitReceipt` and publishes receipt announcements; `d4a6182` makes the Docker checker fail unless live miner receipt/tensor counters are positive | Rerun full Docker checker after `/health` blocker clears |
+| Role-owned validator attestations | Checker hardening implemented/pushed | Validator role verifies assigned receipts, fetches missing tensors remotely, and submits attestations; `d4a6182` makes the Docker checker fail unless live validator attestation counters are positive | Keep as input path for canonical blockspace and rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator block votes | Implemented/pushed | `fb0feb0`; validator role submits `SubmitBlockVote`, gossips block-vote payloads, and status/checker fields expose submitted/ingested/applied vote counters | Rerun full Docker checker after `/health` blocker clears |
 | Remote tensor availability | Implemented/pushed | `2d6609e`; root-addressed tensor request-response and validator fetch counters | Reuse for block-check evidence; revisit slow-peer bounds later |
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
 | Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
 | Role-owned live work before proposal | Implemented/pushed | `e18d5b3`; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Rerun full Docker checker after `/health` blocker clears |
 | Canonical useful-verification block validity | Partially implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce; strict vote validation checks state root, beacon, PoW, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, retargeting, and fallback |
-| Checker evidence | Updated/working tree | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; Iteration 17 working tree adds exact role-owned miner/validator live counter gates | Full Docker checker still awaits `/health` blocker resolution |
+| Checker evidence | Updated/pushed | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; `d4a6182` adds exact role-owned miner/validator live counter gates | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
@@ -98,7 +99,7 @@ Implementation summary:
 - The checker emits exact `live_role_*` evidence fields and boolean role-owned work gates.
 - The Compose artifact-shape test now asserts these hard gates and output fields exist.
 
-Validation so far:
+Validation:
 - Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
   local-testnet library tests and the seed CLI integration test.
 - `bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`
@@ -116,6 +117,10 @@ Validation so far:
 - `git diff --check`
 - `cargo tarpaulin --version` remains unavailable in this environment (`cargo` reports no such command:
   `tarpaulin`), so coverage was not collected.
+
+Push evidence:
+- Feature commit `d4a6182d19bb1e1ea1f63174d8df7eb657cd6dd4` (`Harden role-owned local checker
+  evidence`) was pushed to `origin/main`.
 
 Out of scope:
 - Retargeting and zero-receipt PoW-skip fallback.
