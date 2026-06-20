@@ -22,9 +22,9 @@ pub fn validator_role_work_observation(
     validator: Address,
 ) -> ValidatorRoleWorkObservation {
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
-    let assignment_seed = node.chain.state().finalized_randomness();
     let mut observation = ValidatorRoleWorkObservation::default();
     for (receipt_id, receipt) in node.chain.state().receipts() {
+        let assignment_seed = node.chain.validator_assignment_seed(receipt_id);
         let assignment = scheduler.assign_validators(&node.chain, *receipt_id, &assignment_seed);
         if !assignment.validators.contains(&validator) {
             continue;
@@ -100,11 +100,8 @@ pub fn submit_validator_role_attestation(
     };
     let validator_stake = validator_state.stake;
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
-    let assignment = scheduler.assign_validators(
-        &node.chain,
-        receipt_id,
-        &node.chain.state().finalized_randomness(),
-    );
+    let assignment_seed = node.chain.validator_assignment_seed(&receipt_id);
+    let assignment = scheduler.assign_validators(&node.chain, receipt_id, &assignment_seed);
     if !assignment.validators.contains(&validator)
         || validator_has_attested_for_receipt(&node.chain, validator, receipt_id)
     {
@@ -119,7 +116,7 @@ pub fn submit_validator_role_attestation(
     let Some(bundle) = role_receipt_bundle_from_local_tensors(node, &receipt) else {
         return Ok(None);
     };
-    let validation_seed = node.chain.validation_seed(&receipt_id);
+    let validation_seed = node.chain.validation_seed(&receipt_id, &validator);
     let attestation = ReferenceValidatorRole::new(validator, validator_stake)
         .verify_receipt(
             &job,

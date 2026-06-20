@@ -23,14 +23,24 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         .last()
         .map(TensorBlock::hash)
         .unwrap_or([0; 32]);
+    let beacon_round = chain.state.finalized_beacon_round;
     let beacon = chain.state.finalized_randomness;
-    let selection = canonical_blockspace(&chain.state, &parent_hash, &beacon, blockspace_caps());
+    let selection = canonical_blockspace(
+        &chain.state,
+        &parent_hash,
+        beacon_round,
+        &beacon,
+        blockspace_caps(),
+    );
     let settled_receipt_set_root =
         selected_receipt_commitment_root(&selection.receipt_ids, &chain.state.receipts);
     let checks_root = block_checks_root(
         &selection.receipt_ids,
         &chain.state.receipts,
         &chain.state.attestations,
+        beacon_round,
+        &beacon,
+        &parent_hash,
     );
     let attestation_root = attestation_root(&chain.state.attestations);
     let production_kind = if selection.receipt_ids.is_empty() {
@@ -42,7 +52,7 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
     let child_state = apply_block_to_parent_state(
         &chain.state,
         chain.params.epoch_length,
-        &parent_hash,
+        beacon_round,
         &beacon,
         chain.state.height,
         &selection.receipt_ids,
@@ -59,6 +69,7 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         attestation_root,
         state_root: chain_state_root,
         reward_root,
+        beacon_round,
         beacon,
         production_kind,
         difficulty_target,
@@ -190,7 +201,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     chain.state = apply_block_to_parent_state(
         &chain.state,
         chain.params.epoch_length,
-        &block.parent_hash,
+        block.beacon_round,
         &block.beacon,
         height,
         &outcome.selected_receipt_ids,
@@ -294,6 +305,7 @@ fn clamp_target(params: &super::ChainParams, target: Hash) -> Hash {
 pub(super) fn canonical_blockspace(
     state: &ChainState,
     parent_hash: &Hash,
+    beacon_round: u64,
     beacon: &Hash,
     caps: BlockspaceCaps,
 ) -> BlockspaceSelection {
@@ -310,7 +322,7 @@ pub(super) fn canonical_blockspace(
         };
         let draw = hash_bytes(
             b"tensor-vm-settled-receipt-draw",
-            &[beacon, parent_hash, receipt_id],
+            &[&beacon_round.to_le_bytes(), beacon, parent_hash, receipt_id],
         );
         candidates.push((
             draw,
@@ -382,6 +394,9 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
 
     let outcome = apply_outcome(chain, block)?;
     let parent_state = parent_state_for_validation(chain, block);
+    if block.beacon_round != outcome.parent_snapshot.beacon_round {
+        return Err(TvmError::InvalidReceipt("block beacon round mismatch"));
+    }
     if block.beacon != outcome.parent_snapshot.beacon {
         return Err(TvmError::InvalidReceipt("block beacon mismatch"));
     }
@@ -426,6 +441,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
     let selection = canonical_blockspace(
         &parent_state,
         &block.parent_hash,
+        block.beacon_round,
         &block.beacon,
         blockspace_caps(),
     );
@@ -447,11 +463,14 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         &selected_receipts,
         &parent_state.receipts,
         &parent_state.attestations,
+        block.beacon_round,
+        &block.beacon,
+        &block.parent_hash,
     );
     let child_state = apply_block_to_parent_state(
         &parent_state,
         chain.params.epoch_length,
-        &block.parent_hash,
+        block.beacon_round,
         &block.beacon,
         block.height,
         &selected_receipts,
@@ -459,6 +478,9 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
     let selected_openings = selected_receipt_openings(
         &parent_state,
         chain.params.tensor_retention_window_blocks(),
+        block.beacon_round,
+        &block.beacon,
+        &block.parent_hash,
         &selected_receipts,
     );
     Ok(BlockApplyOutcome {
@@ -471,6 +493,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         child_reward_root: reward_root(&child_state.rewards),
         child_height: child_state.height,
         child_epoch: child_state.epoch,
+        child_beacon_round: child_state.finalized_beacon_round,
         child_beacon: child_state.finalized_randomness,
     })
 }
@@ -486,6 +509,7 @@ pub(super) fn selected_receipts(chain: &Chain, block: &TensorBlock) -> Vec<Hash>
             canonical_blockspace(
                 &parent_state_for_validation(chain, block),
                 &block.parent_hash,
+                block.beacon_round,
                 &block.beacon,
                 blockspace_caps(),
             )
@@ -498,7 +522,9 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
     let block_hash = block.hash();
     parent_state.height = block.height;
     parent_state.epoch = block.epoch;
-    parent_state.finalized_randomness = expected_parent_beacon(chain, block);
+    let parent_beacon = expected_parent_beacon(chain, block);
+    parent_state.finalized_beacon_round = parent_beacon.0;
+    parent_state.finalized_randomness = parent_beacon.1;
     for candidate in chain
         .blocks
         .iter()
@@ -528,6 +554,7 @@ fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParen
         height: parent_state.height,
         epoch: parent_state.epoch,
         state_root: state_root(parent_state),
+        beacon_round: parent_state.finalized_beacon_round,
         beacon: parent_state.finalized_randomness,
         attestation_root: attestation_root(&parent_state.attestations),
         reward_root: reward_root(&parent_state.rewards),
@@ -553,7 +580,7 @@ fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParen
 fn apply_block_to_parent_state(
     parent_state: &ChainState,
     epoch_length: u64,
-    parent_hash: &Hash,
+    beacon_round: u64,
     beacon: &Hash,
     block_height: u64,
     selected_receipts: &[Hash],
@@ -564,14 +591,19 @@ fn apply_block_to_parent_state(
     }
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
-    child_state.finalized_randomness =
-        next_finalized_randomness(beacon, parent_hash, child_state.height);
+    let (next_round, next_beacon) =
+        next_finalized_beacon(beacon_round, beacon, child_state.height, child_state.epoch);
+    child_state.finalized_beacon_round = next_round;
+    child_state.finalized_randomness = next_beacon;
     child_state
 }
 
 fn selected_receipt_openings(
     parent_state: &ChainState,
     retention_window_blocks: u64,
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
     selected_receipts: &[Hash],
 ) -> Vec<SelectedReceiptOpening> {
     let receipt_leaves = selected_receipt_leaves(selected_receipts, &parent_state.receipts);
@@ -584,6 +616,9 @@ fn selected_receipt_openings(
         selected_receipts,
         &parent_state.receipts,
         &parent_state.attestations,
+        beacon_round,
+        beacon,
+        parent_hash,
     );
     let checks_root = merkle_root(&check_leaves);
     selected_receipts
@@ -631,16 +666,29 @@ fn selected_receipt_openings(
         .collect()
 }
 
-fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> Hash {
+fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> (u64, Hash) {
     if block.height == 0 {
-        return chain.state.genesis_randomness;
+        return (
+            chain.state.genesis_beacon_round,
+            chain.state.genesis_randomness,
+        );
     }
     chain
         .blocks
         .iter()
         .find(|candidate| candidate.height + 1 == block.height)
-        .map(|parent| next_finalized_randomness(&parent.beacon, &parent.parent_hash, block.height))
-        .unwrap_or(chain.state.finalized_randomness)
+        .map(|parent| {
+            next_finalized_beacon(
+                parent.beacon_round,
+                &parent.beacon,
+                block.height,
+                block.epoch,
+            )
+        })
+        .unwrap_or((
+            chain.state.finalized_beacon_round,
+            chain.state.finalized_randomness,
+        ))
 }
 
 fn parent_matches(chain: &Chain, block: &TensorBlock) -> bool {
@@ -665,9 +713,22 @@ fn find_nonce(block: &TensorBlock) -> u64 {
     unreachable!("nonzero proof target must have a solution")
 }
 
-fn next_finalized_randomness(beacon: &Hash, block_hash: &Hash, next_height: u64) -> Hash {
-    hash_bytes(
-        b"tensor-vm-finalized-beacon",
-        &[beacon, block_hash, &next_height.to_le_bytes()],
-    )
+fn next_finalized_beacon(
+    parent_beacon_round: u64,
+    parent_beacon: &Hash,
+    next_height: u64,
+    next_epoch: u64,
+) -> (u64, Hash) {
+    let next_round = parent_beacon_round.saturating_add(1);
+    let next_beacon = hash_bytes(
+        b"tensor-vm-finalized-beacon-v2",
+        &[
+            &parent_beacon_round.to_le_bytes(),
+            parent_beacon,
+            &next_round.to_le_bytes(),
+            &next_height.to_le_bytes(),
+            &next_epoch.to_le_bytes(),
+        ],
+    );
+    (next_round, next_beacon)
 }

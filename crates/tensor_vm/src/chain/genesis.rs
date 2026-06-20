@@ -8,7 +8,9 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
         state: ChainState {
             height: 0,
             epoch: 0,
+            finalized_beacon_round: 0,
             finalized_randomness,
+            genesis_beacon_round: 0,
             genesis_randomness: finalized_randomness,
             accounts: BTreeMap::new(),
             miners: BTreeMap::new(),

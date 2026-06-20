@@ -194,8 +194,37 @@ impl Chain {
             .map(|_| ())
     }
 
-    pub fn validation_seed(&self, receipt_id: &Hash) -> Hash {
-        validation::seed(&self.state.finalized_randomness, receipt_id)
+    pub fn validator_assignment_seed(&self, receipt_id: &Hash) -> Hash {
+        validation::assignment_seed(
+            self.state.finalized_beacon_round,
+            &self.state.finalized_randomness,
+            receipt_id,
+        )
+    }
+
+    pub fn miner_assignment_seed(&self, job_id: &Hash) -> Hash {
+        validation::miner_assignment_seed(
+            self.state.finalized_beacon_round,
+            &self.state.finalized_randomness,
+            job_id,
+        )
+    }
+
+    pub fn validation_seed(&self, receipt_id: &Hash, validator: &Address) -> Hash {
+        let job_id = self
+            .state
+            .receipts
+            .get(receipt_id)
+            .map(ReceiptState::job_id)
+            .unwrap_or([0; 32]);
+        validation::seed(
+            self.state.finalized_beacon_round,
+            &self.state.finalized_randomness,
+            receipt_id,
+            &job_id,
+            validator,
+            0,
+        )
     }
 
     pub fn settle_epoch(&mut self, miner_reward_pool: u64, validator_reward_pool: u64) {
@@ -247,8 +276,19 @@ impl Chain {
         blocks::blockspace_caps()
     }
 
-    pub fn canonical_blockspace(&self, parent_hash: &Hash, beacon: &Hash) -> BlockspaceSelection {
-        blocks::canonical_blockspace(&self.state, parent_hash, beacon, self.blockspace_caps())
+    pub fn canonical_blockspace(
+        &self,
+        parent_hash: &Hash,
+        beacon_round: u64,
+        beacon: &Hash,
+    ) -> BlockspaceSelection {
+        blocks::canonical_blockspace(
+            &self.state,
+            parent_hash,
+            beacon_round,
+            beacon,
+            self.blockspace_caps(),
+        )
     }
 
     pub fn selected_receipts_for_block(&self, block: &TensorBlock) -> Vec<Hash> {

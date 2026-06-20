@@ -253,7 +253,9 @@ fn unassigned_validator_attestations_are_rejected() {
     let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
     chain.submit_job(JobState::TensorOp(job));
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
-    let assignment = JobScheduler::default().assign_validators(&chain, receipt.receipt_id, &beacon);
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let assignment =
+        JobScheduler::default().assign_validators(&chain, receipt.receipt_id, &assignment_seed);
     let assigned = assignment.validators[0];
     let unassigned = validators
         .iter()

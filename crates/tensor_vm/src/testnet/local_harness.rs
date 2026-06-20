@@ -194,7 +194,9 @@ impl LocalTestnet {
         self.chain
             .apply_command(ChainCommand::SubmitJob(JobState::TensorOp(job.clone())))
             .expect("generated tensor job should be accepted");
-        let miner_assignment = scheduler.assign_miners(&self.chain, job.job_id, &beacon);
+        let miner_assignment_seed = self.chain.miner_assignment_seed(&job.job_id);
+        let miner_assignment =
+            scheduler.assign_miners(&self.chain, job.job_id, &miner_assignment_seed);
         let mut receipts = Vec::new();
         for (index, miner_address) in miner_assignment.miners.iter().copied().enumerate() {
             let mut miner = MinerNode::new(miner_address, CpuReferenceBackend);
@@ -262,7 +264,9 @@ impl LocalTestnet {
                 job.clone(),
             )))
             .expect("generated linear training job should be accepted");
-        let miner_assignment = scheduler.assign_miners(&self.chain, job.job_id, &beacon);
+        let miner_assignment_seed = self.chain.miner_assignment_seed(&job.job_id);
+        let miner_assignment =
+            scheduler.assign_miners(&self.chain, job.job_id, &miner_assignment_seed);
         let mut receipts = Vec::new();
         for (index, miner_address) in miner_assignment.miners.iter().copied().enumerate() {
             let mut miner = MinerNode::new(miner_address, CpuReferenceBackend);
@@ -286,9 +290,13 @@ impl LocalTestnet {
         }
 
         for (receipt, output) in &receipts {
-            let validation_seed = self.chain.validation_seed(&receipt.receipt_id);
-            let assignment = scheduler.assign_validators(&self.chain, receipt.receipt_id, &beacon);
+            let assignment_seed = self.chain.validator_assignment_seed(&receipt.receipt_id);
+            let assignment =
+                scheduler.assign_validators(&self.chain, receipt.receipt_id, &assignment_seed);
             for validator_address in assignment.validators {
+                let validation_seed = self
+                    .chain
+                    .validation_seed(&receipt.receipt_id, &validator_address);
                 let stake = self
                     .chain
                     .state()
@@ -478,13 +486,17 @@ impl LocalTestnet {
         scheduler: &JobScheduler,
         job: &MatmulJob,
         receipts: &[(TensorOpReceipt, TensorServer)],
-        beacon: &Hash,
+        _beacon: &Hash,
         txpool: &mut TxPool,
     ) {
         for (receipt, tensor_server) in receipts {
-            let validation_seed = self.chain.validation_seed(&receipt.receipt_id);
-            let assignment = scheduler.assign_validators(&self.chain, receipt.receipt_id, beacon);
+            let assignment_seed = self.chain.validator_assignment_seed(&receipt.receipt_id);
+            let assignment =
+                scheduler.assign_validators(&self.chain, receipt.receipt_id, &assignment_seed);
             for validator_address in assignment.validators {
+                let validation_seed = self
+                    .chain
+                    .validation_seed(&receipt.receipt_id, &validator_address);
                 let stake = self
                     .chain
                     .state()

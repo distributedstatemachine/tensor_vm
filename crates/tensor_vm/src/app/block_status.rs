@@ -100,6 +100,8 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
             "parent_snapshot_root",
             hex(&outcome.parent_snapshot.state_root),
         );
+        report.field("parent_beacon_round", outcome.parent_snapshot.beacon_round);
+        report.field("parent_beacon", hex(&outcome.parent_snapshot.beacon));
         report.field(
             "parent_settled_receipt_pool_root",
             hex(&outcome.parent_snapshot.settled_receipt_pool_root),
@@ -116,7 +118,13 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
         report.field("child_reward_root", hex(&outcome.child_reward_root));
         report.field("child_height", outcome.child_height);
         report.field("child_epoch", outcome.child_epoch);
+        report.field("child_beacon_round", outcome.child_beacon_round);
         report.field("child_beacon", hex(&outcome.child_beacon));
+        report.field(
+            "block_uses_parent_finalized_beacon",
+            block.beacon_round == outcome.parent_snapshot.beacon_round
+                && block.beacon == outcome.parent_snapshot.beacon,
+        );
     }
     report.field("proposer", hex(&block.proposer));
     report.field("proposer_role", "validator");
@@ -124,6 +132,8 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("tensorwork_proposer_selection", false);
     report.field("state_root", hex(&block.state_root));
     report.field("epoch", block.epoch);
+    report.field("beacon_round", block.beacon_round);
+    report.field("beacon", hex(&block.beacon));
     report.field("latest_height", chain.state().height());
     report.field("finalized", finalized);
     report.field(

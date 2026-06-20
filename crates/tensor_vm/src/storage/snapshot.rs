@@ -7,13 +7,15 @@ use std::path::{Path, PathBuf};
 use super::codec::{HASH_LEN, U64_LEN, read_hash_at, read_u64_at, write_hash, write_u64};
 
 const SNAPSHOT_MAGIC: &[u8] = b"TENSORVM_SNAPSHOT\n";
-const SNAPSHOT_PAYLOAD_LEN: usize = U64_LEN + U64_LEN + HASH_LEN + U64_LEN + HASH_LEN + HASH_LEN;
+const SNAPSHOT_PAYLOAD_LEN: usize =
+    U64_LEN + U64_LEN + U64_LEN + HASH_LEN + U64_LEN + HASH_LEN + HASH_LEN;
 const SNAPSHOT_DIGEST_LEN: usize = HASH_LEN;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChainSnapshot {
     pub height: u64,
     pub epoch: u64,
+    pub finalized_beacon_round: u64,
     pub finalized_randomness: Hash,
     pub block_count: u64,
     pub state_root: Hash,
@@ -25,6 +27,7 @@ impl ChainSnapshot {
         Self {
             height: chain.state().height(),
             epoch: chain.state().epoch(),
+            finalized_beacon_round: chain.state().finalized_beacon_round(),
             finalized_randomness: chain.state().finalized_randomness(),
             block_count: chain.blocks().len() as u64,
             state_root: chain.state_root(),
@@ -73,6 +76,7 @@ impl ChainSnapshot {
         Ok(Self {
             height: read_u64_at(payload, &mut offset, "truncated snapshot u64")?,
             epoch: read_u64_at(payload, &mut offset, "truncated snapshot u64")?,
+            finalized_beacon_round: read_u64_at(payload, &mut offset, "truncated snapshot u64")?,
             finalized_randomness: read_hash_at(payload, &mut offset, "truncated snapshot hash")?,
             block_count: read_u64_at(payload, &mut offset, "truncated snapshot u64")?,
             state_root: read_hash_at(payload, &mut offset, "truncated snapshot hash")?,
@@ -84,6 +88,7 @@ impl ChainSnapshot {
         let mut payload = Vec::with_capacity(SNAPSHOT_PAYLOAD_LEN);
         write_u64(&mut payload, self.height);
         write_u64(&mut payload, self.epoch);
+        write_u64(&mut payload, self.finalized_beacon_round);
         write_hash(&mut payload, &self.finalized_randomness);
         write_u64(&mut payload, self.block_count);
         write_hash(&mut payload, &self.state_root);

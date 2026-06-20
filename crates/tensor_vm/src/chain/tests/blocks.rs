@@ -29,6 +29,41 @@ fn blocks_advance_height_and_commit_state() {
 }
 
 #[test]
+fn produced_blocks_use_parent_finalized_beacon_not_own_hash() {
+    let beacon = hash_bytes(b"test", &[b"parent-finalized-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let proposer = address(b"parent-beacon-proposer");
+    chain.register_validator(proposer, 10_000).unwrap();
+
+    let block = chain.produce_block(proposer, 1_000).unwrap();
+
+    assert_eq!(block.beacon_round, 0);
+    assert_eq!(block.beacon, beacon);
+    assert_ne!(block.beacon, block.hash());
+    assert_ne!(block.beacon, block.pow_hash());
+    assert_eq!(chain.state().finalized_beacon_round(), 1);
+    assert_ne!(chain.state().finalized_randomness(), block.hash());
+}
+
+#[test]
+fn block_validation_rejects_block_hash_beacon_randomness() {
+    let beacon = hash_bytes(b"test", &[b"block-hash-beacon-ban"]);
+    let mut chain = Chain::new(beacon);
+    let proposer = address(b"bad-beacon-proposer");
+    chain.register_validator(proposer, 10_000).unwrap();
+    let block = chain.produce_block(proposer, 1_000).unwrap();
+
+    let mut bad_block = block.clone();
+    bad_block.beacon = block.hash();
+    mine_test_block(&mut bad_block);
+
+    assert_eq!(
+        chain.validate_block(&bad_block),
+        Err(TvmError::InvalidReceipt("block beacon mismatch"))
+    );
+}
+
+#[test]
 fn block_finality_requires_two_thirds_validator_stake() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);
@@ -137,6 +172,41 @@ fn block_votes_reject_invalid_useful_pow_and_checks_root() {
     assert_eq!(
         chain.submit_block_vote(BlockVote::new(validator, 10_000, &bad_receipts)),
         Err(TvmError::InvalidReceipt("noncanonical settled receipt set"))
+    );
+}
+
+#[test]
+fn block_checks_root_is_bound_to_finalized_beacon_round() {
+    let beacon = hash_bytes(b"test", &[b"checks-beacon-binding"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"checks-beacon-miner");
+    let validator = address(b"checks-beacon-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    let wrong_beacon = block.hash();
+    let wrong_checks_root = block_checks_root(
+        &chain.selected_receipts_for_block(&block),
+        chain.state().receipts(),
+        chain.state().attestations(),
+        block.beacon_round,
+        &wrong_beacon,
+        &block.parent_hash,
+    );
+    assert_ne!(block.checks_root, wrong_checks_root);
+
+    let mut bad_block = block.clone();
+    bad_block.checks_root = wrong_checks_root;
+    mine_test_block(&mut bad_block);
+
+    assert_eq!(
+        chain.validate_block(&bad_block),
+        Err(TvmError::InvalidReceipt("block checks root mismatch"))
     );
 }
 
@@ -325,14 +395,20 @@ fn block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values
         .last()
         .map(TensorBlock::hash)
         .unwrap_or([0; 32]);
-    let expected_selection =
-        chain.canonical_blockspace(&parent_hash, &chain.state().finalized_randomness());
+    let expected_selection = chain.canonical_blockspace(
+        &parent_hash,
+        chain.state().finalized_beacon_round(),
+        &chain.state().finalized_randomness(),
+    );
     let expected_settled_receipt_set_root =
         selected_receipt_commitment_root(&expected_selection.receipt_ids, chain.state().receipts());
     let expected_checks_root = block_checks_root(
         &expected_selection.receipt_ids,
         chain.state().receipts(),
         chain.state().attestations(),
+        chain.state().finalized_beacon_round(),
+        &chain.state().finalized_randomness(),
+        &parent_hash,
     );
     let expected_attestation_root = attestation_root(chain.state().attestations());
     let block = chain.produce_block(validator, 1_000).unwrap();

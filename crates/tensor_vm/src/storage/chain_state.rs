@@ -189,7 +189,9 @@ fn decode_freivalds_params(reader: &mut StateReader<'_>) -> Result<FreivaldsPara
 fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     write_u64(out, state.height());
     write_u64(out, state.epoch());
+    write_u64(out, state.finalized_beacon_round());
     write_hash(out, &state.finalized_randomness());
+    write_u64(out, state.genesis_beacon_round());
     write_hash(out, &state.genesis_randomness());
     encode_accounts(out, state.accounts());
     encode_miners(out, state.miners());
@@ -211,7 +213,9 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
     Ok(ChainState::from_parts(ChainStateParts {
         height: reader.read_u64()?,
         epoch: reader.read_u64()?,
+        finalized_beacon_round: reader.read_u64()?,
         finalized_randomness: reader.read_hash()?,
+        genesis_beacon_round: reader.read_u64()?,
         genesis_randomness: reader.read_hash()?,
         accounts: decode_accounts(reader)?,
         miners: decode_miners(reader)?,

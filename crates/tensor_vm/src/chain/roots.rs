@@ -22,7 +22,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     let mut parts = Vec::new();
     parts.extend_from_slice(&state.height.to_le_bytes());
     parts.extend_from_slice(&state.epoch.to_le_bytes());
+    parts.extend_from_slice(&state.finalized_beacon_round.to_le_bytes());
     parts.extend_from_slice(&state.finalized_randomness);
+    parts.extend_from_slice(&state.genesis_beacon_round.to_le_bytes());
     parts.extend_from_slice(&state.genesis_randomness);
     parts.extend_from_slice(&account_root(&state.accounts));
     parts.extend_from_slice(&miner_root(&state.miners));
@@ -267,11 +269,17 @@ pub(super) fn block_checks_root(
     selected_receipts: &[Hash],
     receipts: &BTreeMap<Hash, ReceiptState>,
     attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
 ) -> Hash {
     merkle_root(&block_check_leaves(
         selected_receipts,
         receipts,
         attestations,
+        beacon_round,
+        beacon,
+        parent_hash,
     ))
 }
 
@@ -279,10 +287,22 @@ pub(super) fn block_check_leaves(
     selected_receipts: &[Hash],
     receipts: &BTreeMap<Hash, ReceiptState>,
     attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
 ) -> Vec<Hash> {
     selected_receipts
         .iter()
-        .map(|receipt_id| block_check_leaf(receipt_id, receipts.get(receipt_id), attestations))
+        .map(|receipt_id| {
+            block_check_leaf(
+                receipt_id,
+                receipts.get(receipt_id),
+                attestations,
+                beacon_round,
+                beacon,
+                parent_hash,
+            )
+        })
         .collect()
 }
 
@@ -290,10 +310,18 @@ pub(super) fn block_check_leaf(
     receipt_id: &Hash,
     receipt: Option<&ReceiptState>,
     attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
 ) -> Hash {
     let receipt_checks_root =
         canonical_receipt_checks_root(receipt_id, attestations.get(receipt_id));
+    let check_seed = block_check_seed(beacon_round, beacon, parent_hash, receipt_id);
     let mut encoded = Vec::new();
+    encoded.extend_from_slice(&beacon_round.to_le_bytes());
+    encoded.extend_from_slice(beacon);
+    encoded.extend_from_slice(parent_hash);
+    encoded.extend_from_slice(&check_seed);
     encoded.extend_from_slice(receipt_id);
     encoded.extend_from_slice(&selected_receipt_leaf(receipt_id, receipt));
     encoded.extend_from_slice(&receipt_checks_root);
@@ -303,6 +331,24 @@ pub(super) fn block_check_leaf(
         encoded.extend_from_slice(&receipt.estimated_block_bytes().to_le_bytes());
     }
     hash_bytes(b"tensor-vm-block-check-leaf-v1", &[&encoded])
+}
+
+pub(super) fn block_check_seed(
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
+    receipt_id: &Hash,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-block-check-seed-v1",
+        &[
+            &beacon_round.to_le_bytes(),
+            beacon,
+            parent_hash,
+            receipt_id,
+            b"checks",
+        ],
+    )
 }
 
 fn canonical_receipt_checks_root(

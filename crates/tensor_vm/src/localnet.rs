@@ -96,7 +96,8 @@ fn produce_synthetic_matmul_work(
     let beacon = chain.state().finalized_randomness();
     let job_state = JobState::TensorOp(job.clone());
     chain.apply_command(ChainCommand::SubmitJob(job_state.clone()))?;
-    let miner_assignment = scheduler.assign_miners(chain, job.job_id, &beacon);
+    let miner_assignment_seed = chain.miner_assignment_seed(&job.job_id);
+    let miner_assignment = scheduler.assign_miners(chain, job.job_id, &miner_assignment_seed);
     let mut receipts = Vec::new();
     for (index, miner_address) in miner_assignment.miners.iter().copied().enumerate() {
         let receipt = CpuReferenceMinerRole::new(miner_address).execute_job(
@@ -135,7 +136,8 @@ fn produce_synthetic_linear_training_work(
     register_synthetic_linear_model(chain, &job, &weights)?;
     let job_state = JobState::LinearTrainingStep(job.clone());
     chain.apply_command(ChainCommand::SubmitJob(job_state.clone()))?;
-    let miner_assignment = scheduler.assign_miners(chain, job.job_id, &beacon);
+    let miner_assignment_seed = chain.miner_assignment_seed(&job.job_id);
+    let miner_assignment = scheduler.assign_miners(chain, job.job_id, &miner_assignment_seed);
     let mut receipts = Vec::new();
     for (index, miner_address) in miner_assignment.miners.iter().copied().enumerate() {
         let receipt = CpuReferenceMinerRole::new(miner_address).execute_job(
@@ -191,13 +193,14 @@ fn attest_receipt_bundles(
     scheduler: &JobScheduler,
     job: &JobState,
     receipts: &[RoleReceiptBundle],
-    beacon: &crate::types::Hash,
+    _beacon: &crate::types::Hash,
 ) -> Result<()> {
     for receipt in receipts {
         let receipt_id = receipt.receipt_id();
-        let validation_seed = chain.validation_seed(&receipt_id);
-        let validator_assignment = scheduler.assign_validators(chain, receipt_id, beacon);
+        let assignment_seed = chain.validator_assignment_seed(&receipt_id);
+        let validator_assignment = scheduler.assign_validators(chain, receipt_id, &assignment_seed);
         for validator_address in validator_assignment.validators {
+            let validation_seed = chain.validation_seed(&receipt_id, &validator_address);
             let validator = ReferenceValidatorRole::new(
                 validator_address,
                 validator_stake(chain, &validator_address),

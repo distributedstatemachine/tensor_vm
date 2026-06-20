@@ -21,9 +21,9 @@ pub struct MinerRoleWorkObservation {
 
 pub fn miner_role_work_observation(chain: &Chain, miner: Address) -> MinerRoleWorkObservation {
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
-    let assignment_seed = chain.state().finalized_randomness();
     let mut observation = MinerRoleWorkObservation::default();
     for job_id in chain.state().jobs().keys() {
+        let assignment_seed = chain.miner_assignment_seed(job_id);
         let assignment = scheduler.assign_miners(chain, *job_id, &assignment_seed);
         if !assignment.miners.contains(&miner) {
             continue;
@@ -60,11 +60,8 @@ pub fn submit_miner_role_receipt(
         return Ok(None);
     }
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
-    let assignment = scheduler.assign_miners(
-        &node.chain,
-        job_id,
-        &node.chain.state().finalized_randomness(),
-    );
+    let assignment_seed = node.chain.miner_assignment_seed(&job_id);
+    let assignment = scheduler.assign_miners(&node.chain, job_id, &assignment_seed);
     if !assignment.miners.contains(&miner) || miner_has_receipt_for_job(&node.chain, miner, job_id)
     {
         return Ok(None);

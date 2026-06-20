@@ -120,8 +120,13 @@ fn is_assigned_validator(chain: &Chain, validator: Address, receipt_id: Hash) ->
 }
 
 fn assigned_validators(chain: &Chain, receipt_id: Hash) -> BTreeSet<Address> {
+    let assignment_seed = assignment_seed(
+        chain.state.finalized_beacon_round,
+        &chain.state.finalized_randomness,
+        &receipt_id,
+    );
     JobScheduler::default()
-        .assign_validators(chain, receipt_id, &chain.state.finalized_randomness)
+        .assign_validators(chain, receipt_id, &assignment_seed)
         .validators
         .into_iter()
         .collect()
@@ -211,9 +216,45 @@ pub fn has_block_finality(chain: &Chain, block_hash: &Hash) -> bool {
     signed_stake.saturating_mul(denominator) >= total_stake.saturating_mul(numerator)
 }
 
-pub fn seed(finalized_randomness: &Hash, receipt_id: &Hash) -> Hash {
+pub fn assignment_seed(beacon_round: u64, finalized_randomness: &Hash, receipt_id: &Hash) -> Hash {
+    hash_bytes(
+        b"tensor-vm-validator-assignment-seed-v1",
+        &[
+            &beacon_round.to_le_bytes(),
+            finalized_randomness,
+            receipt_id,
+        ],
+    )
+}
+
+pub fn miner_assignment_seed(
+    beacon_round: u64,
+    finalized_randomness: &Hash,
+    job_id: &Hash,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-miner-assignment-seed-v1",
+        &[&beacon_round.to_le_bytes(), finalized_randomness, job_id],
+    )
+}
+
+pub fn seed(
+    beacon_round: u64,
+    finalized_randomness: &Hash,
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    validation_round: u64,
+) -> Hash {
     hash_bytes(
         b"tensor-vm-validation-seed-v1",
-        &[finalized_randomness, receipt_id],
+        &[
+            &beacon_round.to_le_bytes(),
+            finalized_randomness,
+            receipt_id,
+            job_id,
+            validator,
+            &validation_round.to_le_bytes(),
+        ],
     )
 }

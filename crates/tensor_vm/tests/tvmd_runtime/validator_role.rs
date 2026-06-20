@@ -103,10 +103,11 @@ fn validator_role_attestation_submission_skips_missing_unregistered_unassigned_a
     chain
         .apply_command(ChainCommand::SubmitReceipt(bundle.receipt.clone()))
         .unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt_id);
     let assignment = JobScheduler::with_small_shape((8, 8, 8)).assign_validators(
         &chain,
         receipt_id,
-        &chain.state().finalized_randomness(),
+        &assignment_seed,
     );
     let assigned = assignment.validators[0];
     let unassigned = [validator_a, validator_b]

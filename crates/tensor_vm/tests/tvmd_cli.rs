@@ -519,6 +519,8 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     stdout_hex_hash(&block, "settled_receipt_set_root");
     stdout_hex_hash(&block, "checks_root");
     stdout_hex_hash(&block, "parent_snapshot_root");
+    stdout_u64(&block, "parent_beacon_round");
+    stdout_hex_hash(&block, "parent_beacon");
     stdout_hex_hash(&block, "parent_settled_receipt_pool_root");
     stdout_hex_hash(&block, "parent_included_receipt_root");
     stdout_hex_hash(&block, "parent_data_unavailable_receipt_root");
@@ -526,7 +528,14 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     stdout_hex_hash(&block, "child_reward_root");
     stdout_u64(&block, "child_height");
     stdout_u64(&block, "child_epoch");
+    stdout_u64(&block, "child_beacon_round");
     stdout_hex_hash(&block, "child_beacon");
+    stdout_u64(&block, "beacon_round");
+    stdout_hex_hash(&block, "beacon");
+    assert_eq!(
+        stdout_value(&block, "block_uses_parent_finalized_beacon"),
+        "true"
+    );
     assert_eq!(stdout_value(&block, "checks_root_recomputed"), "true");
     assert_eq!(
         stdout_value(&block, "selected_receipt_root_recomputed"),
@@ -684,9 +693,18 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
         "false"
     );
     stdout_hex_hash(&block, "parent_snapshot_root");
+    stdout_u64(&block, "parent_beacon_round");
+    stdout_hex_hash(&block, "parent_beacon");
     stdout_hex_hash(&block, "child_state_root");
     stdout_hex_hash(&block, "child_reward_root");
+    stdout_u64(&block, "child_beacon_round");
     stdout_hex_hash(&block, "child_beacon");
+    stdout_u64(&block, "beacon_round");
+    stdout_hex_hash(&block, "beacon");
+    assert_eq!(
+        stdout_value(&block, "block_uses_parent_finalized_beacon"),
+        "true"
+    );
     stdout_u64(&block, "selected_receipt_opening_count");
     stdout_u64(&block, "checks_opening_count");
     if stdout_value(&block, "pow_required") == "true" {

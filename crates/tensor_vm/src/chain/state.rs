@@ -144,6 +144,7 @@ pub struct BlockParentSnapshot {
     pub height: u64,
     pub epoch: u64,
     pub state_root: Hash,
+    pub beacon_round: u64,
     pub beacon: Hash,
     pub attestation_root: Hash,
     pub reward_root: Hash,
@@ -182,6 +183,7 @@ pub struct BlockApplyOutcome {
     pub child_reward_root: Hash,
     pub child_height: u64,
     pub child_epoch: u64,
+    pub child_beacon_round: u64,
     pub child_beacon: Hash,
 }
 
@@ -446,6 +448,7 @@ pub struct TensorBlock {
     pub attestation_root: Hash,
     pub state_root: Hash,
     pub reward_root: Hash,
+    pub beacon_round: u64,
     pub beacon: Hash,
     pub production_kind: BlockProductionKind,
     pub difficulty_target: Hash,
@@ -469,6 +472,7 @@ impl TensorBlock {
                 &self.attestation_root,
                 &self.state_root,
                 &self.reward_root,
+                &self.beacon_round.to_le_bytes(),
                 &self.beacon,
                 &[self.production_kind.tag()],
                 &self.difficulty_target,
@@ -491,6 +495,7 @@ impl TensorBlock {
                 &self.attestation_root,
                 &self.state_root,
                 &self.reward_root,
+                &self.beacon_round.to_le_bytes(),
                 &self.beacon,
                 &[self.production_kind.tag()],
                 &self.difficulty_target,
@@ -561,7 +566,9 @@ impl BlockVote {
 pub struct ChainState {
     pub(in crate::chain) height: u64,
     pub(in crate::chain) epoch: u64,
+    pub(in crate::chain) finalized_beacon_round: u64,
     pub(in crate::chain) finalized_randomness: Hash,
+    pub(in crate::chain) genesis_beacon_round: u64,
     pub(in crate::chain) genesis_randomness: Hash,
     pub(in crate::chain) accounts: BTreeMap<Address, AccountState>,
     pub(in crate::chain) miners: BTreeMap<Address, MinerState>,
@@ -583,7 +590,9 @@ pub struct ChainState {
 pub(crate) struct ChainStateParts {
     pub height: u64,
     pub epoch: u64,
+    pub finalized_beacon_round: u64,
     pub finalized_randomness: Hash,
+    pub genesis_beacon_round: u64,
     pub genesis_randomness: Hash,
     pub accounts: BTreeMap<Address, AccountState>,
     pub miners: BTreeMap<Address, MinerState>,
@@ -606,7 +615,9 @@ impl ChainState {
         Self {
             height: parts.height,
             epoch: parts.epoch,
+            finalized_beacon_round: parts.finalized_beacon_round,
             finalized_randomness: parts.finalized_randomness,
+            genesis_beacon_round: parts.genesis_beacon_round,
             genesis_randomness: parts.genesis_randomness,
             accounts: parts.accounts,
             miners: parts.miners,
@@ -633,8 +644,16 @@ impl ChainState {
         self.epoch
     }
 
+    pub fn finalized_beacon_round(&self) -> u64 {
+        self.finalized_beacon_round
+    }
+
     pub fn finalized_randomness(&self) -> Hash {
         self.finalized_randomness
+    }
+
+    pub fn genesis_beacon_round(&self) -> u64 {
+        self.genesis_beacon_round
     }
 
     pub fn genesis_randomness(&self) -> Hash {

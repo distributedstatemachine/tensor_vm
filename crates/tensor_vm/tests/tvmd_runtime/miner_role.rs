@@ -135,11 +135,9 @@ fn miner_role_receipt_submission_skips_duplicate_unregistered_and_unassigned_wor
     chain
         .apply_command(ChainCommand::SubmitJob(tensor_vm::JobState::TensorOp(job)))
         .unwrap();
-    let assignment = JobScheduler::with_small_shape((8, 8, 8)).assign_miners(
-        &chain,
-        job_id,
-        &chain.state().finalized_randomness(),
-    );
+    let assignment_seed = chain.miner_assignment_seed(&job_id);
+    let assignment =
+        JobScheduler::with_small_shape((8, 8, 8)).assign_miners(&chain, job_id, &assignment_seed);
     let assigned = assignment.miners[0];
     let unassigned = [miner_a, miner_b]
         .into_iter()
