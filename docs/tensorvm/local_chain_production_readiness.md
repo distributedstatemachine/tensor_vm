@@ -6,8 +6,9 @@ The MVP spec now uses useful-verification PoW with deterministic blockspace. Gap
 TensorWork-weighted proposer selection or job-rooted blocks are obsolete. New gaps:
 
 - Implement `useful_verification_pow` puzzle and difficulty retargeting.
-- Extend the local settled-receipt pool and deterministic canonical selection into a full parent-state,
-  selected-leaf, expiry, carry-over, and challenge-window lifecycle model.
+- Extend the local settled-receipt pool and deterministic canonical selection into the remaining
+  selected-leaf, expiry, carry-over, and challenge-window lifecycle model. Exact block parent snapshots
+  are now stored by block hash for replay-stable apply evidence.
 - Implement verification challenge window with cross-validator dispute path.
 - Keep local checker assertions for PoW block validity, canonical blockspace evidence, and BFT finality
   independent as the live proposer network path is upgraded.
@@ -150,7 +151,8 @@ The local bundle is useful and should remain the first operational target:
 - Scheduled local block production remains split from validator block proposal. The scheduled producer
   publishes only deterministic local jobs; it does not force empty fallback blocks through the role wallet.
   The validator role tick observes only not-yet-included settled receipts with local tensor artifacts and
-  validator attestations, prepares chain-owned parent state, applies a rewarded block command only when
+  validator attestations, prepares chain-owned parent state, stores exact parent-state snapshots by block
+  hash for replay-stable `BlockApplyOutcome`/status evidence, applies a rewarded block command only when
   useful settled receipt blockspace is available, and publishes the resulting block payload/header/hash.
   Validator block proposal is no longer gated by the local synthetic job producer path: a configured
   validator proposer can assemble a useful block from already accepted settled state even when synthetic

@@ -16,8 +16,8 @@ help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
 This environment does not currently have `cargo-tarpaulin` installed, so Iteration 77 coverage could not
-be regenerated. Iteration 78 rechecked the same command and hit the same missing-binary blocker. The most
-recent completed coverage report below remains the prior May 23, 2026 run.
+be regenerated. Iterations 78 and 79 rechecked the same command and hit the same missing-binary blocker.
+The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
 
@@ -67,6 +67,9 @@ Iteration 77 added live validator-proposer diagnostic challenge emission and har
 require applied diagnostic challenges plus future-maturity pending challenge reward claims. Focused
 app/network, node ingest, and compose contract tests cover the emitted bounded payload, noncanonical
 observed-block application, and delayed reward evidence.
+Iteration 79 added durable block-parent `ChainState` snapshots for replay-stable historical
+`BlockApplyOutcome` evidence. Focused chain and storage tests cover old useful-block apply outcomes after
+future receipts/blocks and after chain-state save/load.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

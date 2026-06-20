@@ -196,6 +196,7 @@ mod tests {
             params: chain.params().clone(),
             state: chain.state().clone(),
             blocks,
+            block_parent_states: chain.block_parent_states.clone(),
         })
     }
 

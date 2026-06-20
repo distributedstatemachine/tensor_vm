@@ -42,6 +42,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             rewards: RewardState::default(),
         },
         blocks: Vec::new(),
+        block_parent_states: BTreeMap::new(),
         observed_invalid_blocks: BTreeMap::new(),
     }
 }

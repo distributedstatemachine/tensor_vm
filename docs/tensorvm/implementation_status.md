@@ -8,12 +8,14 @@ validator-owned block production with useful-verification PoW fields over determ
 blockspace, selected receipts are marked included once, and block votes validate the known block with strict
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
-Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
-child-state apply semantics, difficulty retargeting, fallback timeout scheduling,
-multi-validator proposer competition/fork-choice policy, and a fresh full Docker proof of live validator
-proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
-clears. Deterministic local bad-block challenge construction, live validator-proposer diagnostic emission,
-and observed-block p2p propagation support now exist as diagnostic chain/node/runtime helpers. See
+Historical useful block evidence now stores exact parent `ChainState` snapshots keyed by block hash and
+persists them in the chain-state file, so `BlockApplyOutcome`, selected-receipt openings, checks roots, and
+child roots stay replay-stable after later receipts and blocks. Remaining consensus gaps are full
+verifier-transcript challenge semantics, fallback timeout scheduling, multi-validator proposer
+competition/fork-choice policy, and a fresh full Docker proof of live validator proposer/block-assembly
+networking and diagnostic challenge evidence after the current `/health` blocker clears. Deterministic
+local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
+propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`

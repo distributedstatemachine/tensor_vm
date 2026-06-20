@@ -68,6 +68,7 @@ fn produce_inner(
         .last()
         .map(TensorBlock::hash)
         .unwrap_or([0; 32]);
+    let parent_state = chain.state.clone();
     let beacon_round = chain.state.finalized_beacon_round;
     let beacon = chain.state.finalized_randomness;
     let selection = canonical_blockspace(
@@ -152,6 +153,7 @@ fn produce_inner(
         .state
         .block_selected_receipts
         .insert(block_hash, selection.receipt_ids.clone());
+    chain.block_parent_states.insert(block_hash, parent_state);
     if block.production_kind.requires_pow() && !block.pow_valid() {
         return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
@@ -241,12 +243,14 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     }
 
     validate(chain, &block, true)?;
+    let parent_state = chain.state.clone();
     let outcome = apply_outcome(chain, &block)?;
     chain.blocks.push(block.clone());
     chain
         .state
         .block_selected_receipts
         .insert(block_hash, outcome.selected_receipt_ids.clone());
+    chain.block_parent_states.insert(block_hash, parent_state);
     chain.state = apply_block_to_parent_state(
         &chain.state,
         chain.params.epoch_length,
@@ -607,6 +611,10 @@ pub(super) fn selected_receipts(chain: &Chain, block: &TensorBlock) -> Vec<Hash>
 }
 
 fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState {
+    if let Some(parent_state) = chain.block_parent_states.get(&block.hash()) {
+        return parent_state.clone();
+    }
+
     let mut parent_state = chain.state.clone();
     let block_hash = block.hash();
     parent_state.height = block.height;

@@ -95,6 +95,7 @@ fn encode_chain_state_payload(chain: &Chain) -> Vec<u8> {
     for block in chain.blocks() {
         out.extend_from_slice(&encode_block_payload(block));
     }
+    encode_block_parent_states(&mut out, &chain.block_parent_states);
     out
 }
 
@@ -107,11 +108,13 @@ fn decode_chain_state_payload(bytes: &[u8]) -> Result<Chain> {
     for _ in 0..block_count {
         blocks.push(decode_block_payload(reader.read_exact(BLOCK_PAYLOAD_LEN)?)?);
     }
+    let block_parent_states = decode_block_parent_states(&mut reader)?;
     reader.finish()?;
     Ok(Chain::from_parts(ChainParts {
         params,
         state,
         blocks,
+        block_parent_states,
     }))
 }
 
@@ -275,6 +278,24 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         model_states: decode_model_states(reader)?,
         rewards: decode_rewards(reader)?,
     }))
+}
+
+fn encode_block_parent_states(out: &mut Vec<u8>, snapshots: &BTreeMap<Hash, ChainState>) {
+    write_len(out, snapshots.len());
+    for (block_hash, parent_state) in snapshots {
+        write_hash(out, block_hash);
+        encode_chain_state(out, parent_state);
+    }
+}
+
+fn decode_block_parent_states(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, ChainState>> {
+    let mut snapshots = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let block_hash = reader.read_hash()?;
+        let parent_state = decode_chain_state(reader)?;
+        snapshots.insert(block_hash, parent_state);
+    }
+    Ok(snapshots)
 }
 
 fn encode_accounts(out: &mut Vec<u8>, accounts: &BTreeMap<Hash, AccountState>) {
@@ -1456,6 +1477,12 @@ mod tests {
         let loaded = store.load_chain().unwrap();
         assert_eq!(loaded, chain);
         assert_eq!(loaded.state_root(), chain.state_root());
+        let historical_block = loaded.blocks().first().unwrap();
+        let historical_outcome = loaded.block_apply_outcome(historical_block).unwrap();
+        assert_eq!(
+            historical_outcome.child_state_root,
+            historical_block.state_root
+        );
         assert_eq!(loaded.state().validator_audit_assignments().len(), 1);
         assert_eq!(loaded.state().validator_audit_slashes().len(), 1);
         assert_eq!(loaded.state().validator_audit_appeals().len(), 1);

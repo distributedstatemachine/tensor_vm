@@ -688,6 +688,103 @@ fn block_apply_outcome_exposes_parent_child_and_check_openings() {
 }
 
 #[test]
+fn historical_block_apply_outcome_uses_stored_parent_snapshot_after_future_receipts() {
+    let beacon = hash_bytes(b"test", &[b"historical-apply-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"historical-apply-miner");
+    let validator = address(b"historical-apply-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let first_job = MatmulJob::synthetic(0, 0, 3, 3, 3, &beacon, 10);
+    let (first_receipt, first_a, first_b, first_c) =
+        TensorOpReceipt::from_job(&first_job, miner, 1, 5).unwrap();
+    let first_report = verify_tensor_op(
+        &first_job,
+        &first_receipt,
+        &first_a,
+        &first_b,
+        &first_c,
+        &hash_bytes(b"test", &[b"historical-first-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(first_job.clone()));
+    chain
+        .submit_tensor_op_receipt(first_receipt.clone())
+        .unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: first_receipt.receipt_id,
+                job_id: first_receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: first_report.result,
+                checks_root: first_report.checks_root,
+                data_availability_passed: first_report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+    chain.mark_receipt_settled_for_testing(first_receipt.receipt_id);
+
+    let first_parent_root = chain.state_root();
+    let first_block = chain.produce_block(validator, 1_000).unwrap();
+    let first_child_root = first_block.state_root;
+
+    let second_job = MatmulJob::synthetic(0, 1, 2, 2, 2, &beacon, 10);
+    let (second_receipt, second_a, second_b, second_c) =
+        TensorOpReceipt::from_job(&second_job, miner, 2, 5).unwrap();
+    let second_report = verify_tensor_op(
+        &second_job,
+        &second_receipt,
+        &second_a,
+        &second_b,
+        &second_c,
+        &hash_bytes(b"test", &[b"historical-second-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(second_job.clone()));
+    chain
+        .submit_tensor_op_receipt(second_receipt.clone())
+        .unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: second_receipt.receipt_id,
+                job_id: second_receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: second_report.result,
+                checks_root: second_report.checks_root,
+                data_availability_passed: second_report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+    chain.mark_receipt_settled_for_testing(second_receipt.receipt_id);
+    let second_block = chain.produce_block(validator, 2_000).unwrap();
+
+    let historical = chain.block_apply_outcome(&first_block).unwrap();
+
+    assert_eq!(historical.parent_snapshot.state_root, first_parent_root);
+    assert_eq!(historical.child_state_root, first_child_root);
+    assert_eq!(
+        historical.selected_receipt_ids,
+        vec![first_receipt.receipt_id]
+    );
+    assert!(
+        !historical
+            .selected_receipt_ids
+            .contains(&second_receipt.receipt_id)
+    );
+    assert_eq!(chain.validate_block(&first_block), Ok(()));
+    assert_eq!(chain.validate_block(&second_block), Ok(()));
+}
+
+#[test]
 fn block_validation_rejects_parent_root_disguised_as_child_state_root() {
     let beacon = hash_bytes(b"test", &[b"child-root-beacon"]);
     let mut chain = Chain::new(beacon);
