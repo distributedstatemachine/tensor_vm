@@ -101,6 +101,7 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `4ae1610` (`Hold audit rewards through appeal deadline`) is pushed to `main`.
 
 ## Recent Iterations
 
