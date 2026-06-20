@@ -5,10 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 26, delayed challenger reward finality.
-- Current status: Iteration 26 is implemented and locally validated. Feature commit/push evidence is still
-  pending. Iteration 25, graph-body propagation/storage, is implemented, locally validated, and pushed as
-  `0363bb6` (`Store Tensor IR graph bodies`).
+- Active feature: none. The next feature-sized slice is the next highest-priority v0 gap from the
+  readiness matrix.
+- Current status: Iteration 26, delayed challenger reward finality, is implemented, locally validated, and
+  pushed as `25dbfe4` (`Delay challenger reward finality`).
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -16,8 +16,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 26, record push evidence, then continue with the next highest
-  v0 gap.
+- Next action: continue with the next highest-priority v0 gap, likely slashable bond/audit/data-withholding
+  invariants or generic arbitrary-IR execution.
 
 ## Readiness Matrix
 
@@ -134,6 +134,11 @@ Validation:
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
 
+Push evidence:
+- Feature commit: `25dbfe4` (`Delay challenger reward finality`).
+- Remote/branch: `origin/main`.
+- Push result: `f734a69..25dbfe4  main -> main`.
+
 Out of scope:
 - Full network/RPC challenge gossip.
 - Hard stake slashing for invalid attestations or data withholding.
@@ -218,7 +223,8 @@ Latest current-iteration evidence:
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
   - `cargo test --workspace --release`: passed.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 26 feature commit/push: pending.
+- Iteration 26 feature commit: `25dbfe4` (`Delay challenger reward finality`).
+- Iteration 26 push result: `f734a69..25dbfe4  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
