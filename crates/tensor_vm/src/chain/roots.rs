@@ -10,7 +10,7 @@ use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::{BTreeMap, BTreeSet};
 
-pub(super) fn reward_root(rewards: &RewardState) -> Hash {
+pub(super) fn spendable_reward_root(rewards: &RewardState) -> Hash {
     let mut encoded = Vec::new();
     for (address, balance) in &rewards.balances {
         encoded.extend_from_slice(address);
@@ -18,6 +18,20 @@ pub(super) fn reward_root(rewards: &RewardState) -> Hash {
     }
     encoded.extend_from_slice(&rewards.treasury.to_le_bytes());
     hash_bytes(b"tensor-vm-reward-root-v1", &[&encoded])
+}
+
+pub(super) fn reward_root(state: &ChainState) -> Hash {
+    let mut parts = Vec::new();
+    parts.extend_from_slice(&spendable_reward_root(&state.rewards));
+    parts.extend_from_slice(&pending_proposer_reward_root(
+        &state.pending_proposer_rewards,
+    ));
+    parts.extend_from_slice(&pending_receipt_reward_root(&state.pending_receipt_rewards));
+    parts.extend_from_slice(&pending_challenge_reward_root(
+        &state.pending_challenge_rewards,
+    ));
+    parts.extend_from_slice(&pending_credit_reward_root(&state.pending_credit_rewards));
+    hash_bytes(b"tensor-vm-reward-root-v2", &[&parts])
 }
 
 pub(super) fn state_root(state: &ChainState) -> Hash {
@@ -71,7 +85,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     ));
     parts.extend_from_slice(&pending_credit_reward_root(&state.pending_credit_rewards));
     parts.extend_from_slice(&model_state_root(&state.model_states));
-    parts.extend_from_slice(&reward_root(&state.rewards));
+    parts.extend_from_slice(&spendable_reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
 }
 

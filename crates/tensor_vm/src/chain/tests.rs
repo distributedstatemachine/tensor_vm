@@ -1,6 +1,6 @@
 use super::roots::{
     attestation_root, block_checks_root, miner_root, receipt_root, reward_root,
-    selected_receipt_commitment_root, selected_receipt_root,
+    selected_receipt_commitment_root, selected_receipt_root, spendable_reward_root,
 };
 use super::*;
 use crate::jobs::{

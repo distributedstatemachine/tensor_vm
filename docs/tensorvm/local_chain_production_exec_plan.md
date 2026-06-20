@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 34 is complete.
-- Current status: Iteration 34 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 35 - reward root binds pending reward ledgers.
+- Current status: Iteration 35 implemented and validated locally on June 20, 2026; commit/push pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,8 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: implement the reward-root semantic change, run focused/broad validation, then commit, push,
+  and record evidence. Standing blockers remain the missing workflow document, missing `cargo-tarpaulin`,
+  and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -35,6 +36,99 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 35: Reward Root Binds Pending Reward Ledgers
+
+Feature capability: redefine block `reward_root` as the canonical reward-finality ledger commitment for
+the child state, covering spendable reward balances/treasury plus pending proposer, receipt, challenge, and
+generic credit reward claims.
+
+Readiness requirements covered: `upow.md` §12.1, `mvp_spec.md` §20.3/§20.4/§21/§25.5, and
+`docs/formal/mvp_core_reward_finality_challenge_model.md` RW-002/RW-005 require delayed reward claims to
+be root-bound and non-spendable until maturity. Iteration 34 made generic credits pending; this iteration
+removes the block-level spendable-only `reward_root` shortcut.
+
+Files/modules likely touched: `crates/tensor_vm/src/chain/roots.rs`,
+`crates/tensor_vm/src/chain/blocks.rs`, `crates/tensor_vm/src/chain/tests/rewards.rs`,
+`crates/tensor_vm/src/chain/tests/blocks.rs`, `docs/tensorvm/coverage_matrix.md`,
+`docs/tensorvm/implementation_status.md`, `docs/tensorvm/tarpaulin_report.md`, and this exec plan.
+
+Parallel subagents run:
+- Readiness mapper: confirmed that `TensorBlock.reward_root` currently excludes pending reward-finality
+  ledgers even though the specs/formal model assign reward root to pending claim state.
+- Codebase explorer: confirmed `reward_root(&RewardState)` hashes only spendable balances/treasury and
+  block production/validation use that spendable-only root; recommended keeping the old boundary, but that
+  conflicts with the current reward-finality target.
+- Test-coverage explorer: identified existing tests that prove the old behavior and missing tests for
+  pending proposer/receipt/challenge/credit reward root binding.
+
+Parallelizable implementation workstreams: parent/integrator owns all edits because the root function and
+block validation call sites are coupled; subagents remain read-only.
+
+Tests/checkers/docs to add or update: update the existing proposer reward test to expect pending claims in
+`reward_root`; add block validation rejection for a spendable-only root; add root mutation tests proving
+each pending reward ledger changes the canonical reward root; update coverage/status/tarpaulin docs.
+
+Narrow validation commands: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`,
+`cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`, and `cargo test -p tensor_vm --lib
+chain::tests::root_hashes -- --nocapture`.
+
+Broad validation commands before commit: `cargo fmt --check --all`, `git diff --check`, final
+`cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace --release`, and `cargo tarpaulin --workspace
+--offline` if available.
+
+Expected observable evidence: a produced useful block with a pending proposer reward has
+`block.reward_root != spendable_reward_root(rewards)` and equals the full reward ledger root; block
+validation rejects a spendable-only reward root; changing any pending reward ledger changes the full reward
+root without crediting spendable balances.
+
+Architecture shortcut answers:
+- Canonical owner: `chain::roots` owns canonical reward-root encoding; `chain::blocks` owns child-state
+  block production and validation against that root.
+- Adapter callers: CLI/RPC/status/block views only display the chain-owned block/apply outcome roots.
+- Old shortcut being removed: block `reward_root` commits only spendable `RewardState`, while pending
+  reward-finality claims are visible only through `state_root`.
+- Regression test: a block whose `reward_root` is the old spendable-only root is rejected with
+  `block reward root mismatch`; pending proposer/receipt/challenge/credit mutations change reward root.
+- Behavior with local synthetic block production disabled: inbound or locally produced blocks validate
+  against the same child-state reward ledger root; no synthetic path is needed.
+- Behavior for producer and non-producer roles: producers emit full reward ledger roots; non-producers
+  recompute and reject old spendable-only roots through the shared chain validation path.
+- Structured evidence source: typed root functions and Rust chain tests, not checker-only fields.
+- Finality source: unchanged stake-weighted block votes; this feature changes reward commitment semantics,
+  not finality voting.
+- Wire-size and codec boundary: no new p2p payloads or storage codecs; existing `TensorBlock.reward_root`
+  field carries the strengthened canonical root.
+
+Out of scope: introducing a unified formal `RewardClaim` object with block hash/evidence-root fields,
+automatic reward release on every block, new challenge resolution semantics, public reward-settlement
+evidence, and full bond calibration.
+
+Split trigger: if changing the root signature forces broad public API/storage migration, split API cleanup
+from the consensus root semantic change.
+
+Implemented locally:
+- Renamed the old spendable-only reward commitment helper to `spendable_reward_root`.
+- Redefined canonical block `reward_root` as a full child-state reward ledger root over spendable rewards,
+  pending proposer rewards, pending receipt rewards, pending challenge rewards, and pending credit rewards.
+- Updated block production, block validation/apply outcome, and parent snapshots to use the full reward
+  ledger root.
+- Added tests proving a block with the old spendable-only root is rejected and mutations to each pending
+  reward ledger change the full reward root while balances remain non-spendable.
+- Updated coverage/status docs to record the stronger reward-root boundary while keeping unified formal
+  reward claims and full economics calibration out of scope.
+
+Validation completed locally:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused tests passed: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`,
+  `cargo test -p tensor_vm --lib chain::tests::blocks -- --nocapture`, and `cargo test -p tensor_vm --lib
+  chain::tests::root_hashes -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, final
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
 
 ### Iteration 34: Delayed Generic Reward Credits
 

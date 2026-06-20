@@ -1,5 +1,64 @@
 use super::*;
 
+fn mine_reward_test_block(block: &mut TensorBlock) {
+    for nonce in 0..=u64::MAX {
+        block.nonce = nonce;
+        if block.pow_valid() {
+            let block_hash = block.hash();
+            block.proposer_signature = sign(&block.proposer, &block_hash);
+            block.validator_signature_aggregate =
+                hash_bytes(b"tensor-vm-validator-aggregate", &[&block_hash]);
+            return;
+        }
+    }
+    unreachable!("nonzero proof target must have a solution")
+}
+
+fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
+    let miner = address(b"reward-root-miner");
+    let validator = address(b"reward-root-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"reward-root-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+    chain.settle_epoch(1_000, 500);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
+    receipt.receipt_id
+}
+
 #[test]
 fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -33,7 +92,11 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
             .amount,
         500
     );
-    assert_eq!(block.reward_root, reward_root(chain.state().rewards()));
+    assert_eq!(block.reward_root, reward_root(chain.state()));
+    assert_ne!(
+        block.reward_root,
+        spendable_reward_root(chain.state().rewards())
+    );
 
     chain.settle_epoch_rewards(allocation, proposer);
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
@@ -50,6 +113,127 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
     chain.set_position_for_testing(101, 1);
     chain.release_matured_proposer_rewards().unwrap();
     assert_eq!(chain.state().rewards().balance(&proposer), 1_000);
+}
+
+#[test]
+fn block_reward_root_rejects_spendable_only_root_when_pending_rewards_exist() {
+    let beacon = hash_bytes(b"test", &[b"reward-root-rejects-spendable"]);
+    let mut parent = Chain::new(beacon);
+    let proposer = address(b"reward-root-old-proposer");
+    parent
+        .register_validator(proposer, parent.params().validator_min_stake)
+        .unwrap();
+
+    let mut producer = parent.clone();
+    let mut block = producer
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    assert_eq!(producer.state().rewards().balance(&proposer), 0);
+    assert_eq!(block.reward_root, reward_root(producer.state()));
+    assert_ne!(
+        block.reward_root,
+        spendable_reward_root(producer.state().rewards())
+    );
+
+    block.reward_root = spendable_reward_root(producer.state().rewards());
+    mine_reward_test_block(&mut block);
+    assert_eq!(
+        parent.apply_command(ChainCommand::SubmitBlock(block)),
+        Err(TvmError::InvalidReceipt("block reward root mismatch"))
+    );
+}
+
+#[test]
+fn reward_root_commits_to_all_pending_reward_ledgers() {
+    let beacon = hash_bytes(b"test", &[b"reward-root-pending-ledgers"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"reward-root-proposer");
+    let credit_beneficiary = address(b"reward-root-credit");
+    let challenger = address(b"reward-root-challenger");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+    chain
+        .register_validator(challenger, chain.params().validator_min_stake)
+        .unwrap();
+
+    chain
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    add_pending_receipt_reward(&mut chain, &beacon);
+    chain
+        .apply_command(ChainCommand::CreditReward {
+            address: credit_beneficiary,
+            amount: 25,
+        })
+        .unwrap();
+    let challenge_claim = hash_bytes(b"test", &[b"reward-root-challenge-claim"]);
+    chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+        claim_id: challenge_claim,
+        challenge_id: hash_bytes(b"test", &[b"reward-root-challenge"]),
+        block_hash: chain.blocks().last().unwrap().hash(),
+        receipt_id: hash_bytes(b"test", &[b"reward-root-challenge-receipt"]),
+        challenger,
+        amount: 50,
+        claimable_at_height: chain.state().height() + 10,
+        voided_by_challenge: false,
+    });
+
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert_eq!(chain.state().rewards().balance(&credit_beneficiary), 0);
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    assert!(!chain.state().pending_proposer_rewards().is_empty());
+    assert!(!chain.state().pending_receipt_rewards().is_empty());
+    assert!(!chain.state().pending_credit_rewards().is_empty());
+    assert!(!chain.state().pending_challenge_rewards().is_empty());
+
+    let full_root = reward_root(chain.state());
+    assert_ne!(full_root, spendable_reward_root(chain.state().rewards()));
+
+    let mut changed_proposer = chain.state().clone();
+    changed_proposer
+        .pending_proposer_rewards
+        .values_mut()
+        .next()
+        .unwrap()
+        .amount += 1;
+    assert_ne!(full_root, reward_root(&changed_proposer));
+
+    let mut changed_receipt = chain.state().clone();
+    changed_receipt
+        .pending_receipt_rewards
+        .values_mut()
+        .next()
+        .unwrap()
+        .claimable_at_height += 1;
+    assert_ne!(full_root, reward_root(&changed_receipt));
+
+    let mut changed_credit = chain.state().clone();
+    changed_credit
+        .pending_credit_rewards
+        .values_mut()
+        .next()
+        .unwrap()
+        .amount += 1;
+    assert_ne!(full_root, reward_root(&changed_credit));
+
+    let mut changed_challenge = chain.state().clone();
+    changed_challenge
+        .pending_challenge_rewards
+        .values_mut()
+        .next()
+        .unwrap()
+        .voided_by_challenge = true;
+    assert_ne!(full_root, reward_root(&changed_challenge));
 }
 
 #[test]

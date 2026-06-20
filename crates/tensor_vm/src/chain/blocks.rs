@@ -103,7 +103,7 @@ fn produce_inner(
         },
     );
     let chain_state_root = state_root(&child_state);
-    let reward_root = reward_root(&child_state.rewards);
+    let reward_root = reward_root(&child_state);
     let mut block = TensorBlock {
         height: chain.state.height,
         parent_hash,
@@ -552,7 +552,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         checks_root,
         selected_openings,
         child_state_root: state_root(&child_state),
-        child_reward_root: reward_root(&child_state.rewards),
+        child_reward_root: reward_root(&child_state),
         child_height: child_state.height,
         child_epoch: child_state.epoch,
         child_beacon_round: child_state.finalized_beacon_round,
@@ -619,7 +619,7 @@ fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParen
         beacon_round: parent_state.finalized_beacon_round,
         beacon: parent_state.finalized_randomness,
         attestation_root: attestation_root(&parent_state.attestations),
-        reward_root: reward_root(&parent_state.rewards),
+        reward_root: reward_root(parent_state),
         settled_receipt_pool_root: selected_receipt_commitment_root(
             &parent_state
                 .settled_receipts
