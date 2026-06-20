@@ -524,7 +524,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .state()
             .rewards()
             .balance(&validator),
-        500
+        1_000
     );
 
     drop(p2p_service);

@@ -36,24 +36,8 @@ impl BlockRewardContext {
             .saturating_mul(epoch_length.max(1))
     }
 
-    fn challenge_window_blocks(self, epoch_length: u64) -> u64 {
-        self.challenge_window_epochs
-            .max(1)
-            .saturating_mul(epoch_length.max(1))
-    }
-
-    fn proposer_claimable_at_height(
-        self,
-        block_height: u64,
-        epoch_length: u64,
-        selected_receipts: &[Hash],
-    ) -> u64 {
-        let delay = if selected_receipts.is_empty() {
-            self.reward_maturity_delay_blocks(epoch_length)
-        } else {
-            self.challenge_window_blocks(epoch_length)
-        };
-        block_height.saturating_add(delay)
+    fn proposer_claimable_at_height(self, block_height: u64, epoch_length: u64) -> u64 {
+        block_height.saturating_add(self.reward_maturity_delay_blocks(epoch_length))
     }
 }
 
@@ -726,11 +710,8 @@ fn apply_block_to_parent_state(
                 block_height,
                 proposer: reward_context.proposer,
                 amount: reward_context.proposer_reward,
-                claimable_at_height: reward_context.proposer_claimable_at_height(
-                    block_height,
-                    epoch_length,
-                    selected_receipts,
-                ),
+                claimable_at_height: reward_context
+                    .proposer_claimable_at_height(block_height, epoch_length),
                 voided_by_challenge: false,
             },
         );

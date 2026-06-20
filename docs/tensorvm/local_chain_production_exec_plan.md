@@ -5,15 +5,17 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 54, mixed-dtype comparison and `where` conformance vectors, implemented and
-  validated; commit/push pending.
+- Active feature: Iteration 55, uniform proposer reward maturity delay, implemented and validated;
+  commit/push pending.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
   magic/version bytes, rank, axis, output scale, shape, per-channel signed 64-bit scales, and row-major
   int8 payload bytes. Iteration 52 feature commit `1b86f7f` and evidence commit `0387246` are pushed.
-  Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed. Iteration 54 adds
-  mixed-dtype comparison and `where` coverage to the conformance suite and verifier profile-gating tests.
+  Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed. Iteration 54 feature
+  commit `f5dd68b` is pushed and adds mixed-dtype comparison and `where` coverage to the conformance suite
+  and verifier profile-gating tests. Iteration 55 will make useful and fallback proposer rewards use the
+  same full reward-settlement plus challenge-window maturity delay.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -21,7 +23,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit/push Iteration 54, then start the uniform proposer reward-delay slice.
+- Next action: commit/push Iteration 55, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -38,10 +40,97 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 54 mixed-dtype comparison/`where` vectors implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, and Iteration 54 comparison/selection vectors; CPU pass profile; default CUDA non-admission | Add remaining admitted-op vectors and CUDA conformance evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 53 reward-delay cleanup implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
+| Economics and slashing invariant | Partial; Iteration 55 uniform proposer reward delay implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; useful and fallback proposer claims both use full reward maturity; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 55: Uniform Proposer Reward Maturity Delay
+
+Feature capability: all proposer rewards, including useful-verification blocks and zero-receipt fallback
+blocks, enter the state-rooted pending proposer reward ledger with the same full reward-settlement plus
+challenge-window maturity delay. This removes the remaining reward-timing workaround where useful proposer
+claims could mature after only the challenge-window component.
+
+Readiness requirements covered:
+- `upow.md` §12: verifier-dependent rewards are delayed state claims and become spendable only after the
+  reward-settlement delay plus challenge window.
+- `upow.md` §11.4: block reward allocations are committed by reward roots before spendability.
+- `local_chain_production_readiness.md`: proposer rewards should release after the explicit full
+  reward-maturity height.
+
+Canonical owner: `chain::blocks::BlockRewardContext` owns proposer reward claim creation and maturity
+height; `chain::commands::release_matured_proposer_rewards` owns spendable release; `chain::roots` and
+state storage own commitment/encoding of pending reward fields.
+Adapter callers: validator role block production and tests call the shared chain transition; runtime/status
+surfaces only observe pending/released rewards.
+Old shortcut being removed: useful proposer rewards used only `challenge_window_blocks` while fallback
+proposer rewards used the full reward-settlement plus challenge-window delay.
+Regression test that proves the shortcut is gone: useful proposer rewards remain pending until the full
+reward maturity height, not merely the challenge-window height; fallback reward delay tests continue to
+prove the same rule for empty blockspace.
+Behavior with local synthetic block production disabled: unchanged; validator proposer rewards still enter
+the same pending ledger through role-owned block production.
+Behavior for producer and non-producer roles: unchanged; both recompute the same child reward root and
+release matured pending rewards through block application or explicit release commands.
+Structured evidence source: reward tests, block tests that observe delayed release in block transitions,
+coverage/status docs, and local-testnet Gate 0.
+Finality source: unchanged stake-weighted block votes; reward finality remains delayed beyond block
+finality.
+Wire-size and codec boundary: no codec or storage schema change; only the existing
+`claimable_at_height` value changes for useful proposer rewards.
+
+Parallel subagents:
+- Not used for this narrow consensus-timing slice; parent owns code, tests, and docs.
+
+Implementation workstreams:
+- Update proposer reward maturity calculation to always use the full reward-settlement plus
+  challenge-window delay.
+- Update reward/block tests and status docs that encode the shorter useful reward challenge-window path.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm chain::tests::rewards`
+- `cargo test -p tensor_vm chain::tests::blocks::block_transition_releases_matured_rewards_without_manual_command`
+- `cargo test -p tensor_vm chain::tests::challenges::matured_proposer_reward_releases_after_full_maturity_delay`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: useful and fallback proposer rewards share one full maturity delay, reward
+roots remain deterministic, voiding before maturity still prevents credit, and docs no longer describe
+useful proposer rewards as challenge-window-only.
+
+Out of scope: reward amount calibration, receipt/challenge/credit reward ledger unification, auditor
+selection, appeals, public evidence, Docker `/health`, and storage schema changes.
+
+Implementation summary:
+- Removed the selected-receipt special case from `BlockRewardContext::proposer_claimable_at_height`; all
+  block proposer rewards now use `reward_settlement_delay_epochs + challenge_window_epochs`.
+- Updated `settle_epoch_rewards` proposer claim top-ups/direct inserts to use the same full maturity delay
+  anchored to the reward claim block height.
+- Updated reward, challenge, and role-runtime tests so useful proposer rewards remain pending until full
+  maturity and validator wallets can receive proposer plus receipt rewards at the same release boundary.
+- Updated status/coverage/readiness docs to describe useful and fallback proposer rewards as sharing the
+  same full delayed maturity rule.
+
+Validation evidence:
+- First gate: `cargo test -p tensor_vm local_testnet --release` passed before implementation.
+- Focused reward tests: `cargo test -p tensor_vm chain::tests::rewards` passed.
+- Focused challenge test: `cargo test -p tensor_vm chain::tests::challenges::matured_proposer_reward_releases_after_full_maturity_delay` passed.
+- Focused runtime regression: `cargo test -p tensor_vm --test tvmd_runtime runtime_roles::producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks` passed.
+- Format/diff: `cargo fmt --check --all` and `git diff --check` passed.
+- Broad debug: `cargo test -p tensor_vm` passed 379 library tests plus integration/doc checks.
+- Lint: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Broad release: `cargo test --workspace --release` passed.
+- Final gate: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is
+  not installed (`error: no such command: tarpaulin`).
 
 ### Iteration 54: Mixed-DType Comparison And Where Conformance Vectors
 

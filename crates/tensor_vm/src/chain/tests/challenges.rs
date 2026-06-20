@@ -281,7 +281,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
 }
 
 #[test]
-fn matured_proposer_reward_releases_after_challenge_window() {
+fn matured_proposer_reward_releases_after_full_maturity_delay() {
     let beacon = hash_bytes(b"test", &[b"pending-proposer-reward"]);
     let params = ChainParams {
         challenge_window_epochs: 1,
@@ -307,11 +307,17 @@ fn matured_proposer_reward_releases_after_challenge_window() {
         .get(&block.height)
         .unwrap();
     assert_eq!(pending.amount, 500);
-    assert_eq!(pending.claimable_at_height, 2);
+    assert_eq!(
+        pending.claimable_at_height,
+        block
+            .height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    let claimable_at_height = pending.claimable_at_height;
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
 
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
-    chain.set_position_for_testing(2, 1);
+    chain.set_position_for_testing(claimable_at_height, 1);
     let events = chain.release_matured_proposer_rewards().unwrap();
     assert!(events.contains(&ChainEvent::ProposerRewardReleased {
         block_height: block.height,

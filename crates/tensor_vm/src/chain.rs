@@ -286,27 +286,23 @@ impl Chain {
                 .last()
                 .filter(|block| block.proposer == proposer)
                 .map_or(self.state.height, |block| block.height);
+            let claimable_at_height =
+                block_height.saturating_add(self.params.reward_maturity_delay_blocks());
             self.state
                 .pending_proposer_rewards
                 .entry(block_height)
                 .and_modify(|reward| {
                     if reward.proposer == proposer && !reward.voided_by_challenge {
                         reward.amount = reward.amount.saturating_add(allocation.proposer_reward);
-                        reward.claimable_at_height = reward.claimable_at_height.max(
-                            self.state
-                                .height
-                                .saturating_add(self.params.challenge_window_blocks()),
-                        );
+                        reward.claimable_at_height =
+                            reward.claimable_at_height.max(claimable_at_height);
                     }
                 })
                 .or_insert_with(|| PendingProposerReward {
                     block_height,
                     proposer,
                     amount: allocation.proposer_reward,
-                    claimable_at_height: self
-                        .state
-                        .height
-                        .saturating_add(self.params.challenge_window_blocks()),
+                    claimable_at_height,
                     voided_by_challenge: false,
                 });
         }
