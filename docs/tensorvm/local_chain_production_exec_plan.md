@@ -5,12 +5,10 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 66, local checker delayed-reward claim gate, implemented, validated,
-  committed, and pushed.
+- Active feature: Iteration 67, chain-owned reward claim view, validated; commit/push pending.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
-  and are visible through status/explorer claim samples. The local readiness checker still relies on
-  aggregate pending-reward counters for live acceptance and must gate on future-maturity claim evidence
-  directly.
+  and the checker gates on future-maturity claim evidence. Status and explorer now consume the chain-owned
+  pending reward-claim view instead of rebuilding ledger-specific projections.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -18,7 +16,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit and push the validated chain-owned reward claim view.
 
 ## Readiness Matrix
 
@@ -35,43 +33,41 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; structured pending-claim status/explorer evidence; executable `study::economic_invariant_study` | Gate local checker on structured delayed-claim maturity; add auditor-selection policy, appeal paths, unified formal reward-claim objects, live parameter calibration |
+| Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; chain-owned pending claim view; executable `study::economic_invariant_study` | Add auditor-selection policy, appeal paths, live parameter calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 66: Local Checker Delayed-Reward Claim Gate
+### Iteration 67: Chain-Owned Reward Claim View
 
-Feature capability: make the local CPU readiness checker prove delayed rewards directly from pending reward
-claim samples instead of accepting aggregate pending-reward counter increases as a proxy.
+Feature capability: add a unified chain-state pending reward claim view for proposer, receipt,
+challenge, and credit ledgers so status/explorer/checkers observe formal chain data instead of rebuilding
+ledger-specific adapter projections.
 
 Readiness requirements covered:
-- `mvp_spec.md` §20.3, §20.4, and §25.5: receipt and proposer rewards are pending until the
-  reward-settlement delay plus challenge window closes.
-- `mvp_spec.md` §35 and `local_chain_production_readiness.md` acceptance gate: local evidence must prove
-  live pending reward claims before spendability.
-- `upow.md` §12.1: miner, validator, and challenger rewards derived from verifier-dependent evidence are
-  pending claims before spendability.
+- `mvp_spec.md` §20.3, §20.4, and §25.5: delayed reward claims need explicit beneficiary, amount,
+  maturity height, and voiding state before spendability.
+- `mvp_spec.md` §35 criterion 5: reward evidence must prove distribution by verified settled TensorWork
+  and useful proposer success without adapter-owned ledger semantics.
+- `upow.md` §12.1: verifier-dependent rewards are pending consensus claims before spendability.
 
-Canonical owner: chain state remains the owner of pending reward ledgers and maturity heights.
-Adapter callers: the local checker observes explorer overview/status fields and does not mutate delayed
-reward claims.
-Old shortcut being removed: the local checker can no longer rely only on pending-reward counts to infer that
-delay semantics are active.
-Regression test that proves the shortcut is gone: compose-bundle artifact tests assert the checker requires
-future-maturity pending reward claim samples for live receipt and proposer rewards.
-Behavior with local synthetic block production disabled: unchanged; this is read-only evidence over chain
-state.
-Behavior for producer and non-producer roles: unchanged; all roles persist and report the same rooted
-pending reward state.
-Structured evidence source: explorer overview `pending_rewards` objects and service status claim samples.
+Canonical owner: `ChainState` owns the typed `RewardClaimView` projection over all pending reward ledgers.
+Adapter callers: service status, explorer overview, local checkers, and public evidence tooling can observe
+the claim view but cannot mutate it.
+Old shortcut being removed: adapters no longer independently reconstruct four delayed reward ledger shapes.
+Regression test that proves the shortcut is gone: chain-state tests assert the unified view covers all
+pending reward ledgers in deterministic order; status/RPC tests continue to prove exported fields.
+Behavior with local synthetic block production disabled: unchanged.
+Behavior for producer and non-producer roles: unchanged.
+Structured evidence source: chain-state reward claim view, service status, explorer overview JSON.
 Finality source: unchanged stake-weighted block votes.
-Wire-size and codec boundary: no p2p, storage, block, shared-codec, or consensus changes; only deployment
-checker acceptance and docs change.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes; this is a read-only chain
+view plus adapter refactor.
 
 Narrow validation commands:
-- `bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`
-- `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`
+- `cargo test -p tensor_vm chain::tests::rewards::pending_reward_claim_view_covers_all_ledgers`
+- `cargo test -p tensor_vm app::status::tests::service_status_exports_pending_reward_claim_maturity_details`
+- `cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes`
 Broad validation commands before commit:
 - `cargo fmt --check --all`
 - `git diff --check`
@@ -80,38 +76,46 @@ Broad validation commands before commit:
 - `cargo test --workspace --release`
 - `cargo test -p tensor_vm local_testnet --release`
 - `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
-Expected observable evidence: the checker requires at least one live pending receipt claim and one live
-pending proposer claim whose `claimable_at_height` is greater than the observed live height, and records
-those counts in its readiness output.
-Out of scope: changing consensus reward maturity, adding new reward ledgers, public deployment evidence, and
-full Docker checker execution while `/health` remains blocked.
-Split trigger: split smaller only if the checker needs a new API route or storage format change.
+Expected observable evidence: chain-state pending reward claim samples have ledger, claim id, subject,
+optional related id, beneficiary, amount, claimable height, and voided fields and are consumed by
+status/explorer.
+Out of scope: changing reward maturity, release, slashing, public deployment evidence, and Docker runtime
+execution while `/health` remains blocked.
 
 Implementation summary:
-- Added `json_future_pending_reward_count` to the local CPU checker and required future-maturity,
-  non-voided receipt/proposer pending reward claims in the live readiness loop.
-- Added readiness output fields for delayed receipt and proposer claim counts.
-- Updated the compose artifact test and status/coverage/tarpaulin docs.
+- Added `RewardClaimLedger`, `RewardClaimKey`, and `RewardClaimView` to the chain state boundary.
+- Added `ChainState::pending_reward_claims()` as a deterministic projection over proposer, receipt miner,
+  receipt validator, challenge, and credit pending ledgers, including the challenge receipt related id.
+- Refactored service status and explorer pending-reward samples to consume the chain-owned view.
+- Added focused chain coverage for all pending reward ledgers and updated status/coverage docs.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Shell syntax: `bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh` passed.
-- Focused compose artifact:
-  `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`
+- Focused chain view:
+  `cargo test -p tensor_vm chain::tests::rewards::pending_reward_claim_view_covers_all_ledgers` passed.
+- Focused service status:
+  `cargo test -p tensor_vm app::status::tests::service_status_exports_pending_reward_claim_maturity_details`
+  passed.
+- Focused RPC:
+  `cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes`
   passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm` passed 399 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 400 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `2232724` (`Gate delayed reward claims in local checker`) pushed `3d9cd9b..9547dde
-  main -> main` to `github.com:distributedstatemachine/tensor_vm.git`.
-- Evidence commit: `9547dde` (`Record delayed reward checker evidence`) pushed with the same update.
 
 ## Recent Iterations
+
+### Iteration 66: Local Checker Delayed-Reward Claim Gate
+
+The local CPU checker now requires future-maturity, non-voided receipt/proposer pending reward claims
+instead of aggregate pending-reward counts. Validation passed shell syntax, compose artifact, full crate,
+clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit `2232724`
+and evidence commits `9547dde`/`7c9c209` are pushed.
 
 ### Iteration 64: Exact Field `div` Admission
 
@@ -175,16 +179,16 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 65 on June 20, 2026:
+Latest full validation is Iteration 67 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract
-cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes
+cargo test -p tensor_vm chain::tests::rewards::pending_reward_claim_view_covers_all_ledgers
 cargo test -p tensor_vm app::status::tests::service_status_exports_pending_reward_claim_maturity_details
-cargo test -p tensor_vm
+cargo test -p tensor_vm rpc::tests::routes::node_rpc_serves_explorer_telemetry_and_faucet_routes
 cargo fmt --check --all
 git diff --check
+cargo test -p tensor_vm --quiet
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --release
 cargo test -p tensor_vm local_testnet --release

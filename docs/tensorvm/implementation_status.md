@@ -128,11 +128,14 @@ blocker clears. See
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
   and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
   challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
-  Service status now exports bounded pending proposer, receipt, challenge, and credit reward claim samples
-  with maturity heights, and explorer overview JSON carries typed pending reward claim samples with
-  beneficiary, amount, claimable height, and voided status so local checkers can prove reward delay from
-  structured state instead of count-only workarounds. The local CPU checker now fails unless live explorer
-  overview evidence includes non-voided pending receipt and proposer reward claims whose
+  `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
+  miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
+  subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable
+  heights, and voided status. Service status and explorer
+  overview consume that chain view for bounded pending reward claim samples, so local checkers can prove
+  reward delay from structured state instead of adapter-rebuilt count-only workarounds. The local CPU
+  checker now fails unless live explorer overview evidence includes non-voided pending receipt and
+  proposer reward claims whose
   `claimable_at_height` is greater than the observed live height.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner

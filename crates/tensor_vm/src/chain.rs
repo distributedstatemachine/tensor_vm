@@ -34,9 +34,10 @@ pub use state::{
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
     ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardState,
-    SelectedReceiptOpening, TensorBlock, Transaction, ValidatorAuditAssignment,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardClaimKey,
+    RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock,
+    Transaction, ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 

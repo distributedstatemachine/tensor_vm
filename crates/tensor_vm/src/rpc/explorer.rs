@@ -1,4 +1,4 @@
-use crate::chain::{Chain, HardwareClass, JobState};
+use crate::chain::{Chain, HardwareClass, JobState, RewardClaimKey};
 use crate::hash::hex;
 use crate::jobs::PrimitiveType;
 use crate::types::Address;
@@ -161,63 +161,28 @@ pub(super) fn explorer_receipts(chain: &Chain, limit: usize) -> Vec<ExplorerRece
 }
 
 pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<ExplorerPendingReward> {
-    let mut rewards = Vec::new();
-    for (block_height, reward) in chain.state().pending_proposer_rewards() {
-        rewards.push(ExplorerPendingReward {
-            ledger: "proposer".to_owned(),
-            claim_id: block_height.to_string(),
-            subject_id: block_height.to_string(),
-            beneficiary: hex(&reward.proposer),
-            amount: reward.amount,
-            claimable_at_height: reward.claimable_at_height,
-            voided_by_challenge: reward.voided_by_challenge,
-        });
+    chain
+        .state()
+        .pending_reward_claims()
+        .into_iter()
+        .take(limit)
+        .map(|claim| ExplorerPendingReward {
+            ledger: claim.ledger.label().to_owned(),
+            claim_id: reward_claim_key_label(claim.claim_id),
+            subject_id: reward_claim_key_label(claim.subject_id),
+            beneficiary: hex(&claim.beneficiary),
+            amount: claim.amount,
+            claimable_at_height: claim.claimable_at_height,
+            voided_by_challenge: claim.voided_by_challenge,
+        })
+        .collect()
+}
+
+fn reward_claim_key_label(key: RewardClaimKey) -> String {
+    match key {
+        RewardClaimKey::BlockHeight(height) => height.to_string(),
+        RewardClaimKey::Hash(hash) => hex(&hash),
     }
-    for (claim_id, reward) in chain.state().pending_receipt_rewards() {
-        rewards.push(ExplorerPendingReward {
-            ledger: match reward.kind {
-                crate::chain::ReceiptRewardKind::Miner => "receipt_miner",
-                crate::chain::ReceiptRewardKind::Validator => "receipt_validator",
-            }
-            .to_owned(),
-            claim_id: hex(claim_id),
-            subject_id: hex(&reward.receipt_id),
-            beneficiary: hex(&reward.beneficiary),
-            amount: reward.amount,
-            claimable_at_height: reward.claimable_at_height,
-            voided_by_challenge: reward.voided_by_challenge,
-        });
-    }
-    for (claim_id, reward) in chain.state().pending_challenge_rewards() {
-        rewards.push(ExplorerPendingReward {
-            ledger: "challenge".to_owned(),
-            claim_id: hex(claim_id),
-            subject_id: hex(&reward.challenge_id),
-            beneficiary: hex(&reward.challenger),
-            amount: reward.amount,
-            claimable_at_height: reward.claimable_at_height,
-            voided_by_challenge: reward.voided_by_challenge,
-        });
-    }
-    for (claim_id, reward) in chain.state().pending_credit_rewards() {
-        rewards.push(ExplorerPendingReward {
-            ledger: "credit".to_owned(),
-            claim_id: hex(claim_id),
-            subject_id: hex(claim_id),
-            beneficiary: hex(&reward.beneficiary),
-            amount: reward.amount,
-            claimable_at_height: reward.claimable_at_height,
-            voided_by_challenge: false,
-        });
-    }
-    rewards.sort_by(|left, right| {
-        left.claimable_at_height
-            .cmp(&right.claimable_at_height)
-            .then_with(|| left.ledger.cmp(&right.ledger))
-            .then_with(|| left.claim_id.cmp(&right.claim_id))
-    });
-    rewards.truncate(limit);
-    rewards
 }
 
 pub(super) fn explorer_jobs(chain: &Chain, limit: usize) -> Vec<ExplorerJob> {

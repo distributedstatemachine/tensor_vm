@@ -290,6 +290,91 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
 }
 
 #[test]
+fn pending_reward_claim_view_covers_all_ledgers() {
+    let beacon = hash_bytes(b"test", &[b"pending-reward-claim-view"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"claim-view-proposer");
+    let challenger = address(b"claim-view-challenger");
+    let credit_beneficiary = address(b"claim-view-credit");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+    chain
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    let receipt_id = add_pending_receipt_reward(&mut chain, &beacon);
+    chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+        claim_id: hash_bytes(b"test", &[b"claim-view-challenge-claim"]),
+        challenge_id: hash_bytes(b"test", &[b"claim-view-challenge"]),
+        block_hash: chain.blocks().last().unwrap().hash(),
+        receipt_id,
+        challenger,
+        amount: 50,
+        claimable_at_height: chain.state().height() + 10,
+        voided_by_challenge: true,
+    });
+    chain
+        .apply_command(ChainCommand::CreditReward {
+            address: credit_beneficiary,
+            amount: 25,
+        })
+        .unwrap();
+
+    let claims = chain.state().pending_reward_claims();
+    assert_eq!(claims.len(), 5);
+    assert!(claims.windows(2).all(|window| {
+        window[0]
+            .claimable_at_height
+            .cmp(&window[1].claimable_at_height)
+            .then_with(|| window[0].ledger.cmp(&window[1].ledger))
+            .then_with(|| window[0].claim_id.cmp(&window[1].claim_id))
+            != std::cmp::Ordering::Greater
+    }));
+    assert!(claims.iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::Proposer
+            && claim.claim_id == RewardClaimKey::BlockHeight(0)
+            && claim.subject_id == RewardClaimKey::BlockHeight(0)
+            && claim.beneficiary == proposer
+            && !claim.voided_by_challenge
+    }));
+    assert!(claims.iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::ReceiptMiner
+            && claim.subject_id == RewardClaimKey::Hash(receipt_id)
+            && claim.amount > 0
+            && !claim.voided_by_challenge
+    }));
+    assert!(claims.iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::ReceiptValidator
+            && claim.subject_id == RewardClaimKey::Hash(receipt_id)
+            && claim.amount > 0
+            && !claim.voided_by_challenge
+    }));
+    assert!(claims.iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::Challenge
+            && claim.subject_id
+                == RewardClaimKey::Hash(hash_bytes(b"test", &[b"claim-view-challenge"]))
+            && claim.related_id == Some(RewardClaimKey::Hash(receipt_id))
+            && claim.beneficiary == challenger
+            && claim.voided_by_challenge
+    }));
+    assert!(claims.iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::Credit
+            && claim.beneficiary == credit_beneficiary
+            && claim.amount == 25
+            && !claim.voided_by_challenge
+    }));
+}
+
+#[test]
 fn block_transition_releases_matured_rewards_without_manual_command() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {

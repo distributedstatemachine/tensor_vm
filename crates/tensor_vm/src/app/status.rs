@@ -1,7 +1,11 @@
 use std::{collections::BTreeMap, path::Path};
 
 use super::{KeyValueReport, KeyValueReportWriter};
-use crate::{Chain, NodeStore, chain::ReceiptRewardKind, hash::hex};
+use crate::{
+    Chain, NodeStore,
+    chain::{RewardClaimKey, RewardClaimLedger},
+    hash::hex,
+};
 
 pub fn hex_hash_list(hashes: &[[u8; 32]]) -> String {
     if hashes.is_empty() {
@@ -284,17 +288,18 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
 fn pending_proposer_reward_claims(chain: &Chain, limit: usize) -> String {
     let claims = chain
         .state()
-        .pending_proposer_rewards()
-        .iter()
+        .pending_reward_claims()
+        .into_iter()
+        .filter(|claim| claim.ledger == RewardClaimLedger::Proposer)
         .take(limit)
-        .map(|(block_height, reward)| {
+        .map(|claim| {
             format!(
                 "{}:{}:{}:{}:{}",
-                block_height,
-                hex(&reward.proposer),
-                reward.amount,
-                reward.claimable_at_height,
-                reward.voided_by_challenge
+                claim_key_label(claim.claim_id),
+                hex(&claim.beneficiary),
+                claim.amount,
+                claim.claimable_at_height,
+                claim.voided_by_challenge
             )
         })
         .collect::<Vec<_>>();
@@ -304,19 +309,25 @@ fn pending_proposer_reward_claims(chain: &Chain, limit: usize) -> String {
 fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
     let claims = chain
         .state()
-        .pending_receipt_rewards()
-        .iter()
+        .pending_reward_claims()
+        .into_iter()
+        .filter(|claim| {
+            matches!(
+                claim.ledger,
+                RewardClaimLedger::ReceiptMiner | RewardClaimLedger::ReceiptValidator
+            )
+        })
         .take(limit)
-        .map(|(claim_id, reward)| {
+        .map(|claim| {
             format!(
                 "{}:{}:{}:{}:{}:{}:{}",
-                hex(claim_id),
-                hex(&reward.receipt_id),
-                receipt_reward_kind_label(reward.kind),
-                hex(&reward.beneficiary),
-                reward.amount,
-                reward.claimable_at_height,
-                reward.voided_by_challenge
+                claim_key_label(claim.claim_id),
+                claim_key_label(claim.subject_id),
+                claim.ledger.receipt_kind_label().unwrap_or("unknown"),
+                hex(&claim.beneficiary),
+                claim.amount,
+                claim.claimable_at_height,
+                claim.voided_by_challenge
             )
         })
         .collect::<Vec<_>>();
@@ -326,19 +337,23 @@ fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
 fn pending_challenge_reward_claims(chain: &Chain, limit: usize) -> String {
     let claims = chain
         .state()
-        .pending_challenge_rewards()
-        .iter()
+        .pending_reward_claims()
+        .into_iter()
+        .filter(|claim| claim.ledger == RewardClaimLedger::Challenge)
         .take(limit)
-        .map(|(claim_id, reward)| {
+        .map(|claim| {
             format!(
                 "{}:{}:{}:{}:{}:{}:{}",
-                hex(claim_id),
-                hex(&reward.challenge_id),
-                hex(&reward.receipt_id),
-                hex(&reward.challenger),
-                reward.amount,
-                reward.claimable_at_height,
-                reward.voided_by_challenge
+                claim_key_label(claim.claim_id),
+                claim_key_label(claim.subject_id),
+                claim
+                    .related_id
+                    .map(claim_key_label)
+                    .unwrap_or_else(|| "none".to_owned()),
+                hex(&claim.beneficiary),
+                claim.amount,
+                claim.claimable_at_height,
+                claim.voided_by_challenge
             )
         })
         .collect::<Vec<_>>();
@@ -348,16 +363,17 @@ fn pending_challenge_reward_claims(chain: &Chain, limit: usize) -> String {
 fn pending_credit_reward_claims(chain: &Chain, limit: usize) -> String {
     let claims = chain
         .state()
-        .pending_credit_rewards()
-        .iter()
+        .pending_reward_claims()
+        .into_iter()
+        .filter(|claim| claim.ledger == RewardClaimLedger::Credit)
         .take(limit)
-        .map(|(claim_id, reward)| {
+        .map(|claim| {
             format!(
                 "{}:{}:{}:{}",
-                hex(claim_id),
-                hex(&reward.beneficiary),
-                reward.amount,
-                reward.claimable_at_height
+                claim_key_label(claim.claim_id),
+                hex(&claim.beneficiary),
+                claim.amount,
+                claim.claimable_at_height
             )
         })
         .collect::<Vec<_>>();
@@ -372,10 +388,10 @@ fn compact_claims(claims: Vec<String>) -> String {
     }
 }
 
-fn receipt_reward_kind_label(kind: ReceiptRewardKind) -> &'static str {
-    match kind {
-        ReceiptRewardKind::Miner => "miner",
-        ReceiptRewardKind::Validator => "validator",
+fn claim_key_label(key: RewardClaimKey) -> String {
+    match key {
+        RewardClaimKey::BlockHeight(height) => height.to_string(),
+        RewardClaimKey::Hash(hash) => hex(&hash),
     }
 }
 

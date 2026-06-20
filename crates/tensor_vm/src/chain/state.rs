@@ -284,6 +284,53 @@ pub struct PendingCreditReward {
     pub claimable_at_height: u64,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum RewardClaimLedger {
+    Proposer,
+    ReceiptMiner,
+    ReceiptValidator,
+    Challenge,
+    Credit,
+}
+
+impl RewardClaimLedger {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Proposer => "proposer",
+            Self::ReceiptMiner => "receipt_miner",
+            Self::ReceiptValidator => "receipt_validator",
+            Self::Challenge => "challenge",
+            Self::Credit => "credit",
+        }
+    }
+
+    pub fn receipt_kind_label(self) -> Option<&'static str> {
+        match self {
+            Self::ReceiptMiner => Some("miner"),
+            Self::ReceiptValidator => Some("validator"),
+            _ => None,
+        }
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum RewardClaimKey {
+    BlockHeight(u64),
+    Hash(Hash),
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RewardClaimView {
+    pub ledger: RewardClaimLedger,
+    pub claim_id: RewardClaimKey,
+    pub subject_id: RewardClaimKey,
+    pub related_id: Option<RewardClaimKey>,
+    pub beneficiary: Address,
+    pub amount: u64,
+    pub claimable_at_height: u64,
+    pub voided_by_challenge: bool,
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceiptRandomnessAnchor {
     pub receipt_id: Hash,
@@ -1071,6 +1118,68 @@ impl ChainState {
 
     pub fn pending_credit_rewards(&self) -> &BTreeMap<Hash, PendingCreditReward> {
         &self.pending_credit_rewards
+    }
+
+    pub fn pending_reward_claims(&self) -> Vec<RewardClaimView> {
+        let mut claims = Vec::new();
+        for (block_height, reward) in &self.pending_proposer_rewards {
+            claims.push(RewardClaimView {
+                ledger: RewardClaimLedger::Proposer,
+                claim_id: RewardClaimKey::BlockHeight(*block_height),
+                subject_id: RewardClaimKey::BlockHeight(*block_height),
+                related_id: None,
+                beneficiary: reward.proposer,
+                amount: reward.amount,
+                claimable_at_height: reward.claimable_at_height,
+                voided_by_challenge: reward.voided_by_challenge,
+            });
+        }
+        for (claim_id, reward) in &self.pending_receipt_rewards {
+            claims.push(RewardClaimView {
+                ledger: match reward.kind {
+                    ReceiptRewardKind::Miner => RewardClaimLedger::ReceiptMiner,
+                    ReceiptRewardKind::Validator => RewardClaimLedger::ReceiptValidator,
+                },
+                claim_id: RewardClaimKey::Hash(*claim_id),
+                subject_id: RewardClaimKey::Hash(reward.receipt_id),
+                related_id: None,
+                beneficiary: reward.beneficiary,
+                amount: reward.amount,
+                claimable_at_height: reward.claimable_at_height,
+                voided_by_challenge: reward.voided_by_challenge,
+            });
+        }
+        for (claim_id, reward) in &self.pending_challenge_rewards {
+            claims.push(RewardClaimView {
+                ledger: RewardClaimLedger::Challenge,
+                claim_id: RewardClaimKey::Hash(*claim_id),
+                subject_id: RewardClaimKey::Hash(reward.challenge_id),
+                related_id: Some(RewardClaimKey::Hash(reward.receipt_id)),
+                beneficiary: reward.challenger,
+                amount: reward.amount,
+                claimable_at_height: reward.claimable_at_height,
+                voided_by_challenge: reward.voided_by_challenge,
+            });
+        }
+        for (claim_id, reward) in &self.pending_credit_rewards {
+            claims.push(RewardClaimView {
+                ledger: RewardClaimLedger::Credit,
+                claim_id: RewardClaimKey::Hash(*claim_id),
+                subject_id: RewardClaimKey::Hash(*claim_id),
+                related_id: None,
+                beneficiary: reward.beneficiary,
+                amount: reward.amount,
+                claimable_at_height: reward.claimable_at_height,
+                voided_by_challenge: false,
+            });
+        }
+        claims.sort_by(|left, right| {
+            left.claimable_at_height
+                .cmp(&right.claimable_at_height)
+                .then_with(|| left.ledger.cmp(&right.ledger))
+                .then_with(|| left.claim_id.cmp(&right.claim_id))
+        });
+        claims
     }
 
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {
