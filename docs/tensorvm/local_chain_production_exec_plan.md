@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 53, proposer reward delay cleanup, implemented and validated; commit and push
-  pending.
+- Active feature: Iteration 53, proposer reward delay cleanup, implemented, validated, and pushed; evidence
+  commit pending.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
@@ -19,7 +19,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 53, then record commit/push evidence.
+- Next action: commit and push Iteration 53 evidence, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -135,6 +135,7 @@ Validation evidence:
 - Final gate: `cargo test -p tensor_vm local_testnet --release` passed with 5 local-testnet library tests
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
+- Feature commit `72e16b8` pushed `0387246..72e16b8 main -> main`.
 
 ### Iteration 52: Canonical Byte-Packed Int8 Quantization Layout
 
