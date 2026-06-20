@@ -357,6 +357,90 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[1, 3, 2, 4],
             &[2, 2],
         ),
+        scaled_vector(
+            "field-gt-broadcast-mask-v1",
+            "gt",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::FieldElement, DType::FieldElement],
+            &[0, 0],
+            &[],
+            &[&[1, 4], &[0, 4, 5]],
+            DType::Int32,
+            0,
+            &[1, 0, 0, 1, 0, 0],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "field-lt-broadcast-mask-v1",
+            "lt",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::FieldElement, DType::FieldElement],
+            &[0, 0],
+            &[],
+            &[&[1, 4], &[0, 4, 5]],
+            DType::Int32,
+            0,
+            &[0, 1, 1, 0, 0, 1],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "field-ge-broadcast-mask-v1",
+            "ge",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::FieldElement, DType::FieldElement],
+            &[0, 0],
+            &[],
+            &[&[1, 4], &[0, 4, 5]],
+            DType::Int32,
+            0,
+            &[1, 0, 0, 1, 1, 0],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "field-le-broadcast-mask-v1",
+            "le",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::FieldElement, DType::FieldElement],
+            &[0, 0],
+            &[],
+            &[&[1, 4], &[0, 4, 5]],
+            DType::Int32,
+            0,
+            &[0, 1, 1, 0, 1, 1],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "bool-eq-broadcast-mask-v1",
+            "eq",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::Bool, DType::Bool],
+            &[0, 0],
+            &[],
+            &[&[1, 0], &[1, 0, 1]],
+            DType::Int32,
+            0,
+            &[1, 0, 1, 0, 1, 0],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "fixed32-where-mask-broadcast-v1",
+            "where",
+            "B",
+            &[&[2, 3], &[2, 1], &[1, 3]],
+            &[DType::Int32, DType::Fixed32, DType::Fixed32],
+            &[0, 1, 1],
+            &[],
+            &[&[1, 0, 1, 0, 1, 0], &[4, p - 6], &[1, p - 1, 8]],
+            DType::Fixed32,
+            1,
+            &[4, p - 1, 4, 1, p - 6, 8],
+            &[2, 3],
+        ),
         vector(
             "field-matmul-wraparound-v1",
             "matmul",
@@ -521,6 +605,12 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "mean" => mean_tensor(&tensors[0], param(vector, "axis")? as usize),
         "concat" => concat_tensors(&tensors, param(vector, "axis")? as usize),
         "stack" => stack_tensors(&tensors, param(vector, "axis")? as usize),
+        "gt" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs > rhs),
+        "lt" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs < rhs),
+        "ge" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs >= rhs),
+        "le" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs <= rhs),
+        "eq" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs == rhs),
+        "where" => where_tensor(&tensors[0], &tensors[1], &tensors[2]),
         "matmul" => tensors[0].matmul(&tensors[1]),
         "mse_loss" => {
             let loss = vm::mse_loss(&tensors[0], &tensors[1])?;
@@ -611,6 +701,101 @@ fn round_tensor(tensor: &Tensor) -> Result<Tensor> {
         return Ok(tensor.clone());
     }
     cast_tensor(tensor, tensor.dtype(), 0)
+}
+
+fn compare_tensors(
+    lhs: &Tensor,
+    rhs: &Tensor,
+    predicate: impl Fn(Elem, Elem) -> bool,
+) -> Result<Tensor> {
+    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
+        return Err(TvmError::InvalidReceipt("invalid conformance comparison"));
+    }
+    let shape = broadcast_shape(&[lhs.shape(), rhs.shape()])?;
+    let len = shape.iter().try_fold(1usize, |product, dim| {
+        product
+            .checked_mul(*dim)
+            .ok_or(TvmError::InvalidReceipt("invalid conformance comparison"))
+    })?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        data.push(
+            if predicate(
+                broadcast_value(lhs, &shape, index)?,
+                broadcast_value(rhs, &shape, index)?,
+            ) {
+                1
+            } else {
+                0
+            },
+        );
+    }
+    Tensor::from_vec(shape, DType::Int32, data)
+}
+
+fn where_tensor(cond: &Tensor, when_true: &Tensor, when_false: &Tensor) -> Result<Tensor> {
+    if cond.dtype() != DType::Int32
+        || cond.scale() != 0
+        || when_true.dtype() != when_false.dtype()
+        || when_true.scale() != when_false.scale()
+    {
+        return Err(TvmError::InvalidReceipt("invalid conformance where"));
+    }
+    let shape = broadcast_shape(&[cond.shape(), when_true.shape(), when_false.shape()])?;
+    let len = shape.iter().try_fold(1usize, |product, dim| {
+        product
+            .checked_mul(*dim)
+            .ok_or(TvmError::InvalidReceipt("invalid conformance where"))
+    })?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        let selected = if broadcast_value(cond, &shape, index)? == 0 {
+            when_false
+        } else {
+            when_true
+        };
+        data.push(broadcast_value(selected, &shape, index)?);
+    }
+    Tensor::from_vec_with_scale(shape, when_true.dtype(), when_true.scale(), data)
+}
+
+fn broadcast_shape(shapes: &[&[usize]]) -> Result<Vec<usize>> {
+    let rank = shapes.iter().map(|shape| shape.len()).max().unwrap_or(0);
+    let mut out = Vec::with_capacity(rank);
+    for offset in 0..rank {
+        let mut dim = 1usize;
+        for shape in shapes {
+            let value = shape
+                .len()
+                .checked_sub(1 + offset)
+                .map_or(1, |index| shape[index]);
+            if value != 1 && dim != 1 && value != dim {
+                return Err(TvmError::InvalidReceipt("invalid conformance broadcast"));
+            }
+            dim = dim.max(value);
+        }
+        out.push(dim);
+    }
+    out.reverse();
+    Ok(out)
+}
+
+fn broadcast_value(tensor: &Tensor, output_shape: &[usize], output_index: usize) -> Result<Elem> {
+    let output_coords = unravel_index(output_shape, output_index)?;
+    let rank_offset = output_shape
+        .len()
+        .checked_sub(tensor.shape().len())
+        .ok_or(TvmError::InvalidReceipt("invalid conformance broadcast"))?;
+    let mut coords = Vec::with_capacity(tensor.shape().len());
+    for (axis, dim) in tensor.shape().iter().enumerate() {
+        coords.push(if *dim == 1 {
+            0
+        } else {
+            output_coords[rank_offset + axis]
+        });
+    }
+    let input_index = ravel_index(tensor.shape(), &coords)?;
+    Ok(tensor.as_slice()[input_index])
 }
 
 fn quantize_scales(tensor: &Tensor, axis: usize) -> Result<Vec<i128>> {
@@ -914,6 +1099,23 @@ fn unravel_index(shape: &[usize], mut index: usize) -> Result<Vec<usize>> {
         index /= dim;
     }
     Ok(coords)
+}
+
+fn ravel_index(shape: &[usize], coords: &[usize]) -> Result<usize> {
+    if shape.len() != coords.len() {
+        return Err(TvmError::InvalidReceipt("invalid conformance shape"));
+    }
+    let mut index = 0usize;
+    for (dim, coord) in shape.iter().zip(coords.iter()) {
+        if *coord >= *dim {
+            return Err(TvmError::InvalidReceipt("invalid conformance shape"));
+        }
+        index = index
+            .checked_mul(*dim)
+            .and_then(|value| value.checked_add(*coord))
+            .ok_or(TvmError::InvalidReceipt("invalid conformance shape"))?;
+    }
+    Ok(index)
 }
 
 fn signed_abs(value: Elem) -> Elem {

@@ -95,18 +95,20 @@ admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`,
 `identity`, `neg`, signed-residue `abs`, `sign`, `relu`, field/integer and fixed-point `round`, `transpose`,
 `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`, and
 `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
-`unpack_dequantize_int8`, and `mse_loss`, plus scale-aware fixed-point `cast`/`round` vectors using
-per-input and expected output dtype/scale metadata, multi-output expected tensors for exact quantize scale
-output, and byte-exact packed payload vectors. The suite has a stable hash, the CPU reference backend must pass it through
+`unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`, plus
+scale-aware fixed-point `cast`/`round` vectors using per-input and expected output dtype/scale metadata,
+multi-output expected tensors for exact quantize scale output, field-order comparison and selection
+vectors, and byte-exact packed payload vectors. The suite has a stable hash, the CPU reference backend must pass it through
 `runtime::backend_conformance_profile`, and `verify_tensor_op` / `verify_linear_training_step` reject
 otherwise-valid receipts when their required conformance profile is unavailable or missing an op.
-Mixed-dtype comparison and `where` coverage is currently exercised through the IR execution tests. Focused evidence:
+Focused evidence:
 `conformance::tests::conformance_vectors_are_stable_and_cover_current_ops`,
 `conformance::tests::cpu_reference_passes_all_vectors`,
 `conformance::tests::required_conformance_gates_current_jobs`,
 `verify::tests::graph_verifier_accepts_fixed_point_rescale_receipt`,
 `verify::tests::graph_verifier_accepts_quantize_dequantize_receipt`,
 `verify::tests::graph_verifier_accepts_packed_quantize_dequantize_receipt`,
+`verify::tests::graph_verifier_accepts_comparison_where_receipt`,
 `runtime::tests::cpu_backend_reports_passing_conformance_profile`,
 `runtime::tests::gpu_backend_reports_device_and_requires_cuda_kernels`,
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and

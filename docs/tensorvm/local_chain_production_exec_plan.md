@@ -5,13 +5,15 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 53, proposer reward delay cleanup, implemented, validated, and pushed.
+- Active feature: Iteration 54, mixed-dtype comparison and `where` conformance vectors, implemented and
+  validated; commit/push pending.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
   magic/version bytes, rank, axis, output scale, shape, per-channel signed 64-bit scales, and row-major
   int8 payload bytes. Iteration 52 feature commit `1b86f7f` and evidence commit `0387246` are pushed.
-  Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed.
+  Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed. Iteration 54 adds
+  mixed-dtype comparison and `where` coverage to the conformance suite and verifier profile-gating tests.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -19,13 +21,13 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit/push Iteration 54, then start the uniform proposer reward-delay slice.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 53 first command: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 54 first and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -34,12 +36,107 @@ feature-sized iterations are summarized after validation and push, and older det
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
 | Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
-| Per-op `F_p` conformance vectors | Partial; Iteration 52 byte-packed quantization vectors implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, and Iteration 52 byte-exact pack/unpack vectors; CPU pass profile; default CUDA non-admission | Add remaining mixed-dtype admitted-op vectors and CUDA conformance evidence |
+| Per-op `F_p` conformance vectors | Partial; Iteration 54 mixed-dtype comparison/`where` vectors implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, and Iteration 54 comparison/selection vectors; CPU pass profile; default CUDA non-admission | Add remaining admitted-op vectors and CUDA conformance evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial; Iteration 53 reward-delay cleanup implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 54: Mixed-DType Comparison And Where Conformance Vectors
+
+Feature capability: the conformance suite covers exact Tier-B comparison and selection semantics with
+mixed dtypes: canonical field-order comparison emits deterministic integer mask tensors, and `where`
+consumes a mask plus fixed-point branches while preserving output dtype/scale. This moves the current
+IR-only evidence for comparisons and `where` into the per-op `F_p` conformance gate.
+
+Readiness requirements covered:
+- `upow.md` §3.3 and §16: admitted exact ops need deterministic conformance vectors before runtimes can
+  claim receipt eligibility.
+- `upow.md` §4.7-§4.9: Tier-B comparison and selection ops are exact deterministic replay, not
+  implementation-local behavior.
+- `mvp_spec.md` §35: validators must reject otherwise-valid receipts when required op conformance is
+  missing.
+
+Canonical owner: `conformance` owns per-op vector execution and suite hashing; `ir::TensorGraph` owns exact
+runtime semantics; `verify` consumes conformance profiles for receipt admission.
+Adapter callers: CPU/CUDA runtime profile reporting and graph/TensorOp/LinearTrainingStep verifiers consume
+the conformance profile but do not define vector semantics.
+Old shortcut being removed: mixed-dtype comparison and `where` behavior was proven by IR tests only, leaving
+the runtime conformance suite unable to name those admitted ops as pass-gated vectors.
+Regression test that proves the shortcut is gone: conformance tests pass vectors for `gt`, `lt`, `ge`,
+`le`, `eq`, and `where`, and the CPU profile's passed-op set includes those ops.
+Behavior with local synthetic block production disabled: unchanged; this is deterministic runtime
+admission metadata only.
+Behavior for producer and non-producer roles: unchanged; all roles consume the same suite hash/profile.
+Structured evidence source: conformance vector tests, CPU runtime profile tests, and graph verifier tests
+for profile gating.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p or storage codec changes; only the suite hash and vector set change.
+
+Parallel subagents:
+- Required read-only mapper/explorer/test-coverage agent launches were attempted and all failed with
+  `agent thread limit reached`; parent performs the mapping and implementation directly.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns all edits because vector definitions, reference execution, suite hash, tests, and
+  docs must agree.
+- No parallel writers.
+
+Tests/checkers/docs to add or update:
+- Conformance vectors for field-order comparison results and `where` over fixed-point branches.
+- Reference conformance executor support for comparison/selection ops.
+- Status docs replacing mixed-dtype comparison/`where` as IR-only evidence with conformance-covered
+  evidence.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm conformance::tests -- --nocapture`
+- `cargo test -p tensor_vm runtime::tests::cpu_backend_reports_passing_conformance_profile -- --nocapture`
+- `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_comparison_where_receipt -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: the conformance suite includes comparison and `where` vectors, CPU reference
+passes them, suite hashing commits them, and docs no longer list mixed-dtype comparison/`where` as
+IR-only vector coverage.
+
+Out of scope: CUDA runtime pass evidence, new IR op admission, `gather`/`scatter`/`embedding`
+index-consistency proofs, VRF/drand, fork-choice, Docker `/health`, public evidence, and arbitrary runtime
+role changes.
+
+Split trigger: if `where` conformance requires broad graph verifier or vector schema changes, stop after
+comparison vectors and leave `where` vector schema work for a separate iteration.
+
+Implementation summary:
+- Added conformance vectors for canonical field-order `gt`, `lt`, `ge`, `le`, boolean `eq`, and
+  fixed-point `where` with broadcasted mask/branch shapes.
+- Added reference conformance executor support for comparison and selection ops, including shared
+  broadcasting helpers for vector replay.
+- Added `verify::tests::graph_verifier_accepts_comparison_where_receipt`, proving graph receipts using
+  comparison plus `where` verify under the CPU conformance profile and fail when `where` is removed from
+  the passed-op set.
+- Updated status/coverage docs so mixed-dtype comparison and `where` are no longer described as IR-only
+  evidence.
+
+Validation evidence:
+- First gate: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused conformance: `cargo test -p tensor_vm conformance::tests` passed.
+- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_comparison_where_receipt` passed.
+- Focused runtime profile: `cargo test -p tensor_vm runtime::tests::cpu_backend_reports_passing_conformance_profile` passed.
+- Format/diff: `cargo fmt --check --all` and `git diff --check` passed.
+- Broad debug: `cargo test -p tensor_vm` passed 379 library tests plus integration/doc checks.
+- Lint: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Broad release: `cargo test --workspace --release` passed.
+- Final gate: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is
+  not installed (`error: no such command: tarpaulin`).
 
 ### Iteration 53: Proposer Reward Delay Cleanup
 
