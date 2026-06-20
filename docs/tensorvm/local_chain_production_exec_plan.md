@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 34, delayed generic reward credits.
-- Current status: Iteration 34 implemented and validated locally on June 20, 2026; commit/push pending.
+- Active feature: none; Iteration 34 is complete.
+- Current status: Iteration 34 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,9 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: replace the immediate `ChainCommand::CreditReward` spendability path with a state-rooted
-  pending credit reward ledger and explicit maturity release. Standing blockers remain the missing workflow
-  document, missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -130,6 +129,8 @@ Validation completed locally:
   -D warnings`, and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
+- Feature commit: `63052e0` (`Delay generic reward credits`).
+- Push result: `369609e..63052e0  main -> main` on `origin/main`.
 
 ## Recent Iterations
 
