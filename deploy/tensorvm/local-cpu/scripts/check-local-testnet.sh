@@ -667,11 +667,23 @@ ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH=""
 ALL_OPERATOR_COMMON_HEAD_HEIGHT=0
 ALL_OPERATOR_COMMON_HEAD_HASH=""
 CONVERGED_OPERATOR_COUNT=0
+LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT=0
+LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT=0
+LIVE_ROLE_MINER_RECEIPTS_SUBMITTED=0
+LIVE_ROLE_MINER_TENSORS_INSERTED=0
+LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
+LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   CONVERGED_OPERATOR_COUNT=0
   ALL_OPERATOR_MIN_HEIGHT=""
   ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH=""
+  LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT=0
+  LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT=0
+  LIVE_ROLE_MINER_RECEIPTS_SUBMITTED=0
+  LIVE_ROLE_MINER_TENSORS_INSERTED=0
+  LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
+  LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
   STATUS_MISMATCH=false
   for service in $EXPECTED_SERVICES; do
     if STATUS_RAW=$(read_service_status "$service"); then
@@ -893,6 +905,24 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         ;;
     esac
     case "$SERVICE_ROLE_LOOP_ROLE" in
+      miner)
+        if [ "$SERVICE_ROLE_MINER_RECEIPTS_SUBMITTED" -gt 0 ]; then
+          LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT=$((LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT + 1))
+        fi
+        if [ "$SERVICE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ]; then
+          LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT=$((LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT + 1))
+        fi
+        LIVE_ROLE_MINER_RECEIPTS_SUBMITTED=$((LIVE_ROLE_MINER_RECEIPTS_SUBMITTED + SERVICE_ROLE_MINER_RECEIPTS_SUBMITTED))
+        LIVE_ROLE_MINER_TENSORS_INSERTED=$((LIVE_ROLE_MINER_TENSORS_INSERTED + SERVICE_ROLE_MINER_TENSORS_INSERTED))
+        ;;
+      validator)
+        if [ "$SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ]; then
+          LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=$((LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT + 1))
+        fi
+        LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=$((LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED + SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED))
+        ;;
+    esac
+    case "$SERVICE_ROLE_LOOP_ROLE" in
       validator)
         case "$service" in
           validator-00) ;;
@@ -1074,6 +1104,12 @@ done
 [ "$ALL_OPERATOR_NETWORK_HEAD_HASH" != "$ZERO_HASH" ] || fail "operator network-observed latest head hash convergence was empty"
 [ -n "$ALL_OPERATOR_NETWORK_STATE_ROOT" ] || fail "operator network-observed latest state-root convergence was not observed"
 [ "$ALL_OPERATOR_NETWORK_STATE_ROOT" != "$ZERO_HASH" ] || fail "operator network-observed latest state-root convergence was empty"
+[ "$LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live receipt submissions"
+[ "$LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live tensor inserts"
+[ "$LIVE_ROLE_MINER_RECEIPTS_SUBMITTED" -gt 0 ] || fail "miner role receipt submission total did not advance"
+[ "$LIVE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ] || fail "miner role tensor insert total did not advance"
+[ "$LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT" -gt 0 ] || fail "no validator role reported positive live attestation submissions"
+[ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1133,6 +1169,14 @@ all_operator_validator_remote_tensor_fetch_status=true
 all_operator_chain_profiles=true
 all_operator_role_production_policy=true
 all_operator_role_runtime_counters=true
+live_role_miner_receipt_operators=${LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT}
+live_role_miner_tensor_operators=${LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT}
+live_role_miner_receipts_submitted=${LIVE_ROLE_MINER_RECEIPTS_SUBMITTED}
+live_role_miner_tensors_inserted=${LIVE_ROLE_MINER_TENSORS_INSERTED}
+live_role_validator_attestation_operators=${LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT}
+live_role_validator_attestations_submitted=${LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED}
+live_role_owned_miner_receipts=true
+live_role_owned_validator_attestations=true
 single_local_producer=true
 local_proposer_runtime=false
 local_validator_producer=true
