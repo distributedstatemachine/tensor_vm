@@ -1,3 +1,4 @@
+use crate::ir::TensorGraph;
 use crate::jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, MatmulJob, PrimitiveType, TensorOpReceipt,
 };
@@ -357,6 +358,24 @@ impl JobState {
             Self::LinearTrainingStep(job) => job.deadline_block,
         }
     }
+
+    pub fn program_hash(&self) -> Hash {
+        match self {
+            Self::TensorOp(job) => job.program_hash(),
+            Self::LinearTrainingStep(job) => job.program_hash(),
+        }
+    }
+
+    pub fn tensor_ir_graph(&self) -> TensorGraph {
+        match self {
+            Self::TensorOp(job) => job.tensor_ir_graph(),
+            Self::LinearTrainingStep(job) => job.tensor_ir_graph(),
+        }
+    }
+
+    pub fn canonical_program_body(&self) -> Vec<u8> {
+        self.tensor_ir_graph().canonical_json().into_bytes()
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -628,6 +647,7 @@ pub struct ChainState {
     pub(in crate::chain) miners: BTreeMap<Address, MinerState>,
     pub(in crate::chain) validators: BTreeMap<Address, ValidatorState>,
     pub(in crate::chain) jobs: BTreeMap<Hash, JobState>,
+    pub(in crate::chain) program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub(in crate::chain) receipts: BTreeMap<Hash, ReceiptState>,
     pub(in crate::chain) attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub(in crate::chain) block_votes: BTreeMap<Hash, Vec<BlockVote>>,
@@ -657,6 +677,7 @@ pub(crate) struct ChainStateParts {
     pub miners: BTreeMap<Address, MinerState>,
     pub validators: BTreeMap<Address, ValidatorState>,
     pub jobs: BTreeMap<Hash, JobState>,
+    pub program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub receipts: BTreeMap<Hash, ReceiptState>,
     pub attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub block_votes: BTreeMap<Hash, Vec<BlockVote>>,
@@ -687,6 +708,7 @@ impl ChainState {
             miners: parts.miners,
             validators: parts.validators,
             jobs: parts.jobs,
+            program_bodies: parts.program_bodies,
             receipts: parts.receipts,
             attestations: parts.attestations,
             block_votes: parts.block_votes,
@@ -743,6 +765,14 @@ impl ChainState {
 
     pub fn jobs(&self) -> &BTreeMap<Hash, JobState> {
         &self.jobs
+    }
+
+    pub fn program_bodies(&self) -> &BTreeMap<Hash, Vec<u8>> {
+        &self.program_bodies
+    }
+
+    pub fn program_body(&self, graph_id: &Hash) -> Option<&[u8]> {
+        self.program_bodies.get(graph_id).map(Vec::as_slice)
     }
 
     pub fn receipts(&self) -> &BTreeMap<Hash, ReceiptState> {

@@ -16,6 +16,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             miners: BTreeMap::new(),
             validators: BTreeMap::new(),
             jobs: BTreeMap::new(),
+            program_bodies: BTreeMap::new(),
             receipts: BTreeMap::new(),
             attestations: BTreeMap::new(),
             block_votes: BTreeMap::new(),

@@ -79,6 +79,8 @@ fn chain_engine_applies_profile_neutral_commands() {
     assert_eq!(chain.state().rewards().balance(&receiver), 9);
 
     let matmul_job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
+    let matmul_program_hash = matmul_job.program_hash();
+    let matmul_program_body = matmul_job.tensor_ir_graph().canonical_json().into_bytes();
     let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&matmul_job, miner, 0, 3).unwrap();
     assert_eq!(
         chain
@@ -87,6 +89,10 @@ fn chain_engine_applies_profile_neutral_commands() {
             )))
             .unwrap(),
         vec![ChainEvent::JobAccepted(matmul_job.job_id)]
+    );
+    assert_eq!(
+        chain.state().program_body(&matmul_program_hash),
+        Some(matmul_program_body.as_slice())
     );
     assert_eq!(
         chain

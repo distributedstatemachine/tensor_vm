@@ -24,7 +24,10 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   canonical JSON encoding, `graph_id = SHA256(canonical_json(graph))`, frozen v0 op-registry metadata,
   structural validation, Tier-C vocabulary that is carried but rejected for consensus admission, and
   canonical TensorOp/LinearTrainingStep graph constructors. Current TensorOp and LinearTrainingStep
-  receipts bind their `program_hash` to the validated IR `graph_id`.
+  receipts bind their `program_hash` to the validated IR `graph_id`. Current job admission also stores the
+  canonical graph body bytes in chain state keyed by graph ID, commits them in the state root, persists
+  them through the chain-state snapshot, and lets the existing libp2p `RequestProgram`/`ProgramResponse`
+  path serve registered graph bodies.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep (`add`, `sub`, `mul`, `scalar_mul`, `transpose`, `reduce_sum`, `matmul`, and
   `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA

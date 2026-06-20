@@ -203,6 +203,10 @@ pub fn publish_new_chain_announcements(
 ) -> std::result::Result<(), String> {
     for (job_id, job) in chain.state().jobs() {
         if !before.jobs.contains(job_id) {
+            let program_hash = job.program_hash();
+            if let Some(program_body) = chain.state().program_body(&program_hash) {
+                p2p_service.register_program(program_hash, program_body.to_vec());
+            }
             p2p_service
                 .publish_gossip(P2pMessage::NewJobPayload {
                     job_id: *job_id,

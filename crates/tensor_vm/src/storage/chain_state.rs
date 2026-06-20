@@ -13,7 +13,8 @@ use std::path::{Path, PathBuf};
 
 use super::block_log::{BLOCK_PAYLOAD_LEN, decode_block_payload, encode_block_payload};
 use super::codec::{
-    HASH_LEN, StateReader, write_hash, write_i64, write_len, write_option_hash, write_u64,
+    HASH_LEN, StateReader, write_bytes, write_hash, write_i64, write_len, write_option_hash,
+    write_u64,
 };
 
 const CHAIN_STATE_MAGIC: &[u8] = b"TENSORVM_STATE\n";
@@ -198,6 +199,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_miners(out, state.miners());
     encode_validators(out, state.validators());
     encode_jobs(out, state.jobs());
+    encode_program_bodies(out, state.program_bodies());
     encode_receipts(out, state.receipts());
     encode_attestations(out, state.attestations());
     encode_block_votes(out, state.block_votes());
@@ -227,6 +229,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         miners: decode_miners(reader)?,
         validators: decode_validators(reader)?,
         jobs: decode_jobs(reader)?,
+        program_bodies: decode_program_bodies(reader)?,
         receipts: decode_receipts(reader)?,
         attestations: decode_attestations(reader)?,
         block_votes: decode_block_votes(reader)?,
@@ -357,6 +360,24 @@ fn decode_jobs(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, JobState>>
         jobs.insert(key, job);
     }
     Ok(jobs)
+}
+
+fn encode_program_bodies(out: &mut Vec<u8>, programs: &BTreeMap<Hash, Vec<u8>>) {
+    write_len(out, programs.len());
+    for (graph_id, body) in programs {
+        write_hash(out, graph_id);
+        write_bytes(out, body);
+    }
+}
+
+fn decode_program_bodies(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, Vec<u8>>> {
+    let mut programs = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let graph_id = reader.read_hash()?;
+        let body = reader.read_bytes()?;
+        programs.insert(graph_id, body);
+    }
+    Ok(programs)
 }
 
 fn storage_codec_error(error: payload_codec::CodecError) -> TvmError {
@@ -906,6 +927,17 @@ mod tests {
         store.save_chain(&chain).unwrap();
         let loaded = store.load_chain().unwrap();
         assert_eq!(loaded, chain);
+        assert_eq!(
+            loaded.state().program_bodies(),
+            chain.state().program_bodies()
+        );
+        assert!(
+            loaded
+                .state()
+                .jobs()
+                .values()
+                .all(|job| loaded.state().program_body(&job.program_hash()).is_some())
+        );
         assert_eq!(
             loaded.state().pending_receipt_rewards(),
             chain.state().pending_receipt_rewards()

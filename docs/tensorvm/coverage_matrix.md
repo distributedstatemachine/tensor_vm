@@ -35,13 +35,19 @@ The local reference now includes a content-addressed Tensor IR foundation for `u
 `ir::TensorGraph` canonical JSON encoding, `graph_id`, frozen op-registry metadata, structural validation,
 Tier-C vocabulary gating, and canonical graph constructors for the current TensorOp matmul and
 LinearTrainingStep primitives. The current fixed job structs derive their receipt `program_hash` from the
-validated graph ID. Focused evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
+validated graph ID. Submitted current jobs also register their canonical graph body bytes in chain state
+keyed by graph ID; the registry is committed in the state root, persisted by the node-store snapshot, and
+servable through the existing `RequestProgram`/`ProgramResponse` libp2p request-response path. Focused
+evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::graph_validation_rejects_bad_structure`,
 `ir::tests::graph_validation_rejects_op_metadata_mismatches`,
 `ir::tests::tier_c_vocabulary_is_carried_but_not_consensus_admitted`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
-`jobs::tests::linear_receipt_commits_to_learning_step`.
+`jobs::tests::linear_receipt_commits_to_learning_step`,
+`chain::tests::chain_engine_applies_profile_neutral_commands`,
+`storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`, and
+`p2p::service::tests::libp2p_service_fetches_registered_program_body`.
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `scalar_mul`,
@@ -57,10 +63,11 @@ unavailable or missing an op. Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: arbitrary graph body propagation/storage, generic IR execution,
-conformance vectors for the wider admitted registry that is not yet executable by a generic interpreter,
-and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment. Tier-C and
-transcendental/order-dependent ops remain registry vocabulary only and are still gated out of consensus.
+Remaining Tensor IR/conformance gaps: generic arbitrary-IR execution, user-submitted arbitrary graph body
+admission/fetch, conformance vectors for the wider admitted registry that is not yet executable by a
+generic interpreter, and CUDA conformance evidence when `cuda-kernels` is not compiled in this
+environment. Tier-C and transcendental/order-dependent ops remain registry vocabulary only and are still
+gated out of consensus.
 
 ## Local CPU Compose Gate
 

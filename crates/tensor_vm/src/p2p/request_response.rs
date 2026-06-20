@@ -53,7 +53,8 @@ pub(super) fn handle_request_response_event(
                 {
                     return;
                 }
-                let response = response_for_request(&request, metrics.tensor_store);
+                let response =
+                    response_for_request(&request, metrics.tensor_store, metrics.program_store);
                 let _ = send_response_for_protocol(swarm, protocol, channel, response);
             }
             libp2p::request_response::Message::Response {
@@ -125,6 +126,7 @@ pub(super) fn send_response_for_protocol(
 fn response_for_request(
     request: &P2pMessage,
     tensor_store: &Mutex<BTreeMap<Hash, Tensor>>,
+    program_store: &Mutex<BTreeMap<Hash, Vec<u8>>>,
 ) -> P2pMessage {
     match request {
         P2pMessage::RequestTensorByCommitmentRoot { commitment_root } => {
@@ -177,7 +179,11 @@ fn response_for_request(
         }
         P2pMessage::RequestProgram(program_hash) => P2pMessage::ProgramResponse {
             program_hash: *program_hash,
-            bytes: Vec::new(),
+            bytes: program_store
+                .lock()
+                .ok()
+                .and_then(|programs| programs.get(program_hash).cloned())
+                .unwrap_or_default(),
         },
         _ => P2pMessage::ProgramResponse {
             program_hash: [0; 32],

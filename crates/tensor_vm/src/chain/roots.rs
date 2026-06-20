@@ -31,6 +31,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&miner_root(&state.miners));
     parts.extend_from_slice(&validator_root(&state.validators));
     parts.extend_from_slice(&job_root(&state.jobs));
+    parts.extend_from_slice(&program_body_root(&state.program_bodies));
     parts.extend_from_slice(&receipt_root(&state.receipts));
     parts.extend_from_slice(&attestation_root(&state.attestations));
     parts.extend_from_slice(&block_finality_root(
@@ -59,6 +60,16 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
+}
+
+pub(super) fn program_body_root(programs: &BTreeMap<Hash, Vec<u8>>) -> Hash {
+    let mut encoded = Vec::new();
+    for (graph_id, body) in programs {
+        encoded.extend_from_slice(graph_id);
+        encoded.extend_from_slice(&(body.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(body);
+    }
+    hash_bytes(b"tensor-vm-program-body-root-v1", &[&encoded])
 }
 
 pub(super) fn block_check_challenge_root(

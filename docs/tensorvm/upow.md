@@ -155,6 +155,11 @@ Graph {
 - `graph_id = SHA256(canonical_json(graph))`.
 - Jobs reference a graph **only** by `graph_id`; the program is therefore immutable and content-addressed. Two graphs with identical `graph_id` are identical programs by construction.
 
+> Status: current TensorOp and LinearTrainingStep jobs store their validated canonical graph bodies in
+> chain state keyed by `graph_id`, persist those bodies through node-store snapshots, commit them in the
+> state root, and can serve them through the existing `RequestProgram`/`ProgramResponse` libp2p path.
+> Generic arbitrary-IR job admission and execution remain TODO.
+
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):
 1. `ops[i].id == i` for all `i` (dense, ordered ids).

@@ -20,6 +20,11 @@ pub(super) fn write_hash(out: &mut Vec<u8>, hash: &Hash) {
     out.extend_from_slice(hash);
 }
 
+pub(super) fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
+    write_len(out, bytes.len());
+    out.extend_from_slice(bytes);
+}
+
 pub(super) fn write_option_hash(out: &mut Vec<u8>, value: &Option<Hash>) {
     match value {
         Some(hash) => {
@@ -89,6 +94,11 @@ impl<'a> StateReader<'a> {
         Ok(self.read_u64()? as usize)
     }
 
+    pub(super) fn read_bytes(&mut self) -> Result<Vec<u8>> {
+        let len = self.read_len()?;
+        Ok(self.read_exact(len)?.to_vec())
+    }
+
     pub(super) fn read_hash(&mut self) -> Result<Hash> {
         let mut out = [0_u8; HASH_LEN];
         out.copy_from_slice(self.read_exact(HASH_LEN)?);
@@ -123,6 +133,7 @@ mod tests {
         write_i64(&mut encoded, -7);
         write_len(&mut encoded, 3);
         write_hash(&mut encoded, &hash);
+        write_bytes(&mut encoded, b"payload");
         write_option_hash(&mut encoded, &Some(hash));
         write_option_hash(&mut encoded, &None);
 
@@ -131,6 +142,7 @@ mod tests {
         assert_eq!(reader.read_i64().unwrap(), -7);
         assert_eq!(reader.read_len().unwrap(), 3);
         assert_eq!(reader.read_hash().unwrap(), hash);
+        assert_eq!(reader.read_bytes().unwrap(), b"payload");
         assert_eq!(reader.read_option_hash().unwrap(), Some(hash));
         assert_eq!(reader.read_option_hash().unwrap(), None);
         reader.finish().unwrap();

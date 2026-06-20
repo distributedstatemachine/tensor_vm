@@ -4,6 +4,15 @@ use crate::jobs::{LinearTrainingStepReceipt, TensorOpReceipt};
 use crate::types::Hash;
 
 pub fn submit_job(chain: &mut Chain, job: JobState) {
+    let graph = job.tensor_ir_graph();
+    if graph.validate_for_consensus().is_ok() {
+        let graph_id = graph.graph_id();
+        chain
+            .state
+            .program_bodies
+            .entry(graph_id)
+            .or_insert_with(|| graph.canonical_json().into_bytes());
+    }
     chain.state.jobs.insert(job.job_id(), job);
 }
 

@@ -30,6 +30,7 @@ pub(super) struct ServiceEventMetrics<'a> {
     pub(super) observed_block_payload_hashes: &'a Mutex<VecDeque<Hash>>,
     pub(super) connected_peer_ids: &'a Mutex<Vec<PeerId>>,
     pub(super) tensor_store: &'a Mutex<BTreeMap<Hash, Tensor>>,
+    pub(super) program_store: &'a Mutex<BTreeMap<Hash, Vec<u8>>>,
     pub(super) observed_message_tx: &'a mpsc::Sender<P2pMessage>,
 }
 

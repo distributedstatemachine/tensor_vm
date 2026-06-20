@@ -46,6 +46,7 @@ pub struct TensorVmLibp2pService {
     observed_block_payload_hashes: Arc<Mutex<VecDeque<Hash>>>,
     connected_peer_ids: Arc<Mutex<Vec<PeerId>>>,
     tensor_store: Arc<Mutex<BTreeMap<Hash, Tensor>>>,
+    program_store: Arc<Mutex<BTreeMap<Hash, Vec<u8>>>>,
     observed_message_rx: Mutex<mpsc::Receiver<P2pMessage>>,
     publish_tx: mpsc::Sender<P2pMessage>,
     request_tx: mpsc::Sender<RequestResponseCommand>,
@@ -162,6 +163,12 @@ impl TensorVmLibp2pService {
         }
     }
 
+    pub fn register_program(&self, program_hash: Hash, bytes: Vec<u8>) {
+        if let Ok(mut programs) = self.program_store.lock() {
+            programs.insert(program_hash, bytes);
+        }
+    }
+
     pub fn request_response(
         &self,
         peer_id: PeerId,
@@ -237,6 +244,8 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
     let worker_connected_peer_ids = Arc::clone(&connected_peer_ids);
     let tensor_store = Arc::new(Mutex::new(BTreeMap::new()));
     let worker_tensor_store = Arc::clone(&tensor_store);
+    let program_store = Arc::new(Mutex::new(BTreeMap::new()));
+    let worker_program_store = Arc::clone(&program_store);
     let (publish_tx, publish_rx) = mpsc::channel();
     let (request_tx, request_rx) = mpsc::channel::<RequestResponseCommand>();
     let (observed_message_tx, observed_message_rx) = mpsc::channel();
@@ -288,6 +297,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                 observed_block_payload_hashes: worker_observed_block_payload_hashes.as_ref(),
                 connected_peer_ids: worker_connected_peer_ids.as_ref(),
                 tensor_store: worker_tensor_store.as_ref(),
+                program_store: worker_program_store.as_ref(),
                 observed_message_tx: &observed_message_tx,
             };
             let mut pending_requests = HashMap::new();
@@ -371,6 +381,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
             observed_block_payload_hashes,
             connected_peer_ids,
             tensor_store,
+            program_store,
             observed_message_rx: Mutex::new(observed_message_rx),
             publish_tx,
             request_tx,
@@ -494,6 +505,60 @@ mod tests {
             P2pMessage::TensorByCommitmentRootResponse {
                 commitment_root: missing_root,
                 payload: None,
+            }
+        );
+    }
+
+    #[test]
+    fn libp2p_service_fetches_registered_program_body() {
+        let port = free_tcp_port();
+        let program_hash = hash_bytes(b"test", &[b"libp2p-service-program"]);
+        let program_body = b"{\"ir_version\":1,\"ops\":[]}".to_vec();
+        let service_a = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-service-program-a"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+        service_a.register_program(program_hash, program_body.clone());
+        let bootstrap_address = format!("/ip4/127.0.0.1/tcp/{port}/p2p/{}", service_a.peer_id());
+        let service_b = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+            bootstrap_addresses: vec![bootstrap_address],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-service-program-b"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+
+        wait_for_connected_services(&service_a, &service_b);
+        let response = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestProgram(program_hash),
+                Duration::from_secs(3),
+            )
+            .unwrap();
+        assert_eq!(
+            response,
+            P2pMessage::ProgramResponse {
+                program_hash,
+                bytes: program_body,
+            }
+        );
+
+        let missing = hash_bytes(b"test", &[b"missing-program"]);
+        let response = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestProgram(missing),
+                Duration::from_secs(3),
+            )
+            .unwrap();
+        assert_eq!(
+            response,
+            P2pMessage::ProgramResponse {
+                program_hash: missing,
+                bytes: Vec::new(),
             }
         );
     }
