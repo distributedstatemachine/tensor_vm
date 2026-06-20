@@ -430,6 +430,7 @@ LIVE_RECEIPTS=""
 LIVE_ATTESTED_RECEIPT_COUNT=0
 LIVE_TENSOR_OP_RECEIPT_COUNT=0
 LIVE_LINEAR_TRAINING_RECEIPT_COUNT=0
+LIVE_PENDING_PROPOSER_REWARD_COUNT=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_CHAIN_HEAD=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/chain/head")
@@ -442,6 +443,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_RECEIPT_COUNT=$(json_number receipt_count "$LIVE_OVERVIEW")
   LIVE_SETTLED_RECEIPT_COUNT=$(json_number settled_receipt_count "$LIVE_OVERVIEW")
   LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_number pending_proposer_reward_count "$LIVE_OVERVIEW")
   LIVE_TOTAL_REWARD_BALANCE=$(json_number total_reward_balance "$LIVE_OVERVIEW")
   LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
@@ -457,7 +459,8 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
-    && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ]; then
+    && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] \
+    && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ]; then
     break
   fi
   attempt=$((attempt + 1))
@@ -475,6 +478,7 @@ done
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
 [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] || fail "live synthetic jobs did not add pending receipt rewards"
+[ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -677,6 +681,8 @@ LIVE_ROLE_MINER_RECEIPTS_SUBMITTED=0
 LIVE_ROLE_MINER_TENSORS_INSERTED=0
 LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
+LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
+LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   CONVERGED_OPERATOR_COUNT=0
@@ -688,6 +694,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_ROLE_MINER_TENSORS_INSERTED=0
   LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
   LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
+  LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
+  LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
   STATUS_MISMATCH=false
   for service in $EXPECTED_SERVICES; do
     if STATUS_RAW=$(read_service_status "$service"); then
@@ -736,6 +744,12 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_VALIDATOR_REMOTE_FETCH_BYTES=$(status_value role_validator_remote_tensor_fetch_bytes "$STATUS")
     SERVICE_ROLE_VALIDATOR_REMOTE_TENSORS_INSERTED=$(status_value role_validator_remote_tensors_inserted "$STATUS")
     SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=$(status_value role_validator_attestations_submitted "$STATUS")
+    SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY=$(status_value role_validator_proposer_work_ready "$STATUS")
+    SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN=$(status_value role_validator_proposer_settled_receipts_seen "$STATUS")
+    SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED=$(status_value role_validator_blocks_proposed "$STATUS")
+    SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=$(status_value role_validator_useful_blocks_proposed "$STATUS")
+    SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=$(status_value role_validator_fallback_blocks_proposed "$STATUS")
+    SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED=$(status_value role_validator_receipts_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED=$(status_value role_validator_block_votes_submitted "$STATUS")
     SERVICE_ROLE_LOCAL_PRODUCER=$(status_value role_local_producer "$STATUS")
     SERVICE_ROLE_PRODUCED_BLOCKS=$(status_value role_produced_blocks "$STATUS")
@@ -816,6 +830,12 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     is_u64 "$SERVICE_ROLE_VALIDATOR_REMOTE_FETCH_BYTES" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_REMOTE_TENSORS_INSERTED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "true" ] || [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED" || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_LOCAL_PRODUCER" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_LOCAL_PRODUCER" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
@@ -924,6 +944,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
           LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=$((LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT + 1))
         fi
         LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=$((LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED + SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED))
+        LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=$((LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED + SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED))
+        LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=$((LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS + SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED))
         ;;
     esac
     case "$SERVICE_ROLE_LOOP_ROLE" in
@@ -945,6 +967,12 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_REMOTE_FETCH_BYTES" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_REMOTE_TENSORS_INSERTED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
     esac
@@ -958,11 +986,18 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
       miner-*)
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "false" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "false" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -985,6 +1020,10 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "false" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1114,6 +1153,8 @@ done
 [ "$LIVE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ] || fail "miner role tensor insert total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT" -gt 0 ] || fail "no validator role reported positive live attestation submissions"
 [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
+[ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
+[ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1149,6 +1190,7 @@ live_linear_training_block_height=${LIVE_LINEAR_TRAINING_BLOCK_HEIGHT}
 live_linear_training_block_receipts=${LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS}
 live_tensor_fetch=true
 live_rewards=true
+live_pending_proposer_rewards=${LIVE_PENDING_PROPOSER_REWARD_COUNT}
 all_operator_status_count=${EXPECTED_SERVICE_COUNT}
 all_operator_min_height=${ALL_OPERATOR_MIN_HEIGHT}
 all_operator_first_live_block_hash=${ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH}
@@ -1180,6 +1222,8 @@ live_role_miner_receipts_submitted=${LIVE_ROLE_MINER_RECEIPTS_SUBMITTED}
 live_role_miner_tensors_inserted=${LIVE_ROLE_MINER_TENSORS_INSERTED}
 live_role_validator_attestation_operators=${LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT}
 live_role_validator_attestations_submitted=${LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED}
+live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED}
+live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}
 live_role_owned_miner_receipts=true
 live_role_owned_validator_attestations=true
 single_local_producer=true

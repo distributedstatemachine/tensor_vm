@@ -102,8 +102,13 @@ pub struct NodeRuntimeState {
     validator_unreported_audits: BTreeSet<Hash>,
     validator_audit_artifact_ready: BTreeSet<Hash>,
     validator_audit_artifact_missing: BTreeSet<Hash>,
+    validator_proposer_settled_receipts_seen: BTreeSet<Hash>,
     validator_attestations_submitted: usize,
     validator_audit_reports_submitted: usize,
+    validator_blocks_proposed: usize,
+    validator_useful_blocks_proposed: usize,
+    validator_fallback_blocks_proposed: usize,
+    validator_receipts_proposed: usize,
     validator_block_votes_submitted: usize,
     validator_remote_tensor_fetch_attempts: usize,
     validator_remote_tensor_fetch_successes: usize,
@@ -197,12 +202,36 @@ impl NodeRuntimeState {
         !self.validator_audit_artifact_ready.is_empty()
     }
 
+    pub fn validator_proposer_settled_receipts_seen(&self) -> usize {
+        self.validator_proposer_settled_receipts_seen.len()
+    }
+
+    pub fn validator_proposer_work_ready(&self) -> bool {
+        !self.validator_proposer_settled_receipts_seen.is_empty()
+    }
+
     pub fn validator_attestations_submitted(&self) -> usize {
         self.validator_attestations_submitted
     }
 
     pub fn validator_audit_reports_submitted(&self) -> usize {
         self.validator_audit_reports_submitted
+    }
+
+    pub fn validator_blocks_proposed(&self) -> usize {
+        self.validator_blocks_proposed
+    }
+
+    pub fn validator_useful_blocks_proposed(&self) -> usize {
+        self.validator_useful_blocks_proposed
+    }
+
+    pub fn validator_fallback_blocks_proposed(&self) -> usize {
+        self.validator_fallback_blocks_proposed
+    }
+
+    pub fn validator_receipts_proposed(&self) -> usize {
+        self.validator_receipts_proposed
     }
 
     pub fn validator_block_votes_submitted(&self) -> usize {
@@ -303,6 +332,15 @@ impl NodeRuntimeState {
         changed
     }
 
+    pub fn record_validator_block_proposal_observation(
+        &mut self,
+        settled_receipts: BTreeSet<Hash>,
+    ) -> bool {
+        let changed = self.validator_proposer_settled_receipts_seen != settled_receipts;
+        self.validator_proposer_settled_receipts_seen = settled_receipts;
+        changed
+    }
+
     pub fn record_validator_attestation_submission(&mut self, attestations_submitted: usize) {
         self.validator_attestations_submitted = self
             .validator_attestations_submitted
@@ -313,6 +351,27 @@ impl NodeRuntimeState {
         self.validator_audit_reports_submitted = self
             .validator_audit_reports_submitted
             .saturating_add(audit_reports_submitted);
+    }
+
+    pub fn record_validator_block_proposal_submission(
+        &mut self,
+        blocks_proposed: usize,
+        useful_blocks_proposed: usize,
+        fallback_blocks_proposed: usize,
+        receipts_proposed: usize,
+    ) {
+        self.validator_blocks_proposed = self
+            .validator_blocks_proposed
+            .saturating_add(blocks_proposed);
+        self.validator_useful_blocks_proposed = self
+            .validator_useful_blocks_proposed
+            .saturating_add(useful_blocks_proposed);
+        self.validator_fallback_blocks_proposed = self
+            .validator_fallback_blocks_proposed
+            .saturating_add(fallback_blocks_proposed);
+        self.validator_receipts_proposed = self
+            .validator_receipts_proposed
+            .saturating_add(receipts_proposed);
     }
 
     pub fn record_validator_block_vote_submission(&mut self, block_votes_submitted: usize) {
@@ -407,6 +466,14 @@ mod tests {
         assert!(!state.validator_work_ready());
         state.record_validator_attestation_submission(1);
         assert_eq!(state.validator_attestations_submitted(), 1);
+        assert!(state.record_validator_block_proposal_observation(BTreeSet::from([[5; 32]])));
+        assert_eq!(state.validator_proposer_settled_receipts_seen(), 1);
+        assert!(state.validator_proposer_work_ready());
+        state.record_validator_block_proposal_submission(2, 1, 1, 3);
+        assert_eq!(state.validator_blocks_proposed(), 2);
+        assert_eq!(state.validator_useful_blocks_proposed(), 1);
+        assert_eq!(state.validator_fallback_blocks_proposed(), 1);
+        assert_eq!(state.validator_receipts_proposed(), 3);
         state.record_validator_block_vote_submission(1);
         assert_eq!(state.validator_block_votes_submitted(), 1);
         state.record_validator_remote_tensor_fetch(3, 2, 1, 128, 2);

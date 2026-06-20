@@ -282,8 +282,23 @@ fn scheduled_local_production_publishes_jobs_without_producer_receipts_or_attest
             .settled_receipts()
             .is_empty()
     );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .is_empty()
+    );
     assert_eq!(server.gateway().node.chain.blocks().len(), 1);
     assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_useful_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_receipts_proposed(), 0);
+    assert_eq!(runtime_state.validator_proposer_settled_receipts_seen(), 0);
+    assert!(!runtime_state.validator_proposer_work_ready());
     assert_eq!(runtime_state.miner_receipts_submitted(), 0);
     assert_eq!(runtime_state.validator_attestations_submitted(), 0);
     assert_eq!(p2p_service.observed_receipt_gossip_count(), 0);
@@ -377,6 +392,9 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .unwrap()
             .expect("validator should propose over role-owned settled receipt");
     assert_eq!(proposal.blocks_proposed, 1);
+    assert_eq!(proposal.useful_blocks_proposed, 1);
+    assert_eq!(proposal.fallback_blocks_proposed, 0);
+    assert_eq!(proposal.selected_receipts, vec![receipt.receipt_id()]);
     assert!(
         server
             .gateway()
@@ -388,6 +406,27 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
     );
     let block = server.gateway().node.chain.blocks().last().unwrap();
     assert_eq!(block.proposer, validator);
+    assert_eq!(block.proposer_reward, 500);
+    let pending_proposer_reward = server
+        .gateway()
+        .node
+        .chain
+        .state()
+        .pending_proposer_rewards()
+        .get(&block.height)
+        .expect("useful role proposal should delay proposer reward");
+    assert_eq!(pending_proposer_reward.proposer, validator);
+    assert_eq!(pending_proposer_reward.amount, 500);
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .rewards()
+            .balance(&validator),
+        0
+    );
     assert_eq!(
         server
             .gateway()

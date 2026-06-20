@@ -26,6 +26,11 @@ pub struct ValidatorRoleAuditObservation {
     pub artifact_missing_audits: BTreeSet<Hash>,
 }
 
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
+pub struct ValidatorRoleBlockProposalObservation {
+    pub settled_receipts: BTreeSet<Hash>,
+}
+
 pub fn validator_role_work_observation(
     node: &RpcNode,
     validator: Address,
@@ -93,6 +98,18 @@ pub fn validator_role_audit_observation(
     observation
 }
 
+pub fn validator_role_block_proposal_observation(
+    node: &RpcNode,
+    validator: Address,
+) -> ValidatorRoleBlockProposalObservation {
+    if !node.chain.state().validators().contains_key(&validator) {
+        return ValidatorRoleBlockProposalObservation::default();
+    }
+    ValidatorRoleBlockProposalObservation {
+        settled_receipts: node.chain.state().settled_receipts().clone(),
+    }
+}
+
 fn validator_has_attested_for_receipt(chain: &Chain, validator: Address, receipt_id: Hash) -> bool {
     chain
         .state()
@@ -120,9 +137,12 @@ pub struct ValidatorRoleBlockVoteSubmission {
     pub block_votes_submitted: usize,
 }
 
-#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Default, Eq, PartialEq)]
 pub struct ValidatorRoleBlockProposal {
     pub blocks_proposed: usize,
+    pub useful_blocks_proposed: usize,
+    pub fallback_blocks_proposed: usize,
+    pub selected_receipts: Vec<Hash>,
 }
 
 pub fn submit_validator_role_block_proposal(
@@ -136,13 +156,41 @@ pub fn submit_validator_role_block_proposal(
     node.chain
         .prepare_block_parent_state()
         .map_err(|error| format!("validator proposer failed to prepare parent state: {error}"))?;
-    node.chain
-        .apply_command(ChainCommand::ProduceBlock {
+    let settled_receipts = node.chain.state().settled_receipts().len();
+    let proposer_reward = node
+        .chain
+        .params()
+        .reward_allocation(10_000)
+        .proposer_reward;
+    let command = if settled_receipts > 0 && proposer_reward > 0 {
+        ChainCommand::ProduceRewardedBlock {
             proposer: validator,
             timestamp,
-        })
+            fixed_block_reward: proposer_reward,
+            fee_share: 0,
+        }
+    } else {
+        ChainCommand::ProduceBlock {
+            proposer: validator,
+            timestamp,
+        }
+    };
+    node.chain
+        .apply_command(command)
         .map_err(|error| format!("validator proposer failed to produce block: {error}"))?;
-    Ok(Some(ValidatorRoleBlockProposal { blocks_proposed: 1 }))
+    let block = node
+        .chain
+        .blocks()
+        .last()
+        .cloned()
+        .ok_or_else(|| "validator proposer produced no block".to_owned())?;
+    let selected_receipts = node.chain.selected_receipts_for_block(&block);
+    Ok(Some(ValidatorRoleBlockProposal {
+        blocks_proposed: 1,
+        useful_blocks_proposed: usize::from(block.production_kind.requires_pow()),
+        fallback_blocks_proposed: usize::from(!block.production_kind.requires_pow()),
+        selected_receipts,
+    }))
 }
 
 pub fn submit_validator_role_attestation(

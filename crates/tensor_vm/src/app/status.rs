@@ -79,6 +79,12 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_validator_audit_artifact_ready",
     "role_validator_audit_artifact_missing",
     "role_validator_audit_reports_submitted",
+    "role_validator_proposer_work_ready",
+    "role_validator_proposer_settled_receipts_seen",
+    "role_validator_blocks_proposed",
+    "role_validator_useful_blocks_proposed",
+    "role_validator_fallback_blocks_proposed",
+    "role_validator_receipts_proposed",
     "role_validator_block_votes_submitted",
     "role_local_producer",
     "role_served_requests",
@@ -235,6 +241,10 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
     report.field(
         "pending_receipt_reward_count",
         chain.state().pending_receipt_rewards().len(),
+    );
+    report.field(
+        "pending_proposer_reward_count",
+        chain.state().pending_proposer_rewards().len(),
     );
     report.field(
         "pending_challenge_reward_count",

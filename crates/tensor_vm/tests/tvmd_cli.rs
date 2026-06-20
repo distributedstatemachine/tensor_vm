@@ -847,6 +847,18 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert!(stdout_u64(&stdout, "validator_remote_tensor_fetch_bytes") <= 1_000_000);
         assert!(stdout_u64(&stdout, "validator_remote_tensors_inserted") <= 20);
         assert!(stdout_u64(&stdout, "validator_attestations_submitted") <= 10);
+        assert!(matches!(
+            stdout_value(&stdout, "validator_proposer_work_ready"),
+            "true" | "false"
+        ));
+        assert_eq!(
+            stdout_u64(&stdout, "validator_proposer_settled_receipts_seen"),
+            0
+        );
+        assert_eq!(stdout_u64(&stdout, "validator_blocks_proposed"), 0);
+        assert_eq!(stdout_u64(&stdout, "validator_useful_blocks_proposed"), 0);
+        assert_eq!(stdout_u64(&stdout, "validator_fallback_blocks_proposed"), 0);
+        assert_eq!(stdout_u64(&stdout, "validator_receipts_proposed"), 0);
         assert_eq!(stdout_u64(&stdout, "validator_block_votes_submitted"), 0);
         assert_eq!(stdout_value(&stdout, "local_producer"), "false");
         assert_eq!(stdout_value(&stdout, "p2p_runtime"), "libp2p");
@@ -934,6 +946,24 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert!(stdout_u64(&status, "role_validator_remote_tensor_fetch_bytes") <= 1_000_000);
         assert!(stdout_u64(&status, "role_validator_remote_tensors_inserted") <= 20);
         assert!(stdout_u64(&status, "role_validator_attestations_submitted") <= 10);
+        assert!(matches!(
+            stdout_value(&status, "role_validator_proposer_work_ready"),
+            "true" | "false"
+        ));
+        assert_eq!(
+            stdout_u64(&status, "role_validator_proposer_settled_receipts_seen"),
+            0
+        );
+        assert_eq!(stdout_u64(&status, "role_validator_blocks_proposed"), 0);
+        assert_eq!(
+            stdout_u64(&status, "role_validator_useful_blocks_proposed"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_validator_fallback_blocks_proposed"),
+            0
+        );
+        assert_eq!(stdout_u64(&status, "role_validator_receipts_proposed"), 0);
         assert_eq!(
             stdout_u64(&status, "role_validator_block_votes_submitted"),
             0

@@ -59,8 +59,10 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
   pending challenge reward claims, treasury rewards, reward accounting without repeated payout, and
-  no-quorum rejection. Receipt and challenge reward claims are state-rooted, persisted, released only after
-  maturity, and receipt claims are voided/pruned if a block-check challenge succeeds before release.
+  no-quorum rejection. Validator-owned useful proposals now create delayed proposer reward claims while
+  empty fallback proposals stay unrewarded. Receipt and challenge reward claims are state-rooted,
+  persisted, released only after maturity, and receipt claims are voided/pruned if a block-check challenge
+  succeeds before release.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
@@ -121,6 +123,11 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   available, rejects conflicting duplicate reports, publishes locally submitted reports over p2p gossip,
   and exposes validator-submitted plus network-ingested/applied audit-report counters for service and role
   runtimes.
+- Validator proposer role status now distinguishes useful settled-receipt block proposals from empty
+  fallback blocks. The timed validator producer records settled-receipt proposer readiness, total proposed
+  blocks, useful proposal count, fallback proposal count, and selected receipt count; `tvmd node status`
+  passes those fields through and the local CPU checker requires positive useful proposal plus
+  proposed-receipt evidence instead of accepting a generic produced-block counter.
 - `CpuReferenceMinerRole`, `ReferenceValidatorRole`, and `RoleReceiptBundle` boundaries for CPU role work,
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine

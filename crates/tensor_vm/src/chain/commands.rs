@@ -121,6 +121,23 @@ impl ChainEngine for Chain {
                     hash: block.hash(),
                 }])
             }
+            ChainCommand::ProduceRewardedBlock {
+                proposer,
+                timestamp,
+                fixed_block_reward,
+                fee_share,
+            } => {
+                let block = self.produce_block_with_rewards(
+                    proposer,
+                    timestamp,
+                    fixed_block_reward,
+                    fee_share,
+                )?;
+                Ok(vec![ChainEvent::BlockProduced {
+                    height: block.height,
+                    hash: block.hash(),
+                }])
+            }
             ChainCommand::ReleaseMaturedProposerRewards => {
                 let mut events = Vec::new();
                 let matured = self

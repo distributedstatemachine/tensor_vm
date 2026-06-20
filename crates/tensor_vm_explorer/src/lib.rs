@@ -28,6 +28,7 @@ pub struct ExplorerSummary {
     pub finalized_block_count: usize,
     pub treasury_balance: u64,
     pub pending_receipt_reward_count: usize,
+    pub pending_proposer_reward_count: usize,
     pub pending_challenge_reward_count: usize,
     pub total_reward_balance: u64,
 }
@@ -35,7 +36,7 @@ pub struct ExplorerSummary {
 impl ExplorerSummary {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_challenge_reward_count\":{},\"total_reward_balance\":{}}}",
+            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"total_reward_balance\":{}}}",
             self.height,
             self.epoch,
             self.block_count,
@@ -56,6 +57,7 @@ impl ExplorerSummary {
             self.finalized_block_count,
             self.treasury_balance,
             self.pending_receipt_reward_count,
+            self.pending_proposer_reward_count,
             self.pending_challenge_reward_count,
             self.total_reward_balance
         )
@@ -576,6 +578,7 @@ mod tests {
             finalized_block_count: 2,
             treasury_balance: 3,
             pending_receipt_reward_count: 7,
+            pending_proposer_reward_count: 4,
             pending_challenge_reward_count: 2,
             total_reward_balance: 100,
         };
@@ -614,6 +617,11 @@ mod tests {
             summary
                 .to_json()
                 .contains("\"pending_receipt_reward_count\":7")
+        );
+        assert!(
+            summary
+                .to_json()
+                .contains("\"pending_proposer_reward_count\":4")
         );
         assert!(
             summary

@@ -149,11 +149,15 @@ The local bundle is useful and should remain the first operational target:
   appends blocks but no longer fabricates finality votes in the runtime path.
 - Scheduled local block production now splits local synthetic job publication from validator block
   proposal. The validator runtime publishes only deterministic local jobs, then calls a validator-role
-  block proposal helper that prepares chain-owned parent state, applies `ChainCommand::ProduceBlock`, and
-  publishes the resulting block payload/header/hash. Producer-local receipt and attestation synthesis is
-  no longer on the scheduled runtime path; the Docker checker now consumes structured role status and fails
-  unless live miner and validator role loops produce positive receipt/tensor and attestation counters from
-  those jobs. A fresh full Docker runtime pass still awaits the standing gateway `/health` timeout blocker.
+  block proposal helper that prepares chain-owned parent state, applies a rewarded block command only when
+  settled receipts are available, and publishes the resulting block payload/header/hash. Producer-local
+  receipt and attestation synthesis is no longer on the scheduled runtime path; the Docker checker now
+  consumes structured role status and fails unless live miner and validator role loops produce positive
+  receipt/tensor and attestation counters from those jobs, unless the timed validator producer reports
+  positive useful block proposals with selected receipt counts, and unless the live overview exposes a
+  pending proposer reward claim for useful block production. Empty fallback block production remains
+  distinguishable and unrewarded. A fresh full Docker runtime pass still awaits the standing gateway
+  `/health` timeout blocker.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,
   builds a typed `NodeConfig` at the CLI boundary, and exposes `chain_profile`/`role_chain_profile` in
   readiness, serve, and status output. Only the local CPU profile enables deterministic synthetic block
@@ -162,8 +166,11 @@ The local bundle is useful and should remain the first operational target:
   paths for the runtime.
 - Each long-running role command now writes live role-loop counters to the node data directory, and
   `tvmd node status` exposes `role_runtime_command`, `role_loop_ready`, `role_loop_role`,
-  `role_chain_profile`, `role_can_produce_blocks`, `role_local_producer`, `role_produced_blocks`, `role_network_applied_blocks`,
-  decoded `role_network_*_ingested` event counters, block/job/receipt/attestation payload apply counters,
+  `role_chain_profile`, `role_can_produce_blocks`, `role_local_producer`, `role_produced_blocks`,
+  `role_validator_proposer_work_ready`, `role_validator_useful_blocks_proposed`,
+  `role_validator_fallback_blocks_proposed`, `role_validator_receipts_proposed`,
+  `role_network_applied_blocks`, decoded `role_network_*_ingested` event counters,
+  block/job/receipt/attestation payload apply counters,
   `role_network_invalid_events`,
   `role_latest_height`, `role_p2p_connected_peers`,
   `role_p2p_observed_jobs`, `role_p2p_observed_receipts`, `role_p2p_observed_attestations`,
@@ -178,10 +185,12 @@ The local bundle is useful and should remain the first operational target:
   connection, job/receipt/attestation/block/block-vote announcements observed through Gossipsub, and an observed network
   announcement for the selected finalized p2p-observed head hash. Validator operators report block-production
   capability, but only `validator-00` reports `role_local_producer=true` and positive timed produced-block
-  progress; miners report no block-production capability. The checker also emits exact
+  progress backed by positive useful proposal and proposed-receipt counters; miners report no
+  block-production capability. The checker also emits exact
   `live_role_miner_receipt_operators`, `live_role_miner_receipts_submitted`,
   `live_role_miner_tensors_inserted`, `live_role_validator_attestation_operators`, and
-  `live_role_validator_attestations_submitted` evidence fields after convergence.
+  `live_role_validator_attestations_submitted`, `live_role_validator_useful_blocks_proposed`, and
+  `live_role_validator_proposed_receipts` evidence fields after convergence.
 - The checker now requires `/explorer/receipts/latest/500` to name more than the seeded count of both
   `tensor_op` and `linear_training_step` receipts, so live post-startup primitive evidence is visible by
   receipt type instead of only by aggregate model-count growth.
@@ -645,8 +654,10 @@ non-producer block-vote ingestion/application, pending receipt/attestation/block
 p2p payloads, the same first live finalized block hash, the same finalized common-head block hash, and a
 finalized local-head checkpoint/state root that was also observed through p2p block gossip via
 `tvmd node block`, plus named post-seed TensorOp and LinearTrainingStep receipt evidence, real libp2p
-connected-peer counts, job/receipt/attestation/block/block-vote gossip observations from every role runtime, and
-nonempty block-log roots from every node store. The restart-continuity script also captures
+connected-peer counts, job/receipt/attestation/block/block-vote gossip observations from every role runtime,
+positive timed-validator useful block proposal and selected-receipt counters, a positive pending proposer
+reward count for useful proposals, and nonempty block-log roots from every node store. The
+restart-continuity script also captures
 pre/post peer IDs, heights, block counts, state roots, block-log roots, and finalized common heads for
 selected restart gates, and the rolling wrapper applies that gate to every counted operator by default.
 Fully assembling blocks from shared network-derived state and role-owned miner/validator/proposer loops

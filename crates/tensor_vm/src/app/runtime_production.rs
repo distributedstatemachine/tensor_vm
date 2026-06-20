@@ -2,7 +2,7 @@ use std::time::{Duration, Instant};
 
 use super::{
     produce_and_publish_synthetic_job, publish_validator_block_proposal,
-    submit_validator_role_block_proposal,
+    submit_validator_role_block_proposal, validator_role_block_proposal_observation,
 };
 use crate::{
     ChainProfile, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService, types::Address,
@@ -55,14 +55,22 @@ impl LocalProductionSchedule {
                 context.p2p_service,
                 context.profile,
             )?;
+            let observation = validator_role_block_proposal_observation(
+                &context.server.gateway().node,
+                validator,
+            );
+            if context
+                .runtime_state
+                .record_validator_block_proposal_observation(observation.settled_receipts)
+            {
+                status_changed = true;
+            }
             let timestamp = next_block_timestamp(context.server);
-            if submit_validator_role_block_proposal(
+            if let Some(proposal) = submit_validator_role_block_proposal(
                 &mut context.server.gateway_mut().node,
                 validator,
                 timestamp,
-            )?
-            .is_some()
-            {
+            )? {
                 let Some(block) = context.server.gateway().node.chain.blocks().last() else {
                     self.next_block_at = Some(Instant::now() + interval);
                     return Ok(false);
@@ -73,6 +81,14 @@ impl LocalProductionSchedule {
                     .persist_chain(&context.server.gateway().node.chain)
                     .map_err(|error| format!("failed to persist produced block: {error}"))?;
                 context.runtime_state.record_produced_block();
+                context
+                    .runtime_state
+                    .record_validator_block_proposal_submission(
+                        proposal.blocks_proposed,
+                        proposal.useful_blocks_proposed,
+                        proposal.fallback_blocks_proposed,
+                        proposal.selected_receipts.len(),
+                    );
                 status_changed = true;
             }
         }

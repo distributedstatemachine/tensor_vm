@@ -401,6 +401,7 @@ impl LocalTestnet {
             finalized_block_count: state.finalized_blocks().len(),
             treasury_balance: state.rewards().treasury(),
             pending_receipt_reward_count: state.pending_receipt_rewards().len(),
+            pending_proposer_reward_count: state.pending_proposer_rewards().len(),
             pending_challenge_reward_count: state.pending_challenge_rewards().len(),
             total_reward_balance: state.rewards().total_balance(),
         }

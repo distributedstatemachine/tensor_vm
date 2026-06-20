@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none selected; Iteration 29 is implemented, validated, committed, and pushed.
-- Current status: Iteration 29 added network-visible validator audit reports through the shared validator
-  role, p2p payload, node-ingest, retry, publication, and runtime-status path.
+- Active feature: Iteration 30, validator proposer delayed-reward evidence.
+- Current status: implemented and validated locally; commit/push evidence still needs to be recorded.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,8 +14,7 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next feature-sized local-readiness slice after running the required first
-  executable Gate 0 command.
+- Next action: commit, push, record evidence, and push the evidence update.
 
 ## Readiness Matrix
 
@@ -37,8 +35,20 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Active Feature Iteration
 
-No active feature is selected. The next iteration must begin by running
-`cargo test -p tensor_vm local_testnet --release` before any other executable command.
+### Iteration 30: Validator Proposer Delayed-Reward Evidence
+
+Implemented locally: validator runtime status now separates useful settled-receipt block proposals from
+empty fallback blocks, useful validator-owned proposals use `ChainCommand::ProduceRewardedBlock` to create
+pending proposer reward claims instead of spendable balances, fallback proposals remain unrewarded, and the
+local checker requires useful proposal, proposed-receipt, and pending proposer reward evidence.
+
+Architecture shortcut answers: `chain` remains the canonical owner of block production, selection, checks
+roots, fallback classification, delayed rewards, and finality. Runtime/status/checker code only records and
+checks structured evidence around chain events. The removed shortcut was accepting any timed
+`role_produced_blocks` count, including empty fallback blocks, as useful proposer evidence. Regression
+coverage is in runtime role tests, runtime-state/status tests, CLI status tests, and the local CPU checker
+fixture. Signed block votes remain the finality source; proposal counters and pending rewards do not imply
+finality. No p2p wire format changed.
 
 ## Recent Iterations
 
@@ -162,19 +172,16 @@ challenges void affected pending receipt rewards before spendability.
 
 Latest current-iteration evidence:
 - Starting branch state: `## main...origin/main`.
-- Iteration 29 required Gate 0 first:
+- Iteration 30 required Gate 0 first:
   `cargo test -p tensor_vm local_testnet --release` passed.
-- Iteration 29 focused validation:
-  - `cargo test -p tensor_vm --lib p2p::wire -- --nocapture`: 14 tests passed.
-  - `cargo test -p tensor_vm --lib node::payload_application -- --nocapture`: 5 tests passed.
-  - `cargo test -p tensor_vm --lib node::message_ingest -- --nocapture`: 7 tests passed.
-  - `cargo test -p tensor_vm --lib node::pending_payloads -- --nocapture`: 4 tests passed.
-  - `cargo test -p tensor_vm --test tvmd_runtime validator_role -- --nocapture`: 7 tests passed.
-  - `cargo test -p tensor_vm --test tvmd_runtime network_payloads -- --nocapture`: 3 tests passed.
-  - `cargo test -p tensor_vm --test tvmd_runtime runtime_state -- --nocapture`: 2 tests passed.
+- Iteration 30 focused validation:
+  - `cargo test -p tensor_vm --lib node::runtime_state -- --nocapture`: 2 tests passed.
   - `cargo test -p tensor_vm --test tvmd_runtime runtime_roles -- --nocapture`: 7 tests passed.
-  - `cargo test -p tensor_vm --test tvmd_runtime runtime_persistence -- --nocapture`: 3 tests passed.
-- Iteration 29 broad validation before feature commit:
+  - `cargo test -p tensor_vm --test tvmd_runtime runtime_state -- --nocapture`: 2 tests passed.
+  - `cargo test -p tensor_vm --test local_cpu_compose -- --nocapture`: 1 test passed.
+  - `cargo test -p tensor_vm --test tvmd_cli role_run_commands_serve_through_role_specific_surfaces -- --nocapture`: 1 test passed.
+  - `cargo test -p tensor_vm_explorer --lib -- --nocapture`: 1 test passed.
+- Iteration 30 broad validation before feature commit:
   - `cargo fmt --check --all`: passed.
   - `git diff --check`: passed.
   - Final `cargo test -p tensor_vm local_testnet --release`: passed.
@@ -185,8 +192,8 @@ Latest current-iteration evidence:
     Compose, 8 `tvmd_cli`, 29 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 29 feature commit: `4e8b0c6` (`Propagate validator audit reports`).
-- Iteration 29 push result: `fcbf2e8..4e8b0c6  main -> main` on `origin/main`.
+- Iteration 30 feature commit: pending.
+- Iteration 30 push result: pending.
 
 Latest unresolved full-gate blocker:
 

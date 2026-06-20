@@ -67,6 +67,12 @@ pub enum ChainCommand {
         proposer: Address,
         timestamp: u64,
     },
+    ProduceRewardedBlock {
+        proposer: Address,
+        timestamp: u64,
+        fixed_block_reward: u64,
+        fee_share: u64,
+    },
     ReleaseMaturedProposerRewards,
     ReleaseMaturedReceiptRewards,
     ReleaseMaturedChallengeRewards,

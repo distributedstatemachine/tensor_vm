@@ -107,6 +107,30 @@ pub fn format_role_runtime_report(
         snapshot.validator_audit_reports_submitted,
     );
     report.field(
+        "validator_proposer_work_ready",
+        snapshot.validator_proposer_work_ready,
+    );
+    report.field(
+        "validator_proposer_settled_receipts_seen",
+        snapshot.validator_proposer_settled_receipts_seen,
+    );
+    report.field(
+        "validator_blocks_proposed",
+        snapshot.validator_blocks_proposed,
+    );
+    report.field(
+        "validator_useful_blocks_proposed",
+        snapshot.validator_useful_blocks_proposed,
+    );
+    report.field(
+        "validator_fallback_blocks_proposed",
+        snapshot.validator_fallback_blocks_proposed,
+    );
+    report.field(
+        "validator_receipts_proposed",
+        snapshot.validator_receipts_proposed,
+    );
+    report.field(
         "validator_block_votes_submitted",
         snapshot.validator_block_votes_submitted,
     );
@@ -343,6 +367,30 @@ pub fn write_role_runtime_status(
     report.field(
         "role_validator_audit_reports_submitted",
         snapshot.validator_audit_reports_submitted,
+    );
+    report.field(
+        "role_validator_proposer_work_ready",
+        snapshot.validator_proposer_work_ready,
+    );
+    report.field(
+        "role_validator_proposer_settled_receipts_seen",
+        snapshot.validator_proposer_settled_receipts_seen,
+    );
+    report.field(
+        "role_validator_blocks_proposed",
+        snapshot.validator_blocks_proposed,
+    );
+    report.field(
+        "role_validator_useful_blocks_proposed",
+        snapshot.validator_useful_blocks_proposed,
+    );
+    report.field(
+        "role_validator_fallback_blocks_proposed",
+        snapshot.validator_fallback_blocks_proposed,
+    );
+    report.field(
+        "role_validator_receipts_proposed",
+        snapshot.validator_receipts_proposed,
     );
     report.field(
         "role_validator_block_votes_submitted",

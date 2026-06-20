@@ -744,6 +744,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"text_contains "$EXPLORER_PAGE" "new WebSocket" || fail "standalone explorer page does not poll TensorVM over websocket""#,
             r#"LIVE_SETTLED_RECEIPT_COUNT=$(json_number settled_receipt_count "$LIVE_OVERVIEW")"#,
             r#"LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")"#,
+            r#"LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_number pending_proposer_reward_count "$LIVE_OVERVIEW")"#,
             r#"LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")"#,
             r#"[ "${LIVE_HEIGHT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "gateway chain head did not advance past seeded height $EXPECTED_SEED_HEIGHT""#,
             r#"[ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway chain block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks""#,
@@ -756,6 +757,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts""#,
             r#"[ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts""#,
             r#"[ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] || fail "live synthetic jobs did not add pending receipt rewards""#,
+            r#"[ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards""#,
             r#"LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")"#,
             r#"LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")"#,
             r#"[ -n "$LIVE_TENSOR_ID" ] || fail "live tensor route did not report a tensor id""#,
@@ -790,6 +792,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"live_linear_training_block_height=${LIVE_LINEAR_TRAINING_BLOCK_HEIGHT}"#,
             r#"live_tensor_fetch=true"#,
             r#"live_rewards=true"#,
+            r#"live_pending_proposer_rewards=${LIVE_PENDING_PROPOSER_REWARD_COUNT}"#,
         ],
     );
     assert!(
@@ -890,6 +893,30 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             (
                 "SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED",
                 "role_validator_attestations_submitted",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY",
+                "role_validator_proposer_work_ready",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN",
+                "role_validator_proposer_settled_receipts_seen",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED",
+                "role_validator_blocks_proposed",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED",
+                "role_validator_useful_blocks_proposed",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED",
+                "role_validator_fallback_blocks_proposed",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED",
+                "role_validator_receipts_proposed",
             ),
             (
                 "SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED",
@@ -1117,6 +1144,10 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "$LIVE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ] || fail "miner role tensor insert total did not advance""#,
             r#"[ "$LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT" -gt 0 ] || fail "no validator role reported positive live attestation submissions""#,
             r#"[ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance""#,
+            r#"[ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
+            r#"[ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
+            r#"live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED}"#,
+            r#"live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}"#,
             r#"if NETWORK_BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$CANDIDATE_NETWORK_HEAD_HEIGHT"); then"#,
             r#"ALL_OPERATOR_NETWORK_HEAD_HEIGHT="$NETWORK_BLOCK_HEIGHT""#,
             r#"ALL_OPERATOR_NETWORK_HEAD_HASH="$NETWORK_BLOCK_HASH""#,

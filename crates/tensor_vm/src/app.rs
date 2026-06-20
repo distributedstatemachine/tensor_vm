@@ -69,8 +69,9 @@ pub use validator_fetch::{
 pub use validator_role::{
     ValidatorRoleAttestationSubmission, ValidatorRoleAuditObservation,
     ValidatorRoleAuditReportSubmission, ValidatorRoleBlockProposal,
-    ValidatorRoleBlockVoteSubmission, ValidatorRoleWorkObservation,
-    submit_validator_role_attestation, submit_validator_role_audit_report,
-    submit_validator_role_block_proposal, submit_validator_role_block_vote,
-    validator_role_audit_observation, validator_role_work_observation,
+    ValidatorRoleBlockProposalObservation, ValidatorRoleBlockVoteSubmission,
+    ValidatorRoleWorkObservation, submit_validator_role_attestation,
+    submit_validator_role_audit_report, submit_validator_role_block_proposal,
+    submit_validator_role_block_vote, validator_role_audit_observation,
+    validator_role_block_proposal_observation, validator_role_work_observation,
 };
