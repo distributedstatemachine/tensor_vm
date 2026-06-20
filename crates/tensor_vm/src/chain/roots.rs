@@ -1,6 +1,7 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, JobState, MinerState,
-    ModelState, PendingProposerReward, ReceiptState, RewardState, ValidatorState,
+    ModelState, PendingProposerReward, PendingReceiptReward, ReceiptState, RewardState,
+    ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -54,6 +55,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&pending_proposer_reward_root(
         &state.pending_proposer_rewards,
     ));
+    parts.extend_from_slice(&pending_receipt_reward_root(&state.pending_receipt_rewards));
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
@@ -102,6 +104,21 @@ pub(super) fn pending_proposer_reward_root(rewards: &BTreeMap<u64, PendingPropos
         encoded.push(u8::from(reward.voided_by_challenge));
     }
     hash_bytes(b"tensor-vm-pending-proposer-reward-root-v1", &[&encoded])
+}
+
+pub(super) fn pending_receipt_reward_root(rewards: &BTreeMap<Hash, PendingReceiptReward>) -> Hash {
+    let mut encoded = Vec::new();
+    for (claim_id, reward) in rewards {
+        encoded.extend_from_slice(claim_id);
+        encoded.extend_from_slice(&reward.claim_id);
+        encoded.extend_from_slice(&reward.receipt_id);
+        encoded.extend_from_slice(&reward.beneficiary);
+        encoded.extend_from_slice(&reward.amount.to_le_bytes());
+        encoded.push(reward.kind.tag());
+        encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
+        encoded.push(u8::from(reward.voided_by_challenge));
+    }
+    hash_bytes(b"tensor-vm-pending-receipt-reward-root-v1", &[&encoded])
 }
 
 pub(super) fn block_finality_root(

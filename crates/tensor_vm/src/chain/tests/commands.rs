@@ -124,14 +124,26 @@ fn chain_engine_applies_profile_neutral_commands() {
         })
         .unwrap();
     assert!(settlement_events.contains(&ChainEvent::ReceiptSettled(receipt.receipt_id)));
-    assert!(settlement_events.contains(&ChainEvent::RewardCredited {
-        address: miner,
-        amount: 1_000,
-    }));
-    assert!(settlement_events.contains(&ChainEvent::RewardCredited {
-        address: validator,
-        amount: 500,
-    }));
+    assert!(settlement_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardPending {
+            receipt_id,
+            beneficiary,
+            amount: 1_000,
+            ..
+        } if *receipt_id == receipt.receipt_id && *beneficiary == miner
+    )));
+    assert!(settlement_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardPending {
+            receipt_id,
+            beneficiary,
+            amount: 500,
+            ..
+        } if *receipt_id == receipt.receipt_id && *beneficiary == validator
+    )));
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert_eq!(chain.state().rewards().balance(&validator), 0);
 
     let block_events = chain
         .apply_command(ChainCommand::ProduceBlock {

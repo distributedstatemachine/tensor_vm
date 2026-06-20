@@ -1406,6 +1406,12 @@ Miner reward weight:
 reward_weight_miner(epoch E) = score_miner(epoch E) / total_valid_tensor_work(epoch E)
 ```
 
+Receipt-derived miner and validator rewards are first recorded as pending claims. A pending receipt reward
+claim is not spendable until the receipt has been included in blockspace and at least
+`reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. A valid
+block-check challenge before maturity voids the affected miner and validator receipt claims; matured voided
+claims are pruned without crediting spendable reward balances.
+
 TensorWork does not affect block proposer selection. Validators produce blocks by proving useful verification
 of the canonical settled-receipt set.
 
@@ -1813,6 +1819,11 @@ chunk_size: 1 MiB
 tensor_retention_epochs: 2
 challenge_window: 1 epoch
 ```
+
+The initial local reference treats the effective receipt-reward maturity delay as
+`reward_settlement_delay + challenge_window` from the block that includes the settled receipt. Tensor/trace
+retention must cover the same or longer period so challengers can still retrieve the data needed to dispute
+the included receipt.
 
 Initial TensorOp shapes:
 

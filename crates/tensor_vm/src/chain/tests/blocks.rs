@@ -261,6 +261,86 @@ fn zero_receipt_parent_produces_explicit_fallback_block() {
 }
 
 #[test]
+fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
+    let beacon = hash_bytes(b"test", &[b"delayed-receipt-reward-block"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        reward_settlement_delay_epochs: 1,
+        challenge_window_epochs: 1,
+        epoch_length: 5,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"delayed-receipt-reward-miner");
+    let validator = address(b"delayed-receipt-reward-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"delayed-reward-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    chain.settle_epoch(1_000, 500);
+    let initial_claimable = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height;
+    chain.set_pending_receipt_reward_claimable_for_testing(receipt.receipt_id, 0);
+
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    assert!(
+        chain
+            .state()
+            .included_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    let inclusion_delayed_claimable = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        inclusion_delayed_claimable,
+        block.height.saturating_add(
+            chain
+                .params()
+                .reward_settlement_delay_epochs
+                .saturating_add(chain.params().challenge_window_epochs)
+                .saturating_mul(chain.params().epoch_length)
+        )
+    );
+    assert_eq!(inclusion_delayed_claimable, initial_claimable);
+    assert!(inclusion_delayed_claimable > 0);
+}
+
+#[test]
 fn block_kind_cannot_masquerade_across_empty_and_nonempty_blockspace() {
     let beacon = hash_bytes(b"test", &[b"kind-beacon"]);
     let mut empty_chain = Chain::new(beacon);

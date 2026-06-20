@@ -17,6 +17,7 @@ use std::collections::BTreeSet;
 struct BlockRewardContext {
     proposer: Address,
     proposer_reward: u64,
+    reward_settlement_delay_epochs: u64,
     challenge_window_epochs: u64,
 }
 
@@ -83,6 +84,7 @@ fn produce_inner(
         BlockRewardContext {
             proposer,
             proposer_reward: pending_proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
         },
     );
@@ -228,6 +230,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
         BlockRewardContext {
             proposer: block.proposer,
             proposer_reward: block.proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
         },
     );
@@ -502,6 +505,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         BlockRewardContext {
             proposer: block.proposer,
             proposer_reward: block.proposer_reward,
+            reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
         },
     );
@@ -617,8 +621,22 @@ fn apply_block_to_parent_state(
     reward_context: BlockRewardContext,
 ) -> ChainState {
     let mut child_state = parent_state.clone();
+    let receipt_reward_claimable_at_height = block_height.saturating_add(
+        reward_context
+            .reward_settlement_delay_epochs
+            .saturating_add(reward_context.challenge_window_epochs)
+            .max(1)
+            .saturating_mul(epoch_length.max(1)),
+    );
     for receipt_id in selected_receipts {
         child_state.included_receipts.insert(*receipt_id);
+        for reward in child_state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == *receipt_id {
+                reward.claimable_at_height = reward
+                    .claimable_at_height
+                    .max(receipt_reward_claimable_at_height);
+            }
+        }
     }
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);

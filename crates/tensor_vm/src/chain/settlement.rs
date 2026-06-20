@@ -1,6 +1,6 @@
-use super::{Chain, ChainEvent, ReceiptState};
+use super::{Chain, ChainEvent, PendingReceiptReward, ReceiptRewardKind, ReceiptState};
 use crate::jobs::LinearTrainingStepReceipt;
-use crate::types::{Address, Hash};
+use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::VerificationResult;
 use std::collections::{BTreeMap, BTreeSet};
 
@@ -57,8 +57,10 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         .iter()
         .map(|(receipt_id, _)| *receipt_id)
         .collect();
+    let claimable_at_height = receipt_reward_claimable_height(chain);
     for (receipt_id, receipt) in newly_settled {
         chain.state.settled_receipts.insert(receipt_id);
+        let mut miner_claim = None;
         if let Some(miner) = chain.state.miners.get_mut(&receipt.miner()) {
             miner.pending_tensor_work = miner
                 .pending_tensor_work
@@ -70,8 +72,18 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 .saturating_mul(receipt.tensor_work_units())
                 .checked_div(total_work)
             {
-                chain.state.rewards.credit(miner.address, reward);
+                miner_claim = Some((miner.address, reward));
             }
+        }
+        if let Some((beneficiary, reward)) = miner_claim {
+            enqueue_pending_receipt_reward(
+                chain,
+                receipt_id,
+                beneficiary,
+                reward,
+                ReceiptRewardKind::Miner,
+                claimable_at_height,
+            );
         }
     }
 
@@ -87,10 +99,14 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
     let total_valid = valid_attestations.len() as u64;
     if let Some(validator_reward) = validator_reward_pool.checked_div(total_valid) {
         for attestation in valid_attestations {
-            chain
-                .state
-                .rewards
-                .credit(attestation.validator, validator_reward);
+            enqueue_pending_receipt_reward(
+                chain,
+                attestation.receipt_id,
+                attestation.validator,
+                validator_reward,
+                ReceiptRewardKind::Validator,
+                claimable_at_height,
+            );
         }
     }
 }
@@ -98,22 +114,69 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
 pub(super) fn events(
     chain: &Chain,
     settled_before: &BTreeSet<Hash>,
-    rewards_before: &BTreeMap<Address, u64>,
+    pending_rewards_before: &BTreeMap<Hash, PendingReceiptReward>,
 ) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     for receipt_id in chain.state.settled_receipts.difference(settled_before) {
         events.push(ChainEvent::ReceiptSettled(*receipt_id));
     }
-    for (address, balance) in &chain.state.rewards.balances {
-        let credited = balance.saturating_sub(rewards_before.get(address).copied().unwrap_or(0));
-        if credited > 0 {
-            events.push(ChainEvent::RewardCredited {
-                address: *address,
-                amount: credited,
+    for (claim_id, reward) in &chain.state.pending_receipt_rewards {
+        if !pending_rewards_before.contains_key(claim_id) {
+            events.push(ChainEvent::ReceiptRewardPending {
+                claim_id: *claim_id,
+                receipt_id: reward.receipt_id,
+                beneficiary: reward.beneficiary,
+                amount: reward.amount,
+                claimable_at_height: reward.claimable_at_height,
             });
         }
     }
     events
+}
+
+pub(super) fn receipt_reward_claimable_height(chain: &Chain) -> u64 {
+    chain
+        .state
+        .height
+        .saturating_add(chain.params.tensor_retention_window_blocks())
+}
+
+fn enqueue_pending_receipt_reward(
+    chain: &mut Chain,
+    receipt_id: Hash,
+    beneficiary: Address,
+    amount: u64,
+    kind: ReceiptRewardKind,
+    claimable_at_height: u64,
+) {
+    if amount == 0 {
+        return;
+    }
+    let claim_id = receipt_reward_claim_id(&receipt_id, &beneficiary, kind);
+    chain
+        .state
+        .pending_receipt_rewards
+        .entry(claim_id)
+        .or_insert(PendingReceiptReward {
+            claim_id,
+            receipt_id,
+            beneficiary,
+            amount,
+            kind,
+            claimable_at_height,
+            voided_by_challenge: false,
+        });
+}
+
+fn receipt_reward_claim_id(
+    receipt_id: &Hash,
+    beneficiary: &Address,
+    kind: ReceiptRewardKind,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-receipt-reward-claim-id-v1",
+        &[receipt_id, beneficiary, &[kind.tag()]],
+    )
 }
 
 pub(super) fn receipts_agree(left: &ReceiptState, right: &ReceiptState) -> bool {

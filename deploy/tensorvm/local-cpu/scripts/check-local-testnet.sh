@@ -388,6 +388,8 @@ SEED_DATA_AVAILABILITY_BPS=$(status_value data_availability_bps "$MINER_SEED_REP
   || fail "seeded local testnet did not report full data availability"
 SEED_REWARDED_MINERS=$(status_value rewarded_miners "$MINER_SEED_REPORT")
 [ "${SEED_REWARDED_MINERS:-0}" -gt 0 ] || fail "seeded local testnet did not report miner rewards"
+SEED_PENDING_RECEIPT_REWARDS=$(status_value pending_receipt_rewards "$MINER_SEED_REPORT")
+[ "${SEED_PENDING_RECEIPT_REWARDS:-0}" -gt 0 ] || fail "seeded local testnet did not report pending receipt rewards"
 SEED_TOTAL_REWARD_BALANCE=$(status_value total_reward_balance "$MINER_SEED_REPORT")
 [ -n "$SEED_TOTAL_REWARD_BALANCE" ] || fail "seeded local testnet did not report total reward balance"
 SEED_ATTESTATION_COUNT=$(status_value attestation_count "$MINER_SEED_REPORT")
@@ -422,6 +424,7 @@ LIVE_MODEL_COUNT=0
 LIVE_ATTESTATION_COUNT=0
 LIVE_RECEIPT_COUNT=0
 LIVE_SETTLED_RECEIPT_COUNT=0
+LIVE_PENDING_RECEIPT_REWARD_COUNT=0
 LIVE_TOTAL_REWARD_BALANCE=0
 LIVE_RECEIPTS=""
 LIVE_ATTESTED_RECEIPT_COUNT=0
@@ -438,6 +441,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_ATTESTATION_COUNT=$(json_number attestation_count "$LIVE_OVERVIEW")
   LIVE_RECEIPT_COUNT=$(json_number receipt_count "$LIVE_OVERVIEW")
   LIVE_SETTLED_RECEIPT_COUNT=$(json_number settled_receipt_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")
   LIVE_TOTAL_REWARD_BALANCE=$(json_number total_reward_balance "$LIVE_OVERVIEW")
   LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
@@ -453,7 +457,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
-    && [ "${LIVE_TOTAL_REWARD_BALANCE:-0}" -gt "$SEED_TOTAL_REWARD_BALANCE" ]; then
+    && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ]; then
     break
   fi
   attempt=$((attempt + 1))
@@ -470,7 +474,7 @@ done
 [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "live receipt details did not include validator attestations"
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
-[ "${LIVE_TOTAL_REWARD_BALANCE:-0}" -gt "$SEED_TOTAL_REWARD_BALANCE" ] || fail "live synthetic jobs did not add rewards"
+[ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] || fail "live synthetic jobs did not add pending receipt rewards"
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -1125,6 +1129,7 @@ settled_receipts=${EXPECTED_SETTLED_RECEIPTS}
 matmul_settled=true
 linear_training_settled=true
 rewarded_miners=${SEED_REWARDED_MINERS}
+pending_receipt_rewards=${SEED_PENDING_RECEIPT_REWARDS}
 finality_rate_bps=${EXPECTED_FULL_RATE_BPS}
 data_availability_bps=${EXPECTED_FULL_RATE_BPS}
 standalone_explorer_ready=true

@@ -89,7 +89,14 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             data_availability_passed: report.data_availability_passed,
         },
     ));
-    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    chain.settle_epoch(1_000, 500);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id && !reward.voided_by_challenge)
+    );
 
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 900, 100)
@@ -150,6 +157,14 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .unwrap()
             .voided_by_challenge
     );
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .filter(|reward| reward.receipt_id == receipt.receipt_id)
+            .all(|reward| reward.voided_by_challenge)
+    );
     assert_eq!(chain.state().rewards().balance(&challenger), 500);
     assert_eq!(chain.state().rewards().treasury(), 500);
     assert!(
@@ -172,6 +187,17 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
         chain.produce_block(proposer, 1_006),
         Err(TvmError::InvalidReceipt("proposer is challenge-throttled"))
     );
+    chain.set_position_for_testing(100, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .all(|reward| reward.receipt_id != receipt.receipt_id)
+    );
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
 }
 
 #[test]

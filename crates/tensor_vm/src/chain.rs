@@ -33,8 +33,8 @@ pub use state::{
     AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
     ChainState, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
-    ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
-    ValidatorState,
+    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardState,
+    SelectedReceiptOpening, TensorBlock, Transaction, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -204,6 +204,10 @@ impl Chain {
 
     pub fn release_matured_proposer_rewards(&mut self) -> Result<Vec<ChainEvent>> {
         self.apply_command(ChainCommand::ReleaseMaturedProposerRewards)
+    }
+
+    pub fn release_matured_receipt_rewards(&mut self) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::ReleaseMaturedReceiptRewards)
     }
 
     pub fn validator_assignment_seed(&self, receipt_id: &Hash) -> Hash {

@@ -29,8 +29,16 @@ pub fn seed_local_testnet(data_dir: &str) -> std::result::Result<String, String>
     let rewarded_miners = testnet
         .miners
         .iter()
-        .filter(|miner| testnet.chain.state().rewards().balance(miner) > 0)
+        .filter(|miner| {
+            testnet
+                .chain
+                .state()
+                .pending_receipt_rewards()
+                .values()
+                .any(|reward| reward.beneficiary == **miner && reward.amount > 0)
+        })
         .count();
+    let pending_receipt_rewards = testnet.chain.state().pending_receipt_rewards().len();
     let total_reward_balance = testnet.chain.state().rewards().total_balance();
     let attestation_count: usize = testnet
         .chain
@@ -57,6 +65,7 @@ pub fn seed_local_testnet(data_dir: &str) -> std::result::Result<String, String>
     );
     report.field("model_states", testnet.chain.state().model_states().len());
     report.field("rewarded_miners", rewarded_miners);
+    report.field("pending_receipt_rewards", pending_receipt_rewards);
     report.field("total_reward_balance", total_reward_balance);
     report.field("attestation_count", attestation_count);
     report.field("total_tensor_work", telemetry.total_tensor_work);

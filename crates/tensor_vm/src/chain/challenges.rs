@@ -201,6 +201,11 @@ fn apply_block_check_resolution(
     }
     chain.state.challenged_receipts.insert(record.receipt_id);
     chain.state.settled_receipts.remove(&record.receipt_id);
+    for reward in chain.state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == record.receipt_id {
+            reward.voided_by_challenge = true;
+        }
+    }
     chain
         .state
         .proposer_penalty_until

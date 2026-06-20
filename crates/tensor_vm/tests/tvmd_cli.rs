@@ -336,7 +336,8 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     assert_eq!(stdout_value(&seed, "matmul_settled"), "true");
     assert_eq!(stdout_value(&seed, "linear_training_settled"), "true");
     assert!(stdout_u64(&seed, "rewarded_miners") > 0);
-    assert!(stdout_u64(&seed, "total_reward_balance") > 0);
+    assert!(stdout_u64(&seed, "pending_receipt_rewards") > 0);
+    assert_eq!(stdout_u64(&seed, "total_reward_balance"), 0);
     assert!(stdout_u64(&seed, "attestation_count") > 0);
     assert_eq!(stdout_u64(&seed, "data_availability_bps"), 10_000);
     assert_eq!(stdout_value(&seed, "node_store_ready"), "true");

@@ -84,9 +84,13 @@ impl ChainEngine for Chain {
                 validator_reward_pool,
             } => {
                 let settled_before = self.state.settled_receipts.clone();
-                let rewards_before = self.state.rewards.balances.clone();
+                let pending_rewards_before = self.state.pending_receipt_rewards.clone();
                 self.settle_epoch(miner_reward_pool, validator_reward_pool);
-                Ok(settlement::events(self, &settled_before, &rewards_before))
+                Ok(settlement::events(
+                    self,
+                    &settled_before,
+                    &pending_rewards_before,
+                ))
             }
             ChainCommand::ProduceBlock {
                 proposer,
@@ -120,6 +124,42 @@ impl ChainEngine for Chain {
                     });
                     events.push(ChainEvent::RewardCredited {
                         address: proposer,
+                        amount,
+                    });
+                }
+                Ok(events)
+            }
+            ChainCommand::ReleaseMaturedReceiptRewards => {
+                let mut events = Vec::new();
+                let matured = self
+                    .state
+                    .pending_receipt_rewards
+                    .iter()
+                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
+                    .map(|(claim_id, reward)| {
+                        (
+                            *claim_id,
+                            reward.receipt_id,
+                            reward.beneficiary,
+                            reward.amount,
+                            reward.voided_by_challenge,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                for (claim_id, receipt_id, beneficiary, amount, voided_by_challenge) in matured {
+                    self.state.pending_receipt_rewards.remove(&claim_id);
+                    if voided_by_challenge {
+                        continue;
+                    }
+                    self.state.rewards.credit(beneficiary, amount);
+                    events.push(ChainEvent::ReceiptRewardReleased {
+                        claim_id,
+                        receipt_id,
+                        beneficiary,
+                        amount,
+                    });
+                    events.push(ChainEvent::RewardCredited {
+                        address: beneficiary,
                         amount,
                     });
                 }

@@ -375,7 +375,8 @@ availability evidence. The checker currently verifies some seed strings and aggr
 Required fix:
 
 - Query live receipt details and prove at least one new post-startup receipt has validator attestations.
-- Query miner and validator rewards after live jobs, not only from seed output.
+- Query pending miner and validator receipt reward claims after live jobs, and separately verify mature
+  release into spendable balances once the reward-settlement delay plus challenge window has elapsed.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.
@@ -618,11 +619,11 @@ jobs, receipts, attestations, and votes.
 - Add this document.
 - Update the local checker to emit exact live counters.
 - Update `coverage_matrix.md` so it describes live post-startup jobs, not only seeded state.
-- Add checker assertions for live rewards, live attestations, live tensor data fetch, and all-operator
+- Add checker assertions for live pending reward claims, mature reward release, live attestations, live tensor data fetch, and all-operator
   finalized-head convergence.
 
 Status: partially complete. The document exists and the checker gates live post-startup height, blocks,
-jobs, model-count advancement, attestation-count growth, reward-balance growth, receipts, and settled
+jobs, model-count advancement, attestation-count growth, pending receipt-reward growth, receipts, and settled
 receipts, per-receipt validator-attestation details, live tensor descriptor/row/chunk/opening fetches, all
 15 operator node stores reporting role status, live chain counters, finalized live TensorOp and
 LinearTrainingStep block-view evidence, the single local producer, network
@@ -755,7 +756,7 @@ blocks are produced from network-visible receipts and attestations
 block finality votes are produced by validator containers and gossiped/applied by non-producers
 TensorOp and LinearTrainingStep live jobs both settle after startup
 tensor rows/chunks/openings are fetched through the local tensor-server path
-live rewards accrue to miners and validators
+live pending reward claims accrue to miners and validators, and matured claims release into spendable balances
 telemetry reflects live post-startup work
 local evidence remains explicitly non-public
 ```

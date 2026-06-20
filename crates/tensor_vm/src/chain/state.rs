@@ -212,6 +212,32 @@ pub struct PendingProposerReward {
     pub voided_by_challenge: bool,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq, Ord, PartialOrd)]
+pub enum ReceiptRewardKind {
+    Miner,
+    Validator,
+}
+
+impl ReceiptRewardKind {
+    pub fn tag(self) -> u8 {
+        match self {
+            Self::Miner => 1,
+            Self::Validator => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingReceiptReward {
+    pub claim_id: Hash,
+    pub receipt_id: Hash,
+    pub beneficiary: Address,
+    pub amount: u64,
+    pub kind: ReceiptRewardKind,
+    pub claimable_at_height: u64,
+    pub voided_by_challenge: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardAllocation {
     pub miner_reward_pool: u64,
@@ -614,6 +640,7 @@ pub struct ChainState {
     pub(in crate::chain) challenged_receipts: BTreeSet<Hash>,
     pub(in crate::chain) proposer_penalty_until: BTreeMap<Address, u64>,
     pub(in crate::chain) pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
+    pub(in crate::chain) pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub(in crate::chain) model_states: BTreeMap<Hash, ModelState>,
     pub(in crate::chain) rewards: RewardState,
 }
@@ -642,6 +669,7 @@ pub(crate) struct ChainStateParts {
     pub challenged_receipts: BTreeSet<Hash>,
     pub proposer_penalty_until: BTreeMap<Address, u64>,
     pub pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
+    pub pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub model_states: BTreeMap<Hash, ModelState>,
     pub rewards: RewardState,
 }
@@ -671,6 +699,7 @@ impl ChainState {
             challenged_receipts: parts.challenged_receipts,
             proposer_penalty_until: parts.proposer_penalty_until,
             pending_proposer_rewards: parts.pending_proposer_rewards,
+            pending_receipt_rewards: parts.pending_receipt_rewards,
             model_states: parts.model_states,
             rewards: parts.rewards,
         }
@@ -762,6 +791,10 @@ impl ChainState {
 
     pub fn pending_proposer_rewards(&self) -> &BTreeMap<u64, PendingProposerReward> {
         &self.pending_proposer_rewards
+    }
+
+    pub fn pending_receipt_rewards(&self) -> &BTreeMap<Hash, PendingReceiptReward> {
+        &self.pending_receipt_rewards
     }
 
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {

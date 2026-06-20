@@ -107,7 +107,14 @@ fn local_testnet_runs_full_matmul_receipt_attestation_settlement_round() {
     let rewarded_miners = testnet
         .miners
         .iter()
-        .filter(|miner| testnet.chain.state().rewards().balance(miner) > 0)
+        .filter(|miner| {
+            testnet
+                .chain
+                .state()
+                .pending_receipt_rewards()
+                .values()
+                .any(|reward| reward.beneficiary == **miner && reward.amount > 0)
+        })
         .count();
     assert!(rewarded_miners >= testnet.chain.params().agreement_quorum);
 
@@ -210,7 +217,14 @@ fn local_testnet_runs_linear_training_receipt_state_transition_round() {
     let rewarded_miners = testnet
         .miners
         .iter()
-        .filter(|miner| testnet.chain.state().rewards().balance(miner) > 0)
+        .filter(|miner| {
+            testnet
+                .chain
+                .state()
+                .pending_receipt_rewards()
+                .values()
+                .any(|reward| reward.beneficiary == **miner && reward.amount > 0)
+        })
         .count();
     assert!(rewarded_miners >= testnet.chain.params().agreement_quorum);
 }

@@ -5,10 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 22 is implemented, validated, committed, and pushed.
-- Current status: Gate 0 for this resumed iteration passed first on June 20, 2026, the full Iteration 22
-  validation suite passed except for the standing missing `cargo-tarpaulin` tool blocker, and feature commit
-  `8e17789` pushed to `origin/main`.
+- Active feature: Iteration 23, delayed receipt reward finality, is implemented and validated locally.
+- Current status: Gate 0 for this resumed iteration passed first on June 20, 2026. Iteration 23 focused
+  and broad validation passed except for the standing missing `cargo-tarpaulin` tool blocker. Commit and
+  push are in progress.
 - Latest completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
   as `8e17789` (`Add content addressed tensor IR`). The crate now has a chain-owned Tensor IR foundation
   with canonical JSON graph IDs, frozen op-registry metadata, structural validation, Tier-C consensus
@@ -27,7 +27,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 22, then start the per-op `F_p` conformance vector suite.
+- Next action: finish broad Iteration 23 validation, commit and push delayed receipt reward finality, then
+  start the per-op `F_p` conformance vector suite.
 
 ## Readiness Matrix
 
@@ -43,10 +44,132 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Foundation implemented/pushed | `8e17789`; `ir::TensorGraph`, canonical JSON, `graph_id`, frozen op registry, structural validation, Tier-C consensus gating, and current TensorOp/LinearTrainingStep `program_hash` binding to IR graph IDs; `cargo test -p tensor_vm --lib ir -- --nocapture`, `cargo test -p tensor_vm --lib jobs -- --nocapture`, and `cargo test -p tensor_vm --lib` passed | Next add conformance vectors and graph-body propagation/storage |
 | Per-op `F_p` conformance vectors | Missing | `upow.md` §3.3 marks this blocking for runtime admission | Implement after IR foundation so vectors can bind to registry ops |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer rewards and local challenge penalties exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
+| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, local challenge penalties, and challenge voiding for pending receipt claims exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 23: Delayed Receipt Reward Finality
+
+Feature capability:
+Replace immediate miner/validator receipt reward crediting with consensus-visible pending receipt reward
+claims. Receipt settlement creates claims, block inclusion extends their maturity to
+`reward_settlement_delay + challenge_window`, release credits only matured non-void claims, and successful
+block-check challenges void affected pending receipt rewards before spendability.
+
+Readiness requirements covered:
+- `upow.md` §12 reward finality and challenge safety for verifier-dependent rewards.
+- `mvp_spec.md` §19, §20.4, §20.7, §25, and §28 delayed reward settlement after challenge windows.
+- `local_chain_production_readiness.md` reward evidence boundary: pending live reward claims are distinct
+  from mature released balances.
+
+Files/modules touched:
+- `crates/tensor_vm/src/chain/state.rs`, `settlement.rs`, `commands.rs`, `blocks.rs`, `challenges.rs`,
+  `roots.rs`, `genesis.rs`, and `test_helpers.rs`
+- `crates/tensor_vm/src/storage/chain_state.rs`
+- `crates/tensor_vm/src/rpc/explorer.rs`, `crates/tensor_vm_explorer/src/lib.rs`
+- `crates/tensor_vm/src/app/local_testnet_seed.rs`, `crates/tensor_vm/src/testnet/local_harness.rs`
+- local-testnet checker/tests and docs
+
+Parallel subagents run:
+- `readiness-mapper`: mapped reward-finality readiness/docs risks and flagged pending-vs-released evidence.
+- `tensorvm-codebase-explorer`: checked delayed reward code paths and flagged inclusion-height maturity,
+  missing summary field, missing production release caller, and voided-claim pruning.
+- `tensorvm-test-coverage-explorer`: mapped focused tests and flagged missing non-empty storage roundtrip
+  and voided-release coverage.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns all file edits because the change spans shared chain state, storage, RPC summary
+  shape, checker script evidence, and docs.
+- Subagents remain read-only reviewers.
+
+Tests/checkers/docs added or updated:
+- Settlement tests assert pending claims and mature release.
+- Block tests assert receipt reward maturity is anchored to inclusion height.
+- Challenge tests assert pending receipt rewards are voided and matured voided claims are pruned without
+  crediting balances.
+- Storage tests roundtrip non-empty pending receipt reward claims.
+- Local seed/CLI/checker tests distinguish pending claims from spendable balances.
+- Status, coverage, readiness, Tarpaulin, and spec docs updated.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm --lib produced_blocks_delay_receipt_rewards_from_inclusion_height -- --nocapture`
+- `cargo test -p tensor_vm --lib block_check_challenge_voids_pending_reward_and_throttles_proposer -- --nocapture`
+- `cargo test -p tensor_vm --lib chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
+- `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`
+- `cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `git diff --check`
+- `cargo tarpaulin --workspace --offline` (expected blocked here unless `cargo-tarpaulin` is installed)
+
+Validation:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo test -p tensor_vm --lib produced_blocks_delay_receipt_rewards_from_inclusion_height -- --nocapture`
+  passed.
+- `cargo test -p tensor_vm --lib block_check_challenge_voids_pending_reward_and_throttles_proposer -- --nocapture`
+  passed.
+- `cargo test -p tensor_vm --lib chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
+  passed.
+- `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`
+  passed.
+- `cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks -- --nocapture`
+  passed.
+- `cargo fmt --check --all` passed.
+- `cargo test -p tensor_vm --lib chain::tests -- --nocapture` passed with 48 focused chain tests.
+- `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture` passed with 2 storage tests.
+- `cargo test -p tensor_vm --lib rpc::tests -- --nocapture` passed with 21 RPC tests.
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm` passed with 326 library tests, 1 local CPU Compose integration test,
+  8 `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace --release` passed with 14 `experiments`, 326 `tensor_vm`, 1 local CPU Compose,
+  8 `tvmd_cli`, 28 `tvmd_runtime`, 3 `tensor_vm_explorer`, and doc-test targets.
+- `git diff --check` passed.
+- `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
+  the `cargo-tarpaulin` subcommand installed.
+
+Expected observable evidence:
+- `SettleEpoch` emits `ReceiptRewardPending` events and leaves miner/validator balances unchanged.
+- `ReleaseMaturedReceiptRewards` credits only non-void mature claims.
+- Selected receipt inclusion pushes claim maturity to the inclusion block plus reward-settlement delay and
+  challenge window.
+- Pending receipt rewards are committed in state roots and persisted across node-store roundtrips.
+- Local checker evidence uses pending receipt reward growth rather than immediate spendable balance growth.
+
+Out of scope:
+- Hard stake slashing for invalid receipts/attestations.
+- Network/RPC challenge propagation.
+- Automatic runtime release cadence for matured claims after long challenge windows.
+- Full clawback of already released rewards; inclusion-height maturity prevents release before the local
+  block-check challenge window for included receipts.
+
+Split trigger:
+Split if reward finality requires broad transaction/RPC surfaces or a full challenge protocol migration.
+
+Architecture shortcut answers:
+- Canonical owner: `chain::settlement`, `chain::blocks`, `chain::commands`, `chain::challenges`, and
+  `chain::state` own receipt reward claim creation, inclusion maturity, release, challenge voiding, and
+  state-rooted persistence.
+- Adapter callers: local seed, explorer/RPC, and checker paths only observe pending/released reward state;
+  they do not decide reward finality.
+- Old shortcut being removed: immediate spendable miner/validator reward crediting at receipt settlement.
+- Regression test that proves the shortcut is gone: settlement and command tests assert pending claims and
+  zero balances before maturity; challenge tests assert voided claims do not release.
+- Behavior with local synthetic block production disabled: unchanged; delayed reward state transitions are
+  pure chain commands.
+- Behavior for producer and non-producer roles: both observe the same state-rooted pending receipt reward
+  claims and release semantics after syncing accepted chain state.
+- Structured evidence source: chain/storage/RPC/checker tests and docs; no shell-only reward workaround.
+- Finality source: unchanged, signed validator block votes through `SubmitBlockVote`.
+- Wire-size and codec boundary: no consensus P2P payload format change; state storage encoding gains the
+  pending receipt reward map and explorer JSON adds a typed summary count.
 
 ### Iteration 22: Content-Addressed Tensor IR Foundation
 

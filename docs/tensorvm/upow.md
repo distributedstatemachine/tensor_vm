@@ -451,6 +451,11 @@ TensorBlock {
 - **Miners** earn rewards proportional to settled, verified TensorWork (with diminishing returns / concentration analysis to resist monopoly). Reward requires surviving verification; a slashed receipt forfeits the bond.
 - **Validators** earn (a) the block reward for the winning UVPoW block and (b) attestation fees / a share of slashed bonds for catching fraud. Verifying correctly is the paid job.
 - **Challengers** (§8.2) earn a share of the loser's slashed bond → bounty for finding fraud.
+- Miner and validator rewards derived from verifier-dependent receipt settlement are pending claims first.
+  They become spendable only after the reward-settlement delay plus the challenge window, and a successful
+  challenge before maturity voids the affected pending claims. This reward-finality delay is distinct from,
+  but must be at least as long as, the tensor/trace retention window needed for verification and challenge
+  data availability.
 
 ### 12.2 Slashing
 - Miner: committing a receipt that fails verification (Freivalds/random-linear/fraud-proof) → slash bond.
@@ -539,4 +544,3 @@ This section is non-normative guidance on how the spec components partition into
 - [ ] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with `const_blob` inputs (availability of the blob during a dispute).
 - [ ] Edge case: floating-point miners producing off-by-one-ULP fixed-point results — define the canonical rounding so this is a *fault*, not noise.
 ```
-

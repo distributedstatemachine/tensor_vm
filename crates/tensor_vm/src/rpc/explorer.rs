@@ -21,6 +21,7 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         settled_receipt_count: chain.state().settled_receipts().len(),
         finalized_block_count: chain.state().finalized_blocks().len(),
         treasury_balance: chain.state().rewards().treasury(),
+        pending_receipt_reward_count: chain.state().pending_receipt_rewards().len(),
         total_reward_balance: chain.state().rewards().total_balance(),
     }
 }

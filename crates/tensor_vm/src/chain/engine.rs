@@ -65,6 +65,7 @@ pub enum ChainCommand {
         timestamp: u64,
     },
     ReleaseMaturedProposerRewards,
+    ReleaseMaturedReceiptRewards,
     RegisterModel {
         model_id: Hash,
         architecture_hash: Hash,
@@ -122,6 +123,19 @@ pub enum ChainEvent {
     ProposerRewardReleased {
         block_height: u64,
         proposer: Address,
+        amount: u64,
+    },
+    ReceiptRewardPending {
+        claim_id: Hash,
+        receipt_id: Hash,
+        beneficiary: Address,
+        amount: u64,
+        claimable_at_height: u64,
+    },
+    ReceiptRewardReleased {
+        claim_id: Hash,
+        receipt_id: Hash,
+        beneficiary: Address,
         amount: u64,
     },
     BlockAccepted {

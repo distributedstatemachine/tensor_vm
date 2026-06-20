@@ -59,6 +59,42 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
             .settled_tensor_work,
         receipt.tensor_work_units
     );
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .filter(|reward| reward.beneficiary == miner)
+            .count(),
+        1
+    );
+    let pending_validator_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.beneficiary == validators[0])
+        .unwrap()
+        .amount;
+    assert!(pending_validator_reward > 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    chain.set_position_for_testing(claimable_at_height, 0);
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            beneficiary,
+            amount: 1_000,
+            ..
+        } if *beneficiary == miner
+    )));
     assert_eq!(chain.state().rewards().balance(&miner), 1_000);
     let validator_reward = chain.state().rewards().balance(&validators[0]);
     assert!(validator_reward > 0);

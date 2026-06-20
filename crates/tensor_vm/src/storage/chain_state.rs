@@ -1,7 +1,7 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
     ChainStateParts, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
-    ReceiptState, RewardState, ValidatorState,
+    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState, ValidatorState,
 };
 use crate::codec as payload_codec;
 use crate::error::{Result, TvmError};
@@ -210,6 +210,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_hash_set(out, state.challenged_receipts());
     encode_u64_by_hash_map(out, state.proposer_penalty_until());
     encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
+    encode_pending_receipt_rewards(out, state.pending_receipt_rewards());
     encode_model_states(out, state.model_states());
     encode_rewards(out, state.rewards());
 }
@@ -238,6 +239,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         challenged_receipts: decode_hash_set(reader)?,
         proposer_penalty_until: decode_u64_by_hash_map(reader)?,
         pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
+        pending_receipt_rewards: decode_pending_receipt_rewards(reader)?,
         model_states: decode_model_states(reader)?,
         rewards: decode_rewards(reader)?,
     }))
@@ -678,6 +680,60 @@ fn decode_pending_proposer_rewards(
     Ok(rewards)
 }
 
+fn encode_pending_receipt_rewards(
+    out: &mut Vec<u8>,
+    rewards: &BTreeMap<Hash, PendingReceiptReward>,
+) {
+    write_len(out, rewards.len());
+    for (claim_id, reward) in rewards {
+        write_hash(out, claim_id);
+        write_hash(out, &reward.claim_id);
+        write_hash(out, &reward.receipt_id);
+        write_hash(out, &reward.beneficiary);
+        write_u64(out, reward.amount);
+        out.push(reward.kind.tag());
+        write_u64(out, reward.claimable_at_height);
+        out.push(u8::from(reward.voided_by_challenge));
+    }
+}
+
+fn decode_pending_receipt_rewards(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, PendingReceiptReward>> {
+    let mut rewards = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let claim_id = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let beneficiary = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let kind = match reader.read_u8()? {
+            1 => ReceiptRewardKind::Miner,
+            2 => ReceiptRewardKind::Validator,
+            _ => return Err(TvmError::Storage("invalid pending receipt reward kind")),
+        };
+        let claimable_at_height = reader.read_u64()?;
+        let voided_by_challenge = match reader.read_u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(TvmError::Storage("invalid pending receipt reward boolean")),
+        };
+        rewards.insert(
+            key,
+            PendingReceiptReward {
+                claim_id,
+                receipt_id,
+                beneficiary,
+                amount,
+                kind,
+                claimable_at_height,
+                voided_by_challenge,
+            },
+        );
+    }
+    Ok(rewards)
+}
+
 fn hardware_class_code(hardware_class: HardwareClass) -> u8 {
     match hardware_class {
         HardwareClass::Cpu => 1,
@@ -804,7 +860,20 @@ mod tests {
             &mut chain,
             ReceiptState::LinearTrainingStep(linear_receipt.clone()),
         );
-        chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+        chain.settle_epoch(1_000, 500);
+        assert!(
+            chain
+                .state()
+                .pending_receipt_rewards()
+                .values()
+                .any(|reward| {
+                    reward.receipt_id == receipt.receipt_id
+                        && reward.beneficiary == miner
+                        && reward.amount == 1_000
+                        && reward.kind == ReceiptRewardKind::Miner
+                        && !reward.voided_by_challenge
+                })
+        );
         chain.mark_receipt_data_unavailable_for_testing(linear_receipt.receipt_id);
         credit_reward(&mut chain, miner, 77);
         chain.set_reward_treasury_for_testing(11);
@@ -835,7 +904,23 @@ mod tests {
         );
 
         store.save_chain(&chain).unwrap();
-        assert_eq!(store.load_chain().unwrap(), chain);
+        let loaded = store.load_chain().unwrap();
+        assert_eq!(loaded, chain);
+        assert_eq!(
+            loaded.state().pending_receipt_rewards(),
+            chain.state().pending_receipt_rewards()
+        );
+        assert!(
+            loaded
+                .state()
+                .pending_receipt_rewards()
+                .values()
+                .any(|reward| reward.amount == 1_000
+                    && reward.kind == ReceiptRewardKind::Miner
+                    && reward.claim_id != [0; 32]
+                    && reward.claimable_at_height > chain.state().height()
+                    && !reward.voided_by_challenge)
+        );
         assert_eq!(
             decode_chain_state_file(&encode_chain_state_file(&chain)).unwrap(),
             chain

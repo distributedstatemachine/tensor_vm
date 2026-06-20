@@ -28,6 +28,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             challenged_receipts: BTreeSet::new(),
             proposer_penalty_until: BTreeMap::new(),
             pending_proposer_rewards: BTreeMap::new(),
+            pending_receipt_rewards: BTreeMap::new(),
             model_states: BTreeMap::new(),
             rewards: RewardState::default(),
         },
