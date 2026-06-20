@@ -147,13 +147,14 @@ The local bundle is useful and should remain the first operational target:
   and report `role_validator_block_votes_submitted`, `role_network_block_votes_ingested`,
   `role_network_block_votes_applied`, and `role_p2p_observed_block_votes`. Local synthetic block production
   appends blocks but no longer fabricates finality votes in the runtime path.
-- Scheduled local block production now splits local synthetic job publication from validator block
-  proposal. The scheduled producer publishes only deterministic local jobs; the validator role tick then
-  observes settled receipts with local tensor artifacts and validator attestations, prepares chain-owned
-  parent state, applies a rewarded block command only when settled receipts are available, and publishes
-  the resulting block payload/header/hash. Validator block proposal is no longer gated by the local
-  synthetic job producer path: a configured validator proposer can assemble a useful block from already
-  accepted settled state even when synthetic job production is disabled. Producer-local
+- Scheduled local block production remains split from validator block proposal. The scheduled producer
+  publishes only deterministic local jobs; it does not force empty fallback blocks through the role wallet.
+  The validator role tick observes only not-yet-included settled receipts with local tensor artifacts and
+  validator attestations, prepares chain-owned parent state, applies a rewarded block command only when
+  useful settled receipt blockspace is available, and publishes the resulting block payload/header/hash.
+  Validator block proposal is no longer gated by the local synthetic job producer path: a configured
+  validator proposer can assemble a useful block from already accepted settled state even when synthetic
+  job production is disabled. Producer-local
   receipt and attestation synthesis is no longer on the scheduled runtime path; the Docker checker now
   consumes structured role status and fails unless live miner and validator role loops produce positive
   receipt/tensor and attestation counters from those jobs, unless the validator producer reports positive
@@ -161,7 +162,8 @@ The local bundle is useful and should remain the first operational target:
   the live overview exposes a pending proposer reward claim for useful block production. Useful and empty
   fallback block production both release proposer claims only after the explicit full reward-settlement plus
   challenge-window maturity height is reached, while fallback blocks remain distinguishable from useful
-  UVPoW and carry only the reduced proposer claim amount. Pending proposer reward state, roots, and storage
+  UVPoW, carry only the reduced proposer claim amount, and validate only for the deterministic
+  stake-weighted fallback proposer selected from parent state and beacon. Pending proposer reward state, roots, and storage
   no longer carry a later useful-block unlock latch. A fresh full Docker runtime pass still awaits the
   standing gateway `/health` timeout blocker.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,

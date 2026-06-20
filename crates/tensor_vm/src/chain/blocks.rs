@@ -477,6 +477,7 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
                     "fallback requires zero selected receipts",
                 ));
             }
+            validate_fallback_proposer(&parent_state, block)?;
         }
     }
     if block.settled_receipt_set_root != outcome.selected_receipt_root {
@@ -493,6 +494,19 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
     }
     if strict_state_root && block.state_root != outcome.child_state_root {
         return Err(TvmError::InvalidReceipt("block state root mismatch"));
+    }
+    Ok(())
+}
+
+fn validate_fallback_proposer(parent_state: &ChainState, block: &TensorBlock) -> Result<()> {
+    let Some(expected_proposer) = super::proposer::for_next_epoch(parent_state, &block.beacon)
+    else {
+        return Err(TvmError::UnknownValidator);
+    };
+    if block.proposer != expected_proposer {
+        return Err(TvmError::InvalidReceipt(
+            "fallback proposer is not selected",
+        ));
     }
     Ok(())
 }

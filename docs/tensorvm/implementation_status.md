@@ -9,7 +9,7 @@ blockspace, selected receipts are marked included once, and block votes validate
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
-child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics,
+child-state apply semantics, difficulty retargeting, fallback timeout scheduling,
 multi-validator proposer competition/fork-choice policy, and a fresh full Docker proof of live validator
 proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
 clears. Deterministic local bad-block challenge construction, live validator-proposer diagnostic emission,
@@ -107,6 +107,7 @@ and observed-block p2p propagation support now exist as diagnostic chain/node/ru
 - Block assembly through the internal `chain::blocks` boundary with registered-validator proposer
   eligibility, deterministic settled-receipt blockspace selection, block-level `checks_root`, beacon,
   difficulty target, nonce search, useful-verification PoW checking, stake-weighted block-finality votes,
+  zero-receipt fallback proposer eligibility through the stake-weighted `chain::proposer` selector,
   duplicate-vote rejection, finalized block tracking, and finality-rate telemetry
 - Duplicate registration, duplicate receipt, and duplicate validator-attestation rejection
 - Account, miner, validator, job, receipt, attestation, reward, and model-state registries
@@ -230,11 +231,12 @@ and observed-block p2p propagation support now exist as diagnostic chain/node/ru
   deterministic selected auditor, exclude the audited validator, and are committed in the audit assignment
   root.
 - Validator proposer role status now distinguishes useful settled-receipt block proposals from empty
-  fallback blocks. The scheduled local producer publishes deterministic jobs only; the validator role tick
-  observes settled receipts with local tensor artifacts and validator attestations before submitting useful
-  block proposals through the chain engine. Validator proposal is gated by the configured validator
-  proposer duty, not by the local synthetic job producer path, so a validator can propose from already
-  accepted settled state even when synthetic job production is disabled. Runtime status records
+  fallback blocks. The scheduled local producer publishes deterministic jobs only, while the validator role
+  tick observes not-yet-included settled receipts with local tensor artifacts and validator attestations
+  before submitting useful block proposals through the chain engine. Validator proposal is gated by the
+  configured validator proposer duty, not by the local synthetic job producer path, so a validator can
+  propose from already accepted settled state even when synthetic job production is disabled. Runtime
+  status records
   settled-receipt proposer readiness, artifact-ready receipt count, attested receipt count, total proposed
   blocks, useful proposal count, fallback proposal count, and selected receipt count; `tvmd node status`
   passes those fields through and the local CPU checker requires positive useful proposal,

@@ -108,10 +108,19 @@ pub fn validator_role_block_proposal_observation(
         return ValidatorRoleBlockProposalObservation::default();
     }
     let mut observation = ValidatorRoleBlockProposalObservation {
-        settled_receipts: node.chain.state().settled_receipts().clone(),
         ..ValidatorRoleBlockProposalObservation::default()
     };
-    for receipt_id in &observation.settled_receipts {
+    for receipt_id in node.chain.state().settled_receipts() {
+        if node.chain.state().included_receipts().contains(receipt_id)
+            || node
+                .chain
+                .state()
+                .data_unavailable_receipts()
+                .contains(receipt_id)
+        {
+            continue;
+        }
+        observation.settled_receipts.insert(*receipt_id);
         if let Some(receipt) = node.chain.state().receipts().get(receipt_id)
             && role_receipt_bundle_from_local_tensors(node, receipt).is_some()
         {

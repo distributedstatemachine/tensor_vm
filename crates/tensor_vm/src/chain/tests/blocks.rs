@@ -73,7 +73,8 @@ fn block_finality_requires_two_thirds_validator_stake() {
     for validator in &validators {
         chain.register_validator(*validator, 10_000).unwrap();
     }
-    let block = chain.produce_block(validators[0], 1_000).unwrap();
+    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
+    let block = chain.produce_block(proposer, 1_000).unwrap();
     let block_hash = block.hash();
 
     assert!(!chain.has_block_finality(&block_hash));
@@ -109,7 +110,8 @@ fn block_finality_ignores_invalid_direct_vote_records() {
     for validator in &validators {
         chain.register_validator(*validator, 10_000).unwrap();
     }
-    let block = chain.produce_block(validators[0], 1_000).unwrap();
+    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
+    let block = chain.produce_block(proposer, 1_000).unwrap();
     let block_hash = block.hash();
 
     let unknown = BlockVote::new(address(b"unknown-direct-validator"), 10_000, &block);
@@ -258,6 +260,95 @@ fn zero_receipt_parent_produces_explicit_fallback_block() {
     assert_eq!(block.nonce, 0);
     assert!(chain.selected_receipts_for_block(&block).is_empty());
     assert_eq!(chain.validate_block(&block), Ok(()));
+}
+
+#[test]
+fn fallback_blocks_require_stake_weighted_selected_validator() {
+    let beacon = hash_bytes(b"test", &[b"fallback-selected-proposer"]);
+    let mut producer = Chain::new(beacon);
+    let mut peer = Chain::new(beacon);
+    let validators: Vec<_> = (0..4)
+        .map(|i| address(format!("fallback-selected-validator-{i}").as_bytes()))
+        .collect();
+    for (i, validator) in validators.iter().enumerate() {
+        let stake = 10_000 + i as u64;
+        producer.register_validator(*validator, stake).unwrap();
+        peer.register_validator(*validator, stake).unwrap();
+    }
+    let selected = producer.proposer_for_next_epoch(&beacon).unwrap();
+    let other = validators
+        .iter()
+        .copied()
+        .find(|validator| *validator != selected)
+        .unwrap();
+
+    assert_eq!(
+        producer.produce_block(other, 1_000),
+        Err(TvmError::InvalidReceipt(
+            "fallback proposer is not selected"
+        ))
+    );
+
+    let block = producer.produce_block(selected, 1_000).unwrap();
+    assert_eq!(block.production_kind, BlockProductionKind::PowSkipFallback);
+    assert_eq!(block.proposer, selected);
+
+    let mut bad_payload = block.clone();
+    bad_payload.proposer = other;
+    resign_test_block(&mut bad_payload);
+    assert_eq!(
+        peer.validate_block(&bad_payload),
+        Err(TvmError::InvalidReceipt(
+            "fallback proposer is not selected"
+        ))
+    );
+    assert_eq!(
+        peer.apply_command(ChainCommand::SubmitBlock(bad_payload)),
+        Err(TvmError::InvalidReceipt(
+            "fallback proposer is not selected"
+        ))
+    );
+    assert!(peer.blocks().is_empty());
+}
+
+#[test]
+fn useful_pow_blocks_do_not_require_fallback_selected_validator() {
+    let beacon = hash_bytes(b"test", &[b"useful-open-proposer"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"useful-open-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..4)
+        .map(|i| address(format!("useful-open-validator-{i}").as_bytes()))
+        .collect();
+    for (i, validator) in validators.iter().enumerate() {
+        chain
+            .register_validator(*validator, 10_000 + i as u64)
+            .unwrap();
+    }
+    let fallback_selected = chain.proposer_for_next_epoch(&beacon).unwrap();
+    let useful_proposer = validators
+        .iter()
+        .copied()
+        .find(|validator| *validator != fallback_selected)
+        .unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+    let block = chain.produce_block(useful_proposer, 1_000).unwrap();
+
+    assert_eq!(
+        block.production_kind,
+        BlockProductionKind::UsefulVerificationPow
+    );
+    assert_eq!(block.proposer, useful_proposer);
+    assert_ne!(block.proposer, fallback_selected);
+    assert_eq!(
+        chain.selected_receipts_for_block(&block),
+        vec![receipt.receipt_id]
+    );
 }
 
 #[test]

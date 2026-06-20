@@ -59,6 +59,9 @@ pub(super) fn produce_block(
     timestamp: u64,
 ) -> tensor_vm::chain::TensorBlock {
     let block_count = chain.blocks().len();
+    let proposer = chain
+        .proposer_for_next_epoch(&chain.state().finalized_randomness())
+        .unwrap_or(proposer);
     chain
         .apply_command(ChainCommand::ProduceBlock {
             proposer,

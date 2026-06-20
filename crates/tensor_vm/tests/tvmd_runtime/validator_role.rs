@@ -268,6 +268,10 @@ fn validator_role_audit_report_submission_observes_assignments_and_skips_duplica
     submit_validator_role_attestation(&mut node, audited, receipt_id)
         .unwrap()
         .expect("assigned validator should attest before audit assignment");
+    let proposer = node
+        .chain
+        .proposer_for_next_epoch(&node.chain.state().finalized_randomness())
+        .unwrap_or(proposer);
     node.chain.produce_block(proposer, 1_000).unwrap();
     let audit_id = *node
         .chain

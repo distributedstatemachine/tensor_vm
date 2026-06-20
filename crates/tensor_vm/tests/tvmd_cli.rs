@@ -592,7 +592,7 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
 }
 
 #[test]
-fn validator_run_with_local_producer_advances_cpu_chain() {
+fn validator_run_with_local_producer_publishes_jobs_without_empty_fallback_blocks() {
     let data_dir = unique_test_dir("validator-local-producer");
     let data_dir_text = data_dir.to_string_lossy().into_owned();
 
@@ -640,11 +640,16 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
 
     let overview = authenticated_get_request(rpc_port, "/explorer/overview");
     assert_eq!(response_status_line(&overview), "HTTP/1.1 200 OK");
+    let overview = response_json(&overview);
+    assert!(json_u64(&overview["summary"], "job_count") > 2);
     let later_chain_head = authenticated_get_request(rpc_port, "/chain/head");
     assert_eq!(response_status_line(&later_chain_head), "HTTP/1.1 200 OK");
     let later_chain_head = response_json(&later_chain_head);
-    assert!(json_u64(&later_chain_head, "height") > initial_height);
-    assert!(json_u64(&later_chain_head, "block_count") > initial_block_count);
+    assert_eq!(json_u64(&later_chain_head, "height"), initial_height);
+    assert_eq!(
+        json_u64(&later_chain_head, "block_count"),
+        initial_block_count
+    );
 
     let output = child
         .wait_with_output()
@@ -667,7 +672,7 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
     );
     assert_eq!(stdout_value(&stdout, "role_wallet_registered"), "true");
     assert_eq!(stdout_value(&stdout, "local_producer"), "true");
-    assert!(stdout_u64(&stdout, "produced_blocks") > 0);
+    assert_eq!(stdout_u64(&stdout, "produced_blocks"), 0);
 
     let status = run_tvmd(&["node", "status", "--data-dir", &data_dir_text]);
     assert_eq!(stdout_value(&status, "role_loop_role"), "validator");
@@ -677,52 +682,9 @@ fn validator_run_with_local_producer_advances_cpu_chain() {
         "validator"
     );
     assert_eq!(stdout_value(&status, "role_local_producer"), "true");
-    assert!(stdout_u64(&status, "role_produced_blocks") > 0);
-    assert_eq!(stdout_value(&status, "first_live_block_height"), "3");
-    let block = run_tvmd(&[
-        "node",
-        "block",
-        "--data-dir",
-        &data_dir_text,
-        "--height",
-        "3",
-    ]);
-    assert_eq!(stdout_value(&block, "proposer_role"), "validator");
-    assert_eq!(stdout_value(&block, "proposer_registered"), "true");
-    assert_eq!(
-        stdout_value(&block, "tensorwork_proposer_selection"),
-        "false"
-    );
-    stdout_hex_hash(&block, "parent_snapshot_root");
-    stdout_u64(&block, "parent_beacon_round");
-    stdout_hex_hash(&block, "parent_beacon");
-    stdout_hex_hash(&block, "child_state_root");
-    stdout_hex_hash(&block, "child_reward_root");
-    stdout_u64(&block, "child_beacon_round");
-    stdout_hex_hash(&block, "child_beacon");
-    stdout_u64(&block, "beacon_round");
-    stdout_hex_hash(&block, "beacon");
-    assert_eq!(
-        stdout_value(&block, "block_uses_parent_finalized_beacon"),
-        "true"
-    );
-    stdout_u64(&block, "selected_receipt_opening_count");
-    stdout_u64(&block, "checks_opening_count");
-    if stdout_value(&block, "pow_required") == "true" {
-        assert_eq!(stdout_value(&block, "pow_valid"), "true");
-        assert_eq!(
-            stdout_value(&block, "block_kind"),
-            "useful_verification_pow"
-        );
-    } else {
-        assert_eq!(stdout_value(&block, "block_kind"), "pow_skip_fallback");
-        assert_eq!(stdout_value(&block, "pow_skip_fallback"), "true");
-        assert_eq!(stdout_value(&block, "fallback_valid"), "true");
-    }
-    assert!(matches!(
-        stdout_value(&block, "canonical_blockspace_valid"),
-        "true" | "false"
-    ));
+    assert_eq!(stdout_u64(&status, "role_produced_blocks"), 0);
+    assert_eq!(stdout_u64(&status, "height"), initial_height);
+    assert!(stdout_u64(&status, "job_count") > 2);
 
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }

@@ -795,7 +795,8 @@ mod tests {
                 },
             ))
             .unwrap();
-        chain.produce_block(validators[0], 1_000).unwrap();
+        let proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
+        chain.produce_block(proposer, 1_000).unwrap();
         let audit_id = *chain
             .state()
             .validator_audit_assignments()

@@ -75,6 +75,9 @@ pub(super) fn credit_reward(chain: &mut Chain, address: Address, amount: u64) {
 
 pub(super) fn produce_block(chain: &mut Chain, proposer: Address, timestamp: u64) -> TensorBlock {
     let block_count = chain.blocks().len();
+    let proposer = chain
+        .proposer_for_next_epoch(&chain.state().finalized_randomness())
+        .unwrap_or(proposer);
     chain
         .apply_command(ChainCommand::ProduceBlock {
             proposer,

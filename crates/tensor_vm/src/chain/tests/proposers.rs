@@ -35,7 +35,8 @@ fn validation_seed_is_bound_to_validator_and_beacon_round() {
     );
 
     let seed_before = chain.validation_seed(&receipt, &validator_a);
-    chain.produce_block(validator_a, 1_000).unwrap();
+    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
+    chain.produce_block(proposer, 1_000).unwrap();
     assert_ne!(seed_before, chain.validation_seed(&receipt, &validator_a));
     assert_eq!(chain.state().finalized_beacon_round(), 1);
 }

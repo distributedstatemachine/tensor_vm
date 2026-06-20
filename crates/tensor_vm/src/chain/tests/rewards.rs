@@ -219,8 +219,9 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
         .register_validator(challenger, chain.params().validator_min_stake)
         .unwrap();
 
+    let fallback_proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
     chain
-        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .produce_block_with_rewards(fallback_proposer, 1_000, 400, 100)
         .unwrap();
     add_pending_receipt_reward(&mut chain, &beacon);
     chain

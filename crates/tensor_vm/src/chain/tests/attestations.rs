@@ -113,7 +113,10 @@ fn unavailable_data_attestation_slashes_receipt_miner_once_on_block_apply() {
     );
     assert_ne!(chain.state_root(), starting_state_root);
 
-    chain.produce_block(validators[0], 1_006).unwrap();
+    let proposer = chain
+        .proposer_for_next_epoch(&chain.state().finalized_randomness())
+        .unwrap();
+    chain.produce_block(proposer, 1_006).unwrap();
     assert_eq!(chain.state().data_unavailability_slashes().len(), 1);
     assert_eq!(
         chain.state().miners().get(&miner).unwrap().stake,
@@ -291,7 +294,10 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         "voided validator reward should be pruned without credit once appeal hold matures"
     );
 
-    chain.produce_block(validators[0], 1_012).unwrap();
+    let proposer = chain
+        .proposer_for_next_epoch(&chain.state().finalized_randomness())
+        .unwrap();
+    chain.produce_block(proposer, 1_012).unwrap();
     assert_eq!(chain.state().validator_audit_slashes().len(), 1);
     assert_eq!(
         chain.state().validators().get(&assigned).unwrap().stake,
@@ -753,7 +759,8 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
             },
         ))
         .unwrap();
-    passing_chain.produce_block(validators[0], 1_000).unwrap();
+    let proposer = passing_chain.proposer_for_next_epoch(&beacon).unwrap();
+    passing_chain.produce_block(proposer, 1_000).unwrap();
     let audit_id = *passing_chain
         .state()
         .validator_audit_assignments()
