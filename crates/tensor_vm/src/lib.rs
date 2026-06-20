@@ -16,6 +16,7 @@ pub mod error;
 pub mod faucet;
 pub mod field;
 pub mod hash;
+pub mod ir;
 pub mod jobs;
 pub mod localnet;
 pub mod merkle;
@@ -53,6 +54,11 @@ pub use cli::{
 };
 pub use error::{Result, TvmError};
 pub use faucet::Faucet;
+pub use ir::{
+    GraphId, GraphOutput, IrArity, IrLiteral, IrOpTier, IrRef, IrValue, OpNode, OpSpec, ParamSpec,
+    TensorGraph, TensorSpec, canonical_linear_training_step_graph, canonical_matmul_graph,
+    frozen_op_registry, op_spec,
+};
 pub use jobs::{
     LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, MatmulJob,
     PrimitiveType, TensorOpReceipt,

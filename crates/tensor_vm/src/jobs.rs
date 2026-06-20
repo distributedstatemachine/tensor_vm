@@ -1,8 +1,9 @@
 use crate::error::{Result, TvmError};
 use crate::field::Elem;
+use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::tensor::{DType, Tensor};
 use crate::types::{Address, Hash, Signature, hash_bytes, sign};
-use crate::vm::{self, TensorOp};
+use crate::vm;
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum PrimitiveType {
@@ -84,20 +85,11 @@ impl MatmulJob {
     }
 
     pub fn program_hash(&self) -> Hash {
-        vm::program_hash(&[
-            TensorOp::RandomTensor {
-                seed: self.seed_a,
-                shape: vec![self.m, self.k],
-                dtype: self.dtype,
-            },
-            TensorOp::RandomTensor {
-                seed: self.seed_b,
-                shape: vec![self.k, self.n],
-                dtype: self.dtype,
-            },
-            TensorOp::Matmul,
-            TensorOp::CommitTensor,
-        ])
+        self.tensor_ir_graph().graph_id()
+    }
+
+    pub fn tensor_ir_graph(&self) -> TensorGraph {
+        canonical_matmul_graph(self.m, self.k, self.n, self.dtype)
     }
 }
 
@@ -300,13 +292,16 @@ impl LinearTrainingStepJob {
     }
 
     pub fn program_hash(&self) -> Hash {
-        vm::program_hash(&[
-            TensorOp::Matmul,
-            TensorOp::Sub,
-            TensorOp::LinearBackward,
-            TensorOp::SgdUpdate { lr: self.lr },
-            TensorOp::CommitTensor,
-        ])
+        self.tensor_ir_graph().graph_id()
+    }
+
+    pub fn tensor_ir_graph(&self) -> TensorGraph {
+        canonical_linear_training_step_graph(
+            &self.input_shape,
+            &self.weight_shape,
+            &self.target_shape,
+            self.dtype,
+        )
     }
 }
 
@@ -482,10 +477,15 @@ mod tests {
     fn matmul_receipt_commits_to_outputs() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 1, 4, 3, 2, &beacon, 10);
+        assert_eq!(
+            job.program_hash(),
+            job.tensor_ir_graph().validate_for_consensus().unwrap()
+        );
         let miner = address(b"miner");
         let (receipt, _a, _b, c) = TensorOpReceipt::from_job(&job, miner, 1, 7).unwrap();
         assert_eq!(receipt.output_roots, vec![c.commitment_root()]);
         assert_eq!(receipt.tensor_work_units, 48);
+        assert_eq!(receipt.program_hash, job.tensor_ir_graph().graph_id());
     }
 
     #[test]
@@ -504,6 +504,10 @@ mod tests {
             lr: 2,
             deadline_block: 20,
         });
+        assert_eq!(
+            job.program_hash(),
+            job.tensor_ir_graph().validate_for_consensus().unwrap()
+        );
         let (receipt, output) =
             LinearTrainingStepReceipt::from_job(&job, address(b"miner"), &weights, 3, 9).unwrap();
         assert_eq!(receipt.y_root, output.y.commitment_root());

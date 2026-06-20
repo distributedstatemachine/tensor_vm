@@ -20,6 +20,11 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   `tensor_vm` does not depend on `experiments`
 - Bounds-checked tensor row/cell access and invalid-index rejection
 - Full direct TensorVM wrapper and program-hash variant coverage
+- Content-addressed Tensor IR foundation with typed tensor specs, params, refs, ops, graph outputs,
+  canonical JSON encoding, `graph_id = SHA256(canonical_json(graph))`, frozen v0 op-registry metadata,
+  structural validation, Tier-C vocabulary that is carried but rejected for consensus admission, and
+  canonical TensorOp/LinearTrainingStep graph constructors. Current TensorOp and LinearTrainingStep
+  receipts bind their `program_hash` to the validated IR `graph_id`.
 - Tensor descriptors, Merkle commitments, chunk openings, and row access
 - Synthetic matmul jobs, TensorOp receipts, and trace commitments
 - Full-output Freivalds verification and row-sampled audit checks

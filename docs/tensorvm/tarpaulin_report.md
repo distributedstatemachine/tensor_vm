@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root with:
+Latest attempted run: June 20, 2026 from the workspace root after Iteration 22 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -12,7 +12,7 @@ Result:
 error: no such command: `tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 21 coverage could not
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 22 coverage could not
 be regenerated. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:

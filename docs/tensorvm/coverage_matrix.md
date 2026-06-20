@@ -29,6 +29,23 @@ LinearTrainingStep validation and state transition, local tensor-server availabi
 local-only networking-shim credit, and the explicit separation between local evidence and the 7-day public
 deployment gate.
 
+## Tensor IR Foundation
+
+The local reference now includes a content-addressed Tensor IR foundation for `upow.md` §4:
+`ir::TensorGraph` canonical JSON encoding, `graph_id`, frozen op-registry metadata, structural validation,
+Tier-C vocabulary gating, and canonical graph constructors for the current TensorOp matmul and
+LinearTrainingStep primitives. The current fixed job structs derive their receipt `program_hash` from the
+validated graph ID. Focused evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
+`ir::tests::graph_validation_rejects_bad_structure`,
+`ir::tests::graph_validation_rejects_op_metadata_mismatches`,
+`ir::tests::tier_c_vocabulary_is_carried_but_not_consensus_admitted`,
+`ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
+`jobs::tests::matmul_receipt_commits_to_outputs`, and
+`jobs::tests::linear_receipt_commits_to_learning_step`.
+
+Remaining Tensor IR gaps: arbitrary graph body propagation/storage, generic IR execution, and the per-op
+`F_p` conformance vector suite that gates runtime/CUDA receipt acceptance are not complete.
+
 ## Local CPU Compose Gate
 
 [`local_cpu_testnet_spec.md`](local_cpu_testnet_spec.md) maps the first local deployment milestone to the
@@ -79,7 +96,7 @@ continues finalizing blocks after restart.
 
 | # | Criterion | Evidence |
 | --- | --- | --- |
-| 1 | Miners execute deterministic tensor jobs. | `miner::tests::miner_solves_matmul_and_serves_tensors`, `miner::tests::miner_solves_linear_step_and_serves_intermediates`, `runtime::tests::cpu_and_gpu_backends_match_canonical_matmul` |
+| 1 | Miners execute deterministic tensor jobs. | Current TensorOp and LinearTrainingStep jobs are backed by validated content-addressed IR graph IDs. Evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`, `ir::tests::linear_training_step_graph_validates_and_commits_shapes`, `jobs::tests::matmul_receipt_commits_to_outputs`, `jobs::tests::linear_receipt_commits_to_learning_step`, `miner::tests::miner_solves_matmul_and_serves_tensors`, `miner::tests::miner_solves_linear_step_and_serves_intermediates`, `runtime::tests::cpu_and_gpu_backends_match_canonical_matmul` |
 | 2 | Validators verify block-eligible matmul jobs with full-output Freivalds or bounded equivalent. | `verify::full_freivalds`, `verify::tests::full_freivalds_accepts_honest_and_rejects_corruption`, `verify::tests::tensor_op_verifier_rejects_metadata_and_shape_mismatches`, `validator::tests::validator_verifies_matmul_from_tensor_server` |
 | 3 | Row-sampled checks are audits unless false-accept bounds are documented. | `verify::row_sample_detection_probability`, `study::row_sampling_study`, `study::tests::row_sampling_study_blocks_sparse_row_sampled_only_acceptance` |
 | 4 | Blocks are produced by validators winning useful-verification PoW over deterministic settled-receipt blockspace. | Partially implemented locally. `TensorBlock` now commits `settled_receipt_set_root`, block-level `checks_root`, beacon, proposer reward amount, difficulty target, and nonce; `chain::proposer` selects registered validators and ignores miner TensorWork; selected receipts are marked included once; `submit_block_vote` validates known blocks with strict parent-root checks before counting votes; local block-check challenges can disprove a committed check leaf against canonical recomputation and throttle the proposer; validator role loops submit and gossip explicit block votes so append and finality are separate runtime events. Evidence: `chain::tests::proposer_selection_ignores_tensorwork`, `chain::tests::block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values`, `chain::tests::block_votes_reject_invalid_useful_pow_and_checks_root`, `chain::tests::produced_blocks_mark_selected_settled_receipts_included_once`, `chain::tests::block_check_challenge_voids_pending_reward_and_throttles_proposer`, `node::tests::block_payload_application_admits_next_head_and_rejects_bad_edges`, `p2p::tests::block_vote_payloads_roundtrip_and_reject_malformed_edges`, `tvmd` binary `tests::validator_role_block_vote_submission_finalizes_only_through_votes`, `storage::tests::block_log_store_appends_loads_and_detects_tampering`, `localnet::tests::synthetic_cpu_round_settles_work_and_advances_finalized_chain`, and service-block evidence fields. Remaining gaps: full verifier-transcript fraud proofs, network/RPC challenge propagation, exact parent-state snapshots and child-state apply theorem, difficulty retargeting, and live validator proposer/block-assembly networking. |
