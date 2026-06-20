@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 88 complete pending push - competing-head fork-choice and withholding policy.
+- Active feature: Iteration 88 complete and pushed - competing-head fork-choice and withholding policy.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -109,7 +109,9 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `3a75b33` (`Add current head fork choice policy`) pending push to `origin/main`.
+- Feature commit: `3a75b33` (`Add current head fork choice policy`) pushed to `origin/main`.
+- Evidence commit: `d2e758d` (`Record current head fork choice evidence`) pushed to `origin/main`.
+- Push result: `git push origin main` succeeded (`d4d11b8..d2e758d  main -> main`).
 
 ### Iteration 87: Delayed Block-Check Proposer Reward Protection
 
