@@ -542,6 +542,22 @@ impl LocalTestnet {
     }
 
     fn produce_block_with_command(&mut self, proposer: Address, timestamp: u64) -> TensorBlock {
+        let timestamp = self
+            .chain
+            .blocks()
+            .last()
+            .map(|parent| {
+                timestamp.max(
+                    parent.timestamp.saturating_add(
+                        self.chain
+                            .params()
+                            .pow_timeout_blocks
+                            .max(1)
+                            .saturating_mul(self.chain.params().block_time_seconds.max(1)),
+                    ),
+                )
+            })
+            .unwrap_or(timestamp);
         self.chain
             .apply_command(ChainCommand::ProduceBlock {
                 proposer,

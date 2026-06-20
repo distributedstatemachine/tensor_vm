@@ -116,7 +116,7 @@ fn unavailable_data_attestation_slashes_receipt_miner_once_on_block_apply() {
     let proposer = chain
         .proposer_for_next_epoch(&chain.state().finalized_randomness())
         .unwrap();
-    chain.produce_block(proposer, 1_006).unwrap();
+    chain.produce_block(proposer, 1_024).unwrap();
     assert_eq!(chain.state().data_unavailability_slashes().len(), 1);
     assert_eq!(
         chain.state().miners().get(&miner).unwrap().stake,
@@ -234,7 +234,7 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
     assert!(!delayed_validator_claim.voided_by_challenge);
     assert!(chain.state().validator_audit_slashes().is_empty());
 
-    chain.produce_block(validators[0], 1_006).unwrap();
+    chain.produce_block(validators[0], 1_012).unwrap();
     let slash = chain
         .state()
         .validator_audit_slashes()
@@ -297,7 +297,7 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
     let proposer = chain
         .proposer_for_next_epoch(&chain.state().finalized_randomness())
         .unwrap();
-    chain.produce_block(proposer, 1_012).unwrap();
+    chain.produce_block(proposer, 1_024).unwrap();
     assert_eq!(chain.state().validator_audit_slashes().len(), 1);
     assert_eq!(
         chain.state().validators().get(&assigned).unwrap().stake,

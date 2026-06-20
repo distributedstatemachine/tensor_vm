@@ -62,6 +62,21 @@ pub(super) fn produce_block(
     let proposer = chain
         .proposer_for_next_epoch(&chain.state().finalized_randomness())
         .unwrap_or(proposer);
+    let timestamp = chain
+        .blocks()
+        .last()
+        .map(|parent| {
+            timestamp.max(
+                parent.timestamp.saturating_add(
+                    chain
+                        .params()
+                        .pow_timeout_blocks
+                        .max(1)
+                        .saturating_mul(chain.params().block_time_seconds.max(1)),
+                ),
+            )
+        })
+        .unwrap_or(timestamp);
     chain
         .apply_command(ChainCommand::ProduceBlock {
             proposer,

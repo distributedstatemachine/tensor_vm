@@ -417,11 +417,13 @@ pub fn zero_work_liveness_study(
             break;
         };
         proposers.push(proposer);
+        let fallback_interval = chain
+            .params()
+            .pow_timeout_blocks
+            .max(1)
+            .saturating_mul(chain.params().block_time_seconds.max(1));
         chain
-            .produce_block(
-                proposer,
-                height.saturating_mul(chain.params().block_time_seconds),
-            )
+            .produce_block(proposer, height.saturating_mul(fallback_interval))
             .expect("registered validator should produce zero-work study block");
     }
     ZeroWorkLivenessStudy {

@@ -16,7 +16,7 @@ help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
 This environment does not currently have `cargo-tarpaulin` installed, so Iteration 77 coverage could not
-be regenerated. Iterations 78 and 79 rechecked the same command and hit the same missing-binary blocker.
+be regenerated. Iterations 78 through 80 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -70,6 +70,8 @@ observed-block application, and delayed reward evidence.
 Iteration 79 added durable block-parent `ChainState` snapshots for replay-stable historical
 `BlockApplyOutcome` evidence. Focused chain and storage tests cover old useful-block apply outcomes after
 future receipts/blocks and after chain-state save/load.
+Iteration 80 added chain-level PoW-skip fallback timeout validation. Focused fallback and retarget tests
+cover producer and non-producer rejection of early empty fallback blocks while preserving useful UVPoW.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

@@ -29,10 +29,25 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     let block_apply_outcome = chain.block_apply_outcome(block).ok();
     let block_valid = chain.validate_block(block).is_ok();
     let expected_difficulty_target = chain.expected_difficulty_target(block.height);
-    let fallback_valid = !block.production_kind.requires_pow()
-        && selected_receipt_ids.is_empty()
-        && block.nonce == 0
-        && block.difficulty_target == expected_difficulty_target;
+    let fallback_timeout_elapsed = if block.height == 0 {
+        true
+    } else {
+        chain
+            .blocks()
+            .iter()
+            .find(|candidate| {
+                candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
+            })
+            .is_some_and(|parent| {
+                let timeout_seconds = chain
+                    .params()
+                    .pow_timeout_blocks
+                    .max(1)
+                    .saturating_mul(chain.params().block_time_seconds.max(1));
+                block.timestamp >= parent.timestamp.saturating_add(timeout_seconds)
+            })
+    };
+    let fallback_valid = !block.production_kind.requires_pow() && block_valid;
     let proposer_registered = chain.state().validators().contains_key(&block.proposer);
     let pow_hash = block.pow_hash();
     let pow_header_hash = block.pow_header_hash();
@@ -96,6 +111,7 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
     report.field("block_kind", block.production_kind.label());
     report.field("pow_skip_fallback", !block.production_kind.requires_pow());
     report.field("fallback_valid", fallback_valid);
+    report.field("fallback_timeout_elapsed", fallback_timeout_elapsed);
     report.field("parent_hash", hex(&block.parent_hash));
     if let Some(outcome) = &block_apply_outcome {
         report.field(

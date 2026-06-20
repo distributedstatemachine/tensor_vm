@@ -10,8 +10,9 @@ parent-root checks before counting stake. Long-running validator roles can now s
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Historical useful block evidence now stores exact parent `ChainState` snapshots keyed by block hash and
 persists them in the chain-state file, so `BlockApplyOutcome`, selected-receipt openings, checks roots, and
-child roots stay replay-stable after later receipts and blocks. Remaining consensus gaps are full
-verifier-transcript challenge semantics, fallback timeout scheduling, multi-validator proposer
+child roots stay replay-stable after later receipts and blocks. PoW-skip fallback validation now enforces
+the configured `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks.
+Remaining consensus gaps are full verifier-transcript challenge semantics, multi-validator proposer
 competition/fork-choice policy, and a fresh full Docker proof of live validator proposer/block-assembly
 networking and diagnostic challenge evidence after the current `/health` blocker clears. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p

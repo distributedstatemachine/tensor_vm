@@ -481,6 +481,7 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
                     "fallback requires zero selected receipts",
                 ));
             }
+            validate_fallback_timeout(chain, block)?;
             validate_fallback_proposer(&parent_state, block)?;
         }
     }
@@ -498,6 +499,27 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
     }
     if strict_state_root && block.state_root != outcome.child_state_root {
         return Err(TvmError::InvalidReceipt("block state root mismatch"));
+    }
+    Ok(())
+}
+
+fn validate_fallback_timeout(chain: &Chain, block: &TensorBlock) -> Result<()> {
+    if block.height == 0 {
+        return Ok(());
+    }
+    let Some(parent) = chain.blocks.iter().find(|candidate| {
+        candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
+    }) else {
+        return Err(TvmError::InvalidReceipt("block parent mismatch"));
+    };
+    let timeout_seconds = chain
+        .params
+        .pow_timeout_blocks
+        .max(1)
+        .saturating_mul(chain.params.block_time_seconds.max(1));
+    let earliest_fallback_at = parent.timestamp.saturating_add(timeout_seconds);
+    if block.timestamp < earliest_fallback_at {
+        return Err(TvmError::InvalidReceipt("fallback before pow timeout"));
     }
     Ok(())
 }

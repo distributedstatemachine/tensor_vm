@@ -481,7 +481,7 @@ mod tests {
         producer.produce_block(validator, 1_000).unwrap();
         let mut consumer = producer.clone();
         let parent_chain = consumer.clone();
-        let block = producer.produce_block(validator, 1_006).unwrap();
+        let block = producer.produce_block(validator, 1_012).unwrap();
         let block_hash = block.hash();
         let payload = encode_block_payload(&block);
 
@@ -573,7 +573,7 @@ mod tests {
             NetworkBlockPayloadApply::Invalid
         );
 
-        let future = producer.produce_block(validator, 1_012).unwrap();
+        let future = producer.produce_block(validator, 1_024).unwrap();
         let future_hash = future.hash();
         assert_eq!(
             apply_network_block_payload(

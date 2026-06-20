@@ -396,7 +396,7 @@ fn estimated_cost_to_attack_one_epoch(chain: &Chain) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::{Chain, JobState};
+    use crate::chain::{Chain, ChainParams, JobState};
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, PrimitiveType,
         TensorOpReceipt,
@@ -412,7 +412,13 @@ mod tests {
     #[test]
     fn telemetry_reports_block_timing_and_concentration() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
-        let mut chain = Chain::new(beacon);
+        let mut chain = Chain::with_params(
+            ChainParams {
+                pow_timeout_blocks: 1,
+                ..ChainParams::default()
+            },
+            beacon,
+        );
         let miner = address(b"miner");
         let validator = address(b"validator");
         chain.register_miner(miner, 100).unwrap();
@@ -440,7 +446,13 @@ mod tests {
     #[test]
     fn telemetry_reports_receipt_age_and_verification_cost_ratio() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
-        let mut chain = Chain::new(beacon);
+        let mut chain = Chain::with_params(
+            ChainParams {
+                pow_timeout_blocks: 1,
+                ..ChainParams::default()
+            },
+            beacon,
+        );
         let miner = address(b"miner");
         let validator = address(b"receipt-age-validator");
         chain.register_miner(miner, 100).unwrap();
@@ -465,7 +477,13 @@ mod tests {
     #[test]
     fn telemetry_reports_linear_receipt_bandwidth_and_missing_job_edges() {
         let beacon = hash_bytes(b"test", &[b"linear-telemetry-beacon"]);
-        let mut chain = Chain::new(beacon);
+        let mut chain = Chain::with_params(
+            ChainParams {
+                pow_timeout_blocks: 1,
+                ..ChainParams::default()
+            },
+            beacon,
+        );
         let miner = address(b"linear-telemetry-miner");
         let validator = address(b"linear-telemetry-validator");
         chain.register_miner(miner, 100).unwrap();

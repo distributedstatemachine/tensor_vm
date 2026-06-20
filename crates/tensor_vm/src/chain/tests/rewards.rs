@@ -155,7 +155,7 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
             .saturating_add(chain.params().reward_maturity_delay_blocks())
     );
     add_settled_receipt_for_blockspace(&mut chain, &beacon);
-    chain.produce_block(proposer, 1_006).unwrap();
+    chain.produce_block(proposer, 1_012).unwrap();
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
     let claimable_at_height = chain
         .state()
@@ -490,7 +490,7 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     add_settled_receipt_for_blockspace(&mut producer, &beacon);
     add_settled_receipt_for_blockspace(&mut peer, &beacon);
     let block1 = producer
-        .produce_block_with_rewards(proposer, 1_001, 80, 20)
+        .produce_block_with_rewards(proposer, 1_012, 80, 20)
         .unwrap();
     assert_eq!(producer.state().rewards().balance(&proposer), 0);
     assert!(producer.state().pending_proposer_rewards().contains_key(&0));
@@ -514,7 +514,7 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     add_settled_receipt_for_blockspace(&mut producer, &beacon);
     add_settled_receipt_for_blockspace(&mut peer, &beacon);
     let block2 = producer
-        .produce_block_with_rewards(proposer, 1_002, 80, 20)
+        .produce_block_with_rewards(proposer, 1_024, 80, 20)
         .unwrap();
     assert_eq!(producer.state().rewards().balance(&proposer), 500);
     assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
@@ -592,7 +592,7 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
             .contains_key(&fallback.height)
     );
 
-    chain.produce_block(proposer, 1_006).unwrap();
+    chain.produce_block(proposer, 1_012).unwrap();
     assert_eq!(chain.state().height(), 2);
     let events = chain.release_matured_proposer_rewards().unwrap();
     assert!(events.contains(&ChainEvent::ProposerRewardReleased {

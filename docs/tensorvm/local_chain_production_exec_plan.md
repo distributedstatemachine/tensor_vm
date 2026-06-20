@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 79 complete and pushed.
+- Active feature: Iteration 80 complete locally; commit/push pending.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,8 +31,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next non-Docker consensus gap or rerun the full Docker scenario after the
-  `/health` blocker clears.
+- Next action: commit and push Iteration 80, then select the next non-Docker consensus gap or rerun the
+  full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -45,7 +45,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, block-check challenges, and observed malformed block-check challenge payloads | Continue extending only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, stake-weighted fallback proposer eligibility, replay-stable parent snapshots/apply outcomes, delayed rewards, network-visible block-check challenges, deterministic diagnostic bad-block challenge generation, live diagnostic emission, and observed-malformed-block p2p/cache support | Remaining: full transcript disputes, timeout/fork-choice policy, fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, stake-weighted fallback proposer eligibility, fallback timeout enforcement, replay-stable parent snapshots/apply outcomes, delayed rewards, network-visible block-check challenges, deterministic diagnostic bad-block challenge generation, live diagnostic emission, and observed-malformed-block p2p/cache support | Remaining: full transcript disputes, fork-choice/withholding policy, fresh Docker proof |
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
@@ -54,71 +54,66 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 79: Replay-Stable Historical Block Apply Evidence
+### Iteration 80: PoW-Skip Fallback Timeout Enforcement
 
-Feature capability: historical `BlockApplyOutcome` and block-status evidence use durable exact block-parent
-state snapshots before recomputing selected receipts, checks roots, parent snapshots, and child roots.
+Feature capability: non-genesis zero-receipt `PowSkipFallback` blocks are valid only after the parent block
+has aged at least `pow_timeout_blocks * block_time_seconds`; useful UVPoW blocks are not delayed.
 
-Readiness requirements covered: `upow.md`/`mvp_spec.md` §11 block validity evidence, selected-receipt
-lifecycle/opening metadata, and the local readiness gap for exact replayable parent-state/apply semantics.
+Readiness requirements covered: `upow.md` §11 and `mvp_spec.md` §20.1/AC14 zero-receipt fallback policy.
 
-Canonical owner: `chain::blocks::parent_state_for_validation` remains the single chain-owned parent
-reconstruction boundary for block validation, apply outcomes, selected receipts, status, and challenges.
-Adapter callers: block status, challenge helpers, `Chain::validate_block`, block production/admission, and
-runtime/network adapters consume the chain-owned outcome rather than reconstructing state themselves.
-Old shortcut being removed: historical parent reconstruction inferred an old parent from the current head
-state, letting later jobs, receipts, attestations, rewards, and audit metadata change old block evidence.
-Regression test that proves the shortcut is gone: produce an old useful block, add a later settled receipt
-and block, then require the old block's apply outcome/checks root/child state root to remain stable and not
-select the future receipt.
-Behavior with local synthetic block production disabled: unchanged; inbound/status evidence is derived from
-canonical chain state only and does not depend on scheduled local production.
-Behavior for producer and non-producer roles: producers persist selected receipts for emitted blocks;
-non-producers recompute the same historical parent boundary while admitting or reporting received blocks.
-Structured evidence source: `BlockApplyOutcome`, `BlockParentSnapshot`, selected receipt openings, and block
-status fields backed by chain roots.
-Finality source: unchanged; parent/apply evidence is admission/status evidence, while finalized blocks still
-come from explicit block votes.
-Wire-size and codec boundary: no wire change; parent snapshots persist in the existing chain-state file
-codec and existing bounded block/receipt/attestation p2p codecs are unchanged.
+Canonical owner: `chain::blocks` validates fallback timeout, proposer eligibility, canonical empty
+blockspace, roots, and state transition together.
+Adapter callers: `ChainCommand::ProduceBlock`, rewarded production, network block payload admission,
+block status validation, and challenge helpers all use the same chain validator.
+Old shortcut being removed: any selected fallback validator could immediately produce or admit consecutive
+empty fallback blocks as soon as canonical blockspace was empty.
+Regression test that proves the shortcut is gone: focused chain tests reject an early second fallback and
+reject an inbound early fallback payload, then accept the same path after the configured timeout.
+Behavior with local synthetic block production disabled: inbound early fallback blocks are rejected by
+chain validation; useful receipt blocks remain available when settled blockspace exists.
+Behavior for producer and non-producer roles: producers must wait before empty fallback; non-producers
+apply the same timeout to received fallback payloads.
+Structured evidence source: `TensorBlock.timestamp`, parent block timestamp, `ChainParams::pow_timeout_blocks`,
+`ChainParams::block_time_seconds`, and typed chain validation errors.
+Finality source: unchanged; fallback admission is still separate from explicit block-vote finality.
+Wire-size and codec boundary: no wire change; the existing bounded `TensorBlock` codec already carries
+timestamps and production kind.
 
-Files/modules likely touched: `chain/blocks.rs`, chain block tests, coverage/status/readiness docs, and this
-exec plan.
+Files/modules likely touched: `chain/blocks.rs`, chain block/reward/retarget tests, coverage/status/readiness
+docs, and this exec plan.
 Parallel subagents to run: none; user asked not to use subagents unless explicitly requested.
-Parallelizable implementation workstreams: read-only discovery and validation only; code edits are
-single-writer because the parent-state boundary and tests are tightly coupled.
-Tests/checkers/docs to add or update: focused chain test for historical apply evidence after future receipts,
-storage roundtrip coverage for parent snapshots, and docs status for replayable parent reconstruction.
-Narrow validation commands: `cargo test -p tensor_vm historical --quiet`, `cargo test -p tensor_vm block_apply_outcome --quiet`.
+Parallelizable implementation workstreams: read-only discovery and validation only; implementation is a
+single chain boundary.
+Tests/checkers/docs to add or update: focused fallback timeout tests plus docs status for AC14.
+Narrow validation commands: `cargo test -p tensor_vm fallback --quiet`, `cargo test -p tensor_vm retarget --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt.
-Expected observable evidence: an old useful block's selected receipts, checks root, parent snapshot, and
-child root remain valid after newer receipts/blocks are added and after chain-state save/load.
-Out of scope: fork-choice side branches, timeout scheduling, full transcript fraud proofs, and Docker rerun
-until `/health`.
-Split trigger: if exact replay requires multi-branch fork choice, split that work from this canonical
-linear-chain snapshot boundary.
+Expected observable evidence: genesis fallback remains possible, useful blocks remain undelayed, and a
+non-genesis empty fallback before timeout is rejected for producers and non-producers.
+Out of scope: multi-branch fork choice, validator withholding penalties, wall-clock scheduler changes, full
+Docker rerun until `/health`, and fraud-proof transcripts.
+Split trigger: if fallback timeout requires side-branch fork choice or runtime clock orchestration, split
+that from this chain validation rule.
 
 Implementation summary:
-- Added exact block-parent `ChainState` snapshots to `Chain`, populated by local production and inbound
-  block admission.
-- Persisted the parent snapshot map in the existing chain-state file codec and restored it through
-  `ChainParts`.
-- Changed historical parent reconstruction to prefer the stored snapshot, preserving selected receipts,
-  checks roots, child roots, and block status/challenge evidence after later receipts/blocks.
+- Added `PowSkipFallback` timeout validation in `chain::blocks`: height-zero fallback remains allowed, but
+  later empty fallback blocks must wait `pow_timeout_blocks * block_time_seconds` after the parent.
+- Updated block status so `fallback_valid` mirrors chain validation and `fallback_timeout_elapsed` exposes
+  the timestamp condition as structured evidence.
+- Updated pure zero-work fixtures to respect timeout timing without changing useful UVPoW behavior.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm historical --quiet`, `cargo test -p tensor_vm block_apply_outcome --quiet`,
-  and `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
+- Focused: `cargo test -p tensor_vm fallback --quiet`, `cargo test -p tensor_vm retarget --quiet`,
+  `cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks --quiet`,
+  and `cargo test -p tensor_vm --test tvmd_runtime service_init_recovers_torn_snapshot_and_block_log_from_chain_state --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 410 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 411 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `617ffa9` (`Persist block parent snapshots`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
@@ -174,13 +169,14 @@ Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit
 
 ## Validation Evidence
 
-Latest full validation is Iteration 79 on June 20, 2026:
+Latest full validation is Iteration 80 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm historical --quiet
-cargo test -p tensor_vm block_apply_outcome --quiet
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
+cargo test -p tensor_vm fallback --quiet
+cargo test -p tensor_vm retarget --quiet
+cargo test -p tensor_vm --test tvmd_cli local_testnet_service_gateway_does_not_produce_local_blocks --quiet
+cargo test -p tensor_vm --test tvmd_runtime service_init_recovers_torn_snapshot_and_block_log_from_chain_state --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

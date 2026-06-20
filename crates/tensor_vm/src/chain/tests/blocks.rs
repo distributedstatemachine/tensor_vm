@@ -263,6 +263,46 @@ fn zero_receipt_parent_produces_explicit_fallback_block() {
 }
 
 #[test]
+fn non_genesis_fallback_requires_pow_timeout() {
+    let beacon = hash_bytes(b"test", &[b"fallback-timeout-beacon"]);
+    let mut producer = Chain::new(beacon);
+    let mut peer = Chain::new(beacon);
+    let validator = address(b"fallback-timeout-validator");
+    producer.register_validator(validator, 10_000).unwrap();
+    peer.register_validator(validator, 10_000).unwrap();
+
+    let genesis_fallback = producer.produce_block(validator, 1_000).unwrap();
+    peer.apply_command(ChainCommand::SubmitBlock(genesis_fallback.clone()))
+        .unwrap();
+
+    assert_eq!(
+        producer.produce_block(validator, 1_006),
+        Err(TvmError::InvalidReceipt("fallback before pow timeout"))
+    );
+
+    let timed_fallback = producer.produce_block(validator, 1_012).unwrap();
+    let mut early_payload = timed_fallback.clone();
+    early_payload.timestamp = 1_006;
+    resign_test_block(&mut early_payload);
+
+    assert_eq!(
+        peer.validate_block(&early_payload),
+        Err(TvmError::InvalidReceipt("fallback before pow timeout"))
+    );
+    assert_eq!(
+        peer.apply_command(ChainCommand::SubmitBlock(early_payload)),
+        Err(TvmError::InvalidReceipt("fallback before pow timeout"))
+    );
+    assert_eq!(
+        peer.apply_command(ChainCommand::SubmitBlock(timed_fallback)),
+        Ok(vec![ChainEvent::BlockAccepted {
+            height: 1,
+            hash: producer.blocks().last().unwrap().hash()
+        }])
+    );
+}
+
+#[test]
 fn fallback_blocks_require_stake_weighted_selected_validator() {
     let beacon = hash_bytes(b"test", &[b"fallback-selected-proposer"]);
     let mut producer = Chain::new(beacon);
@@ -482,6 +522,7 @@ fn uvpow_retarget_boundary_updates_target_with_bounded_adjustment() {
         difficulty_retarget_epoch_length: 2,
         difficulty_target_block_time_seconds: 6,
         difficulty_retarget_max_ratio: 4,
+        pow_timeout_blocks: 1,
         ..ChainParams::default()
     };
     params.difficulty_floor_target = [1; 32];
@@ -506,6 +547,7 @@ fn uvpow_non_retarget_heights_reuse_parent_target() {
     let params = ChainParams {
         difficulty_retarget_epoch_length: 3,
         difficulty_target_block_time_seconds: 6,
+        pow_timeout_blocks: 1,
         ..ChainParams::default()
     };
     let mut chain = Chain::with_params(params, beacon);
