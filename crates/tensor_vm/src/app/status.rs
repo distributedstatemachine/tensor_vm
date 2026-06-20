@@ -254,6 +254,10 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         "pending_challenge_reward_count",
         chain.state().pending_challenge_rewards().len(),
     );
+    report.field(
+        "pending_credit_reward_count",
+        chain.state().pending_credit_rewards().len(),
+    );
     report.field("model_count", chain.state().model_states().len());
     report.field("bootstrap_peer_count", bootstrap_peer_count);
     report.field("node_store_ready", true);

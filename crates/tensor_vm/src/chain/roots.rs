@@ -1,8 +1,8 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
-    JobState, MinerState, ModelState, PendingChallengeReward, PendingProposerReward,
-    PendingReceiptReward, ReceiptState, RewardState, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
+    PendingProposerReward, PendingReceiptReward, ReceiptState, RewardState,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -69,6 +69,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&pending_challenge_reward_root(
         &state.pending_challenge_rewards,
     ));
+    parts.extend_from_slice(&pending_credit_reward_root(&state.pending_credit_rewards));
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
@@ -231,6 +232,18 @@ pub(super) fn pending_challenge_reward_root(
         encoded.push(u8::from(reward.voided_by_challenge));
     }
     hash_bytes(b"tensor-vm-pending-challenge-reward-root-v1", &[&encoded])
+}
+
+pub(super) fn pending_credit_reward_root(rewards: &BTreeMap<Hash, PendingCreditReward>) -> Hash {
+    let mut encoded = Vec::new();
+    for (claim_id, reward) in rewards {
+        encoded.extend_from_slice(claim_id);
+        encoded.extend_from_slice(&reward.claim_id);
+        encoded.extend_from_slice(&reward.beneficiary);
+        encoded.extend_from_slice(&reward.amount.to_le_bytes());
+        encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
+    }
+    hash_bytes(b"tensor-vm-pending-credit-reward-root-v1", &[&encoded])
 }
 
 pub(super) fn block_finality_root(

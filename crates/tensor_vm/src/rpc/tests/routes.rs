@@ -444,7 +444,17 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
     assert_eq!(claim["claimed"].as_u64(), Some(100));
     assert_eq!(claim["address"].as_str(), Some(hex(&user).as_str()));
     assert_eq!(claim["faucet_balance"].as_u64(), Some(900));
-    assert_eq!(rpc.chain.state().rewards().balance(&user), 100);
+    assert!(claim["claim_id"].as_str().is_some());
+    assert!(claim["claimable_at_height"].as_u64().is_some());
+    assert_eq!(rpc.chain.state().rewards().balance(&user), 0);
+    assert_eq!(rpc.chain.state().pending_credit_rewards().len(), 1);
+    assert!(
+        rpc.chain
+            .state()
+            .pending_credit_rewards()
+            .values()
+            .any(|reward| reward.beneficiary == user && reward.amount == 100)
+    );
     assert_eq!(rpc.faucet.as_ref().unwrap().balance(), 900);
 
     let duplicate = rpc.handle_mut(&RpcRequest {
@@ -453,7 +463,8 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
         body: Vec::new(),
     });
     assert_eq!(duplicate.status, 400);
-    assert_eq!(rpc.chain.state().rewards().balance(&user), 100);
+    assert_eq!(rpc.chain.state().rewards().balance(&user), 0);
+    assert_eq!(rpc.chain.state().pending_credit_rewards().len(), 1);
     assert_eq!(rpc.faucet.as_ref().unwrap().balance(), 900);
 
     let missing_faucet = RpcNode::new(Chain::new(beacon)).handle(&RpcRequest {

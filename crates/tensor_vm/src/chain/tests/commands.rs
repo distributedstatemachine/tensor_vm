@@ -64,19 +64,35 @@ fn chain_engine_applies_profile_neutral_commands() {
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 45);
-    assert_eq!(
-        chain
-            .apply_command(ChainCommand::CreditReward {
-                address: receiver,
-                amount: 9,
-            })
-            .unwrap(),
-        vec![ChainEvent::RewardCredited {
+    let credit_events = chain
+        .apply_command(ChainCommand::CreditReward {
             address: receiver,
             amount: 9,
-        }]
+        })
+        .unwrap();
+    let ChainEvent::CreditRewardPending {
+        claim_id,
+        beneficiary,
+        amount,
+        claimable_at_height,
+    } = credit_events[0]
+    else {
+        panic!("credit reward should create a pending claim");
+    };
+    assert_eq!(beneficiary, receiver);
+    assert_eq!(amount, 9);
+    assert_eq!(chain.state().rewards().balance(&receiver), 0);
+    assert_eq!(chain.state().pending_credit_rewards().len(), 1);
+    assert_eq!(
+        chain.apply_command(ChainCommand::ClaimReward(receiver)),
+        Err(TvmError::InvalidReceipt("no reward to claim"))
     );
-    assert_eq!(chain.state().rewards().balance(&receiver), 9);
+    assert_eq!(chain.state().rewards().balance(&receiver), 0);
+    assert_eq!(
+        chain.state().pending_credit_rewards()[&claim_id].claim_id,
+        claim_id
+    );
+    assert!(claimable_at_height > chain.state().height());
 
     let matmul_job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
     let matmul_program_hash = matmul_job.program_hash();
@@ -284,4 +300,62 @@ fn chain_engine_applies_profile_neutral_commands() {
     );
     assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 97);
     assert_eq!(chain.state().rewards().treasury(), 3);
+}
+
+#[test]
+fn generic_credit_rewards_release_only_after_maturity() {
+    let beacon = hash_bytes(b"test", &[b"delayed-credit-reward"]);
+    let mut chain = Chain::with_params(
+        ChainParams {
+            reward_settlement_delay_epochs: 1,
+            challenge_window_epochs: 1,
+            epoch_length: 5,
+            ..ChainParams::default()
+        },
+        beacon,
+    );
+    let beneficiary = address(b"credit-beneficiary");
+
+    let events = chain
+        .apply_command(ChainCommand::CreditReward {
+            address: beneficiary,
+            amount: 25,
+        })
+        .unwrap();
+    let ChainEvent::CreditRewardPending {
+        claim_id,
+        claimable_at_height,
+        ..
+    } = events[0]
+    else {
+        panic!("expected pending credit event");
+    };
+    assert_eq!(claimable_at_height, 10);
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 0);
+    assert_eq!(
+        chain.apply_command(ChainCommand::ClaimReward(beneficiary)),
+        Err(TvmError::InvalidReceipt("no reward to claim"))
+    );
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+            .unwrap()
+            .is_empty()
+    );
+
+    chain.set_position_for_testing(claimable_at_height, 0);
+    let release_events = chain
+        .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+        .unwrap();
+    assert!(release_events.contains(&ChainEvent::CreditRewardReleased {
+        claim_id,
+        beneficiary,
+        amount: 25,
+    }));
+    assert!(release_events.contains(&ChainEvent::RewardCredited {
+        address: beneficiary,
+        amount: 25,
+    }));
+    assert_eq!(chain.state().pending_credit_rewards().len(), 0);
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 25);
 }

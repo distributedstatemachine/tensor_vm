@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 33 is complete.
-- Current status: Iteration 33 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 34, delayed generic reward credits.
+- Current status: Iteration 34 implemented and validated locally on June 20, 2026; commit/push pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,8 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: replace the immediate `ChainCommand::CreditReward` spendability path with a state-rooted
+  pending credit reward ledger and explicit maturity release. Standing blockers remain the missing workflow
+  document, missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -33,6 +34,102 @@ feature-sized iterations are summarized after validation and push, and older det
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
 | Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, data-unavailability miner bond slashing, configured validator mandatory-audit reward delay/slashing, and network-visible validator audit reports exist; full bond calibration and appeal-safe security are not complete | Add auditor-selection policy, appeal paths, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
+
+## Active Feature Iteration
+
+### Iteration 34: Delayed Generic Reward Credits
+
+Feature capability: remove the remaining immediate spendable `CreditReward` bypass by making generic/faucet
+reward credits enter a state-rooted pending reward-credit ledger before any spendable `RewardState` balance
+is credited.
+
+Readiness requirements covered: `upow.md` §12 and `mvp_spec.md` §20.3/§20.4/§25.5 require reward
+finality to remain delayed after block/order finality; the local readiness checker also requires pending
+claims to mature into spendable balances rather than immediate bounty/faucet-style credits being confused
+with protocol settlement.
+
+Files/modules likely touched: `chain/state.rs`, `chain/engine.rs`, `chain/commands.rs`, `chain/roots.rs`,
+`chain/genesis.rs`, `chain.rs`, `storage/chain_state.rs`, `rpc/mutations.rs`, `rpc/explorer.rs`,
+`app/status.rs`, `testnet/local_harness.rs`, `tensor_vm_explorer/src/lib.rs`, reward/RPC/storage tests,
+coverage/status/tarpaulin docs, and this exec plan.
+
+Parallel subagents run:
+- Readiness mapper: identified `CreditReward` and faucet/RPC as the remaining immediate-credit workaround;
+  canonical owner must be `chain`, not RPC/faucet glue.
+- Codebase explorer: mapped all call sites, storage/root implications, and recommended a distinct pending
+  reward map because proposer rewards are keyed by height and cannot safely hold generic credits.
+- Test-coverage explorer: identified existing delayed proposer/receipt/challenge coverage and missing tests
+  proving `CreditReward` no longer bypasses maturity.
+
+Parallelizable implementation workstreams: parent/integrator owns all edits because the feature changes the
+same chain state, storage codec, and tests; subagents remain read-only.
+
+Tests/checkers/docs to add or update: focused command tests for pending credit creation and mature release,
+RPC faucet tests for pending/non-spendable credit, storage roundtrip/root tests for the new ledger,
+explorer/status count tests, and coverage/status docs clarifying that generic reward credits are delayed.
+
+Narrow validation commands: `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture`,
+`cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`, `cargo test -p tensor_vm --lib
+rpc::tests -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime runtime_persistence --
+--nocapture`, and `cargo test -p tensor_vm_explorer --lib -- --nocapture`.
+
+Broad validation commands before commit: `cargo fmt --check --all`, `git diff --check`, final
+`cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`, `cargo clippy --workspace
+--all-targets -- -D warnings`, `cargo test --workspace --release`, and `cargo tarpaulin --workspace
+--offline` if available.
+
+Expected observable evidence: `CreditReward` emits a pending event and leaves spendable reward balance zero;
+`ReleaseMaturedCreditRewards` credits spendable balances only after `claimable_at_height`; faucet RPC
+returns a pending claim; state roots and node-store snapshots include the new pending ledger.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` state/commands/roots own pending credit rewards and maturity release.
+- Adapter callers: RPC faucet, tests, explorer/status, and storage helpers call or observe the chain-owned
+  command path only.
+- Old shortcut being removed: `ChainCommand::CreditReward` immediately mutates spendable `RewardState`.
+- Regression test: direct command and RPC tests prove a credited reward remains pending/non-spendable until
+  the maturity release command runs.
+- Behavior with local synthetic block production disabled: generic reward credits still enter pending state
+  through the chain command; no synthetic production path is required for release tests.
+- Behavior for producer and non-producer roles: unchanged; any node applying the command observes the same
+  deterministic pending ledger and release rule.
+- Structured evidence source: typed `PendingCreditReward`, `ChainEvent::CreditRewardPending`, state-root and
+  storage roundtrip tests, explorer/status counts.
+- Finality source: unchanged stake-weighted block votes; this feature changes reward spendability only.
+- Wire-size and codec boundary: no new p2p wire payloads; storage codec is extended through the shared
+  chain-state encoder/decoder.
+
+Out of scope: unifying all reward classes into one formal claim object, changing block `reward_root`
+naming, automatic release during every block transition, public-run reward evidence, and full bond
+calibration.
+
+Split trigger: if storage migration/backward compatibility requires a schema-version overhaul, split that
+into a follow-up and keep this iteration to current-state delayed semantics plus tests.
+
+Implemented locally:
+- Added `PendingCreditReward` to chain state with a state-root commitment, storage snapshot roundtrip, and
+  explorer/status summary counts.
+- Changed `ChainCommand::CreditReward` to enqueue a pending credit reward and emit
+  `CreditRewardPending` instead of immediately mutating spendable `RewardState`.
+- Added `ChainCommand::ReleaseMaturedCreditRewards`/`Chain::release_matured_credit_rewards`, which credits
+  spendable balances only after the claim's maturity height and emits `CreditRewardReleased` plus
+  `RewardCredited`.
+- Updated faucet RPC to return pending claim metadata and persist pending credits rather than spendable
+  balances.
+- Updated coverage/status docs to record that generic/faucet credits no longer bypass reward maturity,
+  while leaving full formal reward-claim unification and automatic release policy out of scope.
+
+Validation completed locally:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused tests passed: `cargo test -p tensor_vm --lib chain::tests::commands -- --nocapture`,
+  `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`, `cargo test -p tensor_vm --lib
+  rpc::tests -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime runtime_persistence --
+  --nocapture`, and `cargo test -p tensor_vm_explorer --lib -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  final `cargo test -p tensor_vm local_testnet --release`, `cargo clippy --workspace --all-targets --
+  -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
 
 ## Recent Iterations
 

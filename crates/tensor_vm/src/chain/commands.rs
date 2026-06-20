@@ -1,9 +1,10 @@
 use super::{
     BlockAdmission, Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, ChainState,
-    ReceiptState, TensorBlock, accounts, challenges, settlement,
+    PendingCreditReward, ReceiptState, TensorBlock, accounts, challenges, settlement,
 };
 use crate::challenge::ChallengeOutcome;
 use crate::error::{Result, TvmError};
+use crate::types::{Address, Hash, hash_bytes};
 
 impl ChainEngine for Chain {
     fn apply_command(&mut self, command: ChainCommand) -> Result<Vec<ChainEvent>> {
@@ -21,8 +22,28 @@ impl ChainEngine for Chain {
                 Ok(vec![ChainEvent::AccountTransferred { from, to, amount }])
             }
             ChainCommand::CreditReward { address, amount } => {
-                self.state.rewards.credit(address, amount);
-                Ok(vec![ChainEvent::RewardCredited { address, amount }])
+                let claimable_at_height = pending_credit_reward_claimable_height(self);
+                let claim_id = pending_credit_reward_claim_id(
+                    &address,
+                    amount,
+                    self.state.height,
+                    self.state.pending_credit_rewards.len() as u64,
+                );
+                self.state.pending_credit_rewards.insert(
+                    claim_id,
+                    PendingCreditReward {
+                        claim_id,
+                        beneficiary: address,
+                        amount,
+                        claimable_at_height,
+                    },
+                );
+                Ok(vec![ChainEvent::CreditRewardPending {
+                    claim_id,
+                    beneficiary: address,
+                    amount,
+                    claimable_at_height,
+                }])
             }
             ChainCommand::ClaimReward(address) => {
                 let amount = self.state.rewards.balance(&address);
@@ -239,6 +260,30 @@ impl ChainEngine for Chain {
                 }
                 Ok(events)
             }
+            ChainCommand::ReleaseMaturedCreditRewards => {
+                let mut events = Vec::new();
+                let matured = self
+                    .state
+                    .pending_credit_rewards
+                    .iter()
+                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
+                    .map(|(claim_id, reward)| (*claim_id, reward.beneficiary, reward.amount))
+                    .collect::<Vec<_>>();
+                for (claim_id, beneficiary, amount) in matured {
+                    self.state.pending_credit_rewards.remove(&claim_id);
+                    self.state.rewards.credit(beneficiary, amount);
+                    events.push(ChainEvent::CreditRewardReleased {
+                        claim_id,
+                        beneficiary,
+                        amount,
+                    });
+                    events.push(ChainEvent::RewardCredited {
+                        address: beneficiary,
+                        amount,
+                    });
+                }
+                Ok(events)
+            }
             ChainCommand::RegisterModel {
                 model_id,
                 architecture_hash,
@@ -348,4 +393,32 @@ impl ChainEngine for Chain {
     fn blocks(&self) -> &[TensorBlock] {
         &self.blocks
     }
+}
+
+fn pending_credit_reward_claimable_height(chain: &Chain) -> u64 {
+    chain.state.height.saturating_add(
+        chain
+            .params
+            .reward_settlement_delay_epochs
+            .saturating_add(chain.params.challenge_window_epochs)
+            .max(1)
+            .saturating_mul(chain.params.epoch_length.max(1)),
+    )
+}
+
+fn pending_credit_reward_claim_id(
+    beneficiary: &Address,
+    amount: u64,
+    height: u64,
+    sequence: u64,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-pending-credit-reward-claim-id-v1",
+        &[
+            beneficiary,
+            &amount.to_le_bytes(),
+            &height.to_le_bytes(),
+            &sequence.to_le_bytes(),
+        ],
+    )
 }

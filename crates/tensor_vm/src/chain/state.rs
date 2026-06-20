@@ -263,6 +263,14 @@ pub struct PendingChallengeReward {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingCreditReward {
+    pub claim_id: Hash,
+    pub beneficiary: Address,
+    pub amount: u64,
+    pub claimable_at_height: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataUnavailabilitySlashRecord {
     pub receipt_id: Hash,
     pub miner: Address,
@@ -813,6 +821,7 @@ pub struct ChainState {
     pub(in crate::chain) pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub(in crate::chain) pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub(in crate::chain) pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
+    pub(in crate::chain) pending_credit_rewards: BTreeMap<Hash, PendingCreditReward>,
     pub(in crate::chain) model_states: BTreeMap<Hash, ModelState>,
     pub(in crate::chain) rewards: RewardState,
 }
@@ -848,6 +857,7 @@ pub(crate) struct ChainStateParts {
     pub pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
+    pub pending_credit_rewards: BTreeMap<Hash, PendingCreditReward>,
     pub model_states: BTreeMap<Hash, ModelState>,
     pub rewards: RewardState,
 }
@@ -884,6 +894,7 @@ impl ChainState {
             pending_proposer_rewards: parts.pending_proposer_rewards,
             pending_receipt_rewards: parts.pending_receipt_rewards,
             pending_challenge_rewards: parts.pending_challenge_rewards,
+            pending_credit_rewards: parts.pending_credit_rewards,
             model_states: parts.model_states,
             rewards: parts.rewards,
         }
@@ -1007,6 +1018,10 @@ impl ChainState {
 
     pub fn pending_challenge_rewards(&self) -> &BTreeMap<Hash, PendingChallengeReward> {
         &self.pending_challenge_rewards
+    }
+
+    pub fn pending_credit_rewards(&self) -> &BTreeMap<Hash, PendingCreditReward> {
+        &self.pending_credit_rewards
     }
 
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {

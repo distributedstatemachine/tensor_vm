@@ -403,6 +403,7 @@ impl LocalTestnet {
             pending_receipt_reward_count: state.pending_receipt_rewards().len(),
             pending_proposer_reward_count: state.pending_proposer_rewards().len(),
             pending_challenge_reward_count: state.pending_challenge_rewards().len(),
+            pending_credit_reward_count: state.pending_credit_rewards().len(),
             total_reward_balance: state.rewards().total_balance(),
         }
     }

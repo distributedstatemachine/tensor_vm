@@ -1,9 +1,9 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
-    ModelState, PendingChallengeReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRewardKind, ReceiptState, RewardState, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
+    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -230,6 +230,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
     encode_pending_receipt_rewards(out, state.pending_receipt_rewards());
     encode_pending_challenge_rewards(out, state.pending_challenge_rewards());
+    encode_pending_credit_rewards(out, state.pending_credit_rewards());
     encode_model_states(out, state.model_states());
     encode_rewards(out, state.rewards());
 }
@@ -265,6 +266,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
         pending_receipt_rewards: decode_pending_receipt_rewards(reader)?,
         pending_challenge_rewards: decode_pending_challenge_rewards(reader)?,
+        pending_credit_rewards: decode_pending_credit_rewards(reader)?,
         model_states: decode_model_states(reader)?,
         rewards: decode_rewards(reader)?,
     }))
@@ -1040,6 +1042,40 @@ fn decode_pending_challenge_rewards(
     Ok(rewards)
 }
 
+fn encode_pending_credit_rewards(out: &mut Vec<u8>, rewards: &BTreeMap<Hash, PendingCreditReward>) {
+    write_len(out, rewards.len());
+    for (claim_id, reward) in rewards {
+        write_hash(out, claim_id);
+        write_hash(out, &reward.claim_id);
+        write_hash(out, &reward.beneficiary);
+        write_u64(out, reward.amount);
+        write_u64(out, reward.claimable_at_height);
+    }
+}
+
+fn decode_pending_credit_rewards(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, PendingCreditReward>> {
+    let mut rewards = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let claim_id = reader.read_hash()?;
+        let beneficiary = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let claimable_at_height = reader.read_u64()?;
+        rewards.insert(
+            key,
+            PendingCreditReward {
+                claim_id,
+                beneficiary,
+                amount,
+                claimable_at_height,
+            },
+        );
+    }
+    Ok(rewards)
+}
+
 fn hardware_class_code(hardware_class: HardwareClass) -> u8 {
     match hardware_class {
         HardwareClass::Cpu => 1,
@@ -1261,6 +1297,10 @@ mod tests {
             chain.state().pending_challenge_rewards()
         );
         assert_eq!(
+            loaded.state().pending_credit_rewards(),
+            chain.state().pending_credit_rewards()
+        );
+        assert_eq!(
             loaded.state().data_unavailability_slashes(),
             chain.state().data_unavailability_slashes()
         );
@@ -1312,6 +1352,16 @@ mod tests {
                     && reward.challenger == address(b"durable-validator")
                     && reward.claim_id != [0; 32]
                     && !reward.voided_by_challenge)
+        );
+        assert!(
+            loaded
+                .state()
+                .pending_credit_rewards()
+                .values()
+                .any(|reward| reward.amount == 77
+                    && reward.beneficiary == address(b"durable-miner")
+                    && reward.claim_id != [0; 32]
+                    && reward.claimable_at_height > chain.state().height())
         );
         assert_eq!(
             decode_chain_state_file(&encode_chain_state_file(&chain)).unwrap(),

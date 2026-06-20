@@ -63,11 +63,12 @@ live invalid-block challenge generation, and live validator proposer/block-assem
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
-  pending challenge reward claims, treasury rewards, reward accounting without repeated payout, and
-  no-quorum rejection. Validator-owned useful proposals now create delayed proposer reward claims while
-  empty fallback proposals stay unrewarded. Receipt and challenge reward claims are state-rooted,
-  persisted, released only after maturity, and receipt claims are voided/pruned if a block-check challenge
-  succeeds before release.
+  pending challenge reward claims, delayed generic/faucet credits through a state-rooted pending credit
+  reward ledger, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
+  Validator-owned useful proposals now create delayed proposer reward claims while empty fallback proposals
+  stay unrewarded. Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
+  released only after maturity; receipt claims are voided/pruned if a block-check challenge succeeds before
+  release.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.

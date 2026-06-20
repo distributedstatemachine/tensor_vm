@@ -68,7 +68,14 @@ fn role_runtime_mutating_rpc_persists_chain() {
 
     assert_eq!(http_status_line(&response), "HTTP/1.1 200 OK");
     let persisted = store.load_chain().unwrap();
-    assert_eq!(persisted.state().rewards().balance(&user), 100);
+    assert_eq!(persisted.state().rewards().balance(&user), 0);
+    assert!(
+        persisted
+            .state()
+            .pending_credit_rewards()
+            .values()
+            .any(|reward| reward.beneficiary == user && reward.amount == 100)
+    );
     let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
     assert_eq!(report_u64(&status, "role_served_requests"), 1);
 

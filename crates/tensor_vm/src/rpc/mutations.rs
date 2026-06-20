@@ -1,5 +1,5 @@
 use super::{RpcNode, RpcRequest, RpcResponse, parse_address};
-use crate::chain::{ChainCommand, ChainEngine};
+use crate::chain::{ChainCommand, ChainEngine, ChainEvent};
 use crate::hash::hex;
 use crate::txpool::parse_transaction_envelope;
 use serde_json::json;
@@ -20,14 +20,26 @@ impl RpcNode {
                 .chain
                 .apply_command(ChainCommand::CreditReward { address, amount })
             {
-                Ok(_) => {
+                Ok(events) => {
+                    let pending = events.iter().find_map(|event| match event {
+                        ChainEvent::CreditRewardPending {
+                            claim_id,
+                            claimable_at_height,
+                            ..
+                        } => Some((*claim_id, *claimable_at_height)),
+                        _ => None,
+                    });
                     let balance = faucet.balance();
-                    self.ok(json!({
+                    let mut body = json!({
                         "claimed": amount,
                         "address": hex(&address),
                         "faucet_balance": balance,
-                    })
-                    .to_string())
+                    });
+                    if let Some((claim_id, claimable_at_height)) = pending {
+                        body["claim_id"] = json!(hex(&claim_id));
+                        body["claimable_at_height"] = json!(claimable_at_height);
+                    }
+                    self.ok(body.to_string())
                 }
                 Err(error) => self.bad_request(&error.to_string()),
             },

@@ -474,6 +474,8 @@ TensorBlock {
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
   and released only after its maturity height.
+- Local generic/faucet reward credits also use a state-rooted pending credit claim before spendability, so
+  the shared `CreditReward` command cannot bypass the maturity boundary.
 
 ### 12.2 Slashing
 - Miner: committing a receipt that fails verification (Freivalds/random-linear/fraud-proof) → slash bond.

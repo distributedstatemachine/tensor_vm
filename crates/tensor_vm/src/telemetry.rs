@@ -376,7 +376,7 @@ fn estimated_cost_to_attack_one_epoch(chain: &Chain) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::{Chain, ChainCommand, ChainEngine, JobState};
+    use crate::chain::{Chain, JobState};
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, PrimitiveType,
         TensorOpReceipt,
@@ -526,18 +526,8 @@ mod tests {
                 },
             ))
             .unwrap();
-        chain
-            .apply_command(ChainCommand::CreditReward {
-                address: miner,
-                amount: 64,
-            })
-            .unwrap();
-        chain
-            .apply_command(ChainCommand::CreditReward {
-                address: validator,
-                amount: 8,
-            })
-            .unwrap();
+        chain.credit_reward_for_testing(miner, 64);
+        chain.credit_reward_for_testing(validator, 8);
         chain
             .set_miner_settled_tensor_work_for_testing(miner, 64)
             .unwrap();
