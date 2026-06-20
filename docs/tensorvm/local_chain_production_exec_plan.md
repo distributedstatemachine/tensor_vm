@@ -5,7 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest in-progress feature: Iteration 15, validator-owned local block proposal tick, splits local
+- Latest completed feature: Iteration 15, validator-owned local block proposal tick, is implemented,
+  validated, and pushed as `0d7debcdb94ef50493e2f2926d4f3dc5983fcbd4`
+  (`Add validator-owned block proposal tick`) on `origin/main`. This iteration splits local
   synthetic work generation from scheduled validator block proposal. The runtime scheduled producer now
   calls a validator-role helper that prepares parent state, applies `ChainCommand::ProduceBlock`, publishes
   the resulting block payload/header/hash, and leaves finality to explicit validator block votes. The
@@ -101,6 +103,12 @@ Validation so far:
 - `git diff --check`
 - `cargo tarpaulin --workspace --offline` was blocked because this environment does not have the
   `cargo-tarpaulin` subcommand installed (`error: no such command: tarpaulin`).
+
+Push evidence:
+- Feature commit: `0d7debcdb94ef50493e2f2926d4f3dc5983fcbd4`
+  (`Add validator-owned block proposal tick`).
+- Remote/branch: `origin/main`.
+- Push result: `6d551f1..0d7debc  main -> main`.
 
 Out of scope:
 - Requiring positive live Compose miner/validator-owned submissions.
