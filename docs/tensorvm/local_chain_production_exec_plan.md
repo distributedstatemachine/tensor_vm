@@ -5,12 +5,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 94 complete - side-branch fork tree storage.
+- Active feature: Iteration 95 complete - invalid-output miner stake slashing.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, and delayed
   challenge rewards are implemented locally. Late invalid-output attestations now contest settled receipts
-  by voiding delayed pending receipt rewards before maturity.
+  by voiding delayed pending receipt rewards and slashing miner stake before reward maturity.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -35,66 +35,71 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements, remaining fraud paths, and broader invalid-output stake slashing |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 94: Side-Branch Fork Tree Storage
+### Iteration 95: Invalid-Output Miner Stake Slashing
 
-Feature capability: admit valid known-parent non-canonical blocks into chain-owned side-branch storage with
-parent and child state snapshots, without mutating canonical head state unless the current-head replacement
-rule applies.
+Feature capability: make assigned `Invalid` attestations slash the receipt miner's bonded stake, record the
+slash in state-rooted storage, and include the invalid-output path in fraud-path economic calibration.
 
-Canonical owner: `chain::blocks` and `Chain` fork-tree state.
-Adapter callers: `ChainCommand::SubmitBlock`, p2p/node payload application, storage/node-store snapshots,
-and tests call the same chain admission boundary.
-Old shortcut being removed: valid blocks at known non-head parents were treated as conflicts or pending
-parents instead of being retained as fork-tree branches.
+Canonical owner: `chain::validation::submit_attestation` and `ChainState` slashing records.
+Adapter callers: command/RPC/p2p/runtime paths continue submitting attestations through the shared chain
+API.
+Old shortcut being removed: late assigned invalid-output evidence voided delayed rewards but did not slash
+the miner's bonded stake for the false receipt.
 Regression test that proves the shortcut is gone:
-`chain::tests::historical_parent_side_branch_is_stored_without_replacing_canonical_head`.
-Behavior with local synthetic block production disabled: inbound block payload admission stores side
-branches independently of synthetic job/block production.
-Behavior for producer and non-producer roles: producers and non-producers retain valid alternate branches
-from network payloads; only canonical application changes head state.
-Structured evidence source: `Chain::side_branch_blocks`, `Chain::side_branch_child_states`,
-`block_parent_states`, storage roundtrip, and node payload application.
-Finality source: canonical finalized block set still gates canonical replacement; side-branch storage does
-not finalize or replace finalized heads.
-Wire-size and codec boundary: no p2p block codec change; chain-state storage persists side-branch
-block/state maps.
+`chain::tests::invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards`.
+Behavior with local synthetic block production disabled: attestation admission mutates canonical chain state
+directly; no local producer loop is required.
+Behavior for producer and non-producer roles: both apply the same attestation command/payload and converge
+on the same slash, challenged receipt, and pending reward flags.
+Structured evidence source: miner stake, treasury, `invalid_output_slashes`, `challenged_receipts`,
+`pending_receipt_rewards`, storage roundtrip, status, and explorer economic calibration.
+Finality source: canonical chain state at attestation admission; reward release remains governed by claim
+maturity.
+Wire-size and codec boundary: no p2p payload change; chain-state storage persists invalid-output slash maps
+and the explicit `invalid_output_miner_slash_amount` parameter.
 
-Files/modules likely touched: `chain/state.rs`, `chain/blocks.rs`, `chain/engine.rs`, `chain/commands.rs`,
-`chain.rs`, `storage/chain_state.rs`, node payload application, focused tests, docs, and this plan.
+Files/modules likely touched: `chain/state.rs`, `chain/validation.rs`, `chain/roots.rs`,
+`storage/chain_state.rs`, status/explorer tests, focused tests, docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Tests/checkers/docs to add or update: focused fork-tree, storage, node payload tests, and consensus docs.
-Narrow validation commands: `cargo test -p tensor_vm side_branch --quiet`,
-`cargo test -p tensor_vm block_payload_application --quiet`, and
-`cargo test -p tensor_vm storage::chain_state --quiet`.
+Tests/checkers/docs to add or update: focused attestation, storage, economics/status/explorer tests, and
+consensus docs.
+Narrow validation commands: `cargo test -p tensor_vm invalid_output --quiet`,
+`cargo test -p tensor_vm fraud_path_economic --quiet`,
+`cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`,
+`cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet`, and
+`cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: side branches are retained under known parents with canonical state unchanged;
-grandchildren validate against side-branch child state; persisted reload keeps branch data.
-Out of scope: automatic multi-block reorg selection, public Docker rerun, verifier-transcript fraud proofs,
-or wire format changes.
-Split trigger: if automatic reorg across branch depth is required, split that from branch storage/admission.
+Expected observable evidence: invalid-output evidence records one miner slash, debits stake, credits
+treasury, voids delayed rewards, persists slash evidence, and exposes an `invalid_output` fraud path.
+Out of scope: external deployed-run measurements, automatic deep reorg, public Docker rerun, verifier
+transcript fraud proofs, or p2p wire changes.
+Split trigger: if appeal/reversal of invalid-output miner stake slashes is added, split that from this
+one-way local slashing slice.
 
 Implementation summary:
-- Added side-branch block and child-state maps to `Chain`, persisted them in chain-state snapshots, and
-  exposed read-only views.
-- Block admission now stores valid known-parent non-canonical branches and side-branch grandchildren without
-  mutating canonical head state, while preserving current-head useful replacement and finalized-head guards.
-- Node payload application retains side branches through the same `SubmitBlock` path.
+- Added `InvalidOutputSlashRecord`, `ChainState::invalid_output_slashes`, and
+  `ChainParams::invalid_output_miner_slash_amount`.
+- Assigned invalid-output evidence now slashes the receipt miner once, credits treasury, marks the receipt
+  challenged, and voids delayed receipt rewards before maturity.
+- Storage snapshots persist invalid-output slashes, and fraud-path calibration/status/explorer include the
+  `invalid_output` path.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm side_branch --quiet`,
-  `cargo test -p tensor_vm block_payload_application --quiet`,
-  `cargo test -p tensor_vm blocks --quiet`,
-  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`, and
-  `cargo test -p tensor_vm storage::chain_state --quiet` passed.
+- Focused: `cargo test -p tensor_vm invalid_output --quiet`,
+  `cargo test -p tensor_vm fraud_path_economic --quiet`,
+  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`,
+  `cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet`, and
+  `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`
+  passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 424 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 425 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -102,6 +107,13 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 94: Side-Branch Fork Tree Storage
+
+Valid known-parent non-canonical blocks are retained in chain-owned side-branch storage with parent/child
+state snapshots, persisted through chain-state snapshots, and applied through normal node payload admission
+without mutating canonical head state. Validation passed focused fork-tree/storage/payload tests, full
+crate, clippy, workspace release, and first/final Gate 0. Commit `c33ef38` is pushed to `origin/main`.
 
 ### Iteration 93: Invalid-Output Delayed Reward Voiding
 
@@ -203,15 +215,15 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 94 on June 20, 2026:
+Latest full validation is Iteration 95 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm side_branch --quiet
-cargo test -p tensor_vm block_payload_application --quiet
-cargo test -p tensor_vm blocks --quiet
+cargo test -p tensor_vm invalid_output --quiet
+cargo test -p tensor_vm fraud_path_economic --quiet
 cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
-cargo test -p tensor_vm storage::chain_state --quiet
+cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet
+cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

@@ -498,7 +498,7 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
     let calibration = chain
         .state()
         .fraud_path_economic_calibration(chain.params());
-    assert_eq!(calibration.path_count, 3);
+    assert_eq!(calibration.path_count, 4);
     assert!(calibration.all_invariants_hold);
     assert_eq!(calibration.worst_path, "block_check");
     assert_eq!(calibration.max_required_slashable_bond, 0);
@@ -513,6 +513,17 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
     assert_eq!(validator_audit.slashable_bond, 300);
     assert_eq!(validator_audit.reward_from_fraud, 0);
     assert_eq!(validator_audit.required_slashable_bond, 0);
+    let invalid_output = calibration
+        .paths
+        .iter()
+        .find(|path| path.path == "invalid_output")
+        .unwrap();
+    assert_eq!(
+        invalid_output.slashable_bond,
+        chain.params().invalid_output_miner_slash_amount
+    );
+    assert_eq!(invalid_output.reward_from_fraud, 0);
+    assert_eq!(invalid_output.required_slashable_bond, 0);
     assert!(validator_audit.invariant_holds);
 
     let data_unavailability = calibration
@@ -567,7 +578,7 @@ fn detection_probability_evidence_uses_live_jobs_and_params() {
     chain.submit_job(JobState::LinearTrainingStep(linear_job));
 
     let evidence = chain.state().detection_probability_evidence(chain.params());
-    assert_eq!(evidence.mechanism_count, 8);
+    assert_eq!(evidence.mechanism_count, 9);
     assert!(evidence.live_subject_count >= 2);
 
     let full_freivalds = evidence

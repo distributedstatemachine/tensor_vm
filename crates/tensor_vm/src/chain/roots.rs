@@ -1,8 +1,8 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
-    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
-    RewardState, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
+    PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
+    ReceiptState, RewardState, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
     ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
@@ -64,6 +64,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&data_unavailability_slash_root(
         &state.data_unavailability_slashes,
     ));
+    parts.extend_from_slice(&invalid_output_slash_root(&state.invalid_output_slashes));
     parts.extend_from_slice(&validator_audit_assignment_root(
         &state.validator_audit_assignments,
     ));
@@ -157,6 +158,23 @@ pub(super) fn data_unavailability_slash_root(
         encoded.extend_from_slice(slash.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-data-unavailability-slash-root-v1", &[&encoded])
+}
+
+pub(super) fn invalid_output_slash_root(
+    slashes: &BTreeMap<Hash, InvalidOutputSlashRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (receipt_id, slash) in slashes {
+        encoded.extend_from_slice(receipt_id);
+        encoded.extend_from_slice(&slash.receipt_id);
+        encoded.extend_from_slice(&slash.miner);
+        encoded.extend_from_slice(&slash.evidence_validator);
+        encoded.extend_from_slice(&slash.amount.to_le_bytes());
+        encoded.extend_from_slice(&slash.slashed_at_height.to_le_bytes());
+        encoded.extend_from_slice(&(slash.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(slash.reason.as_bytes());
+    }
+    hash_bytes(b"tensor-vm-invalid-output-slash-root-v1", &[&encoded])
 }
 
 pub(super) fn validator_audit_assignment_root(

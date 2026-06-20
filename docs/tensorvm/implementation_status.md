@@ -154,20 +154,21 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   refund the recorded stake slash from treasury back to validator stake, and still require the normal
   maturity sweep before spendable reward credit. Chain state
   now also exposes live validator-audit economic calibration plus a broader implemented-path fraud
-  calibration view covering validator-audit, miner data-unavailability, and block-check/proposer clawback
-  paths; service status and explorer overview render required slashable bonds, aggregate
+  calibration view covering validator-audit, miner data-unavailability, invalid-output, and
+  block-check/proposer clawback paths; service status and explorer overview render required slashable bonds, aggregate
   worst-required-bond, and pass/fail invariants. Fraud-path calibration treats delayed non-voided receipt
   and proposer claims as slashable/voidable escrow and counts reward-from-fraud only after the claim is
   spendable. Reward maturity now exposes an explicit fraud-window hold so normal receipt rewards remain
   delayed through the configured challenge window and active audit window before spendability.
   Late assigned invalid-output attestations now contest already settled receipts by removing the receipt
-  from the settled set, marking it challenged, and voiding delayed pending receipt reward claims before
-  any mature release can credit spendable balances.
+  from the settled set, marking it challenged, recording a state-rooted miner stake slash, crediting
+  treasury, and voiding delayed pending receipt reward claims before any mature release can credit
+  spendable balances.
   `ChainState::detection_probability_evidence` now derives structured verifier/fraud-path detection
   evidence from current params, live TensorOp and LinearTrainingStep job shapes, graph-job counts, and
   chain-state fraud counters; service status and explorer overview expose per-mechanism detection bps,
-  false-accept bps, sample sizes, source labels, and live subject counts. Deployed-run measurements,
-  remaining fraud paths, and broader invalid-output stake slashing remain open.
+  false-accept bps, sample sizes, source labels, and live subject counts. Deployed-run measurements and
+  remaining fraud paths remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable

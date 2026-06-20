@@ -749,7 +749,7 @@ mod tests {
             fields.value("validator_audit_economic_invariant_holds"),
             Some("true")
         );
-        assert_eq!(fields.value("fraud_path_economic_path_count"), Some("3"));
+        assert_eq!(fields.value("fraud_path_economic_path_count"), Some("4"));
         assert_eq!(
             fields.value("fraud_path_economic_all_invariants_hold"),
             Some("true")
@@ -771,6 +771,14 @@ mod tests {
             Some("0")
         );
         assert_eq!(
+            fields.value("fraud_path_economic_invalid_output_slashable_bond"),
+            Some("25")
+        );
+        assert_eq!(
+            fields.value("fraud_path_economic_invalid_output_required_slashable_bond"),
+            Some("0")
+        );
+        assert_eq!(
             fields.value("fraud_path_economic_block_check_slashable_bond"),
             Some("500")
         );
@@ -780,7 +788,7 @@ mod tests {
         );
         assert_eq!(
             fields.value("detection_probability_mechanism_count"),
-            Some("8")
+            Some("9")
         );
         assert_eq!(
             fields.value("detection_probability_full_freivalds_detection_probability_bps"),

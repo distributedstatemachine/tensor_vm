@@ -542,8 +542,8 @@ TensorBlock {
 > Chain state also exposes live economic calibration from current params and pending reward exposure. The
 > validator-audit view reports configured audit sampling probability, slash amount, non-voided pending
 > validator receipt reward exposure, required slashable bond, and pass/fail invariant. The broader
-> fraud-path view covers implemented validator-audit, miner data-unavailability, and block-check/proposer
-> clawback paths with aggregate worst-required-bond and all-path pass/fail status; delayed, non-voided
+> fraud-path view covers implemented validator-audit, miner data-unavailability, invalid-output, and
+> block-check/proposer clawback paths with aggregate worst-required-bond and all-path pass/fail status; delayed, non-voided
 > receipt and proposer rewards are treated as slashable/voidable escrow, and fraud proceeds are counted
 > only after the claim is actually spendable. Chain state also exposes structured detection-probability
 > evidence for full-output Freivalds, sparse row-sampling audits, LinearTrainingStep random-linear checks,
@@ -552,8 +552,8 @@ TensorBlock {
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.
-> Deployed-run measured detection records, remaining fraud paths, and broader invalid-output stake slashing
-> remain TODO before claiming the full §12 economics invariant.
+> Deployed-run measured detection records and remaining fraud paths remain TODO before claiming the full §12
+> economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 
@@ -650,8 +650,7 @@ This section is non-normative guidance on how the spec components partition into
   block-check/proposer clawback paths, required slashable bonds, aggregate worst-required-bond, and
   pass/fail invariants. Reward maturity includes an explicit fraud-window hold before spendability;
   status/explorer now expose structured detection-probability evidence for implemented verifier and fraud
-  mechanisms. Deployed-run measurements, remaining fraud paths, and broader invalid-output slashing remain
-  open (§12.2).
+  mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
 - [ ] Reward concentration / anti-monopoly curve for TensorWork.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [ ] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with `const_blob` inputs (availability of the blob during a dispute).

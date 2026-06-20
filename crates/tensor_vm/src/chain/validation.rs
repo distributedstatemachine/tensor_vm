@@ -1,7 +1,7 @@
 use super::{
-    BlockVote, Chain, ReceiptRewardKind, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditReport,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
+    BlockVote, Chain, InvalidOutputSlashRecord, ReceiptRewardKind, ValidatorAuditAppeal,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
@@ -102,6 +102,12 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
         if let Some(miner) = chain.state.miners.get_mut(&receipt_miner) {
             miner.reputation -= 1;
         }
+        apply_invalid_output_slash(
+            chain,
+            attestation.receipt_id,
+            receipt_miner,
+            attestation.validator,
+        );
         for reward in chain.state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == attestation.receipt_id {
                 reward.voided_by_challenge = true;
@@ -115,6 +121,36 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
         .or_default()
         .push(attestation);
     Ok(())
+}
+
+fn apply_invalid_output_slash(
+    chain: &mut Chain,
+    receipt_id: Hash,
+    miner_address: Address,
+    evidence_validator: Address,
+) {
+    if chain.state.invalid_output_slashes.contains_key(&receipt_id) {
+        return;
+    }
+    let Some(miner) = chain.state.miners.get_mut(&miner_address) else {
+        return;
+    };
+    let actual_slash = miner
+        .stake
+        .min(chain.params.invalid_output_miner_slash_amount);
+    miner.stake = miner.stake.saturating_sub(actual_slash);
+    chain.state.rewards.credit_treasury(actual_slash);
+    chain.state.invalid_output_slashes.insert(
+        receipt_id,
+        InvalidOutputSlashRecord {
+            receipt_id,
+            miner: miner_address,
+            evidence_validator,
+            amount: actual_slash,
+            slashed_at_height: chain.state.height,
+            reason: "invalid output for receipt verification".to_owned(),
+        },
+    );
 }
 
 pub fn has_attestation_quorum(chain: &Chain, receipt_id: &Hash) -> bool {

@@ -31,6 +31,7 @@ pub struct ChainParams {
     pub miner_min_stake: u64,
     pub validator_min_stake: u64,
     pub data_unavailability_miner_slash_amount: u64,
+    pub invalid_output_miner_slash_amount: u64,
     pub validator_audit_sample_numerator: u64,
     pub validator_audit_sample_denominator: u64,
     pub validator_audit_window_blocks: u64,
@@ -66,6 +67,7 @@ impl Default for ChainParams {
             miner_min_stake: 100,
             validator_min_stake: 10_000,
             data_unavailability_miner_slash_amount: 10,
+            invalid_output_miner_slash_amount: 25,
             validator_audit_sample_numerator: 0,
             validator_audit_sample_denominator: 1,
             validator_audit_window_blocks: 10,
@@ -448,6 +450,16 @@ pub struct ReceiptRandomnessAnchor {
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataUnavailabilitySlashRecord {
+    pub receipt_id: Hash,
+    pub miner: Address,
+    pub evidence_validator: Address,
+    pub amount: u64,
+    pub slashed_at_height: u64,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct InvalidOutputSlashRecord {
     pub receipt_id: Hash,
     pub miner: Address,
     pub evidence_validator: Address,
@@ -1071,6 +1083,7 @@ pub struct ChainState {
     pub(in crate::chain) finalized_blocks: BTreeSet<Hash>,
     pub(in crate::chain) data_unavailable_receipts: BTreeSet<Hash>,
     pub(in crate::chain) data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+    pub(in crate::chain) invalid_output_slashes: BTreeMap<Hash, InvalidOutputSlashRecord>,
     pub(in crate::chain) validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
     pub(in crate::chain) validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
     pub(in crate::chain) validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
@@ -1109,6 +1122,7 @@ pub(crate) struct ChainStateParts {
     pub finalized_blocks: BTreeSet<Hash>,
     pub data_unavailable_receipts: BTreeSet<Hash>,
     pub data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+    pub invalid_output_slashes: BTreeMap<Hash, InvalidOutputSlashRecord>,
     pub validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
     pub validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
     pub validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
@@ -1148,6 +1162,7 @@ impl ChainState {
             finalized_blocks: parts.finalized_blocks,
             data_unavailable_receipts: parts.data_unavailable_receipts,
             data_unavailability_slashes: parts.data_unavailability_slashes,
+            invalid_output_slashes: parts.invalid_output_slashes,
             validator_audit_assignments: parts.validator_audit_assignments,
             validator_audit_results: parts.validator_audit_results,
             validator_audit_slashes: parts.validator_audit_slashes,
@@ -1288,6 +1303,10 @@ impl ChainState {
 
     pub fn data_unavailability_slashes(&self) -> &BTreeMap<Hash, DataUnavailabilitySlashRecord> {
         &self.data_unavailability_slashes
+    }
+
+    pub fn invalid_output_slashes(&self) -> &BTreeMap<Hash, InvalidOutputSlashRecord> {
+        &self.invalid_output_slashes
     }
 
     pub fn validator_audit_assignments(&self) -> &BTreeMap<Hash, ValidatorAuditAssignment> {
@@ -1480,6 +1499,19 @@ impl ChainState {
             1,
             1,
             params.data_unavailability_miner_slash_amount,
+            at_risk_miner_rewards
+                .iter()
+                .filter(|reward| reward.claimable_at_height <= self.height)
+                .map(|reward| reward.amount)
+                .max()
+                .unwrap_or_default(),
+            at_risk_miner_rewards.len(),
+        ));
+        paths.push(fraud_path_calibration(
+            "invalid_output",
+            1,
+            1,
+            params.invalid_output_miner_slash_amount,
             at_risk_miner_rewards
                 .iter()
                 .filter(|reward| reward.claimable_at_height <= self.height)

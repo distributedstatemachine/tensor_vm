@@ -129,6 +129,151 @@ fn unavailable_data_attestation_slashes_receipt_miner_once_on_block_apply() {
 }
 
 #[test]
+fn invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards() {
+    let beacon = hash_bytes(b"test", &[b"invalid-output-slash"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        invalid_output_miner_slash_amount: 31,
+        freivalds: FreivaldsParams {
+            validators_per_job: 3,
+            minimum_validators: 2,
+            minimum_stake_numerator: 2,
+            minimum_stake_denominator: 3,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"invalid-output-slashed-miner");
+    chain.register_miner(miner, 100).unwrap();
+    for i in 0..8 {
+        chain
+            .register_validator(
+                address(format!("invalid-output-slash-validator-{i}").as_bytes()),
+                10_000,
+            )
+            .unwrap();
+    }
+
+    let job = MatmulJob::synthetic(0, 0, 8, 8, 8, &beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"invalid-output-slash-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let validators = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators;
+    assert_eq!(validators.len(), 3);
+    for validator in validators.iter().take(2) {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                *validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: report.result,
+                    checks_root: report.checks_root,
+                    data_availability_passed: report.data_availability_passed,
+                },
+            ))
+            .unwrap();
+    }
+    chain.settle_epoch(1_000, 500);
+    let starting_root = chain.state_root();
+    let starting_treasury = chain.state().rewards().treasury();
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height;
+
+    let invalid_attestation = ValidatorAttestation::new(
+        validators[2],
+        10_000,
+        AttestationStatement {
+            receipt_id: receipt.receipt_id,
+            job_id: receipt.job_id,
+            primitive_type: PrimitiveType::TensorOp,
+            result: VerificationResult::Invalid,
+            checks_root: hash_bytes(b"test", &[b"invalid-output-slash-checks"]),
+            data_availability_passed: true,
+        },
+    );
+    chain.submit_attestation(invalid_attestation).unwrap();
+
+    let slash = chain
+        .state()
+        .invalid_output_slashes()
+        .get(&receipt.receipt_id)
+        .expect("invalid output must slash the receipt miner");
+    assert_eq!(slash.receipt_id, receipt.receipt_id);
+    assert_eq!(slash.miner, miner);
+    assert_eq!(slash.evidence_validator, validators[2]);
+    assert_eq!(slash.amount, 31);
+    assert_eq!(slash.slashed_at_height, chain.state().height());
+    assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 69);
+    assert_eq!(chain.state().rewards().treasury(), starting_treasury + 31);
+    assert_ne!(chain.state_root(), starting_root);
+    assert!(
+        !chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        chain
+            .state()
+            .challenged_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .filter(|reward| reward.receipt_id == receipt.receipt_id)
+            .all(|reward| reward.voided_by_challenge)
+    );
+
+    chain.set_position_for_testing(claimable_at_height, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    chain.set_position_for_testing(claimable_at_height + 1, 0);
+    assert_eq!(
+        chain.submit_attestation(ValidatorAttestation::new(
+            validators[2],
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Invalid,
+                checks_root: hash_bytes(b"test", &[b"invalid-output-slash-checks-again"]),
+                data_availability_passed: true,
+            },
+        )),
+        Err(TvmError::InvalidReceipt("duplicate validator attestation"))
+    );
+    assert_eq!(chain.state().invalid_output_slashes().len(), 1);
+    assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 69);
+    assert_eq!(chain.state().rewards().treasury(), starting_treasury + 31);
+}
+
+#[test]
 fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
     let beacon = hash_bytes(b"test", &[b"audit-missed-beacon"]);
     let params = ChainParams {

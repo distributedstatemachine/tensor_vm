@@ -1,10 +1,11 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
-    ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
-    ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
-    PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardState,
-    TensorBlock, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
-    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, InvalidOutputSlashRecord,
+    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
+    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind,
+    ReceiptState, RewardState, TensorBlock, ValidatorAuditAppealRecord,
+    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -143,6 +144,7 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.miner_min_stake);
     write_u64(out, params.validator_min_stake);
     write_u64(out, params.data_unavailability_miner_slash_amount);
+    write_u64(out, params.invalid_output_miner_slash_amount);
     write_u64(out, params.validator_audit_sample_numerator);
     write_u64(out, params.validator_audit_sample_denominator);
     write_u64(out, params.validator_audit_window_blocks);
@@ -177,6 +179,7 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         miner_min_stake: reader.read_u64()?,
         validator_min_stake: reader.read_u64()?,
         data_unavailability_miner_slash_amount: reader.read_u64()?,
+        invalid_output_miner_slash_amount: reader.read_u64()?,
         validator_audit_sample_numerator: reader.read_u64()?,
         validator_audit_sample_denominator: reader.read_u64()?,
         validator_audit_window_blocks: reader.read_u64()?,
@@ -231,6 +234,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_hash_set(out, state.finalized_blocks());
     encode_hash_set(out, state.data_unavailable_receipts());
     encode_data_unavailability_slashes(out, state.data_unavailability_slashes());
+    encode_invalid_output_slashes(out, state.invalid_output_slashes());
     encode_validator_audit_assignments(out, state.validator_audit_assignments());
     encode_validator_audit_results(out, state.validator_audit_results());
     encode_validator_audit_slashes(out, state.validator_audit_slashes());
@@ -269,6 +273,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         finalized_blocks: decode_hash_set(reader)?,
         data_unavailable_receipts: decode_hash_set(reader)?,
         data_unavailability_slashes: decode_data_unavailability_slashes(reader)?,
+        invalid_output_slashes: decode_invalid_output_slashes(reader)?,
         validator_audit_assignments: decode_validator_audit_assignments(reader)?,
         validator_audit_results: decode_validator_audit_results(reader)?,
         validator_audit_slashes: decode_validator_audit_slashes(reader)?,
@@ -703,6 +708,53 @@ fn decode_data_unavailability_slashes(
         slashes.insert(
             key,
             DataUnavailabilitySlashRecord {
+                receipt_id,
+                miner,
+                evidence_validator,
+                amount,
+                slashed_at_height,
+                reason,
+            },
+        );
+    }
+    Ok(slashes)
+}
+
+fn encode_invalid_output_slashes(
+    out: &mut Vec<u8>,
+    slashes: &BTreeMap<Hash, InvalidOutputSlashRecord>,
+) {
+    write_len(out, slashes.len());
+    for (receipt_id, slash) in slashes {
+        write_hash(out, receipt_id);
+        write_hash(out, &slash.receipt_id);
+        write_hash(out, &slash.miner);
+        write_hash(out, &slash.evidence_validator);
+        write_u64(out, slash.amount);
+        write_u64(out, slash.slashed_at_height);
+        write_len(out, slash.reason.len());
+        out.extend_from_slice(slash.reason.as_bytes());
+    }
+}
+
+fn decode_invalid_output_slashes(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, InvalidOutputSlashRecord>> {
+    let mut slashes = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let miner = reader.read_hash()?;
+        let evidence_validator = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let slashed_at_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid invalid-output slash reason"))?
+            .to_owned();
+        slashes.insert(
+            key,
+            InvalidOutputSlashRecord {
                 receipt_id,
                 miner,
                 evidence_validator,
@@ -1294,6 +1346,7 @@ mod tests {
         GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt,
         LinearTrainingStepSpec, MatmulJob, PrimitiveType, TensorOpReceipt,
     };
+    use crate::scheduler::JobScheduler;
     use crate::tensor::{DType, Tensor};
     use crate::types::address;
     use crate::verify::{AttestationStatement, VerificationResult};
@@ -1514,6 +1567,40 @@ mod tests {
             chain.admit_block(side_branch.clone()).unwrap(),
             BlockAdmission::SideBranchStored { .. }
         ));
+        let miner = address(b"durable-miner");
+        let invalid_job = MatmulJob::synthetic(
+            chain.state().height(),
+            9,
+            2,
+            2,
+            2,
+            &chain.state().finalized_randomness(),
+            12,
+        );
+        let (invalid_receipt, _ia, _ib, _ic) =
+            TensorOpReceipt::from_job(&invalid_job, miner, 4, 9).unwrap();
+        submit_job(&mut chain, JobState::TensorOp(invalid_job));
+        submit_receipt(&mut chain, ReceiptState::TensorOp(invalid_receipt.clone()));
+        let invalid_assignment_seed = chain.validator_assignment_seed(&invalid_receipt.receipt_id);
+        let invalid_validator = JobScheduler::default()
+            .assign_validators(&chain, invalid_receipt.receipt_id, &invalid_assignment_seed)
+            .validators[0];
+        let validator_min_stake = chain.params().validator_min_stake;
+        submit_attestation(
+            &mut chain,
+            ValidatorAttestation::new(
+                invalid_validator,
+                validator_min_stake,
+                AttestationStatement {
+                    receipt_id: invalid_receipt.receipt_id,
+                    job_id: invalid_receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: VerificationResult::Invalid,
+                    checks_root: hash_bytes(b"test", &[b"durable-invalid-output"]),
+                    data_availability_passed: true,
+                },
+            ),
+        );
         let path = std::env::temp_dir().join(format!(
             "tensor-vm-state-{}-{}.bin",
             std::process::id(),
@@ -1634,6 +1721,20 @@ mod tests {
             loaded.state().data_unavailability_slashes(),
             chain.state().data_unavailability_slashes()
         );
+        assert_eq!(
+            loaded.state().invalid_output_slashes(),
+            chain.state().invalid_output_slashes()
+        );
+        assert!(
+            loaded
+                .state()
+                .invalid_output_slashes()
+                .values()
+                .any(|slash| slash.miner == address(b"durable-miner")
+                    && slash.amount == chain.params().invalid_output_miner_slash_amount
+                    && slash.slashed_at_height == chain.state().height()
+                    && slash.reason == "invalid output for receipt verification")
+        );
         assert!(
             loaded
                 .state()
@@ -1654,11 +1755,13 @@ mod tests {
             chain
                 .params()
                 .miner_min_stake
+                .saturating_sub(chain.params().invalid_output_miner_slash_amount)
                 .saturating_sub(chain.params().data_unavailability_miner_slash_amount)
         );
         assert_eq!(
             loaded.state().rewards().treasury(),
-            11 + chain.params().data_unavailability_miner_slash_amount
+            11 + chain.params().invalid_output_miner_slash_amount
+                + chain.params().data_unavailability_miner_slash_amount
         );
         assert!(
             loaded
