@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 84 in progress: Validator Audit Stake-Slash Reversal.
+- Active feature: Iteration 84 complete and pushed.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,8 +31,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: implement governed stake refund on reversed validator-audit appeals, then continue with the
-  next non-Docker consensus gap or rerun the full Docker scenario after the `/health` blocker clears.
+- Next action: continue with broader economics bond calibration, fork-choice/withholding policy, or rerun
+  the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -49,7 +49,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness, assignment seed, and validation seed commitment; attestations require the anchor | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 84 in progress | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add governed validator-audit stake-slash reversal, then broader bond calibration |
+| Economics and slashing invariant | Partial | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; governed appeal reward/stake reversal through pending claims and recorded slash refunds; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add broader fraud-path bond calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
@@ -117,6 +117,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `1feeb1d` (`Refund reversed validator audit slashes`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
