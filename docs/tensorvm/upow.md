@@ -471,7 +471,8 @@ This gives PoW-style permissionless block proposal + BFT economic finality. Tens
 > when its PoW hash is strictly better; finalized heads and accepted fallback heads are not replaced.
 > Valid known-parent side branches are now retained in chain-owned fork-tree storage with parent and child
 > state snapshots, and the chain-state codec persists that branch evidence without mutating the canonical
-> head. Automatic deep reorg selection and public Docker evidence remain open.
+> head until a strictly longer unfinalized branch promotes through chain-owned fork choice. Public Docker
+> evidence remains open.
 
 ### 11.4 Block structure
 

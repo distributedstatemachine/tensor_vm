@@ -734,6 +734,172 @@ fn historical_parent_side_branch_is_stored_without_replacing_canonical_head() {
 }
 
 #[test]
+fn longer_side_branch_reorganizes_unfinalized_canonical_suffix() {
+    let beacon = hash_bytes(b"test", &[b"side-branch-reorg"]);
+    let params = ChainParams {
+        pow_timeout_blocks: 1,
+        ..ChainParams::default()
+    };
+    let mut parent = Chain::with_params(params, beacon);
+    let proposer = address(b"side-branch-reorg-validator");
+    parent
+        .register_validator(proposer, parent.params().validator_min_stake)
+        .unwrap();
+    let base = parent.produce_block(proposer, 1_000).unwrap();
+
+    let mut canonical = parent.clone();
+    let canonical_one = canonical.produce_block(proposer, 1_006).unwrap();
+    let canonical_two = canonical.produce_block(proposer, 1_012).unwrap();
+
+    let mut branch = parent.clone();
+    let side_one = branch.produce_block(proposer, 1_007).unwrap();
+    let side_two = branch.produce_block(proposer, 1_013).unwrap();
+    let side_three = branch.produce_block(proposer, 1_019).unwrap();
+    let branch_state = branch.state().clone();
+    assert_eq!(side_one.parent_hash, base.hash());
+    assert_eq!(side_two.parent_hash, side_one.hash());
+    assert_eq!(side_three.parent_hash, side_two.hash());
+
+    let mut peer = parent;
+    assert!(matches!(
+        peer.admit_block(canonical_one.clone()).unwrap(),
+        BlockAdmission::Applied { .. }
+    ));
+    assert!(matches!(
+        peer.admit_block(canonical_two.clone()).unwrap(),
+        BlockAdmission::Applied { .. }
+    ));
+    let old_head = canonical_two.hash();
+
+    assert!(matches!(
+        peer.admit_block(side_one.clone()).unwrap(),
+        BlockAdmission::SideBranchStored { .. }
+    ));
+    assert!(matches!(
+        peer.admit_block(side_two.clone()).unwrap(),
+        BlockAdmission::SideBranchStored { .. }
+    ));
+    assert_eq!(
+        peer.admit_block(side_three.clone()).unwrap(),
+        BlockAdmission::Reorganized {
+            height: side_three.height,
+            old_head,
+            hash: side_three.hash(),
+        }
+    );
+
+    assert_eq!(peer.state(), &branch_state);
+    assert_eq!(
+        peer.blocks()
+            .iter()
+            .map(TensorBlock::hash)
+            .collect::<Vec<_>>(),
+        vec![
+            base.hash(),
+            side_one.hash(),
+            side_two.hash(),
+            side_three.hash()
+        ]
+    );
+    assert!(
+        peer.side_branch_blocks()
+            .contains_key(&canonical_one.hash())
+    );
+    assert!(
+        peer.side_branch_blocks()
+            .contains_key(&canonical_two.hash())
+    );
+    assert!(
+        peer.side_branch_child_states()
+            .contains_key(&canonical_two.hash())
+    );
+    assert!(!peer.side_branch_blocks().contains_key(&side_three.hash()));
+}
+
+#[test]
+fn side_branch_reorg_does_not_replace_finalized_canonical_suffix() {
+    let beacon = hash_bytes(b"test", &[b"finalized-side-branch-reorg"]);
+    let params = ChainParams {
+        pow_timeout_blocks: 1,
+        ..ChainParams::default()
+    };
+    let mut parent = Chain::with_params(params, beacon);
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("finalized-side-branch-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        parent
+            .register_validator(*validator, parent.params().validator_min_stake)
+            .unwrap();
+    }
+    let base_proposer = parent
+        .proposer_for_next_epoch(&parent.state().finalized_randomness())
+        .unwrap();
+    let base = parent.produce_block(base_proposer, 1_000).unwrap();
+
+    let mut canonical = parent.clone();
+    let canonical_one_proposer = canonical
+        .proposer_for_next_epoch(&canonical.state().finalized_randomness())
+        .unwrap();
+    let canonical_one = canonical
+        .produce_block(canonical_one_proposer, 1_006)
+        .unwrap();
+    let mut branch = parent.clone();
+    let side_one_proposer = branch
+        .proposer_for_next_epoch(&branch.state().finalized_randomness())
+        .unwrap();
+    let side_one = branch.produce_block(side_one_proposer, 1_007).unwrap();
+    let side_two_proposer = branch
+        .proposer_for_next_epoch(&branch.state().finalized_randomness())
+        .unwrap();
+    let side_two = branch.produce_block(side_two_proposer, 1_013).unwrap();
+    let side_three_proposer = branch
+        .proposer_for_next_epoch(&branch.state().finalized_randomness())
+        .unwrap();
+    let side_three = branch.produce_block(side_three_proposer, 1_019).unwrap();
+    assert_eq!(side_one.parent_hash, base.hash());
+
+    let mut peer = parent;
+    peer.admit_block(canonical_one.clone()).unwrap();
+    peer.submit_block_vote(BlockVote::new(validators[0], 10_000, &canonical_one))
+        .unwrap();
+    peer.submit_block_vote(BlockVote::new(validators[1], 10_000, &canonical_one))
+        .unwrap();
+    assert!(peer.is_block_finalized(&canonical_one.hash()));
+    let mut canonical_after_finality = peer.clone();
+    let canonical_two_proposer = canonical_after_finality
+        .proposer_for_next_epoch(&canonical_after_finality.state().finalized_randomness())
+        .unwrap();
+    let canonical_two = canonical_after_finality
+        .produce_block(canonical_two_proposer, 1_012)
+        .unwrap();
+    peer.admit_block(canonical_two.clone()).unwrap();
+    let canonical_state = peer.state().clone();
+
+    assert_eq!(
+        peer.admit_block(side_one.clone()).unwrap(),
+        BlockAdmission::Invalid {
+            height: side_one.height,
+            hash: side_one.hash(),
+            reason: BlockInvalidReason::FinalizedConflict,
+        }
+    );
+    assert!(matches!(
+        peer.admit_block(side_two.clone()).unwrap(),
+        BlockAdmission::PendingParent { .. }
+    ));
+    assert!(matches!(
+        peer.admit_block(side_three.clone()).unwrap(),
+        BlockAdmission::PendingParent { .. }
+    ));
+    assert_eq!(peer.state(), &canonical_state);
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(canonical_two.hash())
+    );
+}
+
+#[test]
 fn block_kind_cannot_masquerade_across_empty_and_nonempty_blockspace() {
     let beacon = hash_bytes(b"test", &[b"kind-beacon"]);
     let mut empty_chain = Chain::new(beacon);

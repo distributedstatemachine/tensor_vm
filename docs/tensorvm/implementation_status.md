@@ -16,8 +16,9 @@ The current-head fork-choice policy now replaces an unfinalized useful head only
 UVPoW block on the same parent has a strictly better PoW hash, while finalized heads and accepted fallback
 heads remain stable. Valid known-parent side branches are retained in chain-owned fork-tree storage with
 parent and child state snapshots, survive chain-state persistence, and do not mutate canonical head state
-unless the current-head replacement rule applies. Remaining consensus gaps are full verifier-transcript
-challenge semantics, automatic deep-reorg selection, and a fresh full Docker proof of live validator
+unless the current-head replacement rule applies; strictly longer unfinalized branches now automatically
+reorganize canonical head state while finalized canonical blocks remain protected. Remaining consensus gaps
+are full verifier-transcript challenge semantics and a fresh full Docker proof of live validator
 proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
 clears. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p

@@ -284,10 +284,11 @@ and configured validator proposer ticks now have role-owned submission paths for
 validators can fetch missing tensors remotely. The chain core now has a current-head competition policy
 that replaces an unfinalized useful head only with a same-parent useful head carrying a strictly better
 PoW hash while keeping finalized and fallback heads stable. Valid known-parent non-canonical blocks are
-now retained in chain-owned side-branch fork storage with parent and child state snapshots, and those branch
-maps persist through chain-state snapshots. The local runtime still needs a fresh full Docker proof of that
-proposer path after the standing `/health` blocker clears, plus automatic deep-reorg selection, before it
-satisfies the local CPU spec as a production-grade local chain.
+now retained in chain-owned side-branch fork storage with parent and child state snapshots, strictly longer
+unfinalized branches automatically reorganize canonical head state, and branch maps persist through
+chain-state snapshots. The local runtime still needs a fresh full Docker proof of that proposer path after
+the standing `/health` blocker clears before it satisfies the local CPU spec as a production-grade local
+chain.
 
 ## Highest-Priority Gaps
 

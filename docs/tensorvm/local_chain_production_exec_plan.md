@@ -5,12 +5,13 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 95 complete - invalid-output miner stake slashing.
+- Active feature: Iteration 96 complete - automatic side-branch deep reorg.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
-  malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, and delayed
-  challenge rewards are implemented locally. Late invalid-output attestations now contest settled receipts
-  by voiding delayed pending receipt rewards and slashing miner stake before reward maturity.
+  malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
+  unfinalized side-branch deep reorg, and delayed challenge rewards are implemented locally. Late
+  invalid-output attestations now contest settled receipts by voiding delayed pending receipt rewards and
+  slashing miner stake before reward maturity.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -29,9 +30,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; checker expects live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement and side-branch storage | Rerun Docker and continue automatic deep-reorg policy |
+| Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage | Remaining: full transcript disputes, automatic deep-reorg policy, fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
@@ -40,66 +41,58 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 95: Invalid-Output Miner Stake Slashing
+### Iteration 96: Automatic Side-Branch Deep Reorg
 
-Feature capability: make assigned `Invalid` attestations slash the receipt miner's bonded stake, record the
-slash in state-rooted storage, and include the invalid-output path in fraud-path economic calibration.
+Feature capability: promote a strictly longer valid side branch into canonical state automatically while
+preserving finalized canonical blocks.
 
-Canonical owner: `chain::validation::submit_attestation` and `ChainState` slashing records.
-Adapter callers: command/RPC/p2p/runtime paths continue submitting attestations through the shared chain
-API.
-Old shortcut being removed: late assigned invalid-output evidence voided delayed rewards but did not slash
-the miner's bonded stake for the false receipt.
+Canonical owner: `chain::blocks` fork-choice/admission and `Chain` side-branch state.
+Adapter callers: `ChainCommand::SubmitBlock`, p2p/node payload application, storage/node-store snapshots,
+and tests call the same chain admission boundary.
+Old shortcut being removed: valid multi-block side branches were retained but never promoted automatically
+even when they overtook canonical unfinalized height.
 Regression test that proves the shortcut is gone:
-`chain::tests::invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards`.
-Behavior with local synthetic block production disabled: attestation admission mutates canonical chain state
-directly; no local producer loop is required.
-Behavior for producer and non-producer roles: both apply the same attestation command/payload and converge
-on the same slash, challenged receipt, and pending reward flags.
-Structured evidence source: miner stake, treasury, `invalid_output_slashes`, `challenged_receipts`,
-`pending_receipt_rewards`, storage roundtrip, status, and explorer economic calibration.
-Finality source: canonical chain state at attestation admission; reward release remains governed by claim
-maturity.
-Wire-size and codec boundary: no p2p payload change; chain-state storage persists invalid-output slash maps
-and the explicit `invalid_output_miner_slash_amount` parameter.
+`chain::tests::longer_side_branch_reorganizes_unfinalized_canonical_suffix`.
+Behavior with local synthetic block production disabled: inbound block payloads can trigger the same
+chain-owned reorg without synthetic block production.
+Behavior for producer and non-producer roles: both converge through `SubmitBlock`/payload admission;
+canonical head changes only through shared chain fork-choice.
+Structured evidence source: canonical `blocks`, `block_parent_states`, `side_branch_blocks`,
+`side_branch_child_states`, state root/height/head, and node payload application.
+Finality source: `ChainState::finalized_blocks` and `is_block_finalized` prevent reorg across finalized
+canonical blocks.
+Wire-size and codec boundary: no p2p wire change; reuse persisted side-branch maps already in the
+chain-state codec.
 
-Files/modules likely touched: `chain/state.rs`, `chain/validation.rs`, `chain/roots.rs`,
-`storage/chain_state.rs`, status/explorer tests, focused tests, docs, and this plan.
+Files/modules likely touched: `chain/blocks.rs`, `chain/engine.rs`, `chain/commands.rs`, node payload
+application, focused tests, docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Tests/checkers/docs to add or update: focused attestation, storage, economics/status/explorer tests, and
-consensus docs.
-Narrow validation commands: `cargo test -p tensor_vm invalid_output --quiet`,
-`cargo test -p tensor_vm fraud_path_economic --quiet`,
-`cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`,
-`cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet`, and
-`cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`.
+Tests/checkers/docs to add or update: focused fork-choice/reorg and node payload tests plus consensus docs.
+Narrow validation commands: `cargo test -p tensor_vm side_branch --quiet`,
+`cargo test -p tensor_vm reorg --quiet`, `cargo test -p tensor_vm blocks --quiet`, and
+`cargo test -p tensor_vm block_payload_application --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: invalid-output evidence records one miner slash, debits stake, credits
-treasury, voids delayed rewards, persists slash evidence, and exposes an `invalid_output` fraud path.
-Out of scope: external deployed-run measurements, automatic deep reorg, public Docker rerun, verifier
-transcript fraud proofs, or p2p wire changes.
-Split trigger: if appeal/reversal of invalid-output miner stake slashes is added, split that from this
-one-way local slashing slice.
+Expected observable evidence: a longer side branch replaces only the unfinalized canonical suffix; old
+canonical suffix moves into side-branch storage; finalized canonical blocks reject conflicting branches.
+Out of scope: public Docker rerun, verifier transcript fraud proofs, external drand/VRF, or p2p wire
+changes.
+Split trigger: if cumulative-work scoring beyond strict branch length is required, split that policy work
+from this deterministic longer-branch promotion.
 
 Implementation summary:
-- Added `InvalidOutputSlashRecord`, `ChainState::invalid_output_slashes`, and
-  `ChainParams::invalid_output_miner_slash_amount`.
-- Assigned invalid-output evidence now slashes the receipt miner once, credits treasury, marks the receipt
-  challenged, and voids delayed receipt rewards before maturity.
-- Storage snapshots persist invalid-output slashes, and fraud-path calibration/status/explorer include the
-  `invalid_output` path.
+- Added `BlockAdmission::Reorganized` / `ChainEvent::ChainReorganized`.
+- Side-branch admission now records selected-receipt metadata in branch child states and promotes strictly
+  longer branches when no replaced canonical block is finalized.
+- Node block payload application now lets known side-branch descendants reach chain admission.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm invalid_output --quiet`,
-  `cargo test -p tensor_vm fraud_path_economic --quiet`,
-  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`,
-  `cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet`, and
-  `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`
-  passed.
+- Focused: `cargo test -p tensor_vm side_branch --quiet`,
+  `cargo test -p tensor_vm reorg --quiet`, `cargo test -p tensor_vm blocks --quiet`, and
+  `cargo test -p tensor_vm block_payload_application --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 425 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 428 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -107,6 +100,14 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 95: Invalid-Output Miner Stake Slashing
+
+Assigned invalid-output evidence now slashes the receipt miner once, credits treasury, records a
+state-rooted slash, marks the receipt challenged, voids delayed receipt rewards, persists through storage,
+and appears in fraud-path calibration/status/explorer output. Validation passed focused
+attestation/storage/economics/status tests, full crate, clippy, workspace release, and first/final Gate 0.
+Commit `695c66e` is pushed to `origin/main`.
 
 ### Iteration 94: Side-Branch Fork Tree Storage
 
@@ -215,15 +216,14 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 95 on June 20, 2026:
+Latest full validation is Iteration 96 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm invalid_output --quiet
-cargo test -p tensor_vm fraud_path_economic --quiet
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
-cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --quiet
-cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet
+cargo test -p tensor_vm side_branch --quiet
+cargo test -p tensor_vm reorg --quiet
+cargo test -p tensor_vm blocks --quiet
+cargo test -p tensor_vm block_payload_application --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

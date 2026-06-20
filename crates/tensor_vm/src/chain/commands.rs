@@ -136,6 +136,15 @@ impl ChainEngine for Chain {
                     old_hash,
                     hash,
                 }]),
+                BlockAdmission::Reorganized {
+                    height,
+                    old_head,
+                    hash,
+                } => Ok(vec![ChainEvent::ChainReorganized {
+                    height,
+                    old_head,
+                    hash,
+                }]),
                 BlockAdmission::SideBranchStored {
                     height,
                     parent_hash,

@@ -318,7 +318,7 @@ fn admit_side_branch(
         .insert(block_hash, parent_state.clone());
     validate(&validation_chain, &block, true)?;
     let outcome = apply_outcome(&validation_chain, &block)?;
-    let child_state = apply_block_to_parent_state(
+    let mut child_state = apply_block_to_parent_state(
         &parent_state,
         chain.params.epoch_length,
         block.beacon_round,
@@ -340,16 +340,121 @@ fn admit_side_branch(
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
+    child_state
+        .block_selected_receipts
+        .insert(block_hash, outcome.selected_receipt_ids);
     chain.block_parent_states.insert(block_hash, parent_state);
     let parent_hash = block.parent_hash;
     chain
         .side_branch_child_states
         .insert(block_hash, child_state);
     chain.side_branch_blocks.insert(block_hash, block);
+    if let Some(admission) = try_promote_side_branch(chain, block_hash) {
+        return Ok(admission);
+    }
     Ok(BlockAdmission::SideBranchStored {
         height,
         parent_hash,
         hash: block_hash,
+    })
+}
+
+fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdmission> {
+    let tip = chain.side_branch_blocks.get(&tip_hash)?.clone();
+    if tip.height.saturating_add(1) <= chain.state.height {
+        return None;
+    }
+
+    let mut path = Vec::new();
+    let mut cursor_hash = tip_hash;
+    let ancestor_index = loop {
+        let branch_block = chain.side_branch_blocks.get(&cursor_hash)?.clone();
+        path.push(branch_block.clone());
+        if branch_block.parent_hash == [0; 32] {
+            break None;
+        }
+        if let Some(index) = chain
+            .blocks
+            .iter()
+            .position(|canonical| canonical.hash() == branch_block.parent_hash)
+        {
+            break Some(index);
+        }
+        cursor_hash = branch_block.parent_hash;
+    };
+
+    let replaced_start = ancestor_index.map_or(0, |index| index + 1);
+    if chain.blocks[replaced_start..]
+        .iter()
+        .any(|canonical| chain.is_block_finalized(&canonical.hash()))
+    {
+        return None;
+    }
+
+    path.reverse();
+    let old_head = chain
+        .blocks
+        .last()
+        .map(TensorBlock::hash)
+        .unwrap_or([0; 32]);
+    let old_child_states = chain.blocks[replaced_start..]
+        .iter()
+        .filter_map(|block| {
+            Some((
+                block.hash(),
+                known_parent_child_state(chain, &block.hash())?,
+            ))
+        })
+        .collect::<Vec<_>>();
+    let old_suffix = chain.blocks.split_off(replaced_start);
+    let old_suffix_hashes = old_suffix
+        .iter()
+        .map(TensorBlock::hash)
+        .collect::<BTreeSet<_>>();
+    for old_hash in &old_suffix_hashes {
+        chain.state.block_selected_receipts.remove(old_hash);
+        chain.state.block_votes.remove(old_hash);
+        chain.state.finalized_blocks.remove(old_hash);
+    }
+
+    for block in &path {
+        chain.blocks.push(block.clone());
+        chain.side_branch_blocks.remove(&block.hash());
+    }
+    let new_head_hash = tip_hash;
+    chain.state = chain
+        .side_branch_child_states
+        .remove(&new_head_hash)
+        .unwrap_or_else(|| known_parent_child_state(chain, &new_head_hash).unwrap());
+    for block in &path {
+        chain.side_branch_child_states.remove(&block.hash());
+    }
+
+    for old_block in old_suffix {
+        let old_hash = old_block.hash();
+        chain
+            .side_branch_blocks
+            .entry(old_hash)
+            .or_insert(old_block);
+        if !chain.side_branch_child_states.contains_key(&old_hash)
+            && let Some((_, child_state)) = old_child_states
+                .iter()
+                .find(|(candidate_hash, _)| *candidate_hash == old_hash)
+        {
+            chain
+                .side_branch_child_states
+                .insert(old_hash, child_state.clone());
+        } else if !chain.side_branch_child_states.contains_key(&old_hash)
+            && let Some(child_state) = known_parent_child_state(chain, &old_hash)
+        {
+            chain.side_branch_child_states.insert(old_hash, child_state);
+        }
+    }
+
+    Some(BlockAdmission::Reorganized {
+        height: tip.height,
+        old_head,
+        hash: new_head_hash,
     })
 }
 

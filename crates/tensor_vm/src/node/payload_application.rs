@@ -57,31 +57,39 @@ pub fn apply_network_block_payload(
     {
         return NetworkBlockPayloadApply::Applied { appended: 0 };
     }
-    if height > chain.state().height() {
+    let parent_known = block.parent_hash == [0; 32]
+        || chain
+            .blocks()
+            .iter()
+            .any(|existing| existing.hash() == block.parent_hash)
+        || chain.side_branch_blocks().contains_key(&block.parent_hash);
+    if height > chain.state().height() && !parent_known {
         return NetworkBlockPayloadApply::Pending;
     }
     let current_head_competitor = height.saturating_add(1) == chain.state().height();
-    if height < chain.state().height() && !current_head_competitor {
+    if height < chain.state().height() && !current_head_competitor && !parent_known {
         return NetworkBlockPayloadApply::Invalid;
     }
-    if !current_head_competitor {
-        let expected_parent = chain
-            .blocks
-            .last()
-            .map(crate::chain::TensorBlock::hash)
-            .unwrap_or([0; 32]);
-        if block.parent_hash != expected_parent {
-            return NetworkBlockPayloadApply::Pending;
-        }
+    let expected_parent = chain
+        .blocks
+        .last()
+        .map(crate::chain::TensorBlock::hash)
+        .unwrap_or([0; 32]);
+    if !current_head_competitor && block.parent_hash != expected_parent && !parent_known {
+        return NetworkBlockPayloadApply::Pending;
     }
 
     let mut candidate = chain.clone();
-    if !current_head_competitor && candidate.prepare_block_parent_state().is_err() {
+    if !current_head_competitor
+        && block.parent_hash == expected_parent
+        && candidate.prepare_block_parent_state().is_err()
+    {
         return NetworkBlockPayloadApply::Invalid;
     }
     match candidate.admit_block(block) {
         Ok(BlockAdmission::Applied { .. })
         | Ok(BlockAdmission::Replaced { .. })
+        | Ok(BlockAdmission::Reorganized { .. })
         | Ok(BlockAdmission::SideBranchStored { .. }) => {
             *chain = candidate;
             NetworkBlockPayloadApply::Applied { appended: 1 }
@@ -1261,6 +1269,94 @@ mod tests {
                 &[1, 2, 3],
             ),
             NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn block_payload_application_reorganizes_to_longer_side_branch() {
+        let seed = hash_bytes(b"test", &[b"network-side-branch-reorg"]);
+        let params = ChainParams {
+            pow_timeout_blocks: 1,
+            ..ChainParams::default()
+        };
+        let mut parent = Chain::with_params(params, seed);
+        let validator = address(b"network-side-branch-validator");
+        parent
+            .register_validator(validator, parent.params().validator_min_stake)
+            .unwrap();
+        let base = parent.produce_block(validator, 1_000).unwrap();
+
+        let mut canonical = parent.clone();
+        let canonical_one = canonical.produce_block(validator, 1_006).unwrap();
+        let canonical_two = canonical.produce_block(validator, 1_012).unwrap();
+
+        let mut branch = parent.clone();
+        let side_one = branch.produce_block(validator, 1_007).unwrap();
+        let side_two = branch.produce_block(validator, 1_013).unwrap();
+        let side_three = branch.produce_block(validator, 1_019).unwrap();
+        let branch_state = branch.state().clone();
+
+        let mut consumer = parent;
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                canonical_one.height,
+                canonical_one.hash(),
+                &encode_block_payload(&canonical_one),
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                canonical_two.height,
+                canonical_two.hash(),
+                &encode_block_payload(&canonical_two),
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            consumer.blocks().last().map(TensorBlock::hash),
+            Some(canonical_two.hash())
+        );
+
+        for block in [&side_one, &side_two] {
+            assert_eq!(
+                apply_network_block_payload(
+                    &mut consumer,
+                    block.height,
+                    block.hash(),
+                    &encode_block_payload(block),
+                ),
+                NetworkBlockPayloadApply::Applied { appended: 1 }
+            );
+            assert_eq!(
+                consumer.blocks().last().map(TensorBlock::hash),
+                Some(canonical_two.hash())
+            );
+        }
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                side_three.height,
+                side_three.hash(),
+                &encode_block_payload(&side_three),
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(consumer.state(), &branch_state);
+        assert_eq!(
+            consumer
+                .blocks()
+                .iter()
+                .map(TensorBlock::hash)
+                .collect::<Vec<_>>(),
+            vec![
+                base.hash(),
+                side_one.hash(),
+                side_two.hash(),
+                side_three.hash()
+            ]
         );
     }
 }

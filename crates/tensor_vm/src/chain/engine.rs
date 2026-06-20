@@ -31,6 +31,11 @@ pub enum BlockAdmission {
         old_hash: Hash,
         hash: Hash,
     },
+    Reorganized {
+        height: u64,
+        old_head: Hash,
+        hash: Hash,
+    },
     SideBranchStored {
         height: u64,
         parent_hash: Hash,
@@ -232,6 +237,11 @@ pub enum ChainEvent {
     BlockReplaced {
         height: u64,
         old_hash: Hash,
+        hash: Hash,
+    },
+    ChainReorganized {
+        height: u64,
+        old_head: Hash,
         hash: Hash,
     },
     SideBranchBlockStored {

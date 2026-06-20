@@ -114,6 +114,9 @@ claims before maturity, and preventing mature release from crediting spendable r
 Iteration 94 added side-branch fork-tree storage. Focused chain, node payload, and storage tests cover
 known-parent side branch admission, side-branch grandchildren, canonical-state preservation, and
 chain-state roundtrip of side-branch block plus child-state maps.
+Iteration 96 added automatic unfinalized side-branch deep reorg. Focused chain and node payload tests cover
+longer-branch promotion, canonical suffix side-branch preservation, finalized-block protection, and
+non-producer payload convergence.
 Iteration 95 added state-rooted invalid-output miner stake slashing. Focused attestation, economic
 calibration, status/explorer, and storage tests cover one-shot miner slash records, treasury credit,
 delayed reward voiding, fraud-path calibration, and chain-state persistence.
