@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 67, chain-owned reward claim view, validated; commit/push pending.
+- Active feature: Iteration 67, chain-owned reward claim view, pushed.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer now consume the chain-owned
   pending reward-claim view instead of rebuilding ledger-specific projections.
@@ -16,7 +16,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push the validated chain-owned reward claim view.
+- Next action: continue with auditor-selection policy, appeal paths, live calibration, or Docker `/health`.
 
 ## Readiness Matrix
 
@@ -107,6 +107,7 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `cf886d4` (`Add chain reward claim view`) is pushed to `main`.
 
 ## Recent Iterations
 
