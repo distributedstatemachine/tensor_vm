@@ -137,6 +137,36 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2],
         ),
         vector(
+            "field-mean-axis1-v1",
+            "mean",
+            "B",
+            &[&[2, 3]],
+            &[("axis", 1)],
+            &[&[1, 2, 3, 4, 5, 6]],
+            &[2, 5],
+            &[2],
+        ),
+        vector(
+            "field-concat-axis0-v1",
+            "concat",
+            "B",
+            &[&[2, 2], &[2, 2]],
+            &[("axis", 0)],
+            &[&[1, 2, 3, 4], &[5, 6, 7, 8]],
+            &[1, 2, 3, 4, 5, 6, 7, 8],
+            &[4, 2],
+        ),
+        vector(
+            "field-stack-axis1-v1",
+            "stack",
+            "B",
+            &[&[2], &[2]],
+            &[("axis", 1)],
+            &[&[1, 2], &[3, 4]],
+            &[1, 3, 2, 4],
+            &[2, 2],
+        ),
+        vector(
             "field-matmul-wraparound-v1",
             "matmul",
             "A",
@@ -284,6 +314,9 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
             Tensor::from_vec(vec![rows, cols], tensors[0].dtype(), data)
         }
         "reduce_sum" => tensors[0].reduce_sum(param(vector, "axis")? as usize),
+        "mean" => mean_tensor(&tensors[0], param(vector, "axis")? as usize),
+        "concat" => concat_tensors(&tensors, param(vector, "axis")? as usize),
+        "stack" => stack_tensors(&tensors, param(vector, "axis")? as usize),
         "matmul" => tensors[0].matmul(&tensors[1]),
         "mse_loss" => {
             let loss = vm::mse_loss(&tensors[0], &tensors[1])?;
@@ -317,6 +350,118 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
         }
         _ => Err(TvmError::InvalidReceipt("unknown conformance op")),
     }
+}
+
+fn mean_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
+    if tensor.shape().len() != 2 {
+        return Err(TvmError::InvalidReceipt("invalid conformance mean"));
+    }
+    let rows = tensor.shape()[0];
+    let cols = tensor.shape()[1];
+    match axis {
+        0 => {
+            let inv = field_inverse(rows as Elem)?;
+            let mut out = vec![0; cols];
+            for row in 0..rows {
+                for (col, value) in out.iter_mut().enumerate() {
+                    *value = field::add(*value, tensor.as_slice()[row * cols + col]);
+                }
+            }
+            for value in &mut out {
+                *value = field::mul(*value, inv);
+            }
+            Tensor::from_vec(vec![cols], tensor.dtype(), out)
+        }
+        1 => {
+            let inv = field_inverse(cols as Elem)?;
+            let mut out = Vec::with_capacity(rows);
+            for row in 0..rows {
+                let mut acc = 0;
+                for col in 0..cols {
+                    acc = field::add(acc, tensor.as_slice()[row * cols + col]);
+                }
+                out.push(field::mul(acc, inv));
+            }
+            Tensor::from_vec(vec![rows], tensor.dtype(), out)
+        }
+        _ => Err(TvmError::InvalidReceipt("invalid conformance mean")),
+    }
+}
+
+fn concat_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
+    if tensors.len() != 2 || tensors[0].shape().len() != 2 || tensors[1].shape().len() != 2 {
+        return Err(TvmError::InvalidReceipt("invalid conformance concat"));
+    }
+    if tensors[0].dtype() != tensors[1].dtype() {
+        return Err(TvmError::InvalidReceipt("invalid conformance concat"));
+    }
+    let [a_rows, a_cols] = [tensors[0].shape()[0], tensors[0].shape()[1]];
+    let [b_rows, b_cols] = [tensors[1].shape()[0], tensors[1].shape()[1]];
+    match axis {
+        0 if a_cols == b_cols => {
+            let mut out = tensors[0].as_slice().to_vec();
+            out.extend_from_slice(tensors[1].as_slice());
+            Tensor::from_vec(vec![a_rows + b_rows, a_cols], tensors[0].dtype(), out)
+        }
+        1 if a_rows == b_rows => {
+            let mut out = Vec::with_capacity((a_cols + b_cols) * a_rows);
+            for row in 0..a_rows {
+                out.extend_from_slice(&tensors[0].as_slice()[row * a_cols..(row + 1) * a_cols]);
+                out.extend_from_slice(&tensors[1].as_slice()[row * b_cols..(row + 1) * b_cols]);
+            }
+            Tensor::from_vec(vec![a_rows, a_cols + b_cols], tensors[0].dtype(), out)
+        }
+        _ => Err(TvmError::InvalidReceipt("invalid conformance concat")),
+    }
+}
+
+fn stack_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
+    if tensors.len() != 2
+        || tensors[0].shape().len() != 1
+        || tensors[0].shape() != tensors[1].shape()
+    {
+        return Err(TvmError::InvalidReceipt("invalid conformance stack"));
+    }
+    if tensors[0].dtype() != tensors[1].dtype() {
+        return Err(TvmError::InvalidReceipt("invalid conformance stack"));
+    }
+    let len = tensors[0].shape()[0];
+    match axis {
+        0 => {
+            let mut out = tensors[0].as_slice().to_vec();
+            out.extend_from_slice(tensors[1].as_slice());
+            Tensor::from_vec(vec![2, len], tensors[0].dtype(), out)
+        }
+        1 => {
+            let mut out = Vec::with_capacity(len * 2);
+            for index in 0..len {
+                out.push(tensors[0].as_slice()[index]);
+                out.push(tensors[1].as_slice()[index]);
+            }
+            Tensor::from_vec(vec![len, 2], tensors[0].dtype(), out)
+        }
+        _ => Err(TvmError::InvalidReceipt("invalid conformance stack")),
+    }
+}
+
+fn field_inverse(value: Elem) -> Result<Elem> {
+    let value = field::normalize(value);
+    if value == 0 {
+        return Err(TvmError::InvalidReceipt("invalid conformance mean"));
+    }
+    Ok(field_pow(value, MODULUS - 2))
+}
+
+fn field_pow(mut base: Elem, mut exponent: Elem) -> Elem {
+    let mut acc = 1;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            acc = field::mul(acc, base);
+        }
+        base = field::mul(base, base);
+        exponent >>= 1;
+    }
+    acc
 }
 
 fn expected_tensor(vector: &ConformanceVector) -> Result<Tensor> {
@@ -446,6 +591,9 @@ mod tests {
         assert!(op_names.contains("transpose"));
         assert!(op_names.contains("reshape"));
         assert!(op_names.contains("broadcast"));
+        assert!(op_names.contains("mean"));
+        assert!(op_names.contains("concat"));
+        assert!(op_names.contains("stack"));
         assert!(op_names.contains("full"));
         assert!(op_names.contains("arange"));
         assert!(op_names.contains("mse_loss"));
@@ -465,6 +613,9 @@ mod tests {
             "reshape",
             "broadcast",
             "reduce_sum",
+            "mean",
+            "concat",
+            "stack",
             "matmul",
             "full",
             "arange",

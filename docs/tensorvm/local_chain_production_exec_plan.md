@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 44 is complete.
-- Current status: Iteration 44 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 45, remaining exact Tier-B shape/reduction IR replay.
+- Current status: Iteration 45 implemented and validated on June 20, 2026; commit/push evidence pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,15 +14,15 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action after Iteration 44: continue toward arbitrary graph-backed jobs/receipts, remaining
-  admitted-registry replay/conformance coverage, full VRF/drand commit-reveal lifecycle, multi-validator
-  proposer competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
+- Next action: commit and push Iteration 45 evidence, then move to arbitrary graph-backed jobs/receipts,
+  full VRF/drand commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, or the
+  Docker `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 44 first command: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 45 first command and final gate: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -30,13 +30,62 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; wider exact replay in progress | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage | Add arbitrary graph-backed jobs/receipts and remaining admitted-registry executor coverage |
-| Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors; CPU pass profile; default CUDA non-admission | Add mixed-dtype vector schema, remaining admitted-registry vectors, CUDA pass evidence when compiled |
+| Tensor IR graph language | Partial; Iteration 45 replay complete | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage and Iteration 45 `mean`/`cast`/`concat`/`stack` replay | Add arbitrary graph-backed jobs/receipts and remaining admitted-registry executor coverage |
+| Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors and Iteration 45 `mean`/`concat`/`stack` vectors; CPU pass profile; default CUDA non-admission | Add mixed-dtype vector schema, remaining admitted-registry vectors, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 45: Remaining Exact Tier-B Shape/Reduction IR Replay
+
+Feature capability: validated Tensor IR graphs can exact-execute `mean`, `cast`, `concat`, and `stack`;
+concat/stack validation uses real axis shape rules instead of the previous same-shape placeholder.
+
+Architecture shortcut answers:
+- Canonical owner: `ir::TensorGraph` validation/exact execution and conformance suite metadata.
+- Adapter callers: current runtime/job verification paths consume accepted graph IDs/profiles; no adapter
+  gains consensus mutation.
+- Old shortcut being removed: admitted Tier-B graph ops no longer fail closed or validate with placeholder
+  same-shape typing solely because deterministic exact replay was missing.
+- Regression tests: new IR execution tests for mean/cast/concat/stack and conformance vector tests where
+  the current same-dtype vector schema fits.
+- Synthetic production disabled: unchanged; this is pure IR execution capability.
+- Producer/non-producer roles: unchanged until graph-backed job admission is wired later.
+- Structured evidence source: `IrExecution` named outputs, `IrOpTrace` roots, conformance profile pass set,
+  docs matrix/status entries.
+- Finality source: unchanged stake-weighted block votes.
+- Wire-size and codec boundary: no wire codec changes.
+
+Validation target:
+- Focused: `cargo test -p tensor_vm --lib ir::tests -- --nocapture` and
+  `cargo test -p tensor_vm --lib conformance::tests -- --nocapture`.
+- Broad: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`,
+  final `cargo test -p tensor_vm local_testnet --release`, and the expected tarpaulin blocked check.
+
+Current validation evidence:
+- Required first gate: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused IR tests: `cargo test -p tensor_vm --lib ir::tests -- --nocapture` passed 13 tests.
+- Focused conformance tests: `cargo test -p tensor_vm --lib conformance::tests -- --nocapture` passed 3
+  tests.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm` passed 361 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final local-testnet gate: `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet
+  library tests plus the filtered service-gateway integration test.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+- Feature commit: pending.
+- Push evidence: pending.
+
+Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt production through
+`TensorGraph::execute_exact`, const-blob fetching, signed/fixed-point unary op semantics, exact
+quantization, mixed-dtype conformance-vector schema, and CUDA generic graph execution.
+
+## Recent Iterations
 
 ### Iteration 44: Wider Exact Tier-B IR Interpreter Coverage
 
@@ -97,8 +146,6 @@ Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt p
 `TensorGraph::execute_exact`, const-blob fetching, mixed-dtype conformance-vector schema, exact replay for
 `mean`, `cast`, exact unary fixed-point ops, concat/stack, exact quantization, and CUDA generic graph
 execution.
-
-## Recent Iterations
 
 ### Iteration 43: Explicit Fallback Reward Maturity Delay
 

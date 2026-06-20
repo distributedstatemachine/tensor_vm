@@ -485,12 +485,8 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
             tensor.scalar_mul(scalar)?
         }
         "transpose" => one_tensor_value(&args)?.transpose()?,
-        "sum" | "reduce_sum" => {
-            let axis = optional_usize_kwarg(&op.kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
-                "tensor ir execution requires explicit reduction dim",
-            ))?;
-            one_tensor_value(&args)?.reduce_sum(axis)?
-        }
+        "sum" | "reduce_sum" => reduce_tensor(one_tensor_value(&args)?, &op.kwargs, false)?,
+        "mean" => reduce_tensor(one_tensor_value(&args)?, &op.kwargs, true)?,
         "identity" => one_tensor_value(&args)?.clone(),
         "reshape" => reshape_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "broadcast" => broadcast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
@@ -512,6 +508,9 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "le" => compare_tensors(&args, |lhs, rhs| lhs <= rhs)?,
         "eq" => compare_tensors(&args, |lhs, rhs| lhs == rhs)?,
         "where" => where_tensor(&args)?,
+        "cast" => cast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "concat" => concat_tensors(&args, &op.kwargs)?,
+        "stack" => stack_tensors(&args, &op.kwargs)?,
         "full" => full_tensor(&op.kwargs)?,
         "arange" => arange_tensor(&op.kwargs)?,
         _ => {
@@ -521,6 +520,79 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
     };
     Ok(vec![RuntimeValue::Tensor(output)])
+}
+
+fn reduce_tensor(
+    tensor: &Tensor,
+    kwargs: &BTreeMap<String, IrValue>,
+    mean: bool,
+) -> Result<Tensor> {
+    let dim = optional_usize_kwarg(kwargs, "dim")?;
+    let keepdim = optional_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
+    let input_shape = tensor.shape();
+    let mut output_shape = input_shape.to_vec();
+    let reduce_count = if let Some(dim) = dim {
+        if dim >= input_shape.len() {
+            return Err(TvmError::InvalidReceipt("tensor ir reduction dim mismatch"));
+        }
+        let count = input_shape[dim];
+        if keepdim {
+            output_shape[dim] = 1;
+        } else {
+            output_shape.remove(dim);
+        }
+        count
+    } else {
+        if keepdim {
+            output_shape.fill(1);
+        } else {
+            output_shape = vec![1];
+        }
+        tensor.len()
+    };
+    if mean && reduce_count == 0 {
+        return Err(TvmError::InvalidReceipt("tensor ir mean over empty axis"));
+    }
+
+    let output_len = checked_usize_product(&output_shape)?;
+    let mut data = vec![0; output_len];
+    for (input_index, value) in tensor.as_slice().iter().enumerate() {
+        let output_index =
+            reduction_output_index(input_shape, &output_shape, dim, keepdim, input_index)?;
+        data[output_index] = field::add(data[output_index], *value);
+    }
+    if mean {
+        let inverse = field_inverse(reduce_count as Elem)?;
+        for value in &mut data {
+            *value = field::mul(*value, inverse);
+        }
+    }
+    Tensor::from_vec(output_shape, tensor.dtype(), data)
+}
+
+fn reduction_output_index(
+    input_shape: &[usize],
+    output_shape: &[usize],
+    dim: Option<usize>,
+    keepdim: bool,
+    input_index: usize,
+) -> Result<usize> {
+    let input_coords = unravel_index(input_shape, input_index)?;
+    let output_coords = match dim {
+        Some(dim) if keepdim => {
+            let mut coords = input_coords;
+            coords[dim] = 0;
+            coords
+        }
+        Some(dim) => input_coords
+            .into_iter()
+            .enumerate()
+            .filter_map(|(axis, coord)| (axis != dim).then_some(coord))
+            .collect(),
+        None if keepdim => vec![0; input_shape.len()],
+        None => vec![0],
+    };
+    ravel_index(output_shape, &output_coords)
 }
 
 fn reshape_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -658,6 +730,120 @@ fn arange_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
     Tensor::from_vec(vec![len], dtype, data)
 }
 
+fn cast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    Tensor::from_vec(
+        tensor.shape().to_vec(),
+        dtype_kwarg(kwargs, "dtype")?,
+        tensor.as_slice().to_vec(),
+    )
+}
+
+fn concat_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let tensors = tensor_values(values)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir concat requires explicit dim",
+    ))?;
+    let output_shape = infer_concat_shape_from_tensors(&tensors, dim)?;
+    let output_len = checked_usize_product(&output_shape)?;
+    let mut data = Vec::with_capacity(output_len);
+    let mut dim_starts = Vec::with_capacity(tensors.len());
+    let mut next_start = 0usize;
+    for tensor in &tensors {
+        dim_starts.push(next_start);
+        next_start = next_start
+            .checked_add(tensor.shape()[dim])
+            .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    }
+    for output_index in 0..output_len {
+        let coords = unravel_index(&output_shape, output_index)?;
+        let dim_coord = coords[dim];
+        let source_index = tensors
+            .iter()
+            .enumerate()
+            .find_map(|(index, tensor)| {
+                let start = dim_starts[index];
+                let end = start + tensor.shape()[dim];
+                (dim_coord >= start && dim_coord < end).then_some(index)
+            })
+            .ok_or(TvmError::InvalidReceipt("tensor ir concat index mismatch"))?;
+        let source = tensors[source_index];
+        let mut source_coords = coords;
+        source_coords[dim] -= dim_starts[source_index];
+        data.push(source.as_slice()[ravel_index(source.shape(), &source_coords)?]);
+    }
+    Tensor::from_vec(output_shape, tensors[0].dtype(), data)
+}
+
+fn stack_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let tensors = tensor_values(values)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir stack requires explicit dim",
+    ))?;
+    let output_shape = infer_stack_shape_from_tensors(&tensors, dim)?;
+    let output_len = checked_usize_product(&output_shape)?;
+    let mut data = Vec::with_capacity(output_len);
+    for output_index in 0..output_len {
+        let coords = unravel_index(&output_shape, output_index)?;
+        let source_index = coords[dim];
+        let source = tensors[source_index];
+        let source_coords = coords
+            .into_iter()
+            .enumerate()
+            .filter_map(|(axis, coord)| (axis != dim).then_some(coord))
+            .collect::<Vec<_>>();
+        data.push(source.as_slice()[ravel_index(source.shape(), &source_coords)?]);
+    }
+    Tensor::from_vec(output_shape, tensors[0].dtype(), data)
+}
+
+fn infer_concat_shape_from_tensors(tensors: &[&Tensor], dim: usize) -> Result<Vec<usize>> {
+    if tensors.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ));
+    }
+    let first = tensors[0];
+    if dim >= first.shape().len() {
+        return Err(TvmError::InvalidReceipt("tensor ir concat dim mismatch"));
+    }
+    let mut shape = first.shape().to_vec();
+    for tensor in &tensors[1..] {
+        if tensor.dtype() != first.dtype() || tensor.shape().len() != first.shape().len() {
+            return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+        }
+        for (axis, shape_dim) in shape.iter_mut().enumerate() {
+            if axis == dim {
+                *shape_dim = shape_dim
+                    .checked_add(tensor.shape()[axis])
+                    .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+            } else if tensor.shape()[axis] != first.shape()[axis] {
+                return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+            }
+        }
+    }
+    Ok(shape)
+}
+
+fn infer_stack_shape_from_tensors(tensors: &[&Tensor], dim: usize) -> Result<Vec<usize>> {
+    if tensors.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ));
+    }
+    let first = tensors[0];
+    if dim > first.shape().len() {
+        return Err(TvmError::InvalidReceipt("tensor ir stack dim mismatch"));
+    }
+    for tensor in &tensors[1..] {
+        if tensor.dtype() != first.dtype() || tensor.shape() != first.shape() {
+            return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+        }
+    }
+    let mut shape = first.shape().to_vec();
+    shape.insert(dim, tensors.len());
+    Ok(shape)
+}
+
 fn broadcast_value(tensor: &Tensor, output_shape: &[usize], output_index: usize) -> Result<Elem> {
     let mut coords = vec![0usize; output_shape.len()];
     let mut remainder = output_index;
@@ -702,6 +888,42 @@ fn broadcast_value(tensor: &Tensor, output_shape: &[usize], output_index: usize)
         ))
 }
 
+fn unravel_index(shape: &[usize], mut index: usize) -> Result<Vec<usize>> {
+    if shape.is_empty() {
+        if index == 0 {
+            return Ok(Vec::new());
+        }
+        return Err(TvmError::InvalidReceipt("tensor ir index mismatch"));
+    }
+    let mut coords = vec![0usize; shape.len()];
+    for axis in (0..shape.len()).rev() {
+        let dim = shape[axis];
+        if dim == 0 {
+            return Err(TvmError::InvalidReceipt("tensor ir zero-dim index"));
+        }
+        coords[axis] = index % dim;
+        index /= dim;
+    }
+    Ok(coords)
+}
+
+fn ravel_index(shape: &[usize], coords: &[usize]) -> Result<usize> {
+    if shape.len() != coords.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir index mismatch"));
+    }
+    let mut index = 0usize;
+    for (dim, coord) in shape.iter().zip(coords) {
+        if *coord >= *dim {
+            return Err(TvmError::InvalidReceipt("tensor ir index mismatch"));
+        }
+        index = index
+            .checked_mul(*dim)
+            .and_then(|value| value.checked_add(*coord))
+            .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    }
+    Ok(index)
+}
+
 fn one_tensor_value(values: &[RuntimeValue]) -> Result<&Tensor> {
     match values {
         [RuntimeValue::Tensor(tensor)] => Ok(tensor),
@@ -709,6 +931,18 @@ fn one_tensor_value(values: &[RuntimeValue]) -> Result<&Tensor> {
             "tensor ir expected tensor argument",
         )),
     }
+}
+
+fn tensor_values(values: &[RuntimeValue]) -> Result<Vec<&Tensor>> {
+    values
+        .iter()
+        .map(|value| match value {
+            RuntimeValue::Tensor(tensor) => Ok(tensor),
+            RuntimeValue::Field(_) => Err(TvmError::InvalidReceipt(
+                "tensor ir expected tensor arguments",
+            )),
+        })
+        .collect()
 }
 
 fn two_tensor_values(values: &[RuntimeValue]) -> Result<[&Tensor; 2]> {
@@ -1131,7 +1365,8 @@ fn infer_outputs(
                 scale: arg.scale,
             }
         }
-        "concat" | "stack" => infer_variadic_same(args)?,
+        "concat" => infer_concat_shape(args, kwargs)?,
+        "stack" => infer_stack_shape(args, kwargs)?,
         "full" => ValueShape {
             shape: shape_kwarg(kwargs, "shape")?,
             dtype: dtype_kwarg(kwargs, "dtype")?,
@@ -1192,16 +1427,59 @@ fn infer_sum(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Result<
     })
 }
 
-fn infer_variadic_same(args: &[ValueShape]) -> Result<ValueShape> {
+fn infer_concat_shape(
+    args: &[ValueShape],
+    kwargs: &BTreeMap<String, IrValue>,
+) -> Result<ValueShape> {
     if args.is_empty() {
         return Err(TvmError::InvalidReceipt(
             "tensor ir variadic op requires args",
         ));
     }
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir concat dim mismatch"))?;
+    if dim >= args[0].shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir concat dim mismatch"));
+    }
+    let mut output = args[0].clone();
+    for arg in &args[1..] {
+        same_dtype(&args[0], arg)?;
+        if arg.shape.len() != args[0].shape.len() {
+            return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+        }
+        for axis in 0..output.shape.len() {
+            if axis == dim {
+                output.shape[axis] = output.shape[axis]
+                    .checked_add(arg.shape[axis])
+                    .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+            } else if arg.shape[axis] != args[0].shape[axis] {
+                return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+            }
+        }
+    }
+    Ok(output)
+}
+
+fn infer_stack_shape(
+    args: &[ValueShape],
+    kwargs: &BTreeMap<String, IrValue>,
+) -> Result<ValueShape> {
+    if args.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ));
+    }
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir stack dim mismatch"))?;
+    if dim > args[0].shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir stack dim mismatch"));
+    }
     for arg in &args[1..] {
         same_tensor(&args[0], arg)?;
     }
-    Ok(args[0].clone())
+    let mut output = args[0].clone();
+    output.shape.insert(dim, args.len() as i64);
+    Ok(output)
 }
 
 fn one_arg(args: &[ValueShape]) -> Result<&ValueShape> {
@@ -1303,6 +1581,26 @@ fn signed_field(value: i64) -> Elem {
     let modulus = field::MODULUS as i128;
     let reduced = (value as i128).rem_euclid(modulus);
     reduced as Elem
+}
+
+fn field_inverse(value: Elem) -> Result<Elem> {
+    let value = field::normalize(value);
+    if value == 0 {
+        return Err(TvmError::InvalidReceipt("tensor ir division by zero"));
+    }
+    Ok(field_pow(value, field::MODULUS - 2))
+}
+
+fn field_pow(mut base: Elem, mut exponent: Elem) -> Elem {
+    let mut acc = 1;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            acc = field::mul(acc, base);
+        }
+        base = field::mul(base, base);
+        exponent >>= 1;
+    }
+    acc
 }
 
 fn arange_len(start: i64, end: i64, step: i64) -> Result<usize> {
@@ -2414,15 +2712,13 @@ mod tests {
             TvmError::InvalidReceipt("tensor ir op is not consensus admitted")
         );
 
-        let mut mean = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
-        mean.ops[0].op = "mean".to_owned();
-        mean.ops[0].args = vec![input_ref("a")];
-        mean.ops[0]
-            .kwargs
-            .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)));
-        mean.ops[0].out[0] = tensor_spec("mean", vec![2], DType::FieldElement, 0);
-        mean.outputs[0].value = op_ref(0);
-        let err = mean
+        let mut abs = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        abs.ops[0].op = "abs".to_owned();
+        abs.ops[0].args = vec![input_ref("a")];
+        abs.ops[0].kwargs.clear();
+        abs.ops[0].out[0] = tensor_spec("abs", vec![2, 3], DType::FieldElement, 0);
+        abs.outputs[0].value = op_ref(0);
+        let err = abs
             .execute_exact(&IrExecutionInputs {
                 tensors: BTreeMap::from([
                     (
@@ -2447,6 +2743,130 @@ mod tests {
             err,
             TvmError::InvalidReceipt("tensor ir op is not executable by exact interpreter")
         );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_mean_cast_concat_and_stack() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("a", vec![2, 3], DType::FieldElement, 0),
+                tensor_spec("b", vec![2, 3], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "mean".to_owned(),
+                    args: vec![input_ref("a")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![tensor_spec("row_mean", vec![2], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "cast".to_owned(),
+                    args: vec![op_ref(0)],
+                    kwargs: BTreeMap::from([(
+                        "dtype".to_owned(),
+                        IrValue::Literal(IrLiteral::String("int64".to_owned())),
+                    )]),
+                    out: vec![tensor_spec("row_mean_i64", vec![2], DType::Int64, 0)],
+                },
+                OpNode {
+                    id: 2,
+                    op: "concat".to_owned(),
+                    args: vec![input_ref("a"), input_ref("b")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![tensor_spec(
+                        "rows_concat",
+                        vec![4, 3],
+                        DType::FieldElement,
+                        0,
+                    )],
+                },
+                OpNode {
+                    id: 3,
+                    op: "stack".to_owned(),
+                    args: vec![input_ref("a"), input_ref("b")],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![tensor_spec(
+                        "paired_rows",
+                        vec![2, 2, 3],
+                        DType::FieldElement,
+                        0,
+                    )],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "row_mean_i64".to_owned(),
+                    value: op_ref(1),
+                },
+                GraphOutput {
+                    name: "rows_concat".to_owned(),
+                    value: op_ref(2),
+                },
+                GraphOutput {
+                    name: "paired_rows".to_owned(),
+                    value: op_ref(3),
+                },
+            ],
+        };
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "a".to_owned(),
+                        Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
+                            .unwrap(),
+                    ),
+                    (
+                        "b".to_owned(),
+                        Tensor::from_vec(
+                            vec![2, 3],
+                            DType::FieldElement,
+                            vec![7, 8, 9, 10, 11, 12],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["row_mean_i64"],
+            Tensor::from_vec(vec![2], DType::Int64, vec![2, 5]).unwrap()
+        );
+        assert_eq!(
+            execution.outputs["rows_concat"],
+            Tensor::from_vec(
+                vec![4, 3],
+                DType::FieldElement,
+                vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12]
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            execution.outputs["paired_rows"],
+            Tensor::from_vec(
+                vec![2, 2, 3],
+                DType::FieldElement,
+                vec![1, 2, 3, 7, 8, 9, 4, 5, 6, 10, 11, 12]
+            )
+            .unwrap()
+        );
+        assert_eq!(execution.op_traces.len(), 4);
     }
 
     #[test]
@@ -2635,6 +3055,22 @@ mod tests {
         ]);
         arange.ops[0].out[0] = tensor_spec("bad_range", vec![5], DType::FieldElement, 0);
         assert!(arange.validate_for_consensus().is_err());
+
+        let mut concat = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        concat.ops[0].op = "concat".to_owned();
+        concat.ops[0].args = vec![input_ref("a"), input_ref("a")];
+        concat.ops[0].kwargs =
+            BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]);
+        concat.ops[0].out[0] = tensor_spec("bad_concat", vec![2, 3], DType::FieldElement, 0);
+        assert!(concat.validate_for_consensus().is_err());
+
+        let mut stack = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        stack.ops[0].op = "stack".to_owned();
+        stack.ops[0].args = vec![input_ref("a"), input_ref("a")];
+        stack.ops[0].kwargs =
+            BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(3)))]);
+        stack.ops[0].out[0] = tensor_spec("bad_stack", vec![2, 2, 3], DType::FieldElement, 0);
+        assert!(stack.validate_for_consensus().is_err());
     }
 
     #[test]
