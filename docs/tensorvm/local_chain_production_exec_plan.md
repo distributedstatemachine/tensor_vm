@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 42, state-rooted arbitrary Tensor IR graph-body admission and fetch.
-- Current status: Iteration 42 implementation and validation passed locally on June 20, 2026; feature
-  commit/push evidence is pending.
+- Active feature: none; Iteration 42 is complete.
+- Current status: Iteration 42 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,10 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit, push, and record evidence for Iteration 42; then continue with arbitrary
-  graph-backed jobs/receipts, wider admitted-registry executor/verifier coverage, full VRF/drand
-  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, or the Docker
-  `/health` blocker if the environment changes.
+- Next action: continue with arbitrary graph-backed jobs/receipts, wider admitted-registry
+  executor/verifier coverage, full VRF/drand commit-reveal lifecycle, multi-validator proposer
+  competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
@@ -97,8 +95,8 @@ Validation completed locally:
   and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
-- Feature commit: pending.
-- Push result: pending.
+- Feature commit: `9a32039` (`Admit arbitrary Tensor IR graph bodies`).
+- Push result: `b5fd81d..9a32039  main -> main` on `origin/main`.
 
 Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt production through
 `TensorGraph::execute_exact`, const-blob fetching, generic graph P2P gossip, full admitted-registry exact
@@ -198,8 +196,8 @@ Latest current-iteration evidence:
   - `cargo test --workspace --release`: passed with 14 `experiments`, 358 `tensor_vm`, 1 local CPU
     Compose, 8 `tvmd_cli`, 31 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
-- Iteration 42 feature commit: pending.
-- Iteration 42 push result: pending.
+- Iteration 42 feature commit: `9a32039` (`Admit arbitrary Tensor IR graph bodies`).
+- Iteration 42 push result: `b5fd81d..9a32039  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
