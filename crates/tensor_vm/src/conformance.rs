@@ -328,6 +328,16 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2],
         ),
         vector(
+            "field-sum-axis1-v1",
+            "sum",
+            "B",
+            &[&[2, 3]],
+            &[("axis", 1)],
+            &[&[p - 1, 2, 3, 4, p - 2, 6]],
+            &[4, 8],
+            &[2],
+        ),
+        vector(
             "field-mean-axis1-v1",
             "mean",
             "B",
@@ -601,7 +611,7 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
                 data,
             )
         }
-        "reduce_sum" => tensors[0].reduce_sum(param(vector, "axis")? as usize),
+        "sum" | "reduce_sum" => tensors[0].reduce_sum(param(vector, "axis")? as usize),
         "mean" => mean_tensor(&tensors[0], param(vector, "axis")? as usize),
         "concat" => concat_tensors(&tensors, param(vector, "axis")? as usize),
         "stack" => stack_tensors(&tensors, param(vector, "axis")? as usize),
@@ -1511,6 +1521,7 @@ mod tests {
         assert!(op_names.contains("transpose"));
         assert!(op_names.contains("reshape"));
         assert!(op_names.contains("broadcast"));
+        assert!(op_names.contains("sum"));
         assert!(op_names.contains("mean"));
         assert!(op_names.contains("concat"));
         assert!(op_names.contains("stack"));
@@ -1554,6 +1565,7 @@ mod tests {
             "transpose",
             "reshape",
             "broadcast",
+            "sum",
             "reduce_sum",
             "mean",
             "concat",
@@ -1563,6 +1575,14 @@ mod tests {
             "arange",
             "quantize_int8_per_channel",
             "dequantize_int8_per_channel",
+            "quantize_pack_int8",
+            "unpack_dequantize_int8",
+            "gt",
+            "lt",
+            "ge",
+            "le",
+            "eq",
+            "where",
             "mse_loss",
         ] {
             assert!(profile.passes(op), "missing conformance pass for {op}");

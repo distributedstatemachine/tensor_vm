@@ -5,7 +5,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 55, uniform proposer reward maturity delay, implemented and validated;
+- Active feature: Iteration 56, `sum` conformance admission vector, implemented and validated;
   commit/push pending.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
@@ -14,8 +14,10 @@ feature-sized iterations are summarized after validation and push, and older det
   int8 payload bytes. Iteration 52 feature commit `1b86f7f` and evidence commit `0387246` are pushed.
   Iteration 53 feature commit `72e16b8` and evidence commit `fae9faf` are pushed. Iteration 54 feature
   commit `f5dd68b` is pushed and adds mixed-dtype comparison and `where` coverage to the conformance suite
-  and verifier profile-gating tests. Iteration 55 will make useful and fallback proposer rewards use the
-  same full reward-settlement plus challenge-window maturity delay.
+  and verifier profile-gating tests. Iteration 55 feature commit `7094319` is pushed and makes useful and
+  fallback proposer rewards use the same full reward-settlement plus challenge-window maturity delay.
+  Iteration 56 adds explicit `sum` conformance coverage for the admitted registry spelling that
+  aliases `reduce_sum` at execution time.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -23,13 +25,13 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit/push Iteration 55, then select the next goal-aligned implementation slice.
+- Next action: commit/push Iteration 56, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 54 first and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 56 first and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -38,12 +40,98 @@ feature-sized iterations are summarized after validation and push, and older det
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
 | Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
-| Per-op `F_p` conformance vectors | Partial; Iteration 54 mixed-dtype comparison/`where` vectors implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, and Iteration 54 comparison/selection vectors; CPU pass profile; default CUDA non-admission | Add remaining admitted-op vectors and CUDA conformance evidence |
+| Per-op `F_p` conformance vectors | Partial; Iteration 56 `sum` vector implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `sum`/`mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, and Iteration 54 comparison/selection vectors; CPU pass profile; default CUDA non-admission | Add remaining admitted-op vectors and CUDA conformance evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial; Iteration 55 uniform proposer reward delay implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; useful and fallback proposer claims both use full reward maturity; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 56: Sum Conformance Admission Vector
+
+Feature capability: the conformance suite covers the admitted `sum` registry spelling directly, not only
+the executable `reduce_sum` alias. Graph receipt verification can therefore reject a `sum` graph when the
+runtime profile lacks a `sum` pass, matching `upow.md` §3.3/§16's per-op admission model.
+
+Readiness requirements covered:
+- `upow.md` §3.3 and §16: every admitted exact op spelling needs deterministic conformance evidence before
+  runtimes can claim receipt eligibility.
+- `upow.md` §4.7-§4.9: `sum` is an admitted exact Tier-B reduction and should not rely on alias-only
+  coverage.
+- `mvp_spec.md` §35: validators must reject otherwise-valid receipts when required op conformance is
+  missing.
+
+Canonical owner: `conformance` owns per-op vector execution and suite hashing; `ir::TensorGraph` owns
+`sum`/`reduce_sum` exact execution semantics; `verify` consumes conformance profiles for graph receipt
+admission.
+Adapter callers: CPU/CUDA runtime profile reporting and graph/TensorOp/LinearTrainingStep verifiers consume
+the conformance profile but do not define op equivalence.
+Old shortcut being removed: `sum` was consensus-admitted in the frozen registry and executable in the IR,
+but conformance evidence only named `reduce_sum`, so a runtime could not independently advertise a `sum`
+pass.
+Regression test that proves the shortcut is gone: conformance tests require `sum` in the CPU passed-op set,
+and a graph verifier regression rejects an otherwise-valid `sum` graph receipt when `sum` is removed from
+the profile.
+Behavior with local synthetic block production disabled: unchanged; this is deterministic runtime
+admission metadata only.
+Behavior for producer and non-producer roles: unchanged; all roles consume the same suite hash/profile.
+Structured evidence source: conformance vector tests, CPU runtime profile tests, and graph verifier profile
+gating tests.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p or storage codec changes; only the suite hash and vector set change.
+
+Parallel subagents:
+- Not used for this narrow conformance alias-coverage slice; parent owns code, tests, and docs.
+
+Implementation workstreams:
+- Add a `sum` vector matching exact reduction semantics.
+- Teach the conformance executor to execute `sum` through the same deterministic path as `reduce_sum`.
+- Add verifier coverage proving `sum` graph receipts require a `sum` profile pass.
+- Update status/coverage docs so `sum` is no longer alias-only coverage.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm conformance::tests`
+- `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_sum_receipt`
+- `cargo test -p tensor_vm runtime::tests::cpu_backend_reports_passing_conformance_profile`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: the conformance suite includes both `sum` and `reduce_sum` admitted
+spellings, CPU reference passes both, graph verification fails when the `sum` pass is missing, and docs no
+longer imply reduction conformance is only through `reduce_sum`.
+
+Out of scope: new op admission, CUDA pass evidence, `einsum`, `gather`/`scatter`/`embedding`
+index-consistency proofs, and low-level packed tensor storage APIs.
+
+Implementation summary:
+- Added `field-sum-axis1-v1`, covering the admitted `sum` spelling with exact deterministic row-major
+  reduction semantics.
+- Routed conformance execution for `sum` through the same exact reduction path as `reduce_sum`.
+- Extended conformance profile tests to require `sum` plus the previously added pack/comparison/selection
+  ops in the CPU passed-op set.
+- Added `verify::tests::graph_verifier_accepts_sum_receipt`, proving a valid graph receipt using `sum`
+  passes with the CPU profile and fails when the `sum` pass is removed.
+- Updated implementation status, coverage matrix, and tarpaulin status docs for Iteration 56.
+
+Validation evidence:
+- First gate: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused conformance: `cargo test -p tensor_vm conformance::tests` passed.
+- Focused verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_sum_receipt` passed.
+- Focused runtime profile: `cargo test -p tensor_vm runtime::tests::cpu_backend_reports_passing_conformance_profile` passed.
+- Format/diff: `cargo fmt --check --all` and `git diff --check` passed.
+- Broad debug: `cargo test -p tensor_vm` passed 380 library tests plus integration/doc checks.
+- Lint: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Broad release: `cargo test --workspace --release` passed.
+- Final gate: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is
+  not installed (`error: no such command: tarpaulin`).
 
 ### Iteration 55: Uniform Proposer Reward Maturity Delay
 
