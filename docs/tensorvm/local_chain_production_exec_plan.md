@@ -109,7 +109,8 @@ Validation:
 - Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
-- Feature commit `b89bb18` pushed `42365a2..b89bb18 main -> main`.
+- Feature commit `b89bb18` pushed `42365a2..b89bb18 main -> main`; evidence commit `4c4d527`
+  pushed `b89bb18..4c4d527 main -> main`.
 - Status/coverage/exec docs clarifying that dtype/registry foundation is implemented while exact
   quantization execution/conformance remains open.
 
@@ -596,7 +597,8 @@ passed; tarpaulin remained blocked by missing `cargo-tarpaulin`. Feature commit 
 - Latest broad gates: `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
   passed after `cargo fmt --all`.
-- Latest feature commit: `b89bb18` pushed `42365a2..b89bb18 main -> main`.
+- Latest feature commit: `b89bb18` pushed `42365a2..b89bb18 main -> main`; evidence commit
+  `4c4d527` pushed `b89bb18..4c4d527 main -> main`.
 - Current tarpaulin blocker:
 
 ```text
