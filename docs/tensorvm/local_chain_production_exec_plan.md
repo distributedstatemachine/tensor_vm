@@ -5,9 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 25, graph-body propagation/storage.
-- Current status: Iteration 25 is implemented and locally validated. Feature commit/push evidence is still
-  pending.
+- Active feature: none. The next feature-sized slice is delayed challenge reward finality or the next
+  highest-priority v0 gap from the readiness matrix.
+- Current status: Iteration 25, graph-body propagation/storage, is implemented, locally validated, and
+  pushed as `0363bb6` (`Store Tensor IR graph bodies`).
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,8 +16,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 25, record push evidence, then start generic IR execution or the
-  next highest-priority v0 gap.
+- Next action: start delayed challenge reward finality, generic IR execution, or the next highest-priority
+  v0 gap.
 
 ## Readiness Matrix
 
@@ -111,6 +112,11 @@ Validation:
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
 
+Push evidence:
+- Feature commit: `0363bb6` (`Store Tensor IR graph bodies`).
+- Remote/branch: `origin/main`.
+- Push result: `b0fe92c..0363bb6  main -> main`.
+
 Expected observable evidence:
 - Chain state exposes nonempty canonical program bytes for submitted TensorOp and LinearTrainingStep jobs.
 - State roots and node-store snapshots commit and roundtrip the program-body registry.
@@ -201,6 +207,8 @@ Latest current-iteration evidence:
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
   - `cargo test --workspace --release`: passed.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
+- Iteration 25 feature commit: `0363bb6` (`Store Tensor IR graph bodies`).
+- Iteration 25 push result: `b0fe92c..0363bb6  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
