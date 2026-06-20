@@ -1,3 +1,7 @@
+use crate::conformance::{
+    ConformanceProfile, conformance_suite_hash, cpu_reference_conformance_profile,
+    ensure_linear_training_step_conformance, ensure_tensor_op_job_conformance,
+};
 use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::jobs::{
@@ -44,6 +48,7 @@ pub struct TensorOpVerificationReport {
     pub full_freivalds_passed: bool,
     pub sampled_rows_checked: usize,
     pub data_availability_passed: bool,
+    pub conformance_suite_hash: Hash,
     pub checks_root: Hash,
 }
 
@@ -55,7 +60,29 @@ pub struct LinearVerificationReport {
     pub backward_passed: bool,
     pub optimizer_passed: bool,
     pub data_availability_passed: bool,
+    pub conformance_suite_hash: Hash,
     pub checks_root: Hash,
+}
+
+pub struct TensorOpConformanceVerification<'a> {
+    pub job: &'a MatmulJob,
+    pub receipt: &'a TensorOpReceipt,
+    pub a: &'a Tensor,
+    pub b: &'a Tensor,
+    pub c: &'a Tensor,
+    pub validation_seed: &'a Hash,
+    pub params: &'a FreivaldsParams,
+    pub conformance_profile: &'a ConformanceProfile,
+}
+
+pub struct LinearConformanceVerification<'a> {
+    pub job: &'a LinearTrainingStepJob,
+    pub receipt: &'a LinearTrainingStepReceipt,
+    pub weights_before: &'a Tensor,
+    pub output: &'a LinearTrainingStepOutput,
+    pub validation_seed: &'a Hash,
+    pub params: &'a FreivaldsParams,
+    pub conformance_profile: &'a ConformanceProfile,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -197,6 +224,33 @@ pub fn verify_tensor_op(
     validation_seed: &Hash,
     params: &FreivaldsParams,
 ) -> Result<TensorOpVerificationReport> {
+    let profile = cpu_reference_conformance_profile()?;
+    verify_tensor_op_with_conformance_profile(TensorOpConformanceVerification {
+        job,
+        receipt,
+        a,
+        b,
+        c,
+        validation_seed,
+        params,
+        conformance_profile: &profile,
+    })
+}
+
+pub fn verify_tensor_op_with_conformance_profile(
+    input: TensorOpConformanceVerification<'_>,
+) -> Result<TensorOpVerificationReport> {
+    let TensorOpConformanceVerification {
+        job,
+        receipt,
+        a,
+        b,
+        c,
+        validation_seed,
+        params,
+        conformance_profile,
+    } = input;
+    ensure_tensor_op_job_conformance(job, conformance_profile)?;
     if receipt.job_id != job.job_id {
         return Err(TvmError::InvalidReceipt("job id mismatch"));
     }
@@ -251,6 +305,7 @@ pub fn verify_tensor_op(
             &[full_freivalds_passed as u8],
             &[sampled_passed as u8],
             &(params.audit_rows as u64).to_le_bytes(),
+            &conformance_suite_hash(),
         ],
     );
     Ok(TensorOpVerificationReport {
@@ -258,6 +313,7 @@ pub fn verify_tensor_op(
         full_freivalds_passed,
         sampled_rows_checked: params.audit_rows.min(job.m),
         data_availability_passed,
+        conformance_suite_hash: conformance_suite_hash(),
         checks_root,
     })
 }
@@ -270,6 +326,31 @@ pub fn verify_linear_training_step(
     validation_seed: &Hash,
     params: &FreivaldsParams,
 ) -> Result<LinearVerificationReport> {
+    let profile = cpu_reference_conformance_profile()?;
+    verify_linear_training_step_with_conformance_profile(LinearConformanceVerification {
+        job,
+        receipt,
+        weights_before,
+        output,
+        validation_seed,
+        params,
+        conformance_profile: &profile,
+    })
+}
+
+pub fn verify_linear_training_step_with_conformance_profile(
+    input: LinearConformanceVerification<'_>,
+) -> Result<LinearVerificationReport> {
+    let LinearConformanceVerification {
+        job,
+        receipt,
+        weights_before,
+        output,
+        validation_seed,
+        params,
+        conformance_profile,
+    } = input;
+    ensure_linear_training_step_conformance(job, conformance_profile)?;
     if receipt.job_id != job.job_id {
         return Err(TvmError::InvalidReceipt("job id mismatch"));
     }
@@ -372,6 +453,7 @@ pub fn verify_linear_training_step(
             &[backward_passed as u8],
             &[optimizer_passed as u8],
             &[loss_passed as u8],
+            &conformance_suite_hash(),
         ],
     );
     Ok(LinearVerificationReport {
@@ -381,6 +463,7 @@ pub fn verify_linear_training_step(
         backward_passed,
         optimizer_passed,
         data_availability_passed,
+        conformance_suite_hash: conformance_suite_hash(),
         checks_root,
     })
 }
@@ -497,6 +580,49 @@ mod tests {
         let report =
             verify_tensor_op(&job, &bad, &a, &b, &c, &seed, &FreivaldsParams::default()).unwrap();
         assert_eq!(report.result, VerificationResult::Invalid);
+    }
+
+    #[test]
+    fn tensor_op_verifier_requires_conformance_profile() {
+        let beacon = hash_bytes(b"test", &[b"beacon"]);
+        let job = MatmulJob::synthetic(0, 0, 4, 3, 2, &beacon, 10);
+        let miner = address(b"miner");
+        let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        let seed = hash_bytes(b"test", &[b"validation"]);
+        let params = FreivaldsParams::default();
+        let report = verify_tensor_op(&job, &receipt, &a, &b, &c, &seed, &params).unwrap();
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        let empty = ConformanceProfile::empty_for_testing();
+        assert_eq!(
+            verify_tensor_op_with_conformance_profile(TensorOpConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                a: &a,
+                b: &b,
+                c: &c,
+                validation_seed: &seed,
+                params: &params,
+                conformance_profile: &empty,
+            }),
+            Err(TvmError::InvalidReceipt("conformance suite unavailable"))
+        );
+
+        let mut missing_matmul = cpu_reference_conformance_profile().unwrap();
+        missing_matmul.passed_ops.remove("matmul");
+        assert_eq!(
+            verify_tensor_op_with_conformance_profile(TensorOpConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                a: &a,
+                b: &b,
+                c: &c,
+                validation_seed: &seed,
+                params: &params,
+                conformance_profile: &missing_matmul,
+            }),
+            Err(TvmError::InvalidReceipt("required op conformance missing"))
+        );
     }
 
     #[test]
@@ -720,6 +846,67 @@ mod tests {
         .unwrap();
         assert_eq!(report.result, VerificationResult::Invalid);
         assert!(!report.optimizer_passed);
+    }
+
+    #[test]
+    fn linear_training_verifier_requires_conformance_profile() {
+        let seed = hash_bytes(b"test", &[b"batch"]);
+        let weights =
+            Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let job = LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+            model_id: hash_bytes(b"test", &[b"model"]),
+            step: 0,
+            batch_seed: seed,
+            weight_root_before: weights.commitment_root(),
+            input_shape: vec![4, 3],
+            weight_shape: vec![3, 2],
+            target_shape: vec![4, 2],
+            lr: 3,
+            deadline_block: 10,
+        });
+        let (receipt, output) =
+            LinearTrainingStepReceipt::from_job(&job, address(b"miner"), &weights, 1, 5).unwrap();
+        let validation_seed = hash_bytes(b"test", &[b"validation"]);
+        let params = FreivaldsParams::default();
+        let report = verify_linear_training_step(
+            &job,
+            &receipt,
+            &weights,
+            &output,
+            &validation_seed,
+            &params,
+        )
+        .unwrap();
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        let empty = ConformanceProfile::empty_for_testing();
+        assert_eq!(
+            verify_linear_training_step_with_conformance_profile(LinearConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                weights_before: &weights,
+                output: &output,
+                validation_seed: &validation_seed,
+                params: &params,
+                conformance_profile: &empty,
+            }),
+            Err(TvmError::InvalidReceipt("conformance suite unavailable"))
+        );
+
+        let mut missing_sub = cpu_reference_conformance_profile().unwrap();
+        missing_sub.passed_ops.remove("sub");
+        assert_eq!(
+            verify_linear_training_step_with_conformance_profile(LinearConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                weights_before: &weights,
+                output: &output,
+                validation_seed: &validation_seed,
+                params: &params,
+                conformance_profile: &missing_sub,
+            }),
+            Err(TvmError::InvalidReceipt("required op conformance missing"))
+        );
     }
 
     #[test]

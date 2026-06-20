@@ -316,6 +316,7 @@ mod tests {
                 full_freivalds_passed: true,
                 sampled_rows_checked: 1,
                 data_availability_passed: false,
+                conformance_suite_hash: crate::conformance::conformance_suite_hash(),
                 checks_root,
             }),
             "data unavailable"
@@ -326,6 +327,7 @@ mod tests {
                 full_freivalds_passed: true,
                 sampled_rows_checked: 1,
                 data_availability_passed: true,
+                conformance_suite_hash: crate::conformance::conformance_suite_hash(),
                 checks_root,
             }),
             "receipt invalid"

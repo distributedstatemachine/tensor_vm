@@ -43,8 +43,24 @@ validated graph ID. Focused evidence: `ir::tests::matmul_graph_has_stable_canoni
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
 `jobs::tests::linear_receipt_commits_to_learning_step`.
 
-Remaining Tensor IR gaps: arbitrary graph body propagation/storage, generic IR execution, and the per-op
-`F_p` conformance vector suite that gates runtime/CUDA receipt acceptance are not complete.
+The local reference also has a deterministic `F_p` conformance vector gate for the current executable
+admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `scalar_mul`,
+`transpose`, `reduce_sum`, `matmul`, and `mse_loss`. The suite has a stable hash, the CPU reference backend
+must pass it through `runtime::backend_conformance_profile`, and `verify_tensor_op` /
+`verify_linear_training_step` reject otherwise-valid receipts when their required conformance profile is
+unavailable or missing an op. Focused evidence:
+`conformance::tests::conformance_vectors_are_stable_and_cover_current_ops`,
+`conformance::tests::cpu_reference_passes_all_vectors`,
+`conformance::tests::required_conformance_gates_current_jobs`,
+`runtime::tests::cpu_backend_reports_passing_conformance_profile`,
+`runtime::tests::gpu_backend_reports_device_and_requires_cuda_kernels`,
+`verify::tests::tensor_op_verifier_requires_conformance_profile`, and
+`verify::tests::linear_training_verifier_requires_conformance_profile`.
+
+Remaining Tensor IR/conformance gaps: arbitrary graph body propagation/storage, generic IR execution,
+conformance vectors for the wider admitted registry that is not yet executable by a generic interpreter,
+and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment. Tier-C and
+transcendental/order-dependent ops remain registry vocabulary only and are still gated out of consensus.
 
 ## Local CPU Compose Gate
 

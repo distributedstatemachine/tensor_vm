@@ -25,6 +25,11 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   structural validation, Tier-C vocabulary that is carried but rejected for consensus admission, and
   canonical TensorOp/LinearTrainingStep graph constructors. Current TensorOp and LinearTrainingStep
   receipts bind their `program_hash` to the validated IR `graph_id`.
+- Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
+  and LinearTrainingStep (`add`, `sub`, `mul`, `scalar_mul`, `transpose`, `reduce_sum`, `matmul`, and
+  `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA
+  non-admission, and receipt verification gates that reject otherwise-valid TensorOp or LinearTrainingStep
+  receipts when the required conformance profile is unavailable or missing an op.
 - Tensor descriptors, Merkle commitments, chunk openings, and row access
 - Synthetic matmul jobs, TensorOp receipts, and trace commitments
 - Full-output Freivalds verification and row-sampled audit checks

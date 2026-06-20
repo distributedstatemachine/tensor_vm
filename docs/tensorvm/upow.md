@@ -87,7 +87,11 @@ Consensus-critical computation MUST be bit-exact reproducible across machines. V
 ### 3.3 Why this matters
 Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisection) is only sound if all honest nodes agree on every bit. The fixed-point/field contract is what makes "anyone can recompute one op and rule on it" possible. **This is the single hardest engineering constraint in the system; everything else depends on it.**
 
-> TODO: publish a conformance test vector suite (per-op input→output in `F_p`) that any runtime (CPU reference, CUDA miner) must pass before its receipts are accepted.
+> Status: the local reference now publishes a conformance vector suite for the current executable exact
+> `F_p` ops used by TensorOp and LinearTrainingStep, and receipt verification gates those current jobs on
+> the matching suite profile. Broader admitted-registry vectors, generic graph execution coverage, CUDA
+> pass evidence, and Tier-C/transcendental vector references remain TODO before claiming complete §3.3
+> coverage for every runtime.
 
 ---
 
@@ -532,7 +536,9 @@ This section is non-normative guidance on how the spec components partition into
 
 ## 16. Open Problems / TODO
 
-- [ ] **Determinism conformance suite**: per-op `F_p` test vectors any runtime must pass (§3.3). Blocking for safety.
+- [~] **Determinism conformance suite**: current executable TensorOp/LinearTrainingStep exact-op `F_p`
+  vectors exist and gate those receipt verifiers; broader admitted-op and CUDA/Tier-C coverage remains
+  blocking for full §3.3 safety.
 - [ ] Exact `F_p` choice and fixed-point scale discipline (range, rescale-after-mul rounding, saturation).
 - [ ] Which Tier-B ops have *sound* random-linear checks vs. must use fraud proofs; index-consistency proofs for `gather`/`scatter`/`embedding` (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).

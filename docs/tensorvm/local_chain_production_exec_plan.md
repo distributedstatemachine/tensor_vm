@@ -5,9 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none. The next feature-sized slice is the per-op `F_p` conformance vector suite.
-- Current status: Gate 0 for the Iteration 23 resumed work passed first on June 20, 2026. Iteration 23
-  focused and broad validation passed except for the standing missing `cargo-tarpaulin` tool blocker.
+- Active feature: Iteration 24, per-op `F_p` conformance vector gate.
+- Current status: Gate 0 for the Iteration 24 resumed work passed first on June 20, 2026. Iteration 24 is
+  implemented and validated locally except for the standing missing `cargo-tarpaulin` tool blocker; commit
+  and push are in progress.
 - Latest completed feature: Iteration 23, delayed receipt reward finality, is implemented and pushed as
   `388c4d6` (`Delay receipt reward finality`). Miner and validator receipt rewards now settle into
   state-rooted pending claims, block inclusion delays claim maturity through the reward-settlement delay
@@ -31,7 +32,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: start the per-op `F_p` conformance vector suite.
+- Next action: commit and push Iteration 24, then start graph-body propagation/storage or the next
+  highest-priority v0 gap from the readiness matrix.
 
 ## Readiness Matrix
 
@@ -44,13 +46,134 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, and block votes | Extend only through shared codecs/events when IR records become networked |
 | Canonical useful-verification block validity | Partially complete | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and local check challenges | Remaining: full transcript disputes, network/RPC challenge propagation, exact replayable snapshots, live validator proposer networking |
-| Tensor IR graph language | Foundation implemented/pushed | `8e17789`; `ir::TensorGraph`, canonical JSON, `graph_id`, frozen op registry, structural validation, Tier-C consensus gating, and current TensorOp/LinearTrainingStep `program_hash` binding to IR graph IDs; `cargo test -p tensor_vm --lib ir -- --nocapture`, `cargo test -p tensor_vm --lib jobs -- --nocapture`, and `cargo test -p tensor_vm --lib` passed | Next add conformance vectors and graph-body propagation/storage |
-| Per-op `F_p` conformance vectors | Missing | `upow.md` §3.3 marks this blocking for runtime admission | Implement after IR foundation so vectors can bind to registry ops |
+| Tensor IR graph language | Foundation implemented/pushed | `8e17789`; `ir::TensorGraph`, canonical JSON, `graph_id`, frozen op registry, structural validation, Tier-C consensus gating, current TensorOp/LinearTrainingStep `program_hash` binding to IR graph IDs, and Iteration 24 current-job conformance vectors | Next add graph-body propagation/storage and generic IR execution |
+| Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Iteration 24 added deterministic vectors for current executable admitted ops, a stable suite hash, CPU backend pass reporting, default CUDA non-admission, and TensorOp/LinearTrainingStep verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
 | Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, local challenge penalties, and challenge voiding for pending receipt claims exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 24: Per-Op `F_p` Conformance Vector Gate
+
+Feature capability:
+Add a deterministic conformance vector suite for the admitted reference `F_p` ops used by current v0
+canonical jobs, expose a stable suite hash, require the CPU reference backend to pass those vectors, and
+gate receipt verification on the relevant job program's conformance profile. CUDA/GPU admission remains
+gated unless compiled kernels can pass the same suite.
+
+Readiness requirements covered:
+- `upow.md` §3.3 and §16 determinism conformance suite for per-op input-to-output vectors.
+- `upow.md` §4.8 canonical `F_p` semantics for exact admitted ops and Tier-C consensus gating.
+- `goal.md` known gap: per-op `F_p` conformance test-vector suite gating receipt acceptance.
+- `mvp_spec.md` §4.1, §8.3, §32, and Acceptance Criteria 1, 2, 8, 10 deterministic reference runtime
+  evidence.
+
+Files/modules likely touched:
+- `crates/tensor_vm/src/conformance.rs` (new) and `crates/tensor_vm/src/lib.rs`
+- `crates/tensor_vm/src/runtime.rs`, `crates/tensor_vm/src/verify.rs`, and focused tests
+- `docs/tensorvm/coverage_matrix.md`, `docs/tensorvm/implementation_status.md`,
+  `docs/tensorvm/tarpaulin_report.md`, and this plan
+
+Parallel subagents to run:
+- `readiness-mapper`: map conformance vectors to v0 readiness and docs/status boundaries.
+- `tensorvm-codebase-explorer`: identify the safest production API and admission points.
+- `tensorvm-test-coverage-explorer`: identify existing tests and missing conformance/gating coverage.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns all file edits because the change crosses runtime, verification, exports, and docs.
+- Subagents remain read-only reviewers.
+
+Tests/checkers/docs to add or update:
+- Unit tests for vector determinism, suite-hash stability, vector coverage of admitted current-job ops,
+  CPU backend pass, default-build CUDA non-admission, and verifier rejection when required conformance is
+  missing.
+- Runtime tests should prove CUDA admission is not claimed in default builds.
+- Status, coverage, Tarpaulin, and spec progress docs updated without claiming full arbitrary-graph
+  execution or all Tier-B/Tier-C vector coverage.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm --lib conformance -- --nocapture`
+- `cargo test -p tensor_vm --lib runtime -- --nocapture`
+- `cargo test -p tensor_vm --lib verify::tests -- --nocapture`
+- `cargo test -p tensor_vm --lib jobs -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `git diff --check`
+- `cargo tarpaulin --workspace --offline` (expected blocked here unless `cargo-tarpaulin` is installed)
+
+Implementation summary:
+- Added `crates/tensor_vm/src/conformance.rs` with deterministic `F_p` vectors for current executable
+  admitted ops used by TensorOp and LinearTrainingStep: `add`, `sub`, `mul`, `scalar_mul`, `transpose`,
+  `reduce_sum`, `matmul`, and `mse_loss`.
+- Added a stable conformance suite hash and `ConformanceProfile` pass set.
+- Added `runtime::backend_conformance_profile`; CPU reference reports the conformance profile, while the
+  default non-CUDA build rejects GPU conformance with `cuda kernels not compiled`.
+- Added TensorOp and LinearTrainingStep verifier gates. The default verifier path derives the CPU reference
+  profile, and explicit profile helpers reject otherwise-valid receipts when the suite is unavailable or a
+  required op is missing.
+- Updated status, coverage, completion-audit, Tarpaulin, and `upow.md` docs with the current-job scope and
+  remaining broader conformance gaps.
+
+Validation:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo test -p tensor_vm --lib conformance -- --nocapture` passed with 6 filtered tests including
+  conformance, runtime, and verifier conformance-profile tests.
+- `cargo test -p tensor_vm --lib runtime -- --nocapture` passed with 14 filtered runtime/profile/network
+  tests.
+- `cargo test -p tensor_vm --lib verify::tests -- --nocapture` passed with 13 verifier tests.
+- `cargo test -p tensor_vm --lib jobs -- --nocapture` passed with 11 filtered job/localnet/role tests.
+- `cargo fmt --check --all` passed.
+- `cargo test -p tensor_vm --lib` passed with 332 library tests.
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm` passed with 332 library tests, 1 local CPU Compose integration test,
+  8 `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace --release` passed with 14 `experiments`, 332 `tensor_vm`, 1 local CPU Compose,
+  8 `tvmd_cli`, 28 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests, and
+  doc-test targets.
+- `git diff --check` passed.
+- `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
+  the `cargo-tarpaulin` subcommand installed.
+
+Expected observable evidence:
+- A stable conformance suite hash commits the exact vector set and expected outputs.
+- The CPU reference backend passes the suite before its receipts can verify as valid.
+- TensorOp and LinearTrainingStep verification fail if their required conformance profile is unavailable.
+- Tier-C/deferred ops remain present as vocabulary but cannot satisfy consensus conformance.
+
+Out of scope:
+- Generic arbitrary-IR graph execution.
+- Exhaustive vectors for every registry vocabulary op not yet implemented by the reference runtime.
+- CUDA kernel implementation or GPU-readiness claims in default builds.
+- Transcendental/fixed-point approximation references for Tier-C ops.
+
+Split trigger:
+Split if generic graph execution is required before the current canonical TensorOp and LinearTrainingStep
+jobs can be conformance-gated.
+
+Architecture shortcut answers:
+- Canonical owner: `conformance`, `runtime`, and `verify` own conformance vectors, backend checks, and
+  receipt-verification gating.
+- Adapter callers: miner/validator/runtime paths can ask whether a backend/profile passes; adapters do not
+  decide vector contents or bypass failed conformance.
+- Old shortcut being removed: accepting current receipts based only on ad hoc job execution and program
+  hash equality, without an explicit per-op deterministic vector gate.
+- Regression test that proves the shortcut is gone: verifier tests reject otherwise-valid receipts when
+  the required conformance profile is unavailable or altered.
+- Behavior with local synthetic block production disabled: unchanged; conformance checks are pure runtime
+  validation and receipt-verification prerequisites.
+- Behavior for producer and non-producer roles: both use the same reference vector suite and suite hash.
+- Structured evidence source: unit tests and docs/status; no shell-only conformance assertion.
+- Finality source: unchanged, signed validator block votes through `SubmitBlockVote`.
+- Wire-size and codec boundary: no P2P/storage codec change in this slice; conformance is local
+  admission/verification metadata.
 
 ### Iteration 23: Delayed Receipt Reward Finality
 

@@ -1,3 +1,4 @@
+use crate::conformance::{ConformanceProfile, cpu_reference_conformance_profile};
 use crate::error::{Result, TvmError};
 #[cfg(feature = "cuda-kernels")]
 use crate::field::Elem;
@@ -134,6 +135,59 @@ pub fn cuda_device_count() -> Result<u32> {
     #[cfg(not(feature = "cuda-kernels"))]
     {
         Ok(0)
+    }
+}
+
+pub fn backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<ConformanceProfile> {
+    match backend.kind() {
+        BackendKind::CpuReference => cpu_reference_conformance_profile(),
+        BackendKind::GpuMiner { .. } => gpu_backend_conformance_profile(backend),
+    }
+}
+
+fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<ConformanceProfile> {
+    #[cfg(feature = "cuda-kernels")]
+    {
+        let beacon = hash_bytes(b"tensor-vm-conformance-runtime-v1", &[b"matmul"]);
+        let matmul = MatmulJob::synthetic(0, 0, 2, 3, 2, &beacon, 10);
+        let cpu = CpuReferenceBackend;
+        let (_, _, expected_matmul) = cpu.execute_matmul(&matmul)?;
+        let (_, _, actual_matmul) = backend.execute_matmul(&matmul)?;
+        if expected_matmul != actual_matmul {
+            return Err(TvmError::VerificationFailed(
+                "gpu matmul conformance failed",
+            ));
+        }
+
+        let weights = Tensor::from_vec(
+            vec![3, 2],
+            crate::tensor::DType::FieldElement,
+            vec![1, 2, 3, 4, 5, 6],
+        )?;
+        let linear = LinearTrainingStepJob::from_spec(crate::jobs::LinearTrainingStepSpec {
+            model_id: hash_bytes(b"tensor-vm-conformance-runtime-v1", &[b"model"]),
+            step: 0,
+            batch_seed: hash_bytes(b"tensor-vm-conformance-runtime-v1", &[b"batch"]),
+            weight_root_before: weights.commitment_root(),
+            input_shape: vec![2, 3],
+            weight_shape: vec![3, 2],
+            target_shape: vec![2, 2],
+            lr: 2,
+            deadline_block: 10,
+        });
+        let expected_linear = cpu.execute_linear_training_step(&linear, &weights)?;
+        let actual_linear = backend.execute_linear_training_step(&linear, &weights)?;
+        if expected_linear != actual_linear {
+            return Err(TvmError::VerificationFailed(
+                "gpu linear-step conformance failed",
+            ));
+        }
+        cpu_reference_conformance_profile()
+    }
+    #[cfg(not(feature = "cuda-kernels"))]
+    {
+        let _ = backend;
+        Err(TvmError::InvalidReceipt("cuda kernels not compiled"))
     }
 }
 
@@ -361,6 +415,16 @@ mod tests {
     }
 
     #[test]
+    fn cpu_backend_reports_passing_conformance_profile() {
+        let profile = backend_conformance_profile(&CpuReferenceBackend).unwrap();
+        assert!(profile.passes("matmul"));
+        assert!(profile.passes("sub"));
+        assert!(profile.passes("scalar_mul"));
+        assert!(profile.passes("transpose"));
+        assert!(profile.passes("mse_loss"));
+    }
+
+    #[test]
     fn gpu_backend_reports_device_and_requires_cuda_kernels() {
         let gpu = GpuMinerBackend::new("cuda:0");
         assert_eq!(
@@ -396,6 +460,10 @@ mod tests {
                 gpu.execute_linear_training_step(&linear_job, &weights),
                 Err(TvmError::InvalidReceipt("cuda kernels not compiled"))
             ));
+            assert_eq!(
+                backend_conformance_profile(&gpu),
+                Err(TvmError::InvalidReceipt("cuda kernels not compiled"))
+            );
         }
     }
 
@@ -450,6 +518,10 @@ mod tests {
             gpu_out.weight_after.commitment_root()
         );
         assert_eq!(cpu_out.loss_commitment, gpu_out.loss_commitment);
+        assert_eq!(
+            backend_conformance_profile(&gpu).unwrap().suite_hash,
+            crate::conformance::conformance_suite_hash()
+        );
     }
 
     #[cfg(feature = "cuda-kernels")]

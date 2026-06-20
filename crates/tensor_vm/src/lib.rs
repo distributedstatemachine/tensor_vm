@@ -12,6 +12,7 @@ pub mod chain;
 pub mod challenge;
 mod cli;
 mod codec;
+pub mod conformance;
 pub mod error;
 pub mod faucet;
 pub mod field;
@@ -51,6 +52,11 @@ pub use chain::{
 pub use challenge::{ChallengeOutcome, FraudChallenge, TensorOpChallengeInput, TraceStep};
 pub use cli::{
     TvmdCli, validate_public_evidence_manifest, validate_public_testnet_preflight_manifest,
+};
+pub use conformance::{
+    ConformanceProfile, ConformanceVector, conformance_suite_hash, conformance_vectors,
+    cpu_reference_conformance_profile, ensure_linear_training_step_conformance,
+    ensure_tensor_op_job_conformance,
 };
 pub use error::{Result, TvmError};
 pub use faucet::Faucet;
@@ -92,8 +98,8 @@ pub use roles::{
 };
 pub use rpc::{RpcGateway, RpcHttpServer, RpcNode, RpcPolicy, RpcRequest, RpcResponse};
 pub use runtime::{
-    BackendKind, CpuReferenceBackend, ExecutionBackend, GpuMinerBackend, cuda_device_count,
-    cuda_kernels_compiled,
+    BackendKind, CpuReferenceBackend, ExecutionBackend, GpuMinerBackend,
+    backend_conformance_profile, cuda_device_count, cuda_kernels_compiled,
 };
 pub use scheduler::{
     JobScheduler, JobSource, MinerAssignment, SyntheticLocalJobSource, ValidatorAssignment,
