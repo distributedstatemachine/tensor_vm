@@ -5,16 +5,20 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 23, delayed receipt reward finality, is implemented and validated locally.
-- Current status: Gate 0 for this resumed iteration passed first on June 20, 2026. Iteration 23 focused
-  and broad validation passed except for the standing missing `cargo-tarpaulin` tool blocker. Commit and
-  push are in progress.
-- Latest completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
+- Active feature: none. The next feature-sized slice is the per-op `F_p` conformance vector suite.
+- Current status: Gate 0 for the Iteration 23 resumed work passed first on June 20, 2026. Iteration 23
+  focused and broad validation passed except for the standing missing `cargo-tarpaulin` tool blocker.
+- Latest completed feature: Iteration 23, delayed receipt reward finality, is implemented and pushed as
+  `388c4d6` (`Delay receipt reward finality`). Miner and validator receipt rewards now settle into
+  state-rooted pending claims, block inclusion delays claim maturity through the reward-settlement delay
+  plus challenge window, challenge success voids pending receipt rewards, and release only credits mature
+  non-void claims.
+- Previous completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
   as `8e17789` (`Add content addressed tensor IR`). The crate now has a chain-owned Tensor IR foundation
   with canonical JSON graph IDs, frozen op-registry metadata, structural validation, Tier-C consensus
   gating, canonical TensorOp and LinearTrainingStep graph constructors, and current receipt `program_hash`
   binding to IR `graph_id`.
-- Previous completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
+- Earlier completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
   implemented and pushed as `62e5600` (`Add delayed proposer reward challenges`). `TensorBlock` now carries
   proposer reward amounts, rewarded block production creates `PendingProposerReward` records, matured
   proposer rewards are released only after the challenge window, and successful local block-check
@@ -27,8 +31,7 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: finish broad Iteration 23 validation, commit and push delayed receipt reward finality, then
-  start the per-op `F_p` conformance vector suite.
+- Next action: start the per-op `F_p` conformance vector suite.
 
 ## Readiness Matrix
 
@@ -134,6 +137,11 @@ Validation:
 - `git diff --check` passed.
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
+
+Push evidence:
+- Feature commit: `388c4d6` (`Delay receipt reward finality`).
+- Remote/branch: `origin/main`.
+- Push result: `c08f340..388c4d6  main -> main`.
 
 Expected observable evidence:
 - `SettleEpoch` emits `ReceiptRewardPending` events and leaves miner/validator balances unchanged.
@@ -381,6 +389,21 @@ Latest current-iteration evidence:
 - Iteration 22 feature commit/push:
   - Feature commit: `8e17789` (`Add content addressed tensor IR`).
   - Push result: `0f2d65c..8e17789  main -> main` on `origin/main`.
+- Iteration 23 validation before commit:
+  - `cargo test -p tensor_vm local_testnet --release`: passed first and again after changes.
+  - Focused delayed receipt reward, challenge, storage, local compose, and CLI tests: passed.
+  - `cargo fmt --check --all`: passed.
+  - `cargo test -p tensor_vm --lib chain::tests -- --nocapture`: 48 focused chain tests passed.
+  - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`: passed.
+  - `cargo test -p tensor_vm --lib rpc::tests -- --nocapture`: passed.
+  - `cargo test -p tensor_vm`: passed.
+  - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
+  - `cargo test --workspace --release`: passed.
+  - `git diff --check`: passed.
+  - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
+- Iteration 23 feature commit/push:
+  - Feature commit: `388c4d6` (`Delay receipt reward finality`).
+  - Push result: `c08f340..388c4d6  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
