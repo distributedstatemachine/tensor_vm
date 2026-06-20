@@ -6,8 +6,8 @@ use super::roots::{
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
     BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState,
-    DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptState, SelectedReceiptOpening,
-    TensorBlock,
+    DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptRewardKind, ReceiptState,
+    SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment, ValidatorAuditSlashRecord,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -22,6 +22,10 @@ struct BlockRewardContext {
     reward_settlement_delay_epochs: u64,
     challenge_window_epochs: u64,
     data_unavailability_miner_slash_amount: u64,
+    validator_audit_sample_numerator: u64,
+    validator_audit_sample_denominator: u64,
+    validator_audit_window_blocks: u64,
+    validator_audit_slash_amount: u64,
 }
 
 pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
@@ -92,6 +96,10 @@ fn produce_inner(
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
     let chain_state_root = state_root(&child_state);
@@ -241,6 +249,10 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
     Ok(BlockAdmission::Applied {
@@ -519,6 +531,10 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
             data_unavailability_miner_slash_amount: chain
                 .params
                 .data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: chain.params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+            validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
     let selected_openings = selected_receipt_openings(
@@ -658,6 +674,20 @@ fn apply_block_to_parent_state(
         block_height,
         reward_context.data_unavailability_miner_slash_amount,
     );
+    apply_missed_validator_audit_slashes(
+        &mut child_state,
+        block_height,
+        reward_context.validator_audit_slash_amount,
+    );
+    assign_validator_audits(
+        &mut child_state,
+        block_height,
+        beacon_round,
+        beacon,
+        reward_context.validator_audit_sample_numerator,
+        reward_context.validator_audit_sample_denominator,
+        reward_context.validator_audit_window_blocks,
+    );
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
     let (next_round, next_beacon) =
@@ -681,6 +711,137 @@ fn apply_block_to_parent_state(
         );
     }
     child_state
+}
+
+fn apply_missed_validator_audit_slashes(
+    child_state: &mut ChainState,
+    block_height: u64,
+    slash_amount: u64,
+) {
+    let assignments = child_state
+        .validator_audit_assignments
+        .values()
+        .cloned()
+        .collect::<Vec<_>>();
+    for assignment in assignments {
+        if block_height < assignment.deadline_height {
+            continue;
+        }
+        if child_state
+            .validator_audit_results
+            .contains_key(&assignment.audit_id)
+            || child_state
+                .validator_audit_slashes
+                .contains_key(&assignment.audit_id)
+        {
+            continue;
+        }
+        let Some(validator) = child_state.validators.get_mut(&assignment.validator) else {
+            continue;
+        };
+        let actual_slash = validator.stake.min(slash_amount);
+        validator.stake = validator.stake.saturating_sub(actual_slash);
+        validator.reputation -= 10;
+        validator.missed_assignments = validator.missed_assignments.saturating_add(1);
+        void_validator_audit_reward(child_state, &assignment.receipt_id, &assignment.validator);
+        child_state.rewards.credit_treasury(actual_slash);
+        child_state.validator_audit_slashes.insert(
+            assignment.audit_id,
+            ValidatorAuditSlashRecord {
+                audit_id: assignment.audit_id,
+                receipt_id: assignment.receipt_id,
+                validator: assignment.validator,
+                auditor: [0; 32],
+                amount: actual_slash,
+                slashed_at_height: block_height,
+                reason: "validator missed mandatory audit".to_owned(),
+            },
+        );
+    }
+}
+
+fn assign_validator_audits(
+    child_state: &mut ChainState,
+    block_height: u64,
+    beacon_round: u64,
+    beacon: &Hash,
+    sample_numerator: u64,
+    sample_denominator: u64,
+    audit_window_blocks: u64,
+) {
+    if sample_numerator == 0 {
+        return;
+    }
+    let denominator = sample_denominator.max(1);
+    let numerator = sample_numerator.min(denominator);
+    let deadline_height = block_height.saturating_add(audit_window_blocks.max(1));
+    let attestations = child_state
+        .attestations
+        .iter()
+        .flat_map(|(receipt_id, items)| {
+            items
+                .iter()
+                .map(|attestation| (*receipt_id, attestation.validator))
+        })
+        .collect::<Vec<_>>();
+    for (receipt_id, validator) in attestations {
+        let audit_id = super::validation::validator_audit_id(&receipt_id, &validator);
+        if child_state
+            .validator_audit_assignments
+            .contains_key(&audit_id)
+        {
+            continue;
+        }
+        let seed =
+            super::validation::validator_audit_seed(beacon_round, beacon, &receipt_id, &validator);
+        let draw = u64::from_le_bytes(seed[..8].try_into().expect("slice has length 8"));
+        if draw % denominator >= numerator {
+            continue;
+        }
+        delay_validator_audit_reward(child_state, &receipt_id, &validator, deadline_height);
+        child_state.validator_audit_assignments.insert(
+            audit_id,
+            ValidatorAuditAssignment {
+                audit_id,
+                receipt_id,
+                validator,
+                assigned_at_height: block_height,
+                deadline_height,
+                seed,
+            },
+        );
+    }
+}
+
+fn delay_validator_audit_reward(
+    child_state: &mut ChainState,
+    receipt_id: &Hash,
+    validator: &Address,
+    claimable_at_height: u64,
+) {
+    for reward in child_state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == *receipt_id
+            && reward.beneficiary == *validator
+            && reward.kind == ReceiptRewardKind::Validator
+        {
+            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
+        }
+    }
+}
+
+fn void_validator_audit_reward(
+    child_state: &mut ChainState,
+    receipt_id: &Hash,
+    validator: &Address,
+) {
+    for reward in child_state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == *receipt_id
+            && reward.beneficiary == *validator
+            && reward.kind == ReceiptRewardKind::Validator
+        {
+            reward.voided_by_challenge = true;
+        }
+    }
 }
 
 fn apply_data_unavailability_slashes(

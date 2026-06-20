@@ -2,9 +2,10 @@ use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRewardKind, ReceiptState, RewardState, ValidatorState,
+    ReceiptRewardKind, ReceiptState, RewardState, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
-use crate::codec as payload_codec;
+use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
 use crate::types::{Hash, hash_bytes};
 use crate::verify::{FreivaldsParams, ValidatorAttestation};
@@ -131,6 +132,10 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.miner_min_stake);
     write_u64(out, params.validator_min_stake);
     write_u64(out, params.data_unavailability_miner_slash_amount);
+    write_u64(out, params.validator_audit_sample_numerator);
+    write_u64(out, params.validator_audit_sample_denominator);
+    write_u64(out, params.validator_audit_window_blocks);
+    write_u64(out, params.validator_audit_slash_amount);
     write_hash(out, &params.difficulty_initial_target);
     write_hash(out, &params.difficulty_floor_target);
     write_hash(out, &params.difficulty_ceiling_target);
@@ -160,6 +165,10 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         miner_min_stake: reader.read_u64()?,
         validator_min_stake: reader.read_u64()?,
         data_unavailability_miner_slash_amount: reader.read_u64()?,
+        validator_audit_sample_numerator: reader.read_u64()?,
+        validator_audit_sample_denominator: reader.read_u64()?,
+        validator_audit_window_blocks: reader.read_u64()?,
+        validator_audit_slash_amount: reader.read_u64()?,
         difficulty_initial_target: reader.read_hash()?,
         difficulty_floor_target: reader.read_hash()?,
         difficulty_ceiling_target: reader.read_hash()?,
@@ -209,6 +218,9 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_hash_set(out, state.finalized_blocks());
     encode_hash_set(out, state.data_unavailable_receipts());
     encode_data_unavailability_slashes(out, state.data_unavailability_slashes());
+    encode_validator_audit_assignments(out, state.validator_audit_assignments());
+    encode_validator_audit_results(out, state.validator_audit_results());
+    encode_validator_audit_slashes(out, state.validator_audit_slashes());
     encode_hash_set(out, state.settled_receipts());
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
@@ -241,6 +253,9 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         finalized_blocks: decode_hash_set(reader)?,
         data_unavailable_receipts: decode_hash_set(reader)?,
         data_unavailability_slashes: decode_data_unavailability_slashes(reader)?,
+        validator_audit_assignments: decode_validator_audit_assignments(reader)?,
+        validator_audit_results: decode_validator_audit_results(reader)?,
+        validator_audit_slashes: decode_validator_audit_slashes(reader)?,
         settled_receipts: decode_hash_set(reader)?,
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
@@ -606,6 +621,165 @@ fn decode_data_unavailability_slashes(
     Ok(slashes)
 }
 
+fn encode_validator_audit_assignments(
+    out: &mut Vec<u8>,
+    assignments: &BTreeMap<Hash, ValidatorAuditAssignment>,
+) {
+    write_len(out, assignments.len());
+    for (audit_id, assignment) in assignments {
+        write_hash(out, audit_id);
+        write_hash(out, &assignment.audit_id);
+        write_hash(out, &assignment.receipt_id);
+        write_hash(out, &assignment.validator);
+        write_u64(out, assignment.assigned_at_height);
+        write_u64(out, assignment.deadline_height);
+        write_hash(out, &assignment.seed);
+    }
+}
+
+fn decode_validator_audit_assignments(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ValidatorAuditAssignment>> {
+    let mut assignments = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let audit_id = reader.read_hash()?;
+        assignments.insert(
+            audit_id,
+            ValidatorAuditAssignment {
+                audit_id: reader.read_hash()?,
+                receipt_id: reader.read_hash()?,
+                validator: reader.read_hash()?,
+                assigned_at_height: reader.read_u64()?,
+                deadline_height: reader.read_u64()?,
+                seed: reader.read_hash()?,
+            },
+        );
+    }
+    Ok(assignments)
+}
+
+fn encode_validator_audit_results(
+    out: &mut Vec<u8>,
+    results: &BTreeMap<Hash, ValidatorAuditResult>,
+) {
+    write_len(out, results.len());
+    for (audit_id, result) in results {
+        write_hash(out, audit_id);
+        write_hash(out, &result.audit_id);
+        write_hash(out, &result.receipt_id);
+        write_hash(out, &result.validator);
+        write_hash(out, &result.auditor);
+        out.push(verification_result_tag(result.attested_result));
+        out.push(verification_result_tag(result.canonical_result));
+        out.push(u8::from(result.attested_data_availability_passed));
+        out.push(u8::from(result.canonical_data_availability_passed));
+        write_hash(out, &result.checks_root);
+        write_u64(out, result.submitted_at_height);
+        out.push(u8::from(result.passed));
+        out.extend_from_slice(&result.signature);
+    }
+}
+
+fn decode_validator_audit_results(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ValidatorAuditResult>> {
+    let mut results = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let audit_id = reader.read_hash()?;
+        let result_audit_id = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let validator = reader.read_hash()?;
+        let auditor = reader.read_hash()?;
+        let attested_result = verification_result_from_tag(reader.read_u8()?)
+            .ok_or(TvmError::Storage("invalid validator audit attested result"))?;
+        let canonical_result = verification_result_from_tag(reader.read_u8()?).ok_or(
+            TvmError::Storage("invalid validator audit canonical result"),
+        )?;
+        let attested_data_availability_passed = read_bool(reader, "invalid audit attested DA")?;
+        let canonical_data_availability_passed = read_bool(reader, "invalid audit canonical DA")?;
+        let checks_root = reader.read_hash()?;
+        let submitted_at_height = reader.read_u64()?;
+        let passed = read_bool(reader, "invalid validator audit pass flag")?;
+        let signature = reader.read_hash()?;
+        results.insert(
+            audit_id,
+            ValidatorAuditResult {
+                audit_id: result_audit_id,
+                receipt_id,
+                validator,
+                auditor,
+                attested_result,
+                canonical_result,
+                attested_data_availability_passed,
+                canonical_data_availability_passed,
+                checks_root,
+                submitted_at_height,
+                passed,
+                signature,
+            },
+        );
+    }
+    Ok(results)
+}
+
+fn encode_validator_audit_slashes(
+    out: &mut Vec<u8>,
+    slashes: &BTreeMap<Hash, ValidatorAuditSlashRecord>,
+) {
+    write_len(out, slashes.len());
+    for (audit_id, slash) in slashes {
+        write_hash(out, audit_id);
+        write_hash(out, &slash.audit_id);
+        write_hash(out, &slash.receipt_id);
+        write_hash(out, &slash.validator);
+        write_hash(out, &slash.auditor);
+        write_u64(out, slash.amount);
+        write_u64(out, slash.slashed_at_height);
+        write_len(out, slash.reason.len());
+        out.extend_from_slice(slash.reason.as_bytes());
+    }
+}
+
+fn decode_validator_audit_slashes(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ValidatorAuditSlashRecord>> {
+    let mut slashes = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let audit_id = reader.read_hash()?;
+        let record_audit_id = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let validator = reader.read_hash()?;
+        let auditor = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let slashed_at_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid validator audit slash reason"))?
+            .to_owned();
+        slashes.insert(
+            audit_id,
+            ValidatorAuditSlashRecord {
+                audit_id: record_audit_id,
+                receipt_id,
+                validator,
+                auditor,
+                amount,
+                slashed_at_height,
+                reason,
+            },
+        );
+    }
+    Ok(slashes)
+}
+
+fn read_bool(reader: &mut StateReader<'_>, error: &'static str) -> Result<bool> {
+    match reader.read_u8()? {
+        0 => Ok(false),
+        1 => Ok(true),
+        _ => Err(TvmError::Storage(error)),
+    }
+}
+
 fn encode_hash_vec_map(out: &mut Vec<u8>, items: &BTreeMap<Hash, Vec<Hash>>) {
     write_len(out, items.len());
     for (key, values) in items {
@@ -904,6 +1078,10 @@ mod tests {
         let params = ChainParams {
             replication_factor: 2,
             agreement_quorum: 1,
+            validator_audit_sample_numerator: 1,
+            validator_audit_sample_denominator: 1,
+            validator_audit_window_blocks: 1,
+            validator_audit_slash_amount: 17,
             freivalds: FreivaldsParams {
                 full_rounds: 2,
                 audit_rows: 3,
@@ -1050,6 +1228,19 @@ mod tests {
         store.save_chain(&chain).unwrap();
         let loaded = store.load_chain().unwrap();
         assert_eq!(loaded, chain);
+        assert_eq!(loaded.state_root(), chain.state_root());
+        assert_eq!(loaded.state().validator_audit_assignments().len(), 1);
+        assert_eq!(loaded.state().validator_audit_slashes().len(), 1);
+        assert_eq!(
+            loaded
+                .state()
+                .validator_audit_slashes()
+                .values()
+                .next()
+                .unwrap()
+                .amount,
+            17
+        );
         assert_eq!(
             loaded.state().program_bodies(),
             chain.state().program_bodies()
@@ -1098,6 +1289,7 @@ mod tests {
         assert_eq!(
             loaded.state().rewards().treasury(),
             11 + chain.params().data_unavailability_miner_slash_amount
+                + chain.params().validator_audit_slash_amount
         );
         assert!(
             loaded

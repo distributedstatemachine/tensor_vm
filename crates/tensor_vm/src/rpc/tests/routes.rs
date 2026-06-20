@@ -202,6 +202,16 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
         summary["data_unavailability_slashed_amount_total"].as_u64(),
         Some(0)
     );
+    assert_eq!(
+        summary["validator_audit_assignment_count"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(summary["validator_audit_result_count"].as_u64(), Some(0));
+    assert_eq!(summary["validator_audit_slash_count"].as_u64(), Some(0));
+    assert_eq!(
+        summary["validator_audit_slashed_amount_total"].as_u64(),
+        Some(0)
+    );
 
     let overview = rpc.handle(&RpcRequest {
         method: "GET".to_owned(),

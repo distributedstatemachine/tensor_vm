@@ -1,7 +1,8 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
     JobState, MinerState, ModelState, PendingChallengeReward, PendingProposerReward,
-    PendingReceiptReward, ReceiptState, RewardState, ValidatorState,
+    PendingReceiptReward, ReceiptState, RewardState, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -45,6 +46,11 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&data_unavailability_slash_root(
         &state.data_unavailability_slashes,
     ));
+    parts.extend_from_slice(&validator_audit_assignment_root(
+        &state.validator_audit_assignments,
+    ));
+    parts.extend_from_slice(&validator_audit_result_root(&state.validator_audit_results));
+    parts.extend_from_slice(&validator_audit_slash_root(&state.validator_audit_slashes));
     parts.extend_from_slice(&settled_receipt_root(&state.settled_receipts));
     parts.extend_from_slice(&hash_set_root(
         b"tensor-vm-included-receipt-root-v1",
@@ -116,6 +122,60 @@ pub(super) fn data_unavailability_slash_root(
         encoded.extend_from_slice(slash.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-data-unavailability-slash-root-v1", &[&encoded])
+}
+
+pub(super) fn validator_audit_assignment_root(
+    assignments: &BTreeMap<Hash, ValidatorAuditAssignment>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (audit_id, assignment) in assignments {
+        encoded.extend_from_slice(audit_id);
+        encoded.extend_from_slice(&assignment.audit_id);
+        encoded.extend_from_slice(&assignment.receipt_id);
+        encoded.extend_from_slice(&assignment.validator);
+        encoded.extend_from_slice(&assignment.assigned_at_height.to_le_bytes());
+        encoded.extend_from_slice(&assignment.deadline_height.to_le_bytes());
+        encoded.extend_from_slice(&assignment.seed);
+    }
+    hash_bytes(b"tensor-vm-validator-audit-assignment-root-v1", &[&encoded])
+}
+
+pub(super) fn validator_audit_result_root(results: &BTreeMap<Hash, ValidatorAuditResult>) -> Hash {
+    let mut encoded = Vec::new();
+    for (audit_id, result) in results {
+        encoded.extend_from_slice(audit_id);
+        encoded.extend_from_slice(&result.audit_id);
+        encoded.extend_from_slice(&result.receipt_id);
+        encoded.extend_from_slice(&result.validator);
+        encoded.extend_from_slice(&result.auditor);
+        encoded.push(verification_result_tag(result.attested_result));
+        encoded.push(verification_result_tag(result.canonical_result));
+        encoded.push(u8::from(result.attested_data_availability_passed));
+        encoded.push(u8::from(result.canonical_data_availability_passed));
+        encoded.extend_from_slice(&result.checks_root);
+        encoded.extend_from_slice(&result.submitted_at_height.to_le_bytes());
+        encoded.push(u8::from(result.passed));
+        encoded.extend_from_slice(&result.signature);
+    }
+    hash_bytes(b"tensor-vm-validator-audit-result-root-v1", &[&encoded])
+}
+
+pub(super) fn validator_audit_slash_root(
+    slashes: &BTreeMap<Hash, ValidatorAuditSlashRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (audit_id, slash) in slashes {
+        encoded.extend_from_slice(audit_id);
+        encoded.extend_from_slice(&slash.audit_id);
+        encoded.extend_from_slice(&slash.receipt_id);
+        encoded.extend_from_slice(&slash.validator);
+        encoded.extend_from_slice(&slash.auditor);
+        encoded.extend_from_slice(&slash.amount.to_le_bytes());
+        encoded.extend_from_slice(&slash.slashed_at_height.to_le_bytes());
+        encoded.extend_from_slice(&(slash.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(slash.reason.as_bytes());
+    }
+    hash_bytes(b"tensor-vm-validator-audit-slash-root-v1", &[&encoded])
 }
 
 pub(super) fn proposer_penalty_root(penalties: &BTreeMap<Address, u64>) -> Hash {

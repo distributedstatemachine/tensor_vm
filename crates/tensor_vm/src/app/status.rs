@@ -201,6 +201,27 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
             .map(|slash| slash.amount)
             .sum::<u64>(),
     );
+    report.field(
+        "validator_audit_assignment_count",
+        chain.state().validator_audit_assignments().len(),
+    );
+    report.field(
+        "validator_audit_result_count",
+        chain.state().validator_audit_results().len(),
+    );
+    report.field(
+        "validator_audit_slash_count",
+        chain.state().validator_audit_slashes().len(),
+    );
+    report.field(
+        "validator_audit_slashed_amount_total",
+        chain
+            .state()
+            .validator_audit_slashes()
+            .values()
+            .map(|slash| slash.amount)
+            .sum::<u64>(),
+    );
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
     report.field(

@@ -478,8 +478,12 @@ TensorBlock {
 > An assigned validator's unavailable-data attestation marks the receipt non-finalizable, and the next
 > canonical block child-state transition records a `DataUnavailabilitySlashRecord`, reduces the miner stake
 > once for that receipt, and credits treasury. If receipt rewards were already pending, the unavailable-data
-> evidence voids those delayed claims before spendability. Validator mandatory-audit slashing and broader
-> invalid-output slashing remain TODO before claiming the full §12 economics invariant.
+> evidence voids those delayed claims before spendability. The local reference also state-roots validator
+> audit assignments, signed audit results, and validator audit slash records when audit sampling is
+> configured. Audit assignment delays the audited validator's pending receipt reward through the audit
+> deadline; a missed audit or contradictory audit result slashes that validator once, credits treasury, and
+> voids that delayed validator reward. Runtime audit workers, appeal paths, full bond calibration, and
+> broader invalid-output slashing remain TODO before claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 

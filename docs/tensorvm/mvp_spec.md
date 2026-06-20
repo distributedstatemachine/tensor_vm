@@ -1732,8 +1732,8 @@ a successful `checks_root` challenge.
 ```text
 invalid receipt: no reward
 unavailable data: void pending receipt rewards + reputation penalty + state-rooted miner bond slash in the local reference
-invalid attestation: no reward + reputation penalty
-missed validation assignment: no reward
+invalid attestation: no reward + reputation penalty; local reference can slash and void delayed validator receipt reward when a configured mandatory audit contradicts the attestation
+missed validation assignment: no reward; local reference can slash and void delayed validator receipt reward when a configured mandatory audit is missed
 ```
 
 ### 26.2 MVP v1 Penalties
@@ -1749,8 +1749,9 @@ Recommendation:
 
 ```text
 Hard slashing should remain narrowly scoped until verification code is battle-tested. The local reference
-currently hard-slashes miner bond for data-unavailable receipts, while broader invalid-output and validator
-audit slashing still require battle-tested evidence and appeal paths.
+currently hard-slashes miner bond for data-unavailable receipts and can hard-slash validators for missed or
+contradicted mandatory audits when audit sampling is configured. Broader invalid-output slashing, runtime
+audit workers, bond calibration, and appeal paths still require battle-tested evidence.
 ```
 
 Consequence:

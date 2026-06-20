@@ -390,6 +390,14 @@ impl LocalTestnet {
                 .values()
                 .map(|slash| slash.amount)
                 .sum(),
+            validator_audit_assignment_count: state.validator_audit_assignments().len(),
+            validator_audit_result_count: state.validator_audit_results().len(),
+            validator_audit_slash_count: state.validator_audit_slashes().len(),
+            validator_audit_slashed_amount_total: state
+                .validator_audit_slashes()
+                .values()
+                .map(|slash| slash.amount)
+                .sum(),
             finalized_block_count: state.finalized_blocks().len(),
             treasury_balance: state.rewards().treasury(),
             pending_receipt_reward_count: state.pending_receipt_rewards().len(),

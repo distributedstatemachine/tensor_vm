@@ -4,7 +4,7 @@ use crate::jobs::{
 };
 use crate::merkle::MerkleProof;
 use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
-use crate::verify::{FreivaldsParams, ValidatorAttestation};
+use crate::verify::{FreivaldsParams, ValidatorAttestation, VerificationResult};
 use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -26,6 +26,10 @@ pub struct ChainParams {
     pub miner_min_stake: u64,
     pub validator_min_stake: u64,
     pub data_unavailability_miner_slash_amount: u64,
+    pub validator_audit_sample_numerator: u64,
+    pub validator_audit_sample_denominator: u64,
+    pub validator_audit_window_blocks: u64,
+    pub validator_audit_slash_amount: u64,
     pub difficulty_initial_target: Hash,
     pub difficulty_floor_target: Hash,
     pub difficulty_ceiling_target: Hash,
@@ -56,6 +60,10 @@ impl Default for ChainParams {
             miner_min_stake: 100,
             validator_min_stake: 10_000,
             data_unavailability_miner_slash_amount: 10,
+            validator_audit_sample_numerator: 0,
+            validator_audit_sample_denominator: 1,
+            validator_audit_window_blocks: 10,
+            validator_audit_slash_amount: 100,
             difficulty_initial_target: default_useful_pow_target(),
             difficulty_floor_target: default_difficulty_floor_target(),
             difficulty_ceiling_target: [0xff; 32],
@@ -259,6 +267,120 @@ pub struct DataUnavailabilitySlashRecord {
     pub receipt_id: Hash,
     pub miner: Address,
     pub evidence_validator: Address,
+    pub amount: u64,
+    pub slashed_at_height: u64,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditAssignment {
+    pub audit_id: Hash,
+    pub receipt_id: Hash,
+    pub validator: Address,
+    pub assigned_at_height: u64,
+    pub deadline_height: u64,
+    pub seed: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditReport {
+    pub audit_id: Hash,
+    pub auditor: Address,
+    pub canonical_result: VerificationResult,
+    pub canonical_data_availability_passed: bool,
+    pub checks_root: Hash,
+    pub signature: Signature,
+}
+
+impl ValidatorAuditReport {
+    pub fn new(
+        audit_id: Hash,
+        auditor: Address,
+        canonical_result: VerificationResult,
+        canonical_data_availability_passed: bool,
+        checks_root: Hash,
+    ) -> Self {
+        let message = Self::message_hash(
+            &audit_id,
+            &auditor,
+            canonical_result,
+            canonical_data_availability_passed,
+            &checks_root,
+        );
+        Self {
+            audit_id,
+            auditor,
+            canonical_result,
+            canonical_data_availability_passed,
+            checks_root,
+            signature: sign(&auditor, &message),
+        }
+    }
+
+    pub fn verify_signature(&self) -> bool {
+        verify_signature(
+            &self.auditor,
+            &Self::message_hash(
+                &self.audit_id,
+                &self.auditor,
+                self.canonical_result,
+                self.canonical_data_availability_passed,
+                &self.checks_root,
+            ),
+            &self.signature,
+        )
+    }
+
+    fn message_hash(
+        audit_id: &Hash,
+        auditor: &Address,
+        canonical_result: VerificationResult,
+        canonical_data_availability_passed: bool,
+        checks_root: &Hash,
+    ) -> Hash {
+        hash_bytes(
+            b"tensor-vm-validator-audit-report-v1",
+            &[
+                audit_id,
+                auditor,
+                &[verification_result_tag(canonical_result)],
+                &[u8::from(canonical_data_availability_passed)],
+                checks_root,
+            ],
+        )
+    }
+}
+
+fn verification_result_tag(result: VerificationResult) -> u8 {
+    match result {
+        VerificationResult::Valid => 1,
+        VerificationResult::Invalid => 2,
+        VerificationResult::Unavailable => 3,
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditResult {
+    pub audit_id: Hash,
+    pub receipt_id: Hash,
+    pub validator: Address,
+    pub auditor: Address,
+    pub attested_result: VerificationResult,
+    pub canonical_result: VerificationResult,
+    pub attested_data_availability_passed: bool,
+    pub canonical_data_availability_passed: bool,
+    pub checks_root: Hash,
+    pub submitted_at_height: u64,
+    pub passed: bool,
+    pub signature: Signature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditSlashRecord {
+    pub audit_id: Hash,
+    pub receipt_id: Hash,
+    pub validator: Address,
+    pub auditor: Address,
     pub amount: u64,
     pub slashed_at_height: u64,
     pub reason: String,
@@ -679,6 +801,9 @@ pub struct ChainState {
     pub(in crate::chain) finalized_blocks: BTreeSet<Hash>,
     pub(in crate::chain) data_unavailable_receipts: BTreeSet<Hash>,
     pub(in crate::chain) data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+    pub(in crate::chain) validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
+    pub(in crate::chain) validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
+    pub(in crate::chain) validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
     pub(in crate::chain) settled_receipts: BTreeSet<Hash>,
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -711,6 +836,9 @@ pub(crate) struct ChainStateParts {
     pub finalized_blocks: BTreeSet<Hash>,
     pub data_unavailable_receipts: BTreeSet<Hash>,
     pub data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+    pub validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
+    pub validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
+    pub validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
     pub settled_receipts: BTreeSet<Hash>,
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -744,6 +872,9 @@ impl ChainState {
             finalized_blocks: parts.finalized_blocks,
             data_unavailable_receipts: parts.data_unavailable_receipts,
             data_unavailability_slashes: parts.data_unavailability_slashes,
+            validator_audit_assignments: parts.validator_audit_assignments,
+            validator_audit_results: parts.validator_audit_results,
+            validator_audit_slashes: parts.validator_audit_slashes,
             settled_receipts: parts.settled_receipts,
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
@@ -828,6 +959,18 @@ impl ChainState {
 
     pub fn data_unavailability_slashes(&self) -> &BTreeMap<Hash, DataUnavailabilitySlashRecord> {
         &self.data_unavailability_slashes
+    }
+
+    pub fn validator_audit_assignments(&self) -> &BTreeMap<Hash, ValidatorAuditAssignment> {
+        &self.validator_audit_assignments
+    }
+
+    pub fn validator_audit_results(&self) -> &BTreeMap<Hash, ValidatorAuditResult> {
+        &self.validator_audit_results
+    }
+
+    pub fn validator_audit_slashes(&self) -> &BTreeMap<Hash, ValidatorAuditSlashRecord> {
+        &self.validator_audit_slashes
     }
 
     pub fn settled_receipts(&self) -> &BTreeSet<Hash> {

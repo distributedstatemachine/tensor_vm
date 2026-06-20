@@ -126,6 +126,369 @@ fn unavailable_data_attestation_slashes_receipt_miner_once_on_block_apply() {
 }
 
 #[test]
+fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
+    let beacon = hash_bytes(b"test", &[b"audit-missed-beacon"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        reward_settlement_delay_epochs: 0,
+        challenge_window_epochs: 0,
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 1,
+        validator_audit_slash_amount: 77,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"audit-missed-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("audit-missed-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let assigned = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            assigned,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"audit-missed-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    chain.settle_epoch(100, 10);
+    let pending_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == assigned
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("validator reward should be pending before audit assignment");
+    assert_eq!(pending_validator_claim.claimable_at_height, 0);
+    assert!(!pending_validator_claim.voided_by_challenge);
+
+    let starting_treasury = chain.state().rewards().treasury();
+    let starting_stake = chain.state().validators().get(&assigned).unwrap().stake;
+    chain.produce_block(validators[0], 1_000).unwrap();
+    let audit_id = *chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("mandatory audit must be assigned");
+    let assignment = chain
+        .state()
+        .validator_audit_assignments()
+        .get(&audit_id)
+        .unwrap();
+    assert_eq!(assignment.receipt_id, receipt.receipt_id);
+    assert_eq!(assignment.validator, assigned);
+    assert_eq!(assignment.assigned_at_height, 0);
+    assert_eq!(assignment.deadline_height, 1);
+    let delayed_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == assigned
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("validator reward should remain pending through audit deadline");
+    assert_eq!(delayed_validator_claim.claimable_at_height, 1);
+    assert!(!delayed_validator_claim.voided_by_challenge);
+    assert!(chain.state().validator_audit_slashes().is_empty());
+
+    chain.produce_block(validators[0], 1_006).unwrap();
+    let slash = chain
+        .state()
+        .validator_audit_slashes()
+        .get(&audit_id)
+        .expect("missed audit must slash");
+    assert_eq!(slash.validator, assigned);
+    assert_eq!(slash.auditor, [0; 32]);
+    assert_eq!(slash.amount, 77);
+    assert_eq!(slash.slashed_at_height, 1);
+    assert_eq!(slash.reason, "validator missed mandatory audit");
+    assert_eq!(
+        chain.state().validators().get(&assigned).unwrap().stake,
+        starting_stake - 77
+    );
+    assert_eq!(
+        chain
+            .state()
+            .validators()
+            .get(&assigned)
+            .unwrap()
+            .missed_assignments,
+        1
+    );
+    assert_eq!(chain.state().rewards().treasury(), starting_treasury + 77);
+    let voided_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == assigned
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("slashed validator reward should remain pending until release");
+    assert!(voided_validator_claim.voided_by_challenge);
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(!release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            beneficiary,
+            ..
+        } if *beneficiary == assigned
+    )));
+    assert_eq!(chain.state().rewards().balance(&assigned), 0);
+
+    chain.produce_block(validators[0], 1_012).unwrap();
+    assert_eq!(chain.state().validator_audit_slashes().len(), 1);
+    assert_eq!(
+        chain.state().validators().get(&assigned).unwrap().stake,
+        starting_stake - 77
+    );
+}
+
+#[test]
+fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result() {
+    let beacon = hash_bytes(b"test", &[b"audit-report-beacon"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        reward_settlement_delay_epochs: 0,
+        challenge_window_epochs: 0,
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 3,
+        validator_audit_slash_amount: 55,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"audit-report-miner");
+    let auditor = address(b"audit-report-auditor");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(auditor, 10_000).unwrap();
+    let validators: Vec<_> = (0..4)
+        .map(|i| address(format!("audit-report-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let audited = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            audited,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"audit-report-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+    chain.settle_epoch(100, 10);
+    let pending_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == audited
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("audited validator reward should be pending before assignment");
+    assert_eq!(pending_validator_claim.claimable_at_height, 0);
+    let starting_stake = chain.state().validators().get(&audited).unwrap().stake;
+    let starting_treasury = chain.state().rewards().treasury();
+    chain.produce_block(validators[0], 1_000).unwrap();
+    let audit_id = *chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("mandatory audit must be assigned");
+    let delayed_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == audited
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("audited validator reward should be delayed by assignment");
+    assert_eq!(delayed_validator_claim.claimable_at_height, 3);
+    assert!(!delayed_validator_claim.voided_by_challenge);
+
+    let report = ValidatorAuditReport::new(
+        audit_id,
+        auditor,
+        VerificationResult::Invalid,
+        true,
+        hash_bytes(b"test", &[b"audit-report-canonical"]),
+    );
+    let events = chain.submit_validator_audit_report(report).unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ValidatorAuditAccepted {
+            audit_id: event_audit_id,
+            auditor: event_auditor,
+            validator: event_validator,
+            passed: false,
+        } if *event_audit_id == audit_id
+            && *event_auditor == auditor
+            && *event_validator == audited
+    )));
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ValidatorAuditSlashApplied {
+            audit_id: event_audit_id,
+            validator: event_validator,
+            amount: 55,
+            reason,
+        } if *event_audit_id == audit_id
+            && *event_validator == audited
+            && reason == "validator audit contradicted attestation"
+    )));
+    let result = chain
+        .state()
+        .validator_audit_results()
+        .get(&audit_id)
+        .unwrap();
+    assert!(!result.passed);
+    assert_eq!(result.attested_result, VerificationResult::Valid);
+    assert_eq!(result.canonical_result, VerificationResult::Invalid);
+    let slash = chain
+        .state()
+        .validator_audit_slashes()
+        .get(&audit_id)
+        .unwrap();
+    assert_eq!(slash.validator, audited);
+    assert_eq!(slash.auditor, auditor);
+    assert_eq!(slash.amount, 55);
+    assert_eq!(
+        chain.state().validators().get(&audited).unwrap().stake,
+        starting_stake - 55
+    );
+    assert_eq!(chain.state().rewards().treasury(), starting_treasury + 55);
+    let voided_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == audited
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("contradicted validator reward should stay pending until release");
+    assert!(voided_validator_claim.voided_by_challenge);
+    assert_eq!(
+        chain.submit_validator_audit_report(ValidatorAuditReport::new(
+            audit_id,
+            auditor,
+            VerificationResult::Invalid,
+            true,
+            hash_bytes(b"test", &[b"duplicate-audit-report"]),
+        )),
+        Err(TvmError::InvalidReceipt("duplicate validator audit result"))
+    );
+
+    let mut passing_chain = Chain::with_params(chain.params().clone(), beacon);
+    passing_chain.register_miner(miner, 100).unwrap();
+    passing_chain.register_validator(auditor, 10_000).unwrap();
+    for validator in &validators {
+        passing_chain
+            .register_validator(*validator, 10_000)
+            .unwrap();
+    }
+    let job = MatmulJob::synthetic(0, 1, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    passing_chain.submit_job(JobState::TensorOp(job));
+    passing_chain
+        .submit_tensor_op_receipt(receipt.clone())
+        .unwrap();
+    let assignment_seed = passing_chain.validator_assignment_seed(&receipt.receipt_id);
+    let audited = JobScheduler::default()
+        .assign_validators(&passing_chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
+    passing_chain
+        .submit_attestation(ValidatorAttestation::new(
+            audited,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"passing-audit-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+    passing_chain.produce_block(validators[0], 1_000).unwrap();
+    let audit_id = *passing_chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("mandatory audit must be assigned");
+    let events = passing_chain
+        .submit_validator_audit_report(ValidatorAuditReport::new(
+            audit_id,
+            auditor,
+            VerificationResult::Valid,
+            true,
+            hash_bytes(b"test", &[b"passing-audit-canonical"]),
+        ))
+        .unwrap();
+    assert_eq!(events.len(), 1);
+    assert!(passing_chain.state().validator_audit_results()[&audit_id].passed);
+    assert!(passing_chain.state().validator_audit_slashes().is_empty());
+}
+
+#[test]
 fn mismatched_attestation_metadata_penalizes_validator_and_is_rejected() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);

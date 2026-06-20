@@ -1,4 +1,7 @@
-use super::{BlockVote, Chain, blocks};
+use super::{
+    BlockVote, Chain, ReceiptRewardKind, ValidatorAuditAssignment, ValidatorAuditReport,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
+};
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
 use crate::types::{Address, Hash, hash_bytes};
@@ -119,6 +122,155 @@ pub fn has_attestation_quorum(chain: &Chain, receipt_id: &Hash) -> bool {
     let stake_den = chain.params.freivalds.minimum_stake_denominator.max(1);
     valid_count >= chain.params.freivalds.minimum_validators
         && valid_stake.saturating_mul(stake_den) >= assigned_stake.saturating_mul(stake_num)
+}
+
+pub fn submit_validator_audit_report(
+    chain: &mut Chain,
+    report: ValidatorAuditReport,
+) -> Result<(ValidatorAuditResult, Option<ValidatorAuditSlashRecord>)> {
+    if !chain.state.validators.contains_key(&report.auditor) {
+        return Err(TvmError::UnknownValidator);
+    }
+    if !report.verify_signature() {
+        return Err(TvmError::InvalidReceipt("bad validator audit signature"));
+    }
+    let assignment = chain
+        .state
+        .validator_audit_assignments
+        .get(&report.audit_id)
+        .cloned()
+        .ok_or(TvmError::InvalidReceipt("unknown validator audit"))?;
+    if chain.state.height > assignment.deadline_height {
+        return Err(TvmError::InvalidReceipt("validator audit deadline expired"));
+    }
+    if chain
+        .state
+        .validator_audit_results
+        .contains_key(&report.audit_id)
+    {
+        return Err(TvmError::InvalidReceipt("duplicate validator audit result"));
+    }
+    if chain
+        .state
+        .validator_audit_slashes
+        .contains_key(&report.audit_id)
+    {
+        return Err(TvmError::InvalidReceipt("validator audit already slashed"));
+    }
+    let audited_attestation = chain
+        .state
+        .attestations
+        .get(&assignment.receipt_id)
+        .and_then(|items| {
+            items
+                .iter()
+                .find(|attestation| attestation.validator == assignment.validator)
+        })
+        .ok_or(TvmError::InvalidReceipt(
+            "audited validator attestation missing",
+        ))?;
+    let passed = audited_attestation.result == report.canonical_result
+        && audited_attestation.data_availability_passed
+            == report.canonical_data_availability_passed;
+    let result = ValidatorAuditResult {
+        audit_id: report.audit_id,
+        receipt_id: assignment.receipt_id,
+        validator: assignment.validator,
+        auditor: report.auditor,
+        attested_result: audited_attestation.result,
+        canonical_result: report.canonical_result,
+        attested_data_availability_passed: audited_attestation.data_availability_passed,
+        canonical_data_availability_passed: report.canonical_data_availability_passed,
+        checks_root: report.checks_root,
+        submitted_at_height: chain.state.height,
+        passed,
+        signature: report.signature,
+    };
+    chain
+        .state
+        .validator_audit_results
+        .insert(result.audit_id, result.clone());
+    let slash = if passed {
+        None
+    } else {
+        Some(apply_validator_audit_slash(
+            chain,
+            &assignment,
+            report.auditor,
+            "validator audit contradicted attestation",
+        ))
+    };
+    Ok((result, slash))
+}
+
+pub(super) fn apply_validator_audit_slash(
+    chain: &mut Chain,
+    assignment: &ValidatorAuditAssignment,
+    auditor: Address,
+    reason: &str,
+) -> ValidatorAuditSlashRecord {
+    let Some(validator) = chain.state.validators.get_mut(&assignment.validator) else {
+        return ValidatorAuditSlashRecord {
+            audit_id: assignment.audit_id,
+            receipt_id: assignment.receipt_id,
+            validator: assignment.validator,
+            auditor,
+            amount: 0,
+            slashed_at_height: chain.state.height,
+            reason: reason.to_owned(),
+        };
+    };
+    let amount = validator
+        .stake
+        .min(chain.params.validator_audit_slash_amount);
+    validator.stake = validator.stake.saturating_sub(amount);
+    validator.reputation -= 10;
+    if reason == "validator missed mandatory audit" {
+        validator.missed_assignments = validator.missed_assignments.saturating_add(1);
+    }
+    void_validator_audit_reward(chain, &assignment.receipt_id, &assignment.validator);
+    chain.state.rewards.credit_treasury(amount);
+    let record = ValidatorAuditSlashRecord {
+        audit_id: assignment.audit_id,
+        receipt_id: assignment.receipt_id,
+        validator: assignment.validator,
+        auditor,
+        amount,
+        slashed_at_height: chain.state.height,
+        reason: reason.to_owned(),
+    };
+    chain
+        .state
+        .validator_audit_slashes
+        .insert(assignment.audit_id, record.clone());
+    record
+}
+
+fn void_validator_audit_reward(chain: &mut Chain, receipt_id: &Hash, validator: &Address) {
+    for reward in chain.state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == *receipt_id
+            && reward.beneficiary == *validator
+            && reward.kind == ReceiptRewardKind::Validator
+        {
+            reward.voided_by_challenge = true;
+        }
+    }
+}
+
+pub(super) fn validator_audit_id(receipt_id: &Hash, validator: &Address) -> Hash {
+    hash_bytes(b"tensor-vm-validator-audit-id-v1", &[receipt_id, validator])
+}
+
+pub(super) fn validator_audit_seed(
+    beacon_round: u64,
+    beacon: &Hash,
+    receipt_id: &Hash,
+    validator: &Address,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-validator-audit-seed-v1",
+        &[&beacon_round.to_le_bytes(), beacon, receipt_id, validator],
+    )
 }
 
 fn is_assigned_validator(chain: &Chain, validator: Address, receipt_id: Hash) -> bool {

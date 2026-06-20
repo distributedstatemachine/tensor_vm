@@ -35,7 +35,8 @@ pub use state::{
     ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingProposerReward, PendingReceiptReward, ReceiptRewardKind,
     ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
-    ValidatorState,
+    ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -145,6 +146,13 @@ impl Chain {
 
     pub fn submit_attestation(&mut self, attestation: ValidatorAttestation) -> Result<()> {
         validation::submit_attestation(self, attestation)
+    }
+
+    pub fn submit_validator_audit_report(
+        &mut self,
+        report: ValidatorAuditReport,
+    ) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::SubmitValidatorAuditReport(report))
     }
 
     pub fn has_attestation_quorum(&self, receipt_id: &Hash) -> bool {

@@ -53,6 +53,25 @@ impl ChainEngine for Chain {
                     validator,
                 }])
             }
+            ChainCommand::SubmitValidatorAuditReport(report) => {
+                let (result, slash) =
+                    super::validation::submit_validator_audit_report(self, report)?;
+                let mut events = vec![ChainEvent::ValidatorAuditAccepted {
+                    audit_id: result.audit_id,
+                    auditor: result.auditor,
+                    validator: result.validator,
+                    passed: result.passed,
+                }];
+                if let Some(slash) = slash {
+                    events.push(ChainEvent::ValidatorAuditSlashApplied {
+                        audit_id: slash.audit_id,
+                        validator: slash.validator,
+                        amount: slash.amount,
+                        reason: slash.reason,
+                    });
+                }
+                Ok(events)
+            }
             ChainCommand::SubmitBlock(block) => match self.admit_block(block)? {
                 BlockAdmission::Applied { height, hash } => {
                     Ok(vec![ChainEvent::BlockAccepted { height, hash }])

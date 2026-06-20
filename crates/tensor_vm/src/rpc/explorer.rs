@@ -27,6 +27,15 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
             .values()
             .map(|slash| slash.amount)
             .sum(),
+        validator_audit_assignment_count: chain.state().validator_audit_assignments().len(),
+        validator_audit_result_count: chain.state().validator_audit_results().len(),
+        validator_audit_slash_count: chain.state().validator_audit_slashes().len(),
+        validator_audit_slashed_amount_total: chain
+            .state()
+            .validator_audit_slashes()
+            .values()
+            .map(|slash| slash.amount)
+            .sum(),
         finalized_block_count: chain.state().finalized_blocks().len(),
         treasury_balance: chain.state().rewards().treasury(),
         pending_receipt_reward_count: chain.state().pending_receipt_rewards().len(),
