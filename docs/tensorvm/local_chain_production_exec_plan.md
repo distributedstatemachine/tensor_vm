@@ -817,6 +817,59 @@ curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received
 local CPU testnet check failed: gateway route is not reachable: /health
 ```
 
+Resumed Iteration 21 checkpoint:
+- Starting branch state: `## main...origin/main`.
+- First executable gate before this slice:
+  `cargo test -p tensor_vm local_testnet --release` passed with 5 release local-testnet library tests and
+  the local-testnet service gateway integration test.
+- Required workflow doc remains missing and is tracked as a blocker:
+  `docs/tensorvm/codex_5_5_local_chain_workflow.md`.
+- Scope: implement a minimal MVP §20.7 block `checks_root` challenge path using the Merkle-openable
+  selected receipt/check leaves added in Iteration 19. The slice should prove a mismatched check leaf,
+  delay proposer rewards through the challenge window, void pending proposer rewards on proven block-check
+  challenges, credit a challenger reward from the voided pending reward, throttle future proposer
+  eligibility during a penalty window, and remove the affected receipt from reward settlement until
+  reverified.
+- Parallel explorers launched before implementation: readiness mapper, codebase explorer, and
+  test-coverage explorer.
+- Implemented locally so far:
+  - `TensorBlock` carries a network-visible `proposer_reward` amount.
+  - Rewarded block production and aggregate proposer rewards create `PendingProposerReward` records instead
+    of immediately spendable proposer balances.
+  - `ReleaseMaturedProposerRewards` moves unchallenged pending rewards into spendable balances only after
+    the configured challenge window.
+  - `BlockCheckChallenge` verifies challenger signatures, check-leaf Merkle openings, canonical
+    recomputed `checks_root`, selected receipt/index pairing, duplicate prevention, and challenge-window
+    expiry.
+  - A successful block-check challenge voids the pending proposer reward for the challenged block height,
+    pays the challenger from that pending amount, routes the remainder to treasury, quarantines the
+    affected receipt, and sets a proposer throttle window.
+  - This is not full verifier-transcript fraud-proof completion; check leaves still summarize canonical
+    attestation check roots, and network/RPC challenge propagation is deferred.
+- Validation run during implementation:
+  - `cargo check -p tensor_vm --all-targets` passed.
+  - `cargo test -p tensor_vm chain::tests::challenges -- --nocapture` passed.
+  - `cargo test -p tensor_vm chain::tests::rewards -- --nocapture` passed after updating immediate-reward
+    expectations to pending reward release.
+  - `cargo test -p tensor_vm chain::tests::proposers -- --nocapture` passed.
+  - `cargo test -p tensor_vm storage::chain_state -- --nocapture` passed.
+  - `cargo test -p tensor_vm chain::tests::commands -- --nocapture` passed.
+  - `cargo test -p tensor_vm chain::tests::blocks -- --nocapture` passed.
+  - `cargo test -p tensor_vm --lib` passed with 320 tests.
+  - `cargo fmt --check --all` passed after applying formatting.
+  - `cargo test -p tensor_vm` passed with 320 library tests, 1 local CPU Compose integration test,
+    8 `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
+  - `cargo clippy --workspace --all-targets -- -D warnings` passed after replacing high-arity helpers
+    with typed context structs.
+  - `cargo test -p tensor_vm local_testnet --release` passed with 5 release local-testnet library tests
+    and the service gateway integration test.
+  - `cargo test --workspace --release` passed with 14 `experiments`, 320 `tensor_vm`, 1 local CPU
+    Compose integration test, 8 `tvmd_cli`, 28 `tvmd_runtime`, 3 `tensor_vm_explorer`, and doc-test
+    targets.
+  - `git diff --check` passed.
+  - `cargo tarpaulin --workspace --offline` was attempted but blocked because this environment does not
+    have the `cargo-tarpaulin` subcommand installed.
+
 ## Archive
 
 - Iteration 1, `56da38a Extract reusable node runtime state`: extracted reusable node runtime state,

@@ -1,6 +1,6 @@
 use super::{
-    AccountState, BlockVote, ChainState, JobState, MinerState, ModelState, ReceiptState,
-    RewardState, ValidatorState,
+    AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, JobState, MinerState,
+    ModelState, PendingProposerReward, ReceiptState, RewardState, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -45,9 +45,63 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
         b"tensor-vm-included-receipt-root-v1",
         &state.included_receipts,
     ));
+    parts.extend_from_slice(&block_check_challenge_root(&state.block_check_challenges));
+    parts.extend_from_slice(&hash_set_root(
+        b"tensor-vm-challenged-receipt-root-v1",
+        &state.challenged_receipts,
+    ));
+    parts.extend_from_slice(&proposer_penalty_root(&state.proposer_penalty_until));
+    parts.extend_from_slice(&pending_proposer_reward_root(
+        &state.pending_proposer_rewards,
+    ));
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
+}
+
+pub(super) fn block_check_challenge_root(
+    challenges: &BTreeMap<Hash, BlockCheckChallengeRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (challenge_id, challenge) in challenges {
+        encoded.extend_from_slice(challenge_id);
+        encoded.extend_from_slice(&challenge.block_hash);
+        encoded.extend_from_slice(&challenge.block_height.to_le_bytes());
+        encoded.extend_from_slice(&challenge.receipt_id);
+        encoded.extend_from_slice(&challenge.proposer);
+        encoded.extend_from_slice(&challenge.challenger);
+        encoded.extend_from_slice(&challenge.expected_check_leaf);
+        encoded.extend_from_slice(&challenge.observed_check_leaf);
+        encoded.extend_from_slice(&challenge.challenged_at_height.to_le_bytes());
+        encoded.extend_from_slice(&challenge.proposer_reward_clawback.to_le_bytes());
+        encoded.extend_from_slice(&challenge.challenger_reward.to_le_bytes());
+        encoded.extend_from_slice(&challenge.penalty_until_height.to_le_bytes());
+        encoded.extend_from_slice(&(challenge.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(challenge.reason.as_bytes());
+    }
+    hash_bytes(b"tensor-vm-block-check-challenge-root-v1", &[&encoded])
+}
+
+pub(super) fn proposer_penalty_root(penalties: &BTreeMap<Address, u64>) -> Hash {
+    let mut encoded = Vec::new();
+    for (proposer, penalty_until_height) in penalties {
+        encoded.extend_from_slice(proposer);
+        encoded.extend_from_slice(&penalty_until_height.to_le_bytes());
+    }
+    hash_bytes(b"tensor-vm-proposer-penalty-root-v1", &[&encoded])
+}
+
+pub(super) fn pending_proposer_reward_root(rewards: &BTreeMap<u64, PendingProposerReward>) -> Hash {
+    let mut encoded = Vec::new();
+    for (height, reward) in rewards {
+        encoded.extend_from_slice(&height.to_le_bytes());
+        encoded.extend_from_slice(&reward.block_height.to_le_bytes());
+        encoded.extend_from_slice(&reward.proposer);
+        encoded.extend_from_slice(&reward.amount.to_le_bytes());
+        encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
+        encoded.push(u8::from(reward.voided_by_challenge));
+    }
+    hash_bytes(b"tensor-vm-pending-proposer-reward-root-v1", &[&encoded])
 }
 
 pub(super) fn block_finality_root(

@@ -201,6 +201,11 @@ The proof corpus must reject these assumptions:
 7. A `checks_root` can omit seed, parameter version, primitive type, or artifact roots.
 8. Reward settlement can happen before direct recomputation or challenge finality.
 
+Current local implementation status: selected receipt check leaves can be opened and block-check
+challenges can disprove a committed `checks_root` against canonical local recomputation, with pending
+proposer reward invalidation. This is challenge-window plumbing over current check leaves, not proof that
+the aggregated attestation `checks_root` values are full verifier transcripts.
+
 ## Discharge Gate
 
 Do not upgrade `K-QUO-001`, `V2-CHK-001`, or `V2-CHK-002` to semantic verifier evidence until all of these

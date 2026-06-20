@@ -1,6 +1,7 @@
 use crate::chain::{
-    AccountState, BlockVote, Chain, ChainParams, ChainParts, ChainState, ChainStateParts,
-    HardwareClass, JobState, MinerState, ModelState, ReceiptState, RewardState, ValidatorState,
+    AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
+    ChainStateParts, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
+    ReceiptState, RewardState, ValidatorState,
 };
 use crate::codec as payload_codec;
 use crate::error::{Result, TvmError};
@@ -205,6 +206,10 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_hash_set(out, state.settled_receipts());
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
+    encode_block_check_challenges(out, state.block_check_challenges());
+    encode_hash_set(out, state.challenged_receipts());
+    encode_u64_by_hash_map(out, state.proposer_penalty_until());
+    encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
     encode_model_states(out, state.model_states());
     encode_rewards(out, state.rewards());
 }
@@ -229,6 +234,10 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         settled_receipts: decode_hash_set(reader)?,
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
+        block_check_challenges: decode_block_check_challenges(reader)?,
+        challenged_receipts: decode_hash_set(reader)?,
+        proposer_penalty_until: decode_u64_by_hash_map(reader)?,
+        pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
         model_states: decode_model_states(reader)?,
         rewards: decode_rewards(reader)?,
     }))
@@ -542,6 +551,131 @@ fn decode_hash_vec_map(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, Ve
         items.insert(key, values);
     }
     Ok(items)
+}
+
+fn encode_block_check_challenges(
+    out: &mut Vec<u8>,
+    challenges: &BTreeMap<Hash, BlockCheckChallengeRecord>,
+) {
+    write_len(out, challenges.len());
+    for (challenge_id, challenge) in challenges {
+        write_hash(out, challenge_id);
+        write_hash(out, &challenge.block_hash);
+        write_u64(out, challenge.block_height);
+        write_hash(out, &challenge.receipt_id);
+        write_hash(out, &challenge.proposer);
+        write_hash(out, &challenge.challenger);
+        write_hash(out, &challenge.expected_check_leaf);
+        write_hash(out, &challenge.observed_check_leaf);
+        write_u64(out, challenge.challenged_at_height);
+        write_u64(out, challenge.proposer_reward_clawback);
+        write_u64(out, challenge.challenger_reward);
+        write_u64(out, challenge.penalty_until_height);
+        write_len(out, challenge.reason.len());
+        out.extend_from_slice(challenge.reason.as_bytes());
+    }
+}
+
+fn decode_block_check_challenges(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, BlockCheckChallengeRecord>> {
+    let mut challenges = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let challenge_id = reader.read_hash()?;
+        let block_hash = reader.read_hash()?;
+        let block_height = reader.read_u64()?;
+        let receipt_id = reader.read_hash()?;
+        let proposer = reader.read_hash()?;
+        let challenger = reader.read_hash()?;
+        let expected_check_leaf = reader.read_hash()?;
+        let observed_check_leaf = reader.read_hash()?;
+        let challenged_at_height = reader.read_u64()?;
+        let proposer_reward_clawback = reader.read_u64()?;
+        let challenger_reward = reader.read_u64()?;
+        let penalty_until_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid challenge reason"))?
+            .to_owned();
+        challenges.insert(
+            challenge_id,
+            BlockCheckChallengeRecord {
+                block_hash,
+                block_height,
+                receipt_id,
+                proposer,
+                challenger,
+                expected_check_leaf,
+                observed_check_leaf,
+                challenged_at_height,
+                proposer_reward_clawback,
+                challenger_reward,
+                penalty_until_height,
+                reason,
+            },
+        );
+    }
+    Ok(challenges)
+}
+
+fn encode_u64_by_hash_map(out: &mut Vec<u8>, items: &BTreeMap<Hash, u64>) {
+    write_len(out, items.len());
+    for (key, value) in items {
+        write_hash(out, key);
+        write_u64(out, *value);
+    }
+}
+
+fn decode_u64_by_hash_map(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, u64>> {
+    let mut items = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        items.insert(reader.read_hash()?, reader.read_u64()?);
+    }
+    Ok(items)
+}
+
+fn encode_pending_proposer_rewards(
+    out: &mut Vec<u8>,
+    rewards: &BTreeMap<u64, PendingProposerReward>,
+) {
+    write_len(out, rewards.len());
+    for (height, reward) in rewards {
+        write_u64(out, *height);
+        write_u64(out, reward.block_height);
+        write_hash(out, &reward.proposer);
+        write_u64(out, reward.amount);
+        write_u64(out, reward.claimable_at_height);
+        out.push(u8::from(reward.voided_by_challenge));
+    }
+}
+
+fn decode_pending_proposer_rewards(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<u64, PendingProposerReward>> {
+    let mut rewards = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let height = reader.read_u64()?;
+        let block_height = reader.read_u64()?;
+        let proposer = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let claimable_at_height = reader.read_u64()?;
+        let voided_by_challenge = match reader.read_u8()? {
+            0 => false,
+            1 => true,
+            _ => return Err(TvmError::Storage("invalid pending reward boolean")),
+        };
+        rewards.insert(
+            height,
+            PendingProposerReward {
+                block_height,
+                proposer,
+                amount,
+                claimable_at_height,
+                voided_by_challenge,
+            },
+        );
+    }
+    Ok(rewards)
 }
 
 fn hardware_class_code(hardware_class: HardwareClass) -> u8 {

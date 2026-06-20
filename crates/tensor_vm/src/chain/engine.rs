@@ -1,5 +1,5 @@
 use super::state::{BlockVote, ChainParams, ChainState, JobState, ReceiptState, TensorBlock};
-use crate::challenge::ChallengeOutcome;
+use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::Result;
 use crate::types::{Address, Hash};
 use crate::verify::ValidatorAttestation;
@@ -64,6 +64,7 @@ pub enum ChainCommand {
         proposer: Address,
         timestamp: u64,
     },
+    ReleaseMaturedProposerRewards,
     RegisterModel {
         model_id: Hash,
         architecture_hash: Hash,
@@ -77,6 +78,7 @@ pub enum ChainCommand {
         weight_root_after: Hash,
     },
     ApplyChallengeOutcome(ChallengeOutcome),
+    SubmitBlockCheckChallenge(BlockCheckChallenge),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -111,6 +113,17 @@ pub enum ChainEvent {
         height: u64,
         hash: Hash,
     },
+    ProposerRewardPending {
+        block_height: u64,
+        proposer: Address,
+        amount: u64,
+        claimable_at_height: u64,
+    },
+    ProposerRewardReleased {
+        block_height: u64,
+        proposer: Address,
+        amount: u64,
+    },
     BlockAccepted {
         height: u64,
         hash: Hash,
@@ -128,6 +141,16 @@ pub enum ChainEvent {
     ChallengeProvenInvalid {
         dishonest_party: Address,
         slash_amount: u64,
+        reason: String,
+    },
+    BlockCheckChallengeProven {
+        block_hash: Hash,
+        receipt_id: Hash,
+        proposer: Address,
+        challenger: Address,
+        proposer_reward_clawback: u64,
+        challenger_reward: u64,
+        penalty_until_height: u64,
         reason: String,
     },
 }

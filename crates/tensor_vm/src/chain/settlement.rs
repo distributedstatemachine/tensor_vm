@@ -33,6 +33,9 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         if chain.state.settled_receipts.contains(receipt_id) {
             continue;
         }
+        if chain.state.challenged_receipts.contains(receipt_id) {
+            continue;
+        }
         if chain.has_attestation_quorum(receipt_id) {
             if !has_redundant_agreement(chain, receipt_id) {
                 continue;

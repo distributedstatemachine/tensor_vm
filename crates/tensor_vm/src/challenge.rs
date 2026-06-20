@@ -1,7 +1,8 @@
 use crate::error::Result;
 use crate::jobs::{MatmulJob, TensorOpReceipt};
+use crate::merkle::MerkleProof;
 use crate::tensor::Tensor;
-use crate::types::{Address, Hash, hash_bytes};
+use crate::types::{Address, Hash, Signature, hash_bytes, sign, verify_signature};
 use crate::verify::{
     FreivaldsParams, TensorOpVerificationReport, VerificationResult, verify_tensor_op,
 };
@@ -45,9 +46,104 @@ pub enum ChallengeOutcome {
         slash_amount: u64,
         reason: String,
     },
+    BlockCheckProvenInvalid {
+        block_hash: Hash,
+        receipt_id: Hash,
+        proposer: Address,
+        challenger: Address,
+        proposer_reward_clawback: u64,
+        challenger_reward: u64,
+        penalty_until_height: u64,
+        reason: String,
+    },
     Rejected {
         reason: String,
     },
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockCheckChallenge {
+    pub challenger: Address,
+    pub block_hash: Hash,
+    pub receipt_id: Hash,
+    pub expected_check_leaf: Hash,
+    pub observed_check_leaf: Hash,
+    pub check_leaf_index: u64,
+    pub check_leaf_proof: MerkleProof,
+    pub recomputed_checks_root: Hash,
+    pub challenger_signature: Signature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockCheckChallengeInput {
+    pub challenger: Address,
+    pub block_hash: Hash,
+    pub receipt_id: Hash,
+    pub expected_check_leaf: Hash,
+    pub observed_check_leaf: Hash,
+    pub check_leaf_index: u64,
+    pub check_leaf_proof: MerkleProof,
+    pub recomputed_checks_root: Hash,
+}
+
+impl BlockCheckChallenge {
+    pub fn new(input: BlockCheckChallengeInput) -> Self {
+        let message = Self::message_hash(
+            &input.block_hash,
+            &input.receipt_id,
+            &input.expected_check_leaf,
+            &input.observed_check_leaf,
+            input.check_leaf_index,
+            &input.recomputed_checks_root,
+        );
+        Self {
+            challenger: input.challenger,
+            block_hash: input.block_hash,
+            receipt_id: input.receipt_id,
+            expected_check_leaf: input.expected_check_leaf,
+            observed_check_leaf: input.observed_check_leaf,
+            check_leaf_index: input.check_leaf_index,
+            check_leaf_proof: input.check_leaf_proof,
+            recomputed_checks_root: input.recomputed_checks_root,
+            challenger_signature: sign(&input.challenger, &message),
+        }
+    }
+
+    pub fn verify_signature(&self) -> bool {
+        verify_signature(
+            &self.challenger,
+            &Self::message_hash(
+                &self.block_hash,
+                &self.receipt_id,
+                &self.expected_check_leaf,
+                &self.observed_check_leaf,
+                self.check_leaf_index,
+                &self.recomputed_checks_root,
+            ),
+            &self.challenger_signature,
+        )
+    }
+
+    fn message_hash(
+        block_hash: &Hash,
+        receipt_id: &Hash,
+        expected_check_leaf: &Hash,
+        observed_check_leaf: &Hash,
+        check_leaf_index: u64,
+        recomputed_checks_root: &Hash,
+    ) -> Hash {
+        hash_bytes(
+            b"tensor-vm-block-check-challenge-v1",
+            &[
+                block_hash,
+                receipt_id,
+                expected_check_leaf,
+                observed_check_leaf,
+                &check_leaf_index.to_le_bytes(),
+                recomputed_checks_root,
+            ],
+        )
+    }
 }
 
 #[derive(Clone, Debug)]

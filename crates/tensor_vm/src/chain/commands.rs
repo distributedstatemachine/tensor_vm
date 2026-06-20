@@ -98,6 +98,33 @@ impl ChainEngine for Chain {
                     hash: block.hash(),
                 }])
             }
+            ChainCommand::ReleaseMaturedProposerRewards => {
+                let mut events = Vec::new();
+                let matured = self
+                    .state
+                    .pending_proposer_rewards
+                    .iter()
+                    .filter(|(_, reward)| {
+                        !reward.voided_by_challenge
+                            && reward.claimable_at_height <= self.state.height
+                    })
+                    .map(|(height, reward)| (*height, reward.proposer, reward.amount))
+                    .collect::<Vec<_>>();
+                for (block_height, proposer, amount) in matured {
+                    self.state.pending_proposer_rewards.remove(&block_height);
+                    self.state.rewards.credit(proposer, amount);
+                    events.push(ChainEvent::ProposerRewardReleased {
+                        block_height,
+                        proposer,
+                        amount,
+                    });
+                    events.push(ChainEvent::RewardCredited {
+                        address: proposer,
+                        amount,
+                    });
+                }
+                Ok(events)
+            }
             ChainCommand::RegisterModel {
                 model_id,
                 architecture_hash,
@@ -139,9 +166,45 @@ impl ChainEngine for Chain {
                         slash_amount: *slash_amount,
                         reason: reason.clone(),
                     },
+                    ChallengeOutcome::BlockCheckProvenInvalid {
+                        proposer,
+                        proposer_reward_clawback,
+                        reason,
+                        ..
+                    } => ChainEvent::ChallengeProvenInvalid {
+                        dishonest_party: *proposer,
+                        slash_amount: *proposer_reward_clawback,
+                        reason: reason.clone(),
+                    },
                 };
                 challenges::apply_outcome(self, outcome)?;
                 Ok(vec![event])
+            }
+            ChainCommand::SubmitBlockCheckChallenge(challenge) => {
+                let outcome = challenges::submit_block_check(self, challenge)?;
+                let ChallengeOutcome::BlockCheckProvenInvalid {
+                    block_hash,
+                    receipt_id,
+                    proposer,
+                    challenger,
+                    proposer_reward_clawback,
+                    challenger_reward,
+                    penalty_until_height,
+                    reason,
+                } = outcome
+                else {
+                    unreachable!("block check challenge returns block check outcome")
+                };
+                Ok(vec![ChainEvent::BlockCheckChallengeProven {
+                    block_hash,
+                    receipt_id,
+                    proposer,
+                    challenger,
+                    proposer_reward_clawback,
+                    challenger_reward,
+                    penalty_until_height,
+                    reason,
+                }])
             }
         }
     }

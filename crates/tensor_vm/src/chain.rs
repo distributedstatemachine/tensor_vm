@@ -1,4 +1,4 @@
-use crate::challenge::ChallengeOutcome;
+use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::Result;
 #[cfg(test)]
 use crate::error::TvmError;
@@ -30,10 +30,11 @@ pub use engine::{BlockAdmission, BlockInvalidReason, ChainCommand, ChainEngine, 
 #[cfg(test)]
 use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
-    AccountState, BlockApplyOutcome, BlockParentSnapshot, BlockProductionKind, BlockVote,
-    BlockspaceCaps, BlockspaceSelection, Chain, ChainParams, ChainState, HardwareClass, JobState,
-    MinerState, ModelState, ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening,
-    TensorBlock, Transaction, ValidatorState,
+    AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
+    BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
+    ChainState, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
+    ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
+    ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -194,6 +195,17 @@ impl Chain {
             .map(|_| ())
     }
 
+    pub fn submit_block_check_challenge(
+        &mut self,
+        challenge: BlockCheckChallenge,
+    ) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
+    }
+
+    pub fn release_matured_proposer_rewards(&mut self) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::ReleaseMaturedProposerRewards)
+    }
+
     pub fn validator_assignment_seed(&self, receipt_id: &Hash) -> Hash {
         validation::assignment_seed(
             self.state.finalized_beacon_round,
@@ -237,9 +249,39 @@ impl Chain {
             allocation.validator_reward_pool,
         );
         if allocation.proposer_reward > 0 {
+            let block_height = self
+                .blocks
+                .last()
+                .filter(|block| block.proposer == proposer)
+                .map_or(self.state.height, |block| block.height);
             self.state
-                .rewards
-                .credit(proposer, allocation.proposer_reward);
+                .pending_proposer_rewards
+                .entry(block_height)
+                .and_modify(|reward| {
+                    if reward.proposer == proposer && !reward.voided_by_challenge {
+                        reward.amount = reward.amount.saturating_add(allocation.proposer_reward);
+                        reward.claimable_at_height = reward.claimable_at_height.max(
+                            self.state.height.saturating_add(
+                                self.params
+                                    .challenge_window_epochs
+                                    .max(1)
+                                    .saturating_mul(self.params.epoch_length.max(1)),
+                            ),
+                        );
+                    }
+                })
+                .or_insert_with(|| PendingProposerReward {
+                    block_height,
+                    proposer,
+                    amount: allocation.proposer_reward,
+                    claimable_at_height: self.state.height.saturating_add(
+                        self.params
+                            .challenge_window_epochs
+                            .max(1)
+                            .saturating_mul(self.params.epoch_length.max(1)),
+                    ),
+                    voided_by_challenge: false,
+                });
         }
         self.state
             .rewards

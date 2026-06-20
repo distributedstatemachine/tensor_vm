@@ -6,7 +6,7 @@ use crate::tensor::DType;
 use crate::types::Hash;
 use crate::verify::{ValidatorAttestation, VerificationResult};
 
-pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 1 + 8 * 5 + 32 * 11;
+pub(crate) const TENSOR_BLOCK_PAYLOAD_LEN: usize = 1 + 8 * 6 + 32 * 11;
 pub(crate) const BLOCK_VOTE_PAYLOAD_LEN: usize = 32 * 3 + 8 * 2;
 pub(crate) const ATTESTATION_PAYLOAD_LEN: usize = 32 * 5 + 8 + 3;
 
@@ -86,6 +86,7 @@ pub(crate) fn encode_tensor_block_payload(block: &TensorBlock) -> Vec<u8> {
     write_u64(&mut out, block.beacon_round);
     write_hash(&mut out, &block.beacon);
     out.push(block.production_kind.tag());
+    write_u64(&mut out, block.proposer_reward);
     write_hash(&mut out, &block.difficulty_target);
     write_u64(&mut out, block.nonce);
     write_u64(&mut out, block.timestamp);
@@ -116,6 +117,7 @@ pub(crate) fn decode_tensor_block_payload(input: &[u8]) -> Option<TensorBlock> {
             offset += 1;
             kind
         },
+        proposer_reward: read_u64(input, &mut offset).ok()?,
         difficulty_target: read_hash(input, &mut offset).ok()?,
         nonce: read_u64(input, &mut offset).ok()?,
         timestamp: read_u64(input, &mut offset).ok()?,
@@ -541,6 +543,7 @@ mod tests {
             beacon_round: 9,
             beacon: hash(9),
             production_kind: BlockProductionKind::UsefulVerificationPow,
+            proposer_reward: 21,
             difficulty_target: hash(10),
             nonce: 12,
             timestamp: 13,

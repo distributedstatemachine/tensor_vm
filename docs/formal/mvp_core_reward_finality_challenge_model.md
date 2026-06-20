@@ -58,6 +58,12 @@ Rewards tied to selected receipts or block-level `checks_root` evidence must mov
 `PendingChallenge` balances must not be usable as spendable balances. They can be represented in a reward
 root, but the root must encode their pending status and maturity deadline.
 
+Current local implementation status: block proposer rewards use pending `PendingProposerReward` claims
+with a challenge-window maturity height, explicit release into spendable rewards, and block-check challenge
+invalidation for the challenged block height. This partially discharges proposer reward delay locally. It
+does not yet prove full verifier-transcript challenges, networked dispute propagation, or delayed
+miner/validator reward finality.
+
 ## Required Objects
 
 The future v2 state needs these objects before reward finality can be proved.

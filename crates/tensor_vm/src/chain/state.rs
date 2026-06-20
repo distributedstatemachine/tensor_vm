@@ -187,6 +187,31 @@ pub struct BlockApplyOutcome {
     pub child_beacon: Hash,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockCheckChallengeRecord {
+    pub block_hash: Hash,
+    pub block_height: u64,
+    pub receipt_id: Hash,
+    pub proposer: Address,
+    pub challenger: Address,
+    pub expected_check_leaf: Hash,
+    pub observed_check_leaf: Hash,
+    pub challenged_at_height: u64,
+    pub proposer_reward_clawback: u64,
+    pub challenger_reward: u64,
+    pub penalty_until_height: u64,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PendingProposerReward {
+    pub block_height: u64,
+    pub proposer: Address,
+    pub amount: u64,
+    pub claimable_at_height: u64,
+    pub voided_by_challenge: bool,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardAllocation {
     pub miner_reward_pool: u64,
@@ -451,6 +476,7 @@ pub struct TensorBlock {
     pub beacon_round: u64,
     pub beacon: Hash,
     pub production_kind: BlockProductionKind,
+    pub proposer_reward: u64,
     pub difficulty_target: Hash,
     pub nonce: u64,
     pub timestamp: u64,
@@ -475,6 +501,7 @@ impl TensorBlock {
                 &self.beacon_round.to_le_bytes(),
                 &self.beacon,
                 &[self.production_kind.tag()],
+                &self.proposer_reward.to_le_bytes(),
                 &self.difficulty_target,
                 &self.nonce.to_le_bytes(),
                 &self.timestamp.to_le_bytes(),
@@ -498,6 +525,7 @@ impl TensorBlock {
                 &self.beacon_round.to_le_bytes(),
                 &self.beacon,
                 &[self.production_kind.tag()],
+                &self.proposer_reward.to_le_bytes(),
                 &self.difficulty_target,
                 &self.timestamp.to_le_bytes(),
             ],
@@ -582,6 +610,10 @@ pub struct ChainState {
     pub(in crate::chain) settled_receipts: BTreeSet<Hash>,
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
+    pub(in crate::chain) block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
+    pub(in crate::chain) challenged_receipts: BTreeSet<Hash>,
+    pub(in crate::chain) proposer_penalty_until: BTreeMap<Address, u64>,
+    pub(in crate::chain) pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub(in crate::chain) model_states: BTreeMap<Hash, ModelState>,
     pub(in crate::chain) rewards: RewardState,
 }
@@ -606,6 +638,10 @@ pub(crate) struct ChainStateParts {
     pub settled_receipts: BTreeSet<Hash>,
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
+    pub block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
+    pub challenged_receipts: BTreeSet<Hash>,
+    pub proposer_penalty_until: BTreeMap<Address, u64>,
+    pub pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub model_states: BTreeMap<Hash, ModelState>,
     pub rewards: RewardState,
 }
@@ -631,6 +667,10 @@ impl ChainState {
             settled_receipts: parts.settled_receipts,
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
+            block_check_challenges: parts.block_check_challenges,
+            challenged_receipts: parts.challenged_receipts,
+            proposer_penalty_until: parts.proposer_penalty_until,
+            pending_proposer_rewards: parts.pending_proposer_rewards,
             model_states: parts.model_states,
             rewards: parts.rewards,
         }
@@ -706,6 +746,22 @@ impl ChainState {
 
     pub fn block_selected_receipts(&self) -> &BTreeMap<Hash, Vec<Hash>> {
         &self.block_selected_receipts
+    }
+
+    pub fn block_check_challenges(&self) -> &BTreeMap<Hash, BlockCheckChallengeRecord> {
+        &self.block_check_challenges
+    }
+
+    pub fn challenged_receipts(&self) -> &BTreeSet<Hash> {
+        &self.challenged_receipts
+    }
+
+    pub fn proposer_penalty_until(&self) -> &BTreeMap<Address, u64> {
+        &self.proposer_penalty_until
+    }
+
+    pub fn pending_proposer_rewards(&self) -> &BTreeMap<u64, PendingProposerReward> {
+        &self.pending_proposer_rewards
     }
 
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {

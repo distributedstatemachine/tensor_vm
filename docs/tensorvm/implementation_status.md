@@ -8,9 +8,9 @@ validator-owned block production with useful-verification PoW fields over determ
 blockspace, selected receipts are marked included once, and block votes validate the known block with strict
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
-Remaining consensus gaps are exact parent-state snapshots and child-state apply semantics,
-selected-receipt lifecycle/opening metadata, `checks_root` challenge openings, difficulty retargeting,
-zero-receipt skip fallback, and live validator proposer/block-assembly networking. See
+Remaining consensus gaps are full verifier-transcript challenge semantics, network/RPC challenge
+propagation, exact parent-state snapshots and child-state apply semantics, difficulty retargeting,
+zero-receipt skip fallback economics, and live validator proposer/block-assembly networking. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -43,7 +43,8 @@ zero-receipt skip fallback, and live validator proposer/block-assembly networkin
 - Content roots for jobs, receipts, attestations, rewards, and full chain state through the internal
   `chain::roots` boundary
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
-  proposer/treasury rewards, reward accounting without repeated payout, and no-quorum rejection
+  delayed proposer rewards through a pending reward ledger, treasury rewards, reward accounting without
+  repeated payout, and no-quorum rejection
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
@@ -58,8 +59,9 @@ zero-receipt skip fallback, and live validator proposer/block-assembly networkin
   boundary
 - Model registration and linear-training model-state transitions through the internal `chain::models`
   boundary
-- Challenge outcome application and miner/validator slashing through the internal `chain::challenges`
-  boundary
+- Challenge outcome application, miner/validator slashing, local block `checks_root` challenge admission,
+  pending proposer reward invalidation, challenger reward payment, challenged-receipt quarantine, and
+  proposer throttle windows through the internal `chain::challenges` boundary
 - Profile-neutral `ChainCommand`, `ChainEvent`, and `ChainEngine` facade types through the internal
   `chain::engine` boundary
 - `ChainEngine` command dispatch, event emission, and view accessors through the internal

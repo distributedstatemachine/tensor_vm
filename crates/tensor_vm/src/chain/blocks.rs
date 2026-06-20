@@ -4,8 +4,8 @@ use super::roots::{
 };
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
-    BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState, ReceiptState,
-    SelectedReceiptOpening, TensorBlock,
+    BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState, PendingProposerReward,
+    ReceiptState, SelectedReceiptOpening, TensorBlock,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -13,9 +13,33 @@ use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use num_bigint::BigUint;
 use std::collections::BTreeSet;
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+struct BlockRewardContext {
+    proposer: Address,
+    proposer_reward: u64,
+    challenge_window_epochs: u64,
+}
+
 pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
+    produce_inner(chain, proposer, timestamp, 0)
+}
+
+fn produce_inner(
+    chain: &mut Chain,
+    proposer: Address,
+    timestamp: u64,
+    pending_proposer_reward: u64,
+) -> Result<TensorBlock> {
     if !chain.state.validators.contains_key(&proposer) {
         return Err(TvmError::UnknownValidator);
+    }
+    if chain
+        .state
+        .proposer_penalty_until
+        .get(&proposer)
+        .is_some_and(|penalty_until| chain.state.height < *penalty_until)
+    {
+        return Err(TvmError::InvalidReceipt("proposer is challenge-throttled"));
     }
 
     let parent_hash = chain
@@ -56,6 +80,11 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         &beacon,
         chain.state.height,
         &selection.receipt_ids,
+        BlockRewardContext {
+            proposer,
+            proposer_reward: pending_proposer_reward,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+        },
     );
     let chain_state_root = state_root(&child_state);
     let reward_root = reward_root(&child_state.rewards);
@@ -72,6 +101,7 @@ pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> R
         beacon_round,
         beacon,
         production_kind,
+        proposer_reward: pending_proposer_reward,
         difficulty_target,
         nonce: 0,
         timestamp,
@@ -111,18 +141,8 @@ pub(super) fn produce_with_rewards(
     if !chain.state.validators.contains_key(&proposer) {
         return Err(TvmError::UnknownValidator);
     }
-    let rewards_before = chain.state.rewards.clone();
     let proposer_reward = fixed_block_reward.saturating_add(fee_share);
-    if proposer_reward > 0 {
-        chain.state.rewards.credit(proposer, proposer_reward);
-    }
-    match produce(chain, proposer, timestamp) {
-        Ok(block) => Ok(block),
-        Err(error) => {
-            chain.state.rewards = rewards_before;
-            Err(error)
-        }
-    }
+    produce_inner(chain, proposer, timestamp, proposer_reward)
 }
 
 pub(super) fn prepare_parent_state(chain: &mut Chain) -> Result<()> {
@@ -205,6 +225,11 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
         &block.beacon,
         height,
         &outcome.selected_receipt_ids,
+        BlockRewardContext {
+            proposer: block.proposer,
+            proposer_reward: block.proposer_reward,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+        },
     );
     Ok(BlockAdmission::Applied {
         height,
@@ -474,6 +499,11 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         &block.beacon,
         block.height,
         &selected_receipts,
+        BlockRewardContext {
+            proposer: block.proposer,
+            proposer_reward: block.proposer_reward,
+            challenge_window_epochs: chain.params.challenge_window_epochs,
+        },
     );
     let selected_openings = selected_receipt_openings(
         &parent_state,
@@ -584,6 +614,7 @@ fn apply_block_to_parent_state(
     beacon: &Hash,
     block_height: u64,
     selected_receipts: &[Hash],
+    reward_context: BlockRewardContext,
 ) -> ChainState {
     let mut child_state = parent_state.clone();
     for receipt_id in selected_receipts {
@@ -595,6 +626,22 @@ fn apply_block_to_parent_state(
         next_finalized_beacon(beacon_round, beacon, child_state.height, child_state.epoch);
     child_state.finalized_beacon_round = next_round;
     child_state.finalized_randomness = next_beacon;
+    if reward_context.proposer_reward > 0 {
+        let challenge_window_blocks = reward_context
+            .challenge_window_epochs
+            .max(1)
+            .saturating_mul(epoch_length.max(1));
+        child_state.pending_proposer_rewards.insert(
+            block_height,
+            PendingProposerReward {
+                block_height,
+                proposer: reward_context.proposer,
+                amount: reward_context.proposer_reward,
+                claimable_at_height: block_height.saturating_add(challenge_window_blocks),
+                voided_by_challenge: false,
+            },
+        );
+    }
     child_state
 }
 

@@ -23,12 +23,33 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
-    assert_eq!(chain.state().rewards().balance(&proposer), 500);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert_eq!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block.height)
+            .unwrap()
+            .amount,
+        500
+    );
     assert_eq!(block.reward_root, reward_root(chain.state().rewards()));
 
     chain.settle_epoch_rewards(allocation, proposer);
-    assert_eq!(chain.state().rewards().balance(&proposer), 1_000);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert_eq!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block.height)
+            .unwrap()
+            .amount,
+        1_000
+    );
     assert_eq!(chain.state().rewards().treasury(), 500);
+    chain.set_position_for_testing(101, 1);
+    chain.release_matured_proposer_rewards().unwrap();
+    assert_eq!(chain.state().rewards().balance(&proposer), 1_000);
 }
 
 #[test]

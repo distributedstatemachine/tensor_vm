@@ -325,6 +325,7 @@ mod tests {
             beacon_round: height,
             beacon: hash_bytes(b"test-block", &[label, b"beacon"]),
             production_kind: crate::chain::BlockProductionKind::UsefulVerificationPow,
+            proposer_reward: 0,
             difficulty_target: [0xff; 32],
             nonce: height.saturating_add(1),
             timestamp: height.saturating_mul(6),
