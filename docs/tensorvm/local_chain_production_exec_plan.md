@@ -5,11 +5,16 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 22 implementation and validation are complete locally and pending commit
-  and push.
-- Current status: Gate 0 for this resumed iteration passed first on June 20, 2026, and the full Iteration
-  22 validation suite passed except for the standing missing `cargo-tarpaulin` tool blocker.
-- Latest completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
+- Active feature: none; Iteration 22 is implemented, validated, committed, and pushed.
+- Current status: Gate 0 for this resumed iteration passed first on June 20, 2026, the full Iteration 22
+  validation suite passed except for the standing missing `cargo-tarpaulin` tool blocker, and feature commit
+  `8e17789` pushed to `origin/main`.
+- Latest completed feature: Iteration 22, content-addressed Tensor IR foundation, is implemented and pushed
+  as `8e17789` (`Add content addressed tensor IR`). The crate now has a chain-owned Tensor IR foundation
+  with canonical JSON graph IDs, frozen op-registry metadata, structural validation, Tier-C consensus
+  gating, canonical TensorOp and LinearTrainingStep graph constructors, and current receipt `program_hash`
+  binding to IR `graph_id`.
+- Previous completed feature: Iteration 21, delayed proposer rewards and local block-check challenges, is
   implemented and pushed as `62e5600` (`Add delayed proposer reward challenges`). `TensorBlock` now carries
   proposer reward amounts, rewarded block production creates `PendingProposerReward` records, matured
   proposer rewards are released only after the challenge window, and successful local block-check
@@ -35,7 +40,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, and block votes | Extend only through shared codecs/events when IR records become networked |
 | Canonical useful-verification block validity | Partially complete | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and local check challenges | Remaining: full transcript disputes, network/RPC challenge propagation, exact replayable snapshots, live validator proposer networking |
-| Tensor IR graph language | Foundation implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, frozen op registry, structural validation, Tier-C consensus gating, and current TensorOp/LinearTrainingStep `program_hash` binding to IR graph IDs; `cargo test -p tensor_vm --lib ir -- --nocapture`, `cargo test -p tensor_vm --lib jobs -- --nocapture`, and `cargo test -p tensor_vm --lib` passed | Commit/push Iteration 22; next add conformance vectors and graph-body propagation/storage |
+| Tensor IR graph language | Foundation implemented/pushed | `8e17789`; `ir::TensorGraph`, canonical JSON, `graph_id`, frozen op registry, structural validation, Tier-C consensus gating, and current TensorOp/LinearTrainingStep `program_hash` binding to IR graph IDs; `cargo test -p tensor_vm --lib ir -- --nocapture`, `cargo test -p tensor_vm --lib jobs -- --nocapture`, and `cargo test -p tensor_vm --lib` passed | Next add conformance vectors and graph-body propagation/storage |
 | Per-op `F_p` conformance vectors | Missing | `upow.md` §3.3 marks this blocking for runtime admission | Implement after IR foundation so vectors can bind to registry ops |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
 | Economics and slashing invariant | Partial | Delayed proposer rewards and local challenge penalties exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
@@ -144,6 +149,11 @@ Validation:
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
 
+Push evidence:
+- Feature commit: `8e17789` (`Add content addressed tensor IR`).
+- Remote/branch: `origin/main`.
+- Push result: `0f2d65c..8e17789  main -> main`.
+
 Split trigger:
 Split smaller if replacing existing receipt `program_hash` semantics forces broad codec/storage migrations
 or breaks local-testnet gates. In that case, land the standalone IR foundation first and defer receipt
@@ -245,6 +255,9 @@ Latest current-iteration evidence:
   - `cargo test --workspace --release`: passed.
   - `git diff --check`: passed.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
+- Iteration 22 feature commit/push:
+  - Feature commit: `8e17789` (`Add content addressed tensor IR`).
+  - Push result: `0f2d65c..8e17789  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
