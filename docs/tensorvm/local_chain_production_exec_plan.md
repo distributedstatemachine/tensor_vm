@@ -5,10 +5,11 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none. The next feature-sized slice is the next highest-priority v0 gap from the
-  readiness matrix.
-- Current status: Iteration 26, delayed challenger reward finality, is implemented, locally validated, and
-  pushed as `25dbfe4` (`Delay challenger reward finality`).
+- Active feature: Iteration 27, data-unavailability reward cancellation and miner bond slashing.
+- Current status: Iteration 27 implementation is local and validation has passed except for the known
+  missing `cargo-tarpaulin` command. The required Gate 0 release local-testnet command passed first on
+  June 20, 2026. Unavailable-data evidence now voids delayed pending receipt rewards before spendability
+  and applies state-rooted miner stake slashing during canonical block child-state application.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -16,8 +17,7 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with the next highest-priority v0 gap, likely slashable bond/audit/data-withholding
-  invariants or generic arbitrary-IR execution.
+- Next action: finish validation, inspect diff, commit, push, and record evidence.
 
 ## Readiness Matrix
 
@@ -33,122 +33,133 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, and challenge voiding for pending receipt claims exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
+| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, and data-unavailability miner bond slashing exist; hard validator audit slashing and full bond calibration are not complete | Finish Iteration 27 validation, then add validator mandatory-audit slashing and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 26: Delayed Challenger Reward Finality
+### Iteration 27: Data-Unavailability Reward Cancellation and Miner Bond Slashing
 
 Feature capability:
-Replace immediate spendable crediting of successful block-check challenger bounties with a state-rooted
-pending challenger reward claim. A successful block-check challenge still voids the proposer reward, sends
-the clawback remainder to treasury, quarantines affected receipt rewards, and throttles the proposer, but
-the challenger bounty becomes spendable only after maturity through an explicit release command.
+When an assigned validator submits canonical evidence that a receipt's required tensor data is unavailable
+(`VerificationResult::Unavailable` or failed data availability), the chain marks the receipt
+non-finalizable, voids any delayed pending receipt rewards for that receipt before spendability, records a
+deterministic slash against the receipt miner's bond, reduces the miner's stake once, credits the slashed
+amount to treasury, and exposes state-rooted evidence. This turns the prior reputation-only path into an
+actual delayed-reward cancellation plus miner-bond invariant slice.
 
 Readiness requirements covered:
-- `upow.md` §12.1: challenger rewards are part of the fraud-detection incentive path and must remain
-  challenge-window aware.
-- `mvp_spec.md` §19 and §20.4: rewards are calculated/finalized after verification challenge windows,
-  while block finality and reward finality are distinct.
-- `mvp_spec.md` §20.7 and §25.5: successful checks-root challenges claw back proposer rewards and reward
-  challengers without bypassing consensus reward finality.
-- `goal.md` economics gap: move reward finality from immediate spendable balances into explicit
-  consensus state instead of adapter workarounds.
+- `upow.md` §9: unserved chunks make a receipt non-finalizable and put the miner bond at risk.
+- `upow.md` §12.2: withholding data needed to settle/dispute causes a timeout-loss slash.
+- `upow.md` §12.3: the bond/gain-from-fraud invariant must be stated and re-verified when parameters
+  change.
+- `mvp_spec.md` §16 and §26: unavailable data means invalid/no reward/reputation penalty now, and hard
+  data-withholding stake slash is the next economics step.
+- `goal.md` economics gap: add slashable miner bonds and data-withholding slashing wired to observable
+  consensus state.
 
-Subagents run:
-- `readiness-mapper`: maps delayed challenger rewards to reward-finality and challenge-window
-  requirements.
-- `tensorvm-codebase-explorer`: maps chain/state/root/storage/RPC-status implementation path.
-- `tensorvm-test-coverage-explorer`: maps focused reward/challenge/storage tests and validation commands.
+Files/modules likely touched:
+- `crates/tensor_vm/src/chain/state.rs`
+- `crates/tensor_vm/src/chain/validation.rs`
+- `crates/tensor_vm/src/chain/roots.rs`
+- `crates/tensor_vm/src/chain/engine.rs`
+- `crates/tensor_vm/src/storage/chain_state.rs`
+- `crates/tensor_vm/src/rpc` and/or typed status snapshot owners
+- focused chain/storage/RPC/explorer tests
+- `docs/tensorvm/upow.md`, `docs/tensorvm/local_chain_production_exec_plan.md`
 
-Architecture shortcut answers:
-- Canonical owner: `chain` owns challenge resolution, pending challenger reward claims, release, roots, and
-  storage; adapters may only observe events or request commands.
-- Adapter callers: RPC/runtime/checkers can surface pending and released rewards, but they do not decide
-  challenger spendability.
-- Old shortcut being removed: successful block-check challenges credited the challenger directly into
-  spendable `RewardState` during challenge resolution.
-- Regression test that proves the shortcut is gone: successful block-check challenge records a pending
-  challenger claim, leaves the challenger spendable reward balance at zero until maturity, and release later
-  credits exactly the pending amount once.
-- Behavior with local synthetic block production disabled: unchanged; inbound challenge commands mutate the
-  same chain state regardless of local producer policy.
-- Behavior for producer and non-producer roles: both validate and persist the same delayed reward state
-  after applying the challenge command.
-- Structured evidence source: chain challenge/reward tests, chain-state storage roundtrip test, status/docs
-  updates; no shell-only assertion.
-- Finality source: unchanged, signed validator block votes finalize blocks; reward finality is separate and
-  state-rooted.
-- Wire-size and codec boundary: no new P2P or storage wire family; storage extends the existing bounded
-  chain-state snapshot codec.
+Parallel subagents to run:
+- `readiness-mapper`: map data-unavailability slashing to v0 economics/readiness and identify exact proof
+  obligations.
+- `tensorvm-codebase-explorer`: inspect chain/state/root/storage/status implementation paths for slash
+  records and stake mutation.
+- `tensorvm-test-coverage-explorer`: identify focused tests for unavailable attestations, duplicate slash
+  prevention, storage roundtrip, state-root changes, and status evidence.
 
-Implementation plan:
-Implementation summary:
-- Added `PendingChallengeReward` state keyed by deterministic claim id.
-- Included pending challenge rewards in `ChainState`, state roots, genesis/from-parts, and node-store
-  snapshot encode/decode.
-- Changed block-check challenge resolution to enqueue the challenger bounty instead of crediting it
-  immediately; the clawback remainder still credits treasury.
-- Added `ReleaseMaturedChallengeRewards` command/event handling matching existing proposer/receipt release
-  commands.
-- Surfaced `pending_challenge_reward_count` in node status and explorer summary output.
-- Updated chain/storage/docs tests to prove delayed spendability, single release, and persistence.
+Parallelizable implementation workstreams:
+- Parent/integrator owns code edits because chain state, roots, storage, and tests share types and would
+  collide if split across writers.
+- Read-only subagents run in parallel to challenge the implementation boundary.
+
+Tests/checkers/docs to add or update:
+- Chain attestation test proving unavailable data slashes the miner once, marks receipt unavailable, prevents
+  settlement/reward, and credits treasury.
+- Chain settlement test proving unavailable-data evidence voids already pending delayed receipt rewards
+  before release.
+- Storage snapshot roundtrip test for slash records.
+- Root/status/RPC or explorer test proving slash evidence is observable and state-rooted.
+- Docs/exec-plan update naming remaining economics gaps: validator audit slashing and broader invariant
+  calibration.
 
 Narrow validation commands:
-- `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`
-- `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`
+- `cargo test -p tensor_vm --lib chain::tests::attestations -- --nocapture`
+- `cargo test -p tensor_vm --lib chain::tests::settlement -- --nocapture`
 - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`
+- `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`
+- `cargo test -p tensor_vm_explorer --lib`
 
 Broad validation commands before commit:
 - `cargo fmt --check --all`
+- `git diff --check`
 - `cargo test -p tensor_vm local_testnet --release`
 - `cargo test -p tensor_vm`
 - `cargo clippy --workspace --all-targets -- -D warnings`
 - `cargo test --workspace --release`
-- `git diff --check`
 - `cargo tarpaulin --workspace --offline` (expected blocked here unless `cargo-tarpaulin` is installed)
 
 Expected observable evidence:
-- A proven block-check challenge no longer immediately increases the challenger reward balance.
-- Pending challenger rewards are committed in the state root and survive storage roundtrip.
-- Matured pending challenger rewards release once into spendable reward balances.
+- An unavailable-data attestation reduces the receipt miner's stake and increases treasury by the slash
+  amount exactly once per receipt.
+- If a receipt reward was already pending, unavailable-data evidence marks those delayed claims void, and
+  release does not credit miner or validator balances.
+- The slash record is committed in state roots and persists through node-store snapshot roundtrip.
+- Status/explorer surfaces report nonzero slashing evidence without requiring shell-only assertions.
 
-Validation:
-- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed.
-- Focused validation passed:
-  - `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`: 3 tests passed.
-  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 2 tests passed.
-  - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`: 2 tests passed.
-  - `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`: 8 tests passed.
-  - `cargo test -p tensor_vm_explorer --lib`: 1 test passed.
-- `cargo fmt --check --all` passed.
-- `git diff --check` passed.
-- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- `cargo test -p tensor_vm` passed with 333 library tests, 1 local CPU Compose integration test, 8
-  `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
-- `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- `cargo test --workspace --release` passed with 14 `experiments`, 333 `tensor_vm`, 1 local CPU Compose,
-  8 `tvmd_cli`, 28 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests, and
-  doc-test targets.
-- `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
-  the `cargo-tarpaulin` subcommand installed.
-
-Push evidence:
-- Feature commit: `25dbfe4` (`Delay challenger reward finality`).
-- Remote/branch: `origin/main`.
-- Push result: `f734a69..25dbfe4  main -> main`.
+Architecture shortcut answers:
+- Canonical owner: `chain` owns unavailable-data slash detection, miner stake mutation, slash records,
+  roots, and persistence.
+- Adapter callers: validator/runtime/RPC may submit or observe attestations and slash evidence; they do not
+  decide stake loss.
+- Old shortcut being removed: unavailable data only marked the receipt unavailable and subtracted miner
+  reputation; delayed pending rewards could still release if evidence arrived after settlement.
+- Regression tests that prove the shortcut is gone: one test submits unavailable-data evidence for an
+  already pending delayed receipt reward and verifies release credits nothing; another records a slash,
+  reduces miner stake, credits treasury, prevents settlement, and proves duplicate unavailable evidence does
+  not slash again.
+- Behavior with local synthetic block production disabled: unchanged; inbound `SubmitAttestation` commands
+  mutate the same canonical chain state.
+- Behavior for producer and non-producer roles: both apply the same attestation command and persist the same
+  slashing state after network/RPC ingest.
+- Structured evidence source: chain tests, storage roundtrip, state-root/status/RPC evidence; no checker-only
+  hardcoded boolean.
+- Finality source: unchanged, signed block votes finalize blocks; slashing is triggered by canonical
+  attestation admission and is state-rooted.
+- Wire-size and codec boundary: no new P2P family; storage snapshot codec extends the existing bounded chain
+  state encoding.
 
 Out of scope:
-- Full network/RPC challenge gossip.
-- Hard stake slashing for invalid attestations or data withholding.
-- Interactive trace fraud proofs.
+- Validator mandatory-audit slashing.
+- Interactive fraud-proof timeout games.
+- Full economic calibration against measured fraud gain.
+- Network/RPC challenge gossip.
 
 Split trigger:
-Split only if status/RPC exposure needs a broader typed snapshot refactor beyond the chain/storage/docs
-surface.
+Split only if the slash ledger requires a broad status snapshot refactor or if changing chain-state storage
+requires a migration-compatible codec redesign.
 
 ## Recent Iterations
+
+### Iteration 26: Delayed Challenger Reward Finality
+
+Implemented and pushed as `25dbfe4` (`Delay challenger reward finality`).
+
+Summary:
+- Added state-rooted pending challenge reward claims, storage/root/status/explorer support, and explicit
+  maturity release instead of immediate challenger spendability.
+- Required Gate 0, focused challenge/reward/storage/RPC/explorer tests, fmt, diff check, full tensor_vm
+  tests, clippy, and release workspace tests passed.
+- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
+- Push result: `f734a69..25dbfe4  main -> main`.
 
 ### Iteration 25: Graph-Body Propagation and Storage
 
@@ -208,23 +219,29 @@ challenges void affected pending receipt rewards before spendability.
 
 Latest current-iteration evidence:
 - Starting branch state: `## main...origin/main`.
-- Iteration 26 required Gate 0 first:
+- Iteration 27 required Gate 0 first:
   `cargo test -p tensor_vm local_testnet --release` passed.
-- Iteration 26 validation before feature commit:
-  - `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`: 3 tests passed.
-  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 2 tests passed.
+- Iteration 27 focused validation:
+  - `cargo test -p tensor_vm --lib chain::tests::attestations -- --nocapture`: 6 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::settlement -- --nocapture`: 5 tests passed.
   - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`: 2 tests passed.
-  - `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`: 8 tests passed.
   - `cargo test -p tensor_vm_explorer --lib`: 1 test passed.
+  - `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`: 8 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::root_hashes -- --nocapture`: 2 tests passed.
+  - `cargo test -p tensor_vm --lib testnet::tests::local_harness -- --nocapture`: 4 tests passed.
+- Iteration 27 broad validation before feature commit:
   - `cargo fmt --check --all`: passed.
   - `git diff --check`: passed.
   - Final `cargo test -p tensor_vm local_testnet --release`: passed.
-  - `cargo test -p tensor_vm`: passed.
+  - `cargo test -p tensor_vm`: passed with 335 library tests, 1 local CPU Compose integration test, 8
+    `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
-  - `cargo test --workspace --release`: passed.
+  - `cargo test --workspace --release`: passed with 14 `experiments`, 335 `tensor_vm`, 1 local CPU Compose,
+    8 `tvmd_cli`, 28 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests, and
+    doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 26 feature commit: `25dbfe4` (`Delay challenger reward finality`).
-- Iteration 26 push result: `f734a69..25dbfe4  main -> main` on `origin/main`.
+- Iteration 27 feature commit: pending.
+- Iteration 27 push result: pending.
 
 Latest unresolved full-gate blocker:
 

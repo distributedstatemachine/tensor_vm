@@ -33,7 +33,7 @@ fn invalid_attestations_do_not_create_quorum() {
 }
 
 #[test]
-fn unavailable_data_attestation_penalizes_receipt_miner_once() {
+fn unavailable_data_attestation_slashes_receipt_miner_once_on_block_apply() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);
     let miner = address(b"unavailable-miner");
@@ -48,6 +48,9 @@ fn unavailable_data_attestation_penalizes_receipt_miner_once() {
     let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
     chain.submit_job(JobState::TensorOp(job));
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    let starting_state_root = chain.state_root();
+    let starting_stake = chain.state().miners().get(&miner).unwrap().stake;
+    let starting_treasury = chain.state().rewards().treasury();
 
     for validator in &validators {
         chain
@@ -77,10 +80,49 @@ fn unavailable_data_attestation_penalizes_receipt_miner_once() {
             .data_unavailable_receipts()
             .contains(&receipt.receipt_id)
     );
+    assert_eq!(
+        chain.state().miners().get(&miner).unwrap().stake,
+        starting_stake,
+        "attestation admission marks evidence; block application performs the slash"
+    );
+    assert!(chain.state().data_unavailability_slashes().is_empty());
     assert_ne!(attestation_root(chain.state().attestations()), [0; 32]);
     assert!(!chain.has_attestation_quorum(&receipt.receipt_id));
     chain.settle_epoch(1_000, 500);
     assert_eq!(chain.state().rewards().balance(&miner), 0);
+
+    let slash_amount = chain.params().data_unavailability_miner_slash_amount;
+    chain.produce_block(validators[0], 1_000).unwrap();
+    let slashed = chain
+        .state()
+        .data_unavailability_slashes()
+        .get(&receipt.receipt_id)
+        .expect("unavailable receipt must have a slash record");
+    assert_eq!(slashed.receipt_id, receipt.receipt_id);
+    assert_eq!(slashed.miner, miner);
+    assert_eq!(slashed.evidence_validator, validators[0]);
+    assert_eq!(slashed.amount, slash_amount);
+    assert_eq!(slashed.slashed_at_height, 0);
+    assert_eq!(
+        chain.state().miners().get(&miner).unwrap().stake,
+        starting_stake - slash_amount
+    );
+    assert_eq!(
+        chain.state().rewards().treasury(),
+        starting_treasury + slash_amount
+    );
+    assert_ne!(chain.state_root(), starting_state_root);
+
+    chain.produce_block(validators[0], 1_006).unwrap();
+    assert_eq!(chain.state().data_unavailability_slashes().len(), 1);
+    assert_eq!(
+        chain.state().miners().get(&miner).unwrap().stake,
+        starting_stake - slash_amount
+    );
+    assert_eq!(
+        chain.state().rewards().treasury(),
+        starting_treasury + slash_amount
+    );
 }
 
 #[test]

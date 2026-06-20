@@ -184,6 +184,23 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         "settled_receipt_count",
         chain.state().settled_receipts().len(),
     );
+    report.field(
+        "data_unavailable_receipt_count",
+        chain.state().data_unavailable_receipts().len(),
+    );
+    report.field(
+        "data_unavailability_slash_count",
+        chain.state().data_unavailability_slashes().len(),
+    );
+    report.field(
+        "data_unavailability_slashed_amount_total",
+        chain
+            .state()
+            .data_unavailability_slashes()
+            .values()
+            .map(|slash| slash.amount)
+            .sum::<u64>(),
+    );
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
     report.field(

@@ -148,7 +148,9 @@ impl ChainEngine for Chain {
                     .collect::<Vec<_>>();
                 for (claim_id, receipt_id, beneficiary, amount, voided_by_challenge) in matured {
                     self.state.pending_receipt_rewards.remove(&claim_id);
-                    if voided_by_challenge {
+                    if voided_by_challenge
+                        || self.state.data_unavailable_receipts.contains(&receipt_id)
+                    {
                         continue;
                     }
                     self.state.rewards.credit(beneficiary, amount);

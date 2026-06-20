@@ -188,6 +188,10 @@ The local bundle is useful and should remain the first operational target:
 - `tvmd node block` now exposes per-height receipt IDs, settled receipt IDs, and TensorOp versus
   LinearTrainingStep receipt counts, and the checker fails unless finalized live blocks expose both
   primitive types through that block view.
+- Chain state now records data-unavailability miner bond slashes: an unavailable-data attestation marks the
+  receipt non-finalizable, and canonical block application slashes the receipt miner once, credits treasury,
+  commits the slash record in the state root, and persists/exposes slashing counts. Mandatory validator audit
+  slashing and full bond calibration remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

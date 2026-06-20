@@ -1216,9 +1216,9 @@ Unavailable data means:
 
 ```text
 receipt invalid
-no reward
+no spendable reward; existing pending receipt rewards are voided before maturity
 reputation penalty
-future versions: slash
+local v0 reference: miner bond slash once canonical block state applies the unavailable-data evidence
 ```
 
 MVP retention rule:
@@ -1731,7 +1731,7 @@ a successful `checks_root` challenge.
 
 ```text
 invalid receipt: no reward
-unavailable data: no reward + reputation penalty
+unavailable data: void pending receipt rewards + reputation penalty + state-rooted miner bond slash in the local reference
 invalid attestation: no reward + reputation penalty
 missed validation assignment: no reward
 ```
@@ -1748,14 +1748,17 @@ collusion proof: slash + ban window
 Recommendation:
 
 ```text
-Do not hard-slash in v0 until verification code is battle-tested.
+Hard slashing should remain narrowly scoped until verification code is battle-tested. The local reference
+currently hard-slashes miner bond for data-unavailable receipts, while broader invalid-output and validator
+audit slashing still require battle-tested evidence and appeal paths.
 ```
 
 Consequence:
 
 ```text
-v0 has weak economic security.
-Invalid work is deterred mainly by non-payment, reputation loss, redundancy, and audits.
+v0 still has incomplete economic security.
+Most invalid work is deterred mainly by non-payment, reputation loss, redundancy, and audits; data
+withholding now also carries a state-rooted miner bond slash in the local reference.
 Public rewards should be capped until slashing and appeal/challenge flows are implemented.
 ```
 

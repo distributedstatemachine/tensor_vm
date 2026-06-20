@@ -383,6 +383,13 @@ impl LocalTestnet {
             attestation_count: state.attestations().values().map(Vec::len).sum(),
             receipt_count: state.receipts().len(),
             settled_receipt_count: state.settled_receipts().len(),
+            data_unavailable_receipt_count: state.data_unavailable_receipts().len(),
+            data_unavailability_slash_count: state.data_unavailability_slashes().len(),
+            data_unavailability_slashed_amount_total: state
+                .data_unavailability_slashes()
+                .values()
+                .map(|slash| slash.amount)
+                .sum(),
             finalized_block_count: state.finalized_blocks().len(),
             treasury_balance: state.rewards().treasury(),
             pending_receipt_reward_count: state.pending_receipt_rewards().len(),

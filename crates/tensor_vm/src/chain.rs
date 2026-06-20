@@ -32,9 +32,10 @@ use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
     AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
-    ChainState, HardwareClass, JobState, MinerState, ModelState, PendingChallengeReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardAllocation,
-    RewardState, SelectedReceiptOpening, TensorBlock, Transaction, ValidatorState,
+    ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
+    PendingChallengeReward, PendingProposerReward, PendingReceiptReward, ReceiptRewardKind,
+    ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
+    ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 

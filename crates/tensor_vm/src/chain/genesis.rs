@@ -22,6 +22,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             block_votes: BTreeMap::new(),
             finalized_blocks: BTreeSet::new(),
             data_unavailable_receipts: BTreeSet::new(),
+            data_unavailability_slashes: BTreeMap::new(),
             settled_receipts: BTreeSet::new(),
             included_receipts: BTreeSet::new(),
             block_selected_receipts: BTreeMap::new(),

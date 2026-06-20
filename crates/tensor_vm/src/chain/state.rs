@@ -25,6 +25,7 @@ pub struct ChainParams {
     pub treasury_reward_bps: u64,
     pub miner_min_stake: u64,
     pub validator_min_stake: u64,
+    pub data_unavailability_miner_slash_amount: u64,
     pub difficulty_initial_target: Hash,
     pub difficulty_floor_target: Hash,
     pub difficulty_ceiling_target: Hash,
@@ -54,6 +55,7 @@ impl Default for ChainParams {
             treasury_reward_bps: 500,
             miner_min_stake: 100,
             validator_min_stake: 10_000,
+            data_unavailability_miner_slash_amount: 10,
             difficulty_initial_target: default_useful_pow_target(),
             difficulty_floor_target: default_difficulty_floor_target(),
             difficulty_ceiling_target: [0xff; 32],
@@ -152,6 +154,7 @@ pub struct BlockParentSnapshot {
     pub settled_receipt_pool_root: Hash,
     pub included_receipt_root: Hash,
     pub data_unavailable_receipt_root: Hash,
+    pub data_unavailability_slash_root: Hash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -249,6 +252,16 @@ pub struct PendingChallengeReward {
     pub amount: u64,
     pub claimable_at_height: u64,
     pub voided_by_challenge: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct DataUnavailabilitySlashRecord {
+    pub receipt_id: Hash,
+    pub miner: Address,
+    pub evidence_validator: Address,
+    pub amount: u64,
+    pub slashed_at_height: u64,
+    pub reason: String,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -665,6 +678,7 @@ pub struct ChainState {
     pub(in crate::chain) block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub(in crate::chain) finalized_blocks: BTreeSet<Hash>,
     pub(in crate::chain) data_unavailable_receipts: BTreeSet<Hash>,
+    pub(in crate::chain) data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
     pub(in crate::chain) settled_receipts: BTreeSet<Hash>,
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -696,6 +710,7 @@ pub(crate) struct ChainStateParts {
     pub block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub finalized_blocks: BTreeSet<Hash>,
     pub data_unavailable_receipts: BTreeSet<Hash>,
+    pub data_unavailability_slashes: BTreeMap<Hash, DataUnavailabilitySlashRecord>,
     pub settled_receipts: BTreeSet<Hash>,
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -728,6 +743,7 @@ impl ChainState {
             block_votes: parts.block_votes,
             finalized_blocks: parts.finalized_blocks,
             data_unavailable_receipts: parts.data_unavailable_receipts,
+            data_unavailability_slashes: parts.data_unavailability_slashes,
             settled_receipts: parts.settled_receipts,
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
@@ -808,6 +824,10 @@ impl ChainState {
 
     pub fn data_unavailable_receipts(&self) -> &BTreeSet<Hash> {
         &self.data_unavailable_receipts
+    }
+
+    pub fn data_unavailability_slashes(&self) -> &BTreeMap<Hash, DataUnavailabilitySlashRecord> {
+        &self.data_unavailability_slashes
     }
 
     pub fn settled_receipts(&self) -> &BTreeSet<Hash> {

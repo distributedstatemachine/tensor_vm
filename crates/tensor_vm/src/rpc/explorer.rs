@@ -19,6 +19,14 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         attestation_count: chain.state().attestations().values().map(Vec::len).sum(),
         receipt_count: chain.state().receipts().len(),
         settled_receipt_count: chain.state().settled_receipts().len(),
+        data_unavailable_receipt_count: chain.state().data_unavailable_receipts().len(),
+        data_unavailability_slash_count: chain.state().data_unavailability_slashes().len(),
+        data_unavailability_slashed_amount_total: chain
+            .state()
+            .data_unavailability_slashes()
+            .values()
+            .map(|slash| slash.amount)
+            .sum(),
         finalized_block_count: chain.state().finalized_blocks().len(),
         treasury_balance: chain.state().rewards().treasury(),
         pending_receipt_reward_count: chain.state().pending_receipt_rewards().len(),

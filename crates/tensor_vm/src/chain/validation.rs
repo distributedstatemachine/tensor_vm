@@ -61,9 +61,15 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
             .state
             .data_unavailable_receipts
             .insert(attestation.receipt_id)
-        && let Some(miner) = chain.state.miners.get_mut(&receipt_miner)
     {
-        miner.reputation -= 1;
+        if let Some(miner) = chain.state.miners.get_mut(&receipt_miner) {
+            miner.reputation -= 1;
+        }
+        for reward in chain.state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == attestation.receipt_id {
+                reward.voided_by_challenge = true;
+            }
+        }
     }
     chain
         .state

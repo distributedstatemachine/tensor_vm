@@ -1,8 +1,8 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
-    ChainStateParts, HardwareClass, JobState, MinerState, ModelState, PendingChallengeReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState,
-    ValidatorState,
+    ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
+    ModelState, PendingChallengeReward, PendingProposerReward, PendingReceiptReward,
+    ReceiptRewardKind, ReceiptState, RewardState, ValidatorState,
 };
 use crate::codec as payload_codec;
 use crate::error::{Result, TvmError};
@@ -130,6 +130,7 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.treasury_reward_bps);
     write_u64(out, params.miner_min_stake);
     write_u64(out, params.validator_min_stake);
+    write_u64(out, params.data_unavailability_miner_slash_amount);
     write_hash(out, &params.difficulty_initial_target);
     write_hash(out, &params.difficulty_floor_target);
     write_hash(out, &params.difficulty_ceiling_target);
@@ -158,6 +159,7 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         treasury_reward_bps: reader.read_u64()?,
         miner_min_stake: reader.read_u64()?,
         validator_min_stake: reader.read_u64()?,
+        data_unavailability_miner_slash_amount: reader.read_u64()?,
         difficulty_initial_target: reader.read_hash()?,
         difficulty_floor_target: reader.read_hash()?,
         difficulty_ceiling_target: reader.read_hash()?,
@@ -206,6 +208,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_block_votes(out, state.block_votes());
     encode_hash_set(out, state.finalized_blocks());
     encode_hash_set(out, state.data_unavailable_receipts());
+    encode_data_unavailability_slashes(out, state.data_unavailability_slashes());
     encode_hash_set(out, state.settled_receipts());
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
@@ -237,6 +240,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         block_votes: decode_block_votes(reader)?,
         finalized_blocks: decode_hash_set(reader)?,
         data_unavailable_receipts: decode_hash_set(reader)?,
+        data_unavailability_slashes: decode_data_unavailability_slashes(reader)?,
         settled_receipts: decode_hash_set(reader)?,
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
@@ -553,6 +557,53 @@ fn decode_hash_set(reader: &mut StateReader<'_>) -> Result<BTreeSet<Hash>> {
         items.insert(reader.read_hash()?);
     }
     Ok(items)
+}
+
+fn encode_data_unavailability_slashes(
+    out: &mut Vec<u8>,
+    slashes: &BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+) {
+    write_len(out, slashes.len());
+    for (receipt_id, slash) in slashes {
+        write_hash(out, receipt_id);
+        write_hash(out, &slash.receipt_id);
+        write_hash(out, &slash.miner);
+        write_hash(out, &slash.evidence_validator);
+        write_u64(out, slash.amount);
+        write_u64(out, slash.slashed_at_height);
+        write_len(out, slash.reason.len());
+        out.extend_from_slice(slash.reason.as_bytes());
+    }
+}
+
+fn decode_data_unavailability_slashes(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, DataUnavailabilitySlashRecord>> {
+    let mut slashes = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let miner = reader.read_hash()?;
+        let evidence_validator = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let slashed_at_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid data-unavailability slash reason"))?
+            .to_owned();
+        slashes.insert(
+            key,
+            DataUnavailabilitySlashRecord {
+                receipt_id,
+                miner,
+                evidence_validator,
+                amount,
+                slashed_at_height,
+                reason,
+            },
+        );
+    }
+    Ok(slashes)
 }
 
 fn encode_hash_vec_map(out: &mut Vec<u8>, items: &BTreeMap<Hash, Vec<Hash>>) {
@@ -1017,6 +1068,36 @@ mod tests {
         assert_eq!(
             loaded.state().pending_challenge_rewards(),
             chain.state().pending_challenge_rewards()
+        );
+        assert_eq!(
+            loaded.state().data_unavailability_slashes(),
+            chain.state().data_unavailability_slashes()
+        );
+        assert!(
+            loaded
+                .state()
+                .data_unavailability_slashes()
+                .values()
+                .any(|slash| slash.miner == address(b"durable-miner")
+                    && slash.amount == chain.params().data_unavailability_miner_slash_amount
+                    && slash.slashed_at_height == 0
+                    && slash.reason == "data unavailable for receipt verification")
+        );
+        assert_eq!(
+            loaded
+                .state()
+                .miners()
+                .get(&address(b"durable-miner"))
+                .unwrap()
+                .stake,
+            chain
+                .params()
+                .miner_min_stake
+                .saturating_sub(chain.params().data_unavailability_miner_slash_amount)
+        );
+        assert_eq!(
+            loaded.state().rewards().treasury(),
+            11 + chain.params().data_unavailability_miner_slash_amount
         );
         assert!(
             loaded

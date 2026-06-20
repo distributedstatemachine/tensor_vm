@@ -1,7 +1,7 @@
 use super::{
-    AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, JobState, MinerState,
-    ModelState, PendingChallengeReward, PendingProposerReward, PendingReceiptReward, ReceiptState,
-    RewardState, ValidatorState,
+    AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
+    JobState, MinerState, ModelState, PendingChallengeReward, PendingProposerReward,
+    PendingReceiptReward, ReceiptState, RewardState, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -41,6 +41,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&hash_set_root(
         b"tensor-vm-data-unavailable-root-v1",
         &state.data_unavailable_receipts,
+    ));
+    parts.extend_from_slice(&data_unavailability_slash_root(
+        &state.data_unavailability_slashes,
     ));
     parts.extend_from_slice(&settled_receipt_root(&state.settled_receipts));
     parts.extend_from_slice(&hash_set_root(
@@ -96,6 +99,23 @@ pub(super) fn block_check_challenge_root(
         encoded.extend_from_slice(challenge.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-block-check-challenge-root-v1", &[&encoded])
+}
+
+pub(super) fn data_unavailability_slash_root(
+    slashes: &BTreeMap<Hash, DataUnavailabilitySlashRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (receipt_id, slash) in slashes {
+        encoded.extend_from_slice(receipt_id);
+        encoded.extend_from_slice(&slash.receipt_id);
+        encoded.extend_from_slice(&slash.miner);
+        encoded.extend_from_slice(&slash.evidence_validator);
+        encoded.extend_from_slice(&slash.amount.to_le_bytes());
+        encoded.extend_from_slice(&slash.slashed_at_height.to_le_bytes());
+        encoded.extend_from_slice(&(slash.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(slash.reason.as_bytes());
+    }
+    hash_bytes(b"tensor-vm-data-unavailability-slash-root-v1", &[&encoded])
 }
 
 pub(super) fn proposer_penalty_root(penalties: &BTreeMap<Address, u64>) -> Hash {

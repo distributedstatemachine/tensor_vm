@@ -1,11 +1,13 @@
 use super::roots::{
-    attestation_root, block_check_leaves, block_checks_root, hash_set_root, reward_root,
-    selected_receipt_commitment_root, selected_receipt_leaves, selected_receipt_root, state_root,
+    attestation_root, block_check_leaves, block_checks_root, data_unavailability_slash_root,
+    hash_set_root, reward_root, selected_receipt_commitment_root, selected_receipt_leaves,
+    selected_receipt_root, state_root,
 };
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
-    BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState, PendingProposerReward,
-    ReceiptState, SelectedReceiptOpening, TensorBlock,
+    BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState,
+    DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptState, SelectedReceiptOpening,
+    TensorBlock,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -19,6 +21,7 @@ struct BlockRewardContext {
     proposer_reward: u64,
     reward_settlement_delay_epochs: u64,
     challenge_window_epochs: u64,
+    data_unavailability_miner_slash_amount: u64,
 }
 
 pub(super) fn produce(chain: &mut Chain, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
@@ -86,6 +89,9 @@ fn produce_inner(
             proposer_reward: pending_proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
         },
     );
     let chain_state_root = state_root(&child_state);
@@ -232,6 +238,9 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
             proposer_reward: block.proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
         },
     );
     Ok(BlockAdmission::Applied {
@@ -507,6 +516,9 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
             proposer_reward: block.proposer_reward,
             reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
             challenge_window_epochs: chain.params.challenge_window_epochs,
+            data_unavailability_miner_slash_amount: chain
+                .params
+                .data_unavailability_miner_slash_amount,
         },
     );
     let selected_openings = selected_receipt_openings(
@@ -608,6 +620,9 @@ fn parent_snapshot(block: &TensorBlock, parent_state: &ChainState) -> BlockParen
             b"tensor-vm-data-unavailable-root-v1",
             &parent_state.data_unavailable_receipts,
         ),
+        data_unavailability_slash_root: data_unavailability_slash_root(
+            &parent_state.data_unavailability_slashes,
+        ),
     }
 }
 
@@ -638,6 +653,11 @@ fn apply_block_to_parent_state(
             }
         }
     }
+    apply_data_unavailability_slashes(
+        &mut child_state,
+        block_height,
+        reward_context.data_unavailability_miner_slash_amount,
+    );
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
     let (next_round, next_beacon) =
@@ -661,6 +681,63 @@ fn apply_block_to_parent_state(
         );
     }
     child_state
+}
+
+fn apply_data_unavailability_slashes(
+    child_state: &mut ChainState,
+    block_height: u64,
+    slash_amount: u64,
+) {
+    let unavailable_receipts = child_state
+        .data_unavailable_receipts
+        .iter()
+        .copied()
+        .collect::<Vec<_>>();
+    for receipt_id in unavailable_receipts {
+        if child_state
+            .data_unavailability_slashes
+            .contains_key(&receipt_id)
+        {
+            continue;
+        }
+        let Some(receipt) = child_state.receipts.get(&receipt_id) else {
+            continue;
+        };
+        let miner_address = receipt.miner();
+        let evidence_validator = child_state
+            .attestations
+            .get(&receipt_id)
+            .and_then(|attestations| {
+                attestations
+                    .iter()
+                    .find(|attestation| {
+                        !attestation.data_availability_passed
+                            || matches!(
+                                attestation.result,
+                                crate::verify::VerificationResult::Unavailable
+                            )
+                    })
+                    .map(|attestation| attestation.validator)
+            })
+            .unwrap_or([0; 32]);
+        let Some(miner) = child_state.miners.get_mut(&miner_address) else {
+            continue;
+        };
+        let actual_slash = miner.stake.min(slash_amount);
+        miner.stake = miner.stake.saturating_sub(actual_slash);
+        child_state.rewards.credit_treasury(actual_slash);
+        child_state.data_unavailability_slashes.insert(
+            receipt_id,
+            DataUnavailabilitySlashRecord {
+                receipt_id,
+                miner: miner_address,
+                evidence_validator,
+                amount: actual_slash,
+                slashed_at_height: block_height,
+                reason: "data unavailable for receipt verification".to_owned(),
+            },
+        );
+    }
 }
 
 fn selected_receipt_openings(

@@ -18,6 +18,9 @@ pub struct ExplorerSummary {
     pub attestation_count: usize,
     pub receipt_count: usize,
     pub settled_receipt_count: usize,
+    pub data_unavailable_receipt_count: usize,
+    pub data_unavailability_slash_count: usize,
+    pub data_unavailability_slashed_amount_total: u64,
     pub finalized_block_count: usize,
     pub treasury_balance: u64,
     pub pending_receipt_reward_count: usize,
@@ -28,7 +31,7 @@ pub struct ExplorerSummary {
 impl ExplorerSummary {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_challenge_reward_count\":{},\"total_reward_balance\":{}}}",
+            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_challenge_reward_count\":{},\"total_reward_balance\":{}}}",
             self.height,
             self.epoch,
             self.block_count,
@@ -39,6 +42,9 @@ impl ExplorerSummary {
             self.attestation_count,
             self.receipt_count,
             self.settled_receipt_count,
+            self.data_unavailable_receipt_count,
+            self.data_unavailability_slash_count,
+            self.data_unavailability_slashed_amount_total,
             self.finalized_block_count,
             self.treasury_balance,
             self.pending_receipt_reward_count,
@@ -552,6 +558,9 @@ mod tests {
             attestation_count: 30,
             receipt_count: 10,
             settled_receipt_count: 10,
+            data_unavailable_receipt_count: 1,
+            data_unavailability_slash_count: 1,
+            data_unavailability_slashed_amount_total: 10,
             finalized_block_count: 2,
             treasury_balance: 3,
             pending_receipt_reward_count: 7,
@@ -559,6 +568,21 @@ mod tests {
             total_reward_balance: 100,
         };
         assert!(summary.to_json().contains("\"settled_receipt_count\":10"));
+        assert!(
+            summary
+                .to_json()
+                .contains("\"data_unavailable_receipt_count\":1")
+        );
+        assert!(
+            summary
+                .to_json()
+                .contains("\"data_unavailability_slash_count\":1")
+        );
+        assert!(
+            summary
+                .to_json()
+                .contains("\"data_unavailability_slashed_amount_total\":10")
+        );
         assert!(
             summary
                 .to_json()

@@ -196,6 +196,12 @@ fn node_rpc_serves_explorer_telemetry_and_faucet_routes() {
     assert_eq!(summary["miner_count"].as_u64(), Some(1));
     assert_eq!(summary["validator_count"].as_u64(), Some(1));
     assert_eq!(summary["job_count"].as_u64(), Some(0));
+    assert_eq!(summary["data_unavailable_receipt_count"].as_u64(), Some(0));
+    assert_eq!(summary["data_unavailability_slash_count"].as_u64(), Some(0));
+    assert_eq!(
+        summary["data_unavailability_slashed_amount_total"].as_u64(),
+        Some(0)
+    );
 
     let overview = rpc.handle(&RpcRequest {
         method: "GET".to_owned(),

@@ -462,9 +462,9 @@ TensorBlock {
 - **Challengers** (§8.2) earn a share of the loser's slashed bond → bounty for finding fraud.
 - Miner and validator rewards derived from verifier-dependent receipt settlement are pending claims first.
   They become spendable only after the reward-settlement delay plus the challenge window, and a successful
-  challenge before maturity voids the affected pending claims. This reward-finality delay is distinct from,
-  but must be at least as long as, the tensor/trace retention window needed for verification and challenge
-  data availability.
+  challenge or unavailable-data evidence before maturity voids the affected pending claims. This
+  reward-finality delay is distinct from, but must be at least as long as, the tensor/trace retention
+  window needed for verification and challenge data availability.
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
   and released only after its maturity height.
@@ -473,6 +473,13 @@ TensorBlock {
 - Miner: committing a receipt that fails verification (Freivalds/random-linear/fraud-proof) → slash bond.
 - Validator: signing an attestation contradicted by canonical re-verification, or failing a *mandatory* (randomly-assigned) audit → slash stake. This closes the "lazy validator that rubber-stamps" attack.
 - Withholding data needed to settle/dispute → slash (timeout loss).
+
+> Status: the local reference now applies a state-rooted miner bond slash for data-unavailable receipts.
+> An assigned validator's unavailable-data attestation marks the receipt non-finalizable, and the next
+> canonical block child-state transition records a `DataUnavailabilitySlashRecord`, reduces the miner stake
+> once for that receipt, and credits treasury. If receipt rewards were already pending, the unavailable-data
+> evidence voids those delayed claims before spendability. Validator mandatory-audit slashing and broader
+> invalid-output slashing remain TODO before claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 

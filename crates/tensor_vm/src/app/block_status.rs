@@ -114,6 +114,10 @@ pub fn service_block_status(data_dir: &str, height: u64) -> std::result::Result<
             "parent_data_unavailable_receipt_root",
             hex(&outcome.parent_snapshot.data_unavailable_receipt_root),
         );
+        report.field(
+            "parent_data_unavailability_slash_root",
+            hex(&outcome.parent_snapshot.data_unavailability_slash_root),
+        );
         report.field("child_state_root", hex(&outcome.child_state_root));
         report.field("child_reward_root", hex(&outcome.child_reward_root));
         report.field("child_height", outcome.child_height);
