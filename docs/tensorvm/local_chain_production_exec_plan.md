@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 33, Tier-B verifier coverage contract and index-op gating.
-- Current status: Iteration 33 implementation and validation are complete locally; feature commit/push is
-  pending.
+- Active feature: none; Iteration 33 is complete.
+- Current status: Iteration 33 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,7 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 33, then record commit/push evidence.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -37,6 +37,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Recent Iterations
 
 ### Iteration 33: Tier-B Verifier Coverage Contract And Index-Op Gating
+
+Implemented and pushed as `84b1098` (`Classify Tensor IR verifier coverage`).
 
 Feature capability: add a machine-readable verifier/soundness classification to the frozen Tensor IR
 registry so the local reference explicitly distinguishes Freivalds-covered Tier-A ops, random-linear
