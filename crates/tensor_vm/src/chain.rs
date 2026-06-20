@@ -34,9 +34,9 @@ pub use state::{
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
     ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRewardKind, ReceiptState, RewardAllocation, RewardState, SelectedReceiptOpening,
-    TensorBlock, Transaction, ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardState,
+    SelectedReceiptOpening, TensorBlock, Transaction, ValidatorAuditAssignment,
+    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -228,11 +228,7 @@ impl Chain {
     }
 
     pub fn validator_assignment_seed(&self, receipt_id: &Hash) -> Hash {
-        validation::assignment_seed(
-            self.state.finalized_beacon_round,
-            &self.state.finalized_randomness,
-            receipt_id,
-        )
+        validation::receipt_assignment_seed(self, receipt_id)
     }
 
     pub fn miner_assignment_seed(&self, job_id: &Hash) -> Hash {
@@ -250,9 +246,20 @@ impl Chain {
             .get(receipt_id)
             .map(ReceiptState::job_id)
             .unwrap_or([0; 32]);
+        let (beacon_round, finalized_randomness) = self
+            .state
+            .receipt_randomness_anchors
+            .get(receipt_id)
+            .map_or(
+                (
+                    self.state.finalized_beacon_round,
+                    self.state.finalized_randomness,
+                ),
+                |anchor| (anchor.beacon_round, anchor.finalized_randomness),
+            );
         validation::seed(
-            self.state.finalized_beacon_round,
-            &self.state.finalized_randomness,
+            beacon_round,
+            &finalized_randomness,
             receipt_id,
             &job_id,
             validator,

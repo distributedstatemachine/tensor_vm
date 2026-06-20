@@ -1,8 +1,9 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
     JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptState, RewardState,
-    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
+    RewardState, ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord,
+    ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -48,6 +49,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&job_root(&state.jobs));
     parts.extend_from_slice(&program_body_root(&state.program_bodies));
     parts.extend_from_slice(&receipt_root(&state.receipts));
+    parts.extend_from_slice(&receipt_randomness_anchor_root(
+        &state.receipt_randomness_anchors,
+    ));
     parts.extend_from_slice(&attestation_root(&state.attestations));
     parts.extend_from_slice(&block_finality_root(
         &state.block_votes,
@@ -87,6 +91,20 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&spendable_reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
+}
+
+pub(super) fn receipt_randomness_anchor_root(
+    anchors: &BTreeMap<Hash, ReceiptRandomnessAnchor>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (receipt_id, anchor) in anchors {
+        encoded.extend_from_slice(receipt_id);
+        encoded.extend_from_slice(&anchor.receipt_id);
+        encoded.extend_from_slice(&anchor.beacon_round.to_le_bytes());
+        encoded.extend_from_slice(&anchor.finalized_randomness);
+        encoded.extend_from_slice(&anchor.assignment_seed);
+    }
+    hash_bytes(b"tensor-vm-receipt-randomness-anchor-root-v1", &[&encoded])
 }
 
 pub(super) fn program_body_root(programs: &BTreeMap<Hash, Vec<u8>>) -> Hash {

@@ -18,6 +18,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             jobs: BTreeMap::new(),
             program_bodies: BTreeMap::new(),
             receipts: BTreeMap::new(),
+            receipt_randomness_anchors: BTreeMap::new(),
             attestations: BTreeMap::new(),
             block_votes: BTreeMap::new(),
             finalized_blocks: BTreeSet::new(),

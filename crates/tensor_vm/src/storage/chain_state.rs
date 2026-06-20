@@ -2,8 +2,8 @@ use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
-    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardState,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -213,6 +213,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_jobs(out, state.jobs());
     encode_program_bodies(out, state.program_bodies());
     encode_receipts(out, state.receipts());
+    encode_receipt_randomness_anchors(out, state.receipt_randomness_anchors());
     encode_attestations(out, state.attestations());
     encode_block_votes(out, state.block_votes());
     encode_hash_set(out, state.finalized_blocks());
@@ -249,6 +250,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         jobs: decode_jobs(reader)?,
         program_bodies: decode_program_bodies(reader)?,
         receipts: decode_receipts(reader)?,
+        receipt_randomness_anchors: decode_receipt_randomness_anchors(reader)?,
         attestations: decode_attestations(reader)?,
         block_votes: decode_block_votes(reader)?,
         finalized_blocks: decode_hash_set(reader)?,
@@ -447,6 +449,39 @@ fn decode_receipts(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, Receip
         receipts.insert(key, receipt);
     }
     Ok(receipts)
+}
+
+fn encode_receipt_randomness_anchors(
+    out: &mut Vec<u8>,
+    anchors: &BTreeMap<Hash, ReceiptRandomnessAnchor>,
+) {
+    write_len(out, anchors.len());
+    for (receipt_id, anchor) in anchors {
+        write_hash(out, receipt_id);
+        write_hash(out, &anchor.receipt_id);
+        write_u64(out, anchor.beacon_round);
+        write_hash(out, &anchor.finalized_randomness);
+        write_hash(out, &anchor.assignment_seed);
+    }
+}
+
+fn decode_receipt_randomness_anchors(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ReceiptRandomnessAnchor>> {
+    let mut anchors = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        anchors.insert(
+            key,
+            ReceiptRandomnessAnchor {
+                receipt_id: reader.read_hash()?,
+                beacon_round: reader.read_u64()?,
+                finalized_randomness: reader.read_hash()?,
+                assignment_seed: reader.read_hash()?,
+            },
+        );
+    }
+    Ok(anchors)
 }
 
 fn encode_attestations(
@@ -1281,6 +1316,16 @@ mod tests {
             loaded.state().program_bodies(),
             chain.state().program_bodies()
         );
+        assert_eq!(
+            loaded.state().receipt_randomness_anchors(),
+            chain.state().receipt_randomness_anchors()
+        );
+        assert!(loaded.state().receipts().keys().all(|receipt_id| {
+            loaded
+                .state()
+                .receipt_randomness_anchors()
+                .contains_key(receipt_id)
+        }));
         assert!(
             loaded
                 .state()

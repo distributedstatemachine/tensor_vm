@@ -1,4 +1,4 @@
-use super::{Chain, JobState, ReceiptState};
+use super::{Chain, JobState, ReceiptRandomnessAnchor, ReceiptState, validation};
 use crate::error::{Result, TvmError};
 use crate::jobs::{LinearTrainingStepReceipt, TensorOpReceipt};
 use crate::types::Hash;
@@ -30,10 +30,12 @@ pub fn submit_tensor_op(chain: &mut Chain, receipt: TensorOpReceipt) -> Result<(
     if chain.state.receipts.contains_key(&receipt.receipt_id) {
         return Err(TvmError::InvalidReceipt("duplicate receipt"));
     }
+    let receipt_id = receipt.receipt_id;
     chain
         .state
         .receipts
-        .insert(receipt.receipt_id, ReceiptState::TensorOp(receipt));
+        .insert(receipt_id, ReceiptState::TensorOp(receipt));
+    anchor_receipt_randomness(chain, receipt_id);
     Ok(())
 }
 
@@ -50,9 +52,27 @@ pub fn submit_linear_training_step(
     if chain.state.receipts.contains_key(&receipt.receipt_id) {
         return Err(TvmError::InvalidReceipt("duplicate receipt"));
     }
-    chain.state.receipts.insert(
-        receipt.receipt_id,
-        ReceiptState::LinearTrainingStep(receipt),
-    );
+    let receipt_id = receipt.receipt_id;
+    chain
+        .state
+        .receipts
+        .insert(receipt_id, ReceiptState::LinearTrainingStep(receipt));
+    anchor_receipt_randomness(chain, receipt_id);
     Ok(())
+}
+
+fn anchor_receipt_randomness(chain: &mut Chain, receipt_id: Hash) {
+    let beacon_round = chain.state.finalized_beacon_round;
+    let finalized_randomness = chain.state.finalized_randomness;
+    let assignment_seed =
+        validation::assignment_seed(beacon_round, &finalized_randomness, &receipt_id);
+    chain.state.receipt_randomness_anchors.insert(
+        receipt_id,
+        ReceiptRandomnessAnchor {
+            receipt_id,
+            beacon_round,
+            finalized_randomness,
+            assignment_seed,
+        },
+    );
 }

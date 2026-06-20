@@ -278,16 +278,29 @@ fn is_assigned_validator(chain: &Chain, validator: Address, receipt_id: Hash) ->
 }
 
 fn assigned_validators(chain: &Chain, receipt_id: Hash) -> BTreeSet<Address> {
-    let assignment_seed = assignment_seed(
-        chain.state.finalized_beacon_round,
-        &chain.state.finalized_randomness,
-        &receipt_id,
-    );
+    let assignment_seed = receipt_assignment_seed(chain, &receipt_id);
     JobScheduler::default()
         .assign_validators(chain, receipt_id, &assignment_seed)
         .validators
         .into_iter()
         .collect()
+}
+
+pub(super) fn receipt_assignment_seed(chain: &Chain, receipt_id: &Hash) -> Hash {
+    chain
+        .state
+        .receipt_randomness_anchors
+        .get(receipt_id)
+        .map_or_else(
+            || {
+                assignment_seed(
+                    chain.state.finalized_beacon_round,
+                    &chain.state.finalized_randomness,
+                    receipt_id,
+                )
+            },
+            |anchor| anchor.assignment_seed,
+        )
 }
 
 pub fn submit_block_vote(chain: &mut Chain, vote: BlockVote) -> Result<()> {

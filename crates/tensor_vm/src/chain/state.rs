@@ -271,6 +271,14 @@ pub struct PendingCreditReward {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ReceiptRandomnessAnchor {
+    pub receipt_id: Hash,
+    pub beacon_round: u64,
+    pub finalized_randomness: Hash,
+    pub assignment_seed: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct DataUnavailabilitySlashRecord {
     pub receipt_id: Hash,
     pub miner: Address,
@@ -804,6 +812,7 @@ pub struct ChainState {
     pub(in crate::chain) jobs: BTreeMap<Hash, JobState>,
     pub(in crate::chain) program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub(in crate::chain) receipts: BTreeMap<Hash, ReceiptState>,
+    pub(in crate::chain) receipt_randomness_anchors: BTreeMap<Hash, ReceiptRandomnessAnchor>,
     pub(in crate::chain) attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub(in crate::chain) block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub(in crate::chain) finalized_blocks: BTreeSet<Hash>,
@@ -840,6 +849,7 @@ pub(crate) struct ChainStateParts {
     pub jobs: BTreeMap<Hash, JobState>,
     pub program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub receipts: BTreeMap<Hash, ReceiptState>,
+    pub receipt_randomness_anchors: BTreeMap<Hash, ReceiptRandomnessAnchor>,
     pub attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub finalized_blocks: BTreeSet<Hash>,
@@ -877,6 +887,7 @@ impl ChainState {
             jobs: parts.jobs,
             program_bodies: parts.program_bodies,
             receipts: parts.receipts,
+            receipt_randomness_anchors: parts.receipt_randomness_anchors,
             attestations: parts.attestations,
             block_votes: parts.block_votes,
             finalized_blocks: parts.finalized_blocks,
@@ -950,6 +961,10 @@ impl ChainState {
 
     pub fn receipts(&self) -> &BTreeMap<Hash, ReceiptState> {
         &self.receipts
+    }
+
+    pub fn receipt_randomness_anchors(&self) -> &BTreeMap<Hash, ReceiptRandomnessAnchor> {
+        &self.receipt_randomness_anchors
     }
 
     pub fn attestations(&self) -> &BTreeMap<Hash, Vec<ValidatorAttestation>> {

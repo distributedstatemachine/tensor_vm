@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 38 is complete.
-- Current status: Iteration 38 clarified delayed proposer reward runtime evidence on June 20, 2026.
+- Active feature: none; Iteration 39 is complete.
+- Current status: Iteration 39 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,15 +14,15 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice from the remaining v0 gaps. Strong candidates are
-  randomness commit/reveal binding, generic arbitrary-IR execution/admission, multi-validator proposer
-  competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
+- Next action: continue with full VRF/drand commit-reveal lifecycle, generic arbitrary-IR
+  execution/admission, multi-validator proposer competition/fork-choice policy, or the Docker `/health`
+  blocker if the environment changes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 38: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 39: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -32,7 +32,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job graph bodies in state/storage/P2P | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Add broader admitted-registry vectors, generic interpreter coverage, CUDA pass evidence when compiled |
-| Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add commit/reveal ordering and enforce receipt-bound unbiasable seed lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; Iteration 39 anchors admitted receipt assignment/validation seeds to persisted receipt-time beacon state | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, receipt, challenge, and credit rewards; full reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
@@ -41,6 +41,47 @@ feature-sized iterations are summarized after validation and push, and older det
 None.
 
 ## Recent Iterations
+
+### Iteration 39: Receipt-Bound Validation Randomness Anchors
+
+Feature capability: admitted receipts record the finalized beacon round/randomness and derived assignment
+seed used by future validator assignment and validation seed derivation, so a receipt's validation
+randomness cannot drift when later blocks advance the finalized beacon.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` owns receipt randomness anchors and seed derivation.
+- Adapter callers: runtime/validator code continues to call chain assignment/seed helpers.
+- Old shortcut removed: deriving admitted-receipt assignment/validation seeds from the mutable current
+  finalized beacon at attestation time.
+- Regression test: `admitted_receipt_validation_randomness_is_anchored_at_submission`.
+- Synthetic production disabled: unchanged; accepted receipts still carry chain-owned randomness anchors.
+- Producer/non-producer roles: both use the same persisted anchor through shared chain state/storage.
+- Structured evidence source: `ChainState::receipt_randomness_anchors`, state root, storage roundtrip,
+  focused chain tests.
+- Finality source: unchanged stake-weighted block votes.
+- Wire-size and codec boundary: no new p2p payloads; node-store chain-state snapshot encoding extended.
+
+Implemented locally:
+- Added `ReceiptRandomnessAnchor` to chain state, state root, genesis, and node-store snapshot encoding.
+- Receipt admission stores the current finalized beacon round/randomness and derived assignment seed.
+- Validator assignment and `Chain::validation_seed` now prefer the persisted receipt anchor, falling back
+  to current finalized randomness only for synthetic/unknown receipt IDs used by low-level tests.
+- Added focused chain and storage tests for stable admitted-receipt seeds and persistence.
+
+Validation completed locally:
+- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused tests passed:
+  - `cargo test -p tensor_vm --lib chain::tests::proposers -- --nocapture`
+  - `cargo test -p tensor_vm --lib storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture`
+  - `cargo test -p tensor_vm --lib chain::tests -- --nocapture`
+  - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
+  `error: no such command: tarpaulin`.
+
+Out of scope: full VRF/drand implementation, external randomness service integration, public
+commit-reveal networking, and generic arbitrary-IR execution.
 
 ### Iteration 38: Runtime Reward Delay Evidence
 
@@ -62,90 +103,6 @@ Validation completed locally:
 Out of scope: new reward ledger types, public reward-settlement evidence, and Docker rerun while `/health`
 remains blocked.
 
-### Iteration 37: Validator Proposer Tick Without Synthetic-Producer Gating
-
-Feature capability: a configured validator proposer can produce a useful block from already accepted,
-settled, artifact-ready, attested state even when `local_synthetic_producer=false`. The synthetic producer
-path now controls deterministic local job publication only; validator proposal uses `local_block_proposer`.
-
-Readiness requirements covered: `upow.md` §2 and §11 validator-owned block proposal over deterministic
-settled-receipt blockspace; `mvp_spec.md` §4.6 adapter shortcut ban; local readiness requirement to replace
-the remaining synthetic-round block-assembly coupling with role-owned proposer evidence.
-
-Architecture shortcut answers:
-- Canonical owner: `chain` remains the owner of parent-state preparation, settlement, block production,
-  UVPoW, selected receipts, delayed rewards, and finality commands.
-- Adapter callers: validator role tick observes local chain/node state, calls existing chain commands, and
-  publishes the resulting block payload; runtime/status/checker surfaces only record structured evidence.
-- Old shortcut removed: validator proposal observation and block proposal were gated by
-  `config.node.local_synthetic_producer()`, coupling block assembly to the timed synthetic job producer.
-- Regression test: `validator_proposer_tick_runs_without_synthetic_producer_gate` proves a configured
-  validator proposer with no synthetic block interval has `local_synthetic_producer=false`, yet proposes a
-  useful block from settled accepted state and records proposer counters.
-- Behavior with synthetic production disabled: deterministic local job publication remains disabled, while
-  accepted ready work can still be proposed by the configured validator proposer.
-- Behavior for producer and non-producer roles: configured validator proposers may propose from ready
-  state; miners, gateways, and legacy proposer roles still cannot produce local blocks through the role
-  tick.
-- Structured evidence source: `NodeRuntimeState` proposer counters, `ChainState` selected receipts and
-  pending proposer rewards, and Rust runtime tests.
-- Finality source: unchanged stake-weighted `SubmitBlockVote`; this feature does not synthesize votes.
-- Wire-size and codec boundary: no new payloads or codecs; existing bounded `TensorBlock` publication is
-  reused.
-
-Implemented locally:
-- Added `NodeConfig::local_block_proposer()` to split configured validator proposal duty from
-  profile-gated synthetic job scheduling.
-- Changed the validator role tick to use `local_block_proposer()` for proposal observation/submission while
-  `local_synthetic_producer()` remains the gate for scheduled deterministic local job publication.
-- Added focused runtime coverage proving a validator proposer can submit a useful block with
-  `local_synthetic_producer=false`.
-- Updated coverage/status/readiness docs while keeping the Docker `/health` and public-readiness blockers
-  explicit.
-
-Validation completed locally:
-- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
-- Focused tests passed:
-  - `cargo test -p tensor_vm --test tvmd_runtime runtime_roles -- --nocapture`
-  - `cargo test -p tensor_vm --test tvmd_runtime network_payloads -- --nocapture`
-  - `cargo test -p tensor_vm --test tvmd_runtime validator_role -- --nocapture`
-  - `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`
-  - `cargo test -p tensor_vm --lib profile::tests -- --nocapture`
-- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
-- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
-  `error: no such command: tarpaulin`.
-- Feature commit: `9d9f716` (`Decouple validator proposals from synthetic production`).
-- Push result: `5e9e182..9d9f716  main -> main` on `origin/main`.
-
-Out of scope: full Docker rerun while `/health` remains blocked, multi-validator proposer competition,
-deterministic live bad-block generation, randomness commit/reveal, generic arbitrary-IR execution, and
-public-run evidence.
-
-### Iteration 36: Block Transitions Release Matured Rewards
-
-Feature capability: normal block production/admission releases matured reward claims through the
-chain-owned child-state transition instead of requiring adapters/checkers to call explicit release commands.
-
-Implemented locally:
-- Factored proposer, receipt, challenge, and credit reward release into shared chain helpers.
-- `apply_block_to_parent_state` now applies current-block receipt-inclusion delays and slash/audit voiding,
-  then sweeps still-matured pending reward claims before height/beacon update and the new proposer claim.
-- Matured voided proposer reward claims are pruned without credit.
-- Added focused tests for producer/non-producer automatic mature release and voided proposer-claim sweep.
-
-Validation completed locally:
-- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
-- Focused chain reward/block/settlement/challenge/root/audit tests passed.
-- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
-- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is not installed.
-- Feature commit: `58da0e6` (`Release matured rewards during blocks`).
-- Evidence commit: `5e9e182` (`Record matured reward release evidence`).
-- Push result: `58da0e6..5e9e182  main -> main` on `origin/main`.
-
-Out of scope: unified formal reward-claim object/status, replacing test-only spendable-balance helpers,
-public reward-settlement evidence, full auditor-selection policy, appeal paths, and bond calibration.
 
 ## Decision Log
 
