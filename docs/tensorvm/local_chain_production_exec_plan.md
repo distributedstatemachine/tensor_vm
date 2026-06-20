@@ -5,8 +5,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 66, local checker delayed-reward claim gate, implemented and validated;
-  commit/push evidence pending.
+- Active feature: Iteration 66, local checker delayed-reward claim gate, implemented, validated, and
+  committed; push/evidence commit pending.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and are visible through status/explorer claim samples. The local readiness checker still relies on
   aggregate pending-reward counters for live acceptance and must gate on future-maturity claim evidence
@@ -18,7 +18,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 66, then record commit evidence.
+- Next action: commit this evidence update and push Iteration 66.
 
 ## Readiness Matrix
 
@@ -107,6 +107,8 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `2232724` (`Gate delayed reward claims in local checker`) created on `main`; push
+  pending.
 
 ## Recent Iterations
 
