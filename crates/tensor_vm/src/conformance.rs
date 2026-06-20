@@ -367,6 +367,30 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[1, 3, 2, 4],
             &[2, 2],
         ),
+        multi_output_vector(
+            "field-split-axis1-sizes1-3-v1",
+            "split",
+            "B",
+            &[&[2, 4]],
+            &[DType::FieldElement],
+            &[0],
+            &[("axis", 1), ("size0", 1), ("size1", 3)],
+            &[&[1, 2, 3, 4, 5, 6, 7, 8]],
+            vec![
+                ConformanceOutput {
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                    data: vec![1, 5],
+                    shape: vec![2, 1],
+                },
+                ConformanceOutput {
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                    data: vec![2, 3, 4, 6, 7, 8],
+                    shape: vec![2, 3],
+                },
+            ],
+        ),
         scaled_vector(
             "field-gt-broadcast-mask-v1",
             "gt",
@@ -675,6 +699,13 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "mean" => mean_tensor(&tensors[0], param(vector, "axis")? as usize),
         "concat" => concat_tensors(&tensors, param(vector, "axis")? as usize),
         "stack" => stack_tensors(&tensors, param(vector, "axis")? as usize),
+        "split" => {
+            return split_tensor(
+                &tensors[0],
+                param(vector, "axis")? as usize,
+                split_sizes(vector)?,
+            );
+        }
         "gt" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs > rhs),
         "lt" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs < rhs),
         "ge" => compare_tensors(&tensors[0], &tensors[1], |lhs, rhs| lhs >= rhs),
@@ -897,6 +928,44 @@ fn slice_tensor(tensor: &Tensor, dim: usize, start: usize, end: usize) -> Result
         data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
     }
     Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn split_tensor(tensor: &Tensor, axis: usize, sizes: Vec<usize>) -> Result<Vec<Tensor>> {
+    if axis >= tensor.shape().len() || sizes.is_empty() {
+        return Err(TvmError::InvalidReceipt("invalid conformance split"));
+    }
+    let total = sizes.iter().try_fold(0usize, |acc, size| {
+        acc.checked_add(*size)
+            .ok_or(TvmError::InvalidReceipt("invalid conformance split"))
+    })?;
+    if sizes.contains(&0) || total != tensor.shape()[axis] {
+        return Err(TvmError::InvalidReceipt("invalid conformance split"));
+    }
+    let mut outputs = Vec::with_capacity(sizes.len());
+    let mut offset = 0usize;
+    for size in sizes {
+        let mut shape = tensor.shape().to_vec();
+        shape[axis] = size;
+        let output_len = shape.iter().try_fold(1usize, |product, dim| {
+            product
+                .checked_mul(*dim)
+                .ok_or(TvmError::InvalidReceipt("invalid conformance split"))
+        })?;
+        let mut data = Vec::with_capacity(output_len);
+        for index in 0..output_len {
+            let mut coords = unravel_index(&shape, index)?;
+            coords[axis] += offset;
+            data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
+        }
+        outputs.push(Tensor::from_vec_with_scale(
+            shape,
+            tensor.dtype(),
+            tensor.scale(),
+            data,
+        )?);
+        offset += size;
+    }
+    Ok(outputs)
 }
 
 fn triangular_tensor(tensor: &Tensor, diagonal: i64, lower: bool) -> Result<Tensor> {
@@ -1471,6 +1540,26 @@ fn param(vector: &ConformanceVector, name: &str) -> Result<u64> {
         .ok_or(TvmError::InvalidReceipt("missing conformance param"))
 }
 
+fn split_sizes(vector: &ConformanceVector) -> Result<Vec<usize>> {
+    let mut sizes = Vec::new();
+    for index in 0.. {
+        let key = format!("size{index}");
+        match vector
+            .params
+            .iter()
+            .find_map(|(param_key, value)| (*param_key == key.as_str()).then_some(*value))
+        {
+            Some(value) if value > 0 => sizes.push(value as usize),
+            Some(_) => return Err(TvmError::InvalidReceipt("invalid conformance split")),
+            None => break,
+        }
+    }
+    if sizes.is_empty() {
+        return Err(TvmError::InvalidReceipt("invalid conformance split"));
+    }
+    Ok(sizes)
+}
+
 impl ConformanceVector {
     fn input_tensors(&self) -> Result<Vec<Tensor>> {
         self.input_shapes
@@ -1693,6 +1782,7 @@ mod tests {
         assert!(op_names.contains("mean"));
         assert!(op_names.contains("concat"));
         assert!(op_names.contains("stack"));
+        assert!(op_names.contains("split"));
         assert!(op_names.contains("full"));
         assert!(op_names.contains("arange"));
         assert!(op_names.contains("quantize_int8_per_channel"));
@@ -1710,6 +1800,12 @@ mod tests {
                 && vector.expected_outputs.len() == 2
                 && vector.expected_outputs[0].dtype == DType::Int8
                 && vector.expected_outputs[1].dtype == DType::Fixed32
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "field-split-axis1-sizes1-3-v1"
+                && vector.expected_outputs.len() == 2
+                && vector.expected_outputs[0].shape == vec![2, 1]
+                && vector.expected_outputs[1].shape == vec![2, 3]
         }));
         assert_eq!(conformance_suite_hash(), conformance_suite_hash());
     }
@@ -1754,6 +1850,7 @@ mod tests {
             "mean",
             "concat",
             "stack",
+            "split",
             "matmul",
             "full",
             "arange",

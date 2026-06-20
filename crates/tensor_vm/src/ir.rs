@@ -33,12 +33,27 @@ pub enum IrVerificationClass {
     CanonicalReferenceRequired,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum IrOutputCount {
+    Exact(usize),
+    KwargListLen(&'static str),
+}
+
+impl IrOutputCount {
+    fn expected(self, kwargs: &BTreeMap<String, IrValue>) -> Result<usize> {
+        match self {
+            IrOutputCount::Exact(count) => Ok(count),
+            IrOutputCount::KwargListLen(key) => literal_list_len_kwarg(kwargs, key),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct OpSpec {
     pub name: &'static str,
     pub tier: IrOpTier,
     pub arity: IrArity,
-    pub output_count: usize,
+    pub output_count: IrOutputCount,
     pub allowed_kwargs: &'static [&'static str],
     pub required_kwargs: &'static [&'static str],
     pub verification: IrVerificationClass,
@@ -283,7 +298,7 @@ impl TensorGraph {
             }
             validate_arity(spec, op.args.len())?;
             validate_kwargs(spec, &op.kwargs)?;
-            if op.out.len() != spec.output_count {
+            if op.out.len() != spec.output_count.expected(&op.kwargs)? {
                 return Err(TvmError::InvalidReceipt("tensor ir output count mismatch"));
             }
             unique_local_output_names(&op.out)?;
@@ -468,6 +483,10 @@ fn literal_field(value: &IrLiteral) -> Result<Elem> {
 fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>> {
     if op.op == "quantize_int8_per_channel" {
         return quantize_int8_per_channel(one_tensor_value(&args)?, &op.kwargs);
+    }
+    if op.op == "split" {
+        return split_tensor(one_tensor_value(&args)?, &op.kwargs)
+            .map(|outputs| outputs.into_iter().map(RuntimeValue::Tensor).collect());
     }
 
     let output = match op.op.as_str() {
@@ -691,6 +710,47 @@ fn slice_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<T
         data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
     }
     Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
+}
+
+fn split_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Vec<Tensor>> {
+    let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
+        "tensor ir split requires explicit dim",
+    ))?;
+    if dim >= tensor.shape().len() {
+        return Err(TvmError::InvalidReceipt("tensor ir split dim mismatch"));
+    }
+    let sizes = split_sizes_kwarg(kwargs, "sizes")?;
+    let total = sizes.iter().try_fold(0usize, |acc, size| {
+        acc.checked_add(*size)
+            .ok_or(TvmError::InvalidReceipt("tensor ir split size mismatch"))
+    })?;
+    if total != tensor.shape()[dim] {
+        return Err(TvmError::InvalidReceipt("tensor ir split size mismatch"));
+    }
+
+    let mut outputs = Vec::with_capacity(sizes.len());
+    let mut offset = 0usize;
+    for size in sizes {
+        let mut shape = tensor.shape().to_vec();
+        shape[dim] = size;
+        let output_len = checked_usize_product(&shape)?;
+        let mut data = Vec::with_capacity(output_len);
+        for output_index in 0..output_len {
+            let mut coords = unravel_index(&shape, output_index)?;
+            coords[dim] += offset;
+            data.push(tensor.as_slice()[ravel_index(tensor.shape(), &coords)?]);
+        }
+        outputs.push(Tensor::from_vec_with_scale(
+            shape,
+            tensor.dtype(),
+            tensor.scale(),
+            data,
+        )?);
+        offset = offset
+            .checked_add(size)
+            .ok_or(TvmError::InvalidReceipt("tensor ir split size mismatch"))?;
+    }
+    Ok(outputs)
 }
 
 fn triangular_tensor(
@@ -1858,6 +1918,7 @@ fn infer_outputs(
         "squeeze" => infer_squeeze(args, kwargs)?,
         "unsqueeze" => infer_unsqueeze(args, kwargs)?,
         "slice" => infer_slice(args, kwargs)?,
+        "split" => return infer_split_shapes(args, kwargs),
         "tril" | "triu" => {
             let arg = one_arg(args)?;
             if arg.shape.len() != 2 {
@@ -2209,6 +2270,36 @@ fn infer_slice(args: &[ValueShape], kwargs: &BTreeMap<String, IrValue>) -> Resul
     Ok(output)
 }
 
+fn infer_split_shapes(
+    args: &[ValueShape],
+    kwargs: &BTreeMap<String, IrValue>,
+) -> Result<Vec<ValueShape>> {
+    let arg = one_arg(args)?;
+    let dim = optional_usize_kwarg(kwargs, "dim")?
+        .ok_or(TvmError::InvalidReceipt("tensor ir split dim mismatch"))?;
+    if dim >= arg.shape.len() {
+        return Err(TvmError::InvalidReceipt("tensor ir split dim mismatch"));
+    }
+    let dim_len = usize::try_from(arg.shape[dim])
+        .map_err(|_| TvmError::InvalidReceipt("tensor ir split size mismatch"))?;
+    let sizes = split_sizes_kwarg(kwargs, "sizes")?;
+    let total = sizes.iter().try_fold(0usize, |acc, size| {
+        acc.checked_add(*size)
+            .ok_or(TvmError::InvalidReceipt("tensor ir split size mismatch"))
+    })?;
+    if total != dim_len {
+        return Err(TvmError::InvalidReceipt("tensor ir split size mismatch"));
+    }
+    sizes
+        .into_iter()
+        .map(|size| {
+            let mut output = arg.clone();
+            output.shape[dim] = size as i64;
+            Ok(output)
+        })
+        .collect()
+}
+
 fn one_arg(args: &[ValueShape]) -> Result<&ValueShape> {
     args.first()
         .filter(|_| args.len() == 1)
@@ -2249,6 +2340,34 @@ fn shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<i64>
             })
             .collect(),
         _ => Err(TvmError::InvalidReceipt("missing tensor ir shape kwarg")),
+    }
+}
+
+fn literal_list_len_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<usize> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::List(values))) if !values.is_empty() => Ok(values.len()),
+        Some(IrValue::Literal(IrLiteral::List(_))) => {
+            Err(TvmError::InvalidReceipt("empty tensor ir list kwarg"))
+        }
+        _ => Err(TvmError::InvalidReceipt("missing tensor ir list kwarg")),
+    }
+}
+
+fn split_sizes_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<usize>> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::List(values))) if !values.is_empty() => values
+            .iter()
+            .map(|value| match value {
+                IrLiteral::Int(size) if *size > 0 => Ok(*size as usize),
+                IrLiteral::Uint(size) if *size > 0 => usize::try_from(*size)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir split size")),
+                _ => Err(TvmError::InvalidReceipt("invalid tensor ir split size")),
+            })
+            .collect(),
+        Some(IrValue::Literal(IrLiteral::List(_))) => {
+            Err(TvmError::InvalidReceipt("invalid tensor ir split size"))
+        }
+        _ => Err(TvmError::InvalidReceipt("missing tensor ir split sizes")),
     }
 }
 
@@ -2751,12 +2870,12 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 49] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::FullFreivalds,
@@ -2766,7 +2885,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "einsum",
         tier: IrOpTier::A,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["equation"],
         required_kwargs: &["equation"],
         verification: IrVerificationClass::FullFreivalds,
@@ -2776,7 +2895,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "add",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2786,7 +2905,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "sub",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2796,7 +2915,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "mul",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2806,7 +2925,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "div",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -2816,7 +2935,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "scalar_mul",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2826,7 +2945,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "transpose",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dims"],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2836,7 +2955,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "sum",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2846,7 +2965,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "reduce_sum",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2856,7 +2975,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "mean",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim", "keepdim"],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2866,7 +2985,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "reshape",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["shape"],
         required_kwargs: &["shape"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2876,7 +2995,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "broadcast",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["shape"],
         required_kwargs: &["shape"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2886,7 +3005,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "squeeze",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2896,7 +3015,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "unsqueeze",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2906,7 +3025,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "slice",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim", "start", "end"],
         required_kwargs: &["dim", "start", "end"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2916,7 +3035,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "tril",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["diagonal"],
         required_kwargs: &["diagonal"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2926,7 +3045,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "triu",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["diagonal"],
         required_kwargs: &["diagonal"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2936,7 +3055,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "identity",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2946,7 +3065,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "neg",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::RandomLinear,
@@ -2956,7 +3075,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "abs",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2966,7 +3085,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "sign",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2976,7 +3095,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "round",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2986,7 +3105,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "relu",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -2996,7 +3115,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "gt",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3006,7 +3125,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "lt",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3016,7 +3135,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "ge",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3026,7 +3145,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "le",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3036,7 +3155,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "eq",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3046,7 +3165,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "where",
         tier: IrOpTier::B,
         arity: IrArity::Exact(3),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3056,7 +3175,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "clamp",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["min", "max"],
         required_kwargs: &["min", "max"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3066,7 +3185,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "cast",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dtype", "scale"],
         required_kwargs: &["dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3076,7 +3195,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "concat",
         tier: IrOpTier::B,
         arity: IrArity::Variadic,
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3086,9 +3205,19 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "stack",
         tier: IrOpTier::B,
         arity: IrArity::Variadic,
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::ExactDeterministicReplay,
+        consensus_admitted: true,
+    },
+    OpSpec {
+        name: "split",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: IrOutputCount::KwargListLen("sizes"),
+        allowed_kwargs: &["sizes", "dim"],
+        required_kwargs: &["sizes", "dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
     },
@@ -3096,7 +3225,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "full",
         tier: IrOpTier::B,
         arity: IrArity::Exact(0),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["shape", "value", "dtype", "scale"],
         required_kwargs: &["shape", "value", "dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3106,7 +3235,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "arange",
         tier: IrOpTier::B,
         arity: IrArity::Exact(0),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["start", "end", "step", "dtype", "scale"],
         required_kwargs: &["start", "end", "step", "dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3116,7 +3245,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "exp",
         tier: IrOpTier::C,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -3126,7 +3255,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "log",
         tier: IrOpTier::C,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -3136,7 +3265,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "sqrt",
         tier: IrOpTier::C,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -3146,7 +3275,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "softmax",
         tier: IrOpTier::C,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -3156,7 +3285,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "gather",
         tier: IrOpTier::C,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::IndexConsistencyRequired,
@@ -3166,7 +3295,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "scatter",
         tier: IrOpTier::C,
         arity: IrArity::Exact(3),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::IndexConsistencyRequired,
@@ -3176,7 +3305,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "embedding",
         tier: IrOpTier::C,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::IndexConsistencyRequired,
@@ -3186,7 +3315,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "topk",
         tier: IrOpTier::C,
         arity: IrArity::Exact(1),
-        output_count: 2,
+        output_count: IrOutputCount::Exact(2),
         allowed_kwargs: &["k", "dim"],
         required_kwargs: &["k", "dim"],
         verification: IrVerificationClass::CanonicalReferenceRequired,
@@ -3196,7 +3325,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "quantize_int8_per_channel",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 2,
+        output_count: IrOutputCount::Exact(2),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3206,7 +3335,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "dequantize_int8_per_channel",
         tier: IrOpTier::B,
         arity: IrArity::Exact(2),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &[],
         required_kwargs: &[],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3216,7 +3345,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "quantize_pack_int8",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3226,7 +3355,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 48] = [
         name: "unpack_dequantize_int8",
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
-        output_count: 1,
+        output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim", "shape", "scale_dim"],
         required_kwargs: &["dim", "shape", "scale_dim"],
         verification: IrVerificationClass::ExactDeterministicReplay,
@@ -3347,7 +3476,7 @@ mod tests {
             (
                 "quantize_int8_per_channel",
                 IrArity::Exact(1),
-                2,
+                IrOutputCount::Exact(2),
                 &["dim"][..],
                 IrVerificationClass::ExactDeterministicReplay,
                 true,
@@ -3355,7 +3484,7 @@ mod tests {
             (
                 "dequantize_int8_per_channel",
                 IrArity::Exact(2),
-                1,
+                IrOutputCount::Exact(1),
                 &[][..],
                 IrVerificationClass::ExactDeterministicReplay,
                 true,
@@ -3363,7 +3492,7 @@ mod tests {
             (
                 "quantize_pack_int8",
                 IrArity::Exact(1),
-                1,
+                IrOutputCount::Exact(1),
                 &["dim"][..],
                 IrVerificationClass::ExactDeterministicReplay,
                 true,
@@ -3371,7 +3500,7 @@ mod tests {
             (
                 "unpack_dequantize_int8",
                 IrArity::Exact(1),
-                1,
+                IrOutputCount::Exact(1),
                 &["dim", "shape", "scale_dim"][..],
                 IrVerificationClass::ExactDeterministicReplay,
                 true,
@@ -3571,6 +3700,117 @@ mod tests {
                 .unwrap()
                 .trace_root
         );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_split_multi_output_structural_op() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 4], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "split".to_owned(),
+                args: vec![input_ref("x")],
+                kwargs: BTreeMap::from([
+                    (
+                        "sizes".to_owned(),
+                        IrValue::Literal(IrLiteral::List(vec![
+                            IrLiteral::Uint(1),
+                            IrLiteral::Uint(3),
+                        ])),
+                    ),
+                    ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                ]),
+                out: vec![
+                    tensor_spec("left", vec![2, 1], DType::FieldElement, 0),
+                    tensor_spec("right", vec![2, 3], DType::FieldElement, 0),
+                ],
+            }],
+            outputs: vec![
+                GraphOutput {
+                    name: "left".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 0 },
+                },
+                GraphOutput {
+                    name: "right".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 1 },
+                },
+            ],
+        };
+        let input = Tensor::from_vec(
+            vec![2, 4],
+            DType::FieldElement,
+            vec![1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
+
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), input)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        let expected_left = Tensor::from_vec(vec![2, 1], DType::FieldElement, vec![1, 5]).unwrap();
+        let expected_right =
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![2, 3, 4, 6, 7, 8]).unwrap();
+        assert_eq!(execution.graph_id, graph_id);
+        assert_eq!(execution.outputs["left"], expected_left);
+        assert_eq!(execution.outputs["right"], expected_right);
+        assert_eq!(execution.op_traces.len(), 1);
+        assert_eq!(execution.op_traces[0].output_roots.len(), 2);
+        assert_eq!(
+            execution.op_traces[0].output_roots,
+            vec![
+                expected_left.commitment_root(),
+                expected_right.commitment_root()
+            ]
+        );
+    }
+
+    #[test]
+    fn graph_validation_rejects_split_size_mismatch() {
+        let mut graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 4], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "split".to_owned(),
+                args: vec![input_ref("x")],
+                kwargs: BTreeMap::from([
+                    (
+                        "sizes".to_owned(),
+                        IrValue::Literal(IrLiteral::List(vec![
+                            IrLiteral::Uint(1),
+                            IrLiteral::Uint(2),
+                        ])),
+                    ),
+                    ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                ]),
+                out: vec![
+                    tensor_spec("left", vec![2, 1], DType::FieldElement, 0),
+                    tensor_spec("right", vec![2, 2], DType::FieldElement, 0),
+                ],
+            }],
+            outputs: vec![GraphOutput {
+                name: "left".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        assert!(graph.validate_for_consensus().is_err());
+
+        graph.ops[0].kwargs.insert(
+            "sizes".to_owned(),
+            IrValue::Literal(IrLiteral::List(vec![
+                IrLiteral::Uint(1),
+                IrLiteral::Uint(3),
+            ])),
+        );
+        graph.ops[0].out.pop();
+        assert!(graph.validate_for_consensus().is_err());
     }
 
     #[test]

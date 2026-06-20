@@ -1662,6 +1662,114 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_split_receipt() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![2, 4],
+                dtype: DType::FieldElement,
+                scale: 0,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "split".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::from([
+                    (
+                        "sizes".to_owned(),
+                        IrValue::Literal(IrLiteral::List(vec![
+                            IrLiteral::Uint(1),
+                            IrLiteral::Uint(3),
+                        ])),
+                    ),
+                    ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                ]),
+                out: vec![
+                    TensorSpec {
+                        name: "left".to_owned(),
+                        shape: vec![2, 1],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    },
+                    TensorSpec {
+                        name: "right".to_owned(),
+                        shape: vec![2, 3],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    },
+                ],
+            }],
+            outputs: vec![
+                GraphOutput {
+                    name: "left".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 0 },
+                },
+                GraphOutput {
+                    name: "right".to_owned(),
+                    value: IrRef::Op { id: 0, idx: 1 },
+                },
+            ],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input = Tensor::from_vec(
+            vec![2, 4],
+            DType::FieldElement,
+            vec![1, 2, 3, 4, 5, 6, 7, 8],
+        )
+        .unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-split-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["left"],
+            Tensor::from_vec(vec![2, 1], DType::FieldElement, vec![1, 5]).unwrap()
+        );
+        assert_eq!(
+            outputs["right"],
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![2, 3, 4, 6, 7, 8]).unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-split-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+
+        let mut missing_split = cpu_reference_conformance_profile().unwrap();
+        missing_split.passed_ops.remove("split");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-split-validation"]),
+                conformance_profile: &missing_split,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn tensor_op_verifier_rejects_metadata_and_shape_mismatches() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
