@@ -211,9 +211,10 @@ The local bundle is useful and should remain the first operational target:
 - Chain state now records data-unavailability miner bond slashes: an unavailable-data attestation marks the
   receipt non-finalizable, and canonical block application slashes the receipt miner once, credits treasury,
   commits the slash record in the state root, and persists/exposes slashing counts. Mandatory validator audit
-  records now also exist in the local reference when audit sampling is configured: assignment names a
-  deterministic registered auditor distinct from the audited validator, delays the audited validator's
-  pending receipt reward through the audit deadline, and a missed or contradicted audit slashes that
+  records now also exist in the local reference when audit sampling is configured: base receipt-reward
+  maturity and tensor retention are extended to at least the validator-audit window, assignment names a
+  deterministic registered auditor distinct from the audited validator, keeps the audited validator's
+  pending receipt reward held through the audit deadline, and a missed or contradicted audit slashes that
   validator once, voids the delayed validator reward, holds the voided claim through the appeal deadline
   before pruning without credit, credits treasury, and persists/exposes audit counts.
   Registered validator roles now observe only their assigned local audit work, submit signed audit reports

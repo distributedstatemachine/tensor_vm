@@ -1835,9 +1835,9 @@ challenge_window: 1 epoch
 ```
 
 The initial local reference treats the effective receipt-reward maturity delay as
-`reward_settlement_delay + challenge_window` from the block that includes the settled receipt. Tensor/trace
-retention must cover the same or longer period so challengers can still retrieve the data needed to dispute
-the included receipt.
+`max(reward_settlement_delay + challenge_window, validator_audit_window when audit sampling is enabled)`
+from the block that includes the settled receipt. Tensor/trace retention must cover the same or longer
+period so auditors and challengers can still retrieve the data needed to dispute the included receipt.
 
 Initial TensorOp shapes:
 

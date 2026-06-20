@@ -185,13 +185,38 @@ and first/final Gate 0, with tarpaulin still blocked.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 84 on June 20, 2026:
+## Active Iteration 85: Audit-Window Reward Escrow
+
+- Canonical owner: `crates/tensor_vm/src/chain/state.rs` owns reward maturity and tensor-retention timing.
+- Adapter callers: settlement, challenge, status, explorer, RPC, storage, and local testnet code consume chain-owned
+  `ChainParams` accessors; no adapter-local timing rule is added.
+- Old shortcut being removed: validator-audit economics relied on post-assignment reward holds while base maturity could
+  be shorter than the audit window in zero/short epoch configurations.
+- Regression test: add/extend chain parameter and validator-audit reward tests proving audit-enabled rewards mature no
+  earlier than the validator audit window and retention follows the same bound.
+- Behavior with local synthetic block production disabled: no synthetic production dependency; imported canonical
+  blocks use the same chain parameter accessors during settlement/release.
+- Behavior for producer and non-producer roles: producers compute claimable heights from consensus params; non-producers
+  validate and replay the same state transition and reject divergent roots.
+- Structured evidence source: pending reward `claimable_at_height`, tensor retention deadline, and validator audit
+  assignment/slash records in `ChainState`.
+- Finality source: finalized state root after replayed block application; no local-only finality source.
+- Wire-size and codec boundary: no new persisted field or p2p/RPC payload; only computed timing accessors and tests.
+
+Result: implemented. `ChainParams::reward_maturity_delay_blocks` now includes the validator-audit hold
+when audit sampling is enabled, and tensor retention mirrors the same audit-window bound. No-audit
+profiles keep the old zero-retention behavior. Focused parameter/audit/reward tests and the full workspace
+release suite passed.
+
+Latest full validation is Iteration 85 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm validator_audit --quiet
-cargo test -p tensor_vm storage::chain_state --quiet
+cargo test -p tensor_vm chain::tests::params --quiet
+cargo test -p tensor_vm mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply --quiet
+cargo test -p tensor_vm validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result --quiet
 cargo test -p tensor_vm reward --quiet
+cargo test -p tensor_vm validator_audit --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

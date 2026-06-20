@@ -91,10 +91,23 @@ fn default_difficulty_floor_target() -> Hash {
 
 impl ChainParams {
     pub fn reward_maturity_delay_blocks(&self) -> u64 {
+        self.base_reward_maturity_delay_blocks()
+            .max(self.validator_audit_reward_hold_blocks())
+    }
+
+    fn base_reward_maturity_delay_blocks(&self) -> u64 {
         self.reward_settlement_delay_epochs
             .saturating_add(self.challenge_window_epochs)
             .max(1)
             .saturating_mul(self.epoch_length.max(1))
+    }
+
+    pub fn validator_audit_reward_hold_blocks(&self) -> u64 {
+        if self.validator_audit_sample_numerator == 0 {
+            0
+        } else {
+            self.validator_audit_window_blocks.max(1)
+        }
     }
 
     pub fn challenge_window_blocks(&self) -> u64 {
@@ -107,6 +120,7 @@ impl ChainParams {
         self.reward_settlement_delay_epochs
             .saturating_add(self.challenge_window_epochs)
             .saturating_mul(self.epoch_length.max(1))
+            .max(self.validator_audit_reward_hold_blocks())
     }
 
     pub fn tensor_retention_deadline(&self, submitted_at_block: u64) -> u64 {

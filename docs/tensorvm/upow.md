@@ -486,8 +486,10 @@ TensorBlock {
 - Miner and validator rewards derived from verifier-dependent receipt settlement are pending claims first.
   They become spendable only after the reward-settlement delay plus the challenge window, and a successful
   challenge or unavailable-data evidence before maturity voids the affected pending claims. This
-  reward-finality delay is distinct from, but must be at least as long as, the tensor/trace retention
-  window needed for verification and challenge data availability.
+  reward-finality delay is also bounded by the configured validator-audit window when mandatory audit
+  sampling is enabled, so audited validator rewards remain escrowed long enough for assignment and
+  dispute. The delay is distinct from, but must be at least as long as, the tensor/trace retention window
+  needed for verification, audit, and challenge data availability.
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
   and released only after its maturity height.
@@ -505,8 +507,10 @@ TensorBlock {
 > once for that receipt, and credits treasury. If receipt rewards were already pending, the unavailable-data
 > evidence voids those delayed claims before spendability. The local reference also state-roots validator
 > audit assignments, signed audit results, and validator audit slash records when audit sampling is
-> configured. Audit assignment names a deterministic registered auditor distinct from the audited
-> validator, delays the audited validator's pending receipt reward through the audit deadline, and rejects
+> configured. Base receipt-reward maturity and tensor retention are extended to at least the audit window,
+> so sampled validator rewards are delayed before spendability instead of relying only on post-assignment
+> holds. Audit assignment names a deterministic registered auditor distinct from the audited validator,
+> keeps the audited validator's pending receipt reward held through the audit deadline, and rejects
 > reports from non-assigned auditors; a missed audit or contradictory audit result slashes that validator
 > once, credits treasury, voids that delayed validator reward, and holds the voided pending claim through
 > the audit appeal deadline before it can be pruned without credit. A slashed validator can now submit a
