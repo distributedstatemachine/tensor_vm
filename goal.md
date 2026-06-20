@@ -1,6 +1,6 @@
 # Goal Operating Contract
 
-Read `docs/tensorvm/upow.md`, `docs/tensorvm/codex_5_5_local_chain_workflow.md`, `docs/tensorvm/mvp_spec.md`, and `docs/tensorvm/local_chain_production_readiness.md` fully before editing. Maintain `docs/tensorvm/local_chain_production_exec_plan.md` as the source of truth for progress, decisions, validation commands, and blockers.
+Read `docs/tensorvm/upow.md`, `docs/tensorvm/mvp_spec.md`, and `docs/tensorvm/local_chain_production_readiness.md` fully before editing. Maintain `docs/tensorvm/local_chain_production_exec_plan.md` as the source of truth for progress, decisions, validation commands, and blockers.
 
 ## Primary Objective
 

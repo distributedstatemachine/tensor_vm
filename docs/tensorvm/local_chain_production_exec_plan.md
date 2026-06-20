@@ -55,8 +55,6 @@ feature-sized iterations are summarized after validation and push, and older det
   evidence commit `1687f86 Record iteration 10 push evidence`. Later proof/doc commits landed on top:
   `e20a879`, `41a20aa`, and `07f2b05`.
 - Standing blockers:
-  - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
-    worktree and tracked `docs/tensorvm` files.
   - The full Docker runtime gate remains unresolved. The latest recorded `check-local-testnet.sh` run
     against an already-running Compose cluster failed at the bounded gateway `/health` probe with
     `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
@@ -822,8 +820,6 @@ Resumed Iteration 21 checkpoint:
 - First executable gate before this slice:
   `cargo test -p tensor_vm local_testnet --release` passed with 5 release local-testnet library tests and
   the local-testnet service gateway integration test.
-- Required workflow doc remains missing and is tracked as a blocker:
-  `docs/tensorvm/codex_5_5_local_chain_workflow.md`.
 - Scope: implement a minimal MVP §20.7 block `checks_root` challenge path using the Merkle-openable
   selected receipt/check leaves added in Iteration 19. The slice should prove a mismatched check leaf,
   delay proposer rewards through the challenge window, void pending proposer rewards on proven block-check
