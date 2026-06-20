@@ -5,12 +5,14 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Latest in-progress feature: Iteration 16, role-owned live work before validator proposal, changes the
-  scheduled local producer to publish synthetic jobs only. Receipts and attestations are now left to
-  miner/validator role paths before validator block proposal. Focused runtime tests prove a producer tick
-  does not create receipts or attestations and prove the job -> miner receipt -> validator attestation ->
-  validator proposal path with existing role-owned helpers.
-- Latest completed feature: Iteration 15, validator-owned local block proposal tick, is implemented,
+- Latest completed feature: Iteration 16, role-owned live work before validator proposal, is implemented,
+  validated, and pushed as `e18d5b3d5e87ee3d0eb71266bb1f50b11ce42171`
+  (`Publish local jobs before role-owned work`) on `origin/main`. The scheduled local producer now
+  publishes synthetic jobs only. Receipts and attestations are left to miner/validator role paths before
+  validator block proposal. Focused runtime tests prove a producer tick does not create receipts or
+  attestations and prove the job -> miner receipt -> validator attestation -> validator proposal path with
+  existing role-owned helpers.
+- Previous completed feature: Iteration 15, validator-owned local block proposal tick, is implemented,
   validated, and pushed as `0d7debcdb94ef50493e2f2926d4f3dc5983fcbd4`
   (`Add validator-owned block proposal tick`) on `origin/main`. This iteration splits local
   synthetic work generation from scheduled validator block proposal. The runtime scheduled producer now
@@ -48,7 +50,7 @@ feature-sized iterations are summarized after validation and push, and older det
 | Remote tensor availability | Implemented/pushed | `2d6609e`; root-addressed tensor request-response and validator fetch counters | Reuse for block-check evidence; revisit slow-peer bounds later |
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
 | Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
-| Role-owned live work before proposal | In progress | Iteration 16 working tree; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Harden Docker checker timing/evidence for positive live miner and validator counters |
+| Role-owned live work before proposal | Implemented/pushed | `e18d5b3`; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Harden Docker checker timing/evidence for positive live miner and validator counters |
 | Canonical useful-verification block validity | Partially implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce; strict vote validation checks state root, beacon, PoW, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, retargeting, and fallback |
 | Checker evidence | Updated | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; checker asserts all booleans before scan exit | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
@@ -90,7 +92,7 @@ Implementation summary:
   attestations and proving a producer-published job can be receipted, attested, and proposed by role-owned
   helpers.
 
-Validation so far:
+Validation:
 - Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
   local-testnet library tests and the seed CLI integration test.
 - `cargo fmt --check --all`
@@ -102,8 +104,17 @@ Validation so far:
 - `cargo test -p tensor_vm --test tvmd_cli validator_run_with_local_producer_advances_cpu_chain`: passed.
 - `cargo test -p tensor_vm --tests`: 308 library tests, 1 local CPU Compose test, 8 `tvmd_cli`
   integration tests, and 28 `tvmd_runtime` integration tests passed.
+- `cargo test --workspace --release`: 14 `experiments` tests, 308 `tensor_vm` library tests, 1
+  `local_cpu_compose` test, 8 `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, 1
+  `tensor_vm_explorer` library test, 2 `tensorvm_explorer` CLI tests, and doctests passed.
 - `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`
 - `git diff --check`
+- `cargo tarpaulin --version` remains unavailable in this environment (`cargo` reports no such command:
+  `tarpaulin`), so coverage was not collected.
+
+Push evidence:
+- Feature commit `e18d5b3d5e87ee3d0eb71266bb1f50b11ce42171` (`Publish local jobs before role-owned
+  work`) was pushed to `origin/main`.
 
 Out of scope:
 - Full Docker checker hardening for positive live role-owned counters.
