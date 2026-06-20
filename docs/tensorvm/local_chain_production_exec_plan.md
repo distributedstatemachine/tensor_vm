@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 32, validator proposer settled-work readiness evidence.
-- Current status: Iteration 32 implementation and validation are complete locally; feature commit/push is
-  pending.
+- Active feature: none; Iteration 32 is complete.
+- Current status: Iteration 32 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,7 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 32, then record commit/push evidence.
+- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
+  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -37,6 +37,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Recent Iterations
 
 ### Iteration 32: Validator Proposer Settled-Work Readiness Evidence
+
+Implemented and pushed as `26e3e25` (`Move validator proposals into role tick`).
 
 Feature capability: validator proposer runtime/status/checker evidence distinguishes raw settled-receipt
 visibility from settled receipts that have local tensor artifacts and validator attestations available before
