@@ -5,11 +5,11 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 27, data-unavailability reward cancellation and miner bond slashing.
-- Current status: Iteration 27 implementation is local and validation has passed except for the known
-  missing `cargo-tarpaulin` command. The required Gate 0 release local-testnet command passed first on
-  June 20, 2026. Unavailable-data evidence now voids delayed pending receipt rewards before spendability
-  and applies state-rooted miner stake slashing during canonical block child-state application.
+- Active feature: none. The next feature-sized slice is the next highest-priority v0 gap from the
+  readiness matrix.
+- Current status: Iteration 27, data-unavailability reward cancellation and miner bond slashing, is
+  implemented, locally validated, and pushed as `cae45b5` (`Handle unavailable receipt rewards and
+  slashing`).
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -17,7 +17,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: finish validation, inspect diff, commit, push, and record evidence.
+- Next action: continue with validator mandatory-audit slashing, broader bond calibration, or generic
+  arbitrary-IR execution.
 
 ## Readiness Matrix
 
@@ -33,10 +34,10 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, and data-unavailability miner bond slashing exist; hard validator audit slashing and full bond calibration are not complete | Finish Iteration 27 validation, then add validator mandatory-audit slashing and broader invariant calibration |
+| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, challenge/unavailable-data voiding for pending receipt claims, and data-unavailability miner bond slashing exist; hard validator audit slashing and full bond calibration are not complete | Add validator mandatory-audit slashing and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
-## Active Feature Iteration
+## Recent Iterations
 
 ### Iteration 27: Data-Unavailability Reward Cancellation and Miner Bond Slashing
 
@@ -147,8 +148,6 @@ Split trigger:
 Split only if the slash ledger requires a broad status snapshot refactor or if changing chain-state storage
 requires a migration-compatible codec redesign.
 
-## Recent Iterations
-
 ### Iteration 26: Delayed Challenger Reward Finality
 
 Implemented and pushed as `25dbfe4` (`Delay challenger reward finality`).
@@ -240,8 +239,8 @@ Latest current-iteration evidence:
     8 `tvmd_cli`, 28 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests, and
     doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 27 feature commit: pending.
-- Iteration 27 push result: pending.
+- Iteration 27 feature commit: `cae45b5` (`Handle unavailable receipt rewards and slashing`).
+- Iteration 27 push result: `9977f2c..cae45b5  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
