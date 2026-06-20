@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 40 validation is complete and commit/push evidence is pending.
-- Current status: Iteration 40 implemented reduced delayed fallback proposer rewards on June 20, 2026.
+- Active feature: none; Iteration 40 is complete.
+- Current status: Iteration 40 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -84,8 +84,8 @@ Validation completed locally:
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
-- Feature commit: pending.
-- Push result: pending.
+- Feature commit: `6cea749` (`Delay fallback proposer rewards`).
+- Push result: `41edc0e..6cea749  main -> main` on `origin/main`.
 
 Out of scope: full stake-weighted fallback proposer rotation/timeout policy, multi-validator fork-choice,
 full reward-claim object unification, and full Docker rerun while `/health` remains blocked.
