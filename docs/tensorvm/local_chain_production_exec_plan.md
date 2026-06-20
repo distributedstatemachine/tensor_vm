@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 37 is complete.
-- Current status: Iteration 37 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: none; Iteration 38 is complete.
+- Current status: Iteration 38 clarified delayed proposer reward runtime evidence on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -22,7 +22,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 37: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 38: `cargo test -p tensor_vm local_testnet --release` passed first and after implementation on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -41,6 +41,26 @@ feature-sized iterations are summarized after validation and push, and older det
 None.
 
 ## Recent Iterations
+
+### Iteration 38: Runtime Reward Delay Evidence
+
+Feature capability: runtime role coverage now proves a delayed useful-proposer reward matures through
+ordinary block production instead of an adapter-side release command.
+
+Implemented locally:
+- Tightened `producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks` so it advances one
+  normal block past the pending proposer claim's `claimable_at_height`.
+- Removed the manual `ReleaseMaturedProposerRewards` command from that runtime-role proof; the assertion
+  now depends on the chain-owned block transition releasing the matured claim.
+
+Validation completed locally:
+- Required Gate 0 first and final: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused test passed:
+  - `cargo test -p tensor_vm --test tvmd_runtime producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks -- --nocapture`
+- Lightweight gates passed: `cargo fmt --check --all` and `git diff --check`.
+
+Out of scope: new reward ledger types, public reward-settlement evidence, and Docker rerun while `/health`
+remains blocked.
 
 ### Iteration 37: Validator Proposer Tick Without Synthetic-Producer Gating
 

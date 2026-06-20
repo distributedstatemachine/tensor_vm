@@ -487,7 +487,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         vec![receipt.receipt_id()]
     );
 
-    while server.gateway().node.chain.state().height() < claimable_at_height {
+    while server.gateway().node.chain.state().height() <= claimable_at_height {
         let timestamp = server
             .gateway()
             .node
@@ -506,12 +506,6 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             })
             .unwrap();
     }
-    server
-        .gateway_mut()
-        .node
-        .chain
-        .apply_command(ChainCommand::ReleaseMaturedProposerRewards)
-        .unwrap();
     assert!(
         server
             .gateway()
