@@ -77,10 +77,12 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   graph body, input roots, params, job id, receipt digest, miner signature, and deadline; shared codec,
   p2p wrappers, state roots, storage snapshots, RPC/explorer rendering, telemetry, role verification, and
   settlement all carry the graph variant. Graph receipts replay through `TensorGraph::execute_exact` and
-  settle through the same delayed pending receipt reward path after valid attestations. Role-runtime
-  production for arbitrary graph jobs outside explicit graph artifacts, const-blob fetching, fixed-point
-  arithmetic scale policy beyond `cast`/`round`, low-level packed tensor storage/chunking APIs, and CUDA
-  generic graph execution remain open.
+  settle through the same delayed pending receipt reward path after valid attestations. Local synthetic
+  production now emits a deterministic exact Tier-B graph job, registers its graph body and input tensors,
+  and miner/validator role helpers can submit and attest the graph receipt from node-local program/tensor
+  artifacts. Const-blob fetching, fixed-point arithmetic scale policy beyond `cast`/`round`, low-level
+  packed tensor storage/chunking APIs, public/p2p artifact propagation evidence for externally supplied
+  arbitrary graph jobs, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,

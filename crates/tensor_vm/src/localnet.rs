@@ -2,7 +2,7 @@
 use crate::chain::{BlockVote, TensorBlock};
 use crate::chain::{Chain, ChainCommand, ChainEngine, JobState, ReceiptState};
 use crate::error::Result;
-use crate::jobs::{LinearTrainingStepJob, MatmulJob};
+use crate::jobs::{GraphJob, LinearTrainingStepJob, MatmulJob};
 use crate::profile::ChainProfile;
 use crate::roles::{
     CpuReferenceMinerRole, ReferenceValidatorRole, RoleReceiptBundle, validator_stake,
@@ -84,7 +84,7 @@ fn produce_synthetic_cpu_work_from_source(
         Some(JobState::LinearTrainingStep(job)) => {
             produce_synthetic_linear_training_work(chain, &scheduler, job)
         }
-        Some(JobState::GraphExecution(_)) => Ok(None),
+        Some(JobState::GraphExecution(job)) => produce_synthetic_graph_work(chain, &scheduler, job),
         None => Ok(None),
     }
 }
@@ -173,6 +173,55 @@ fn produce_synthetic_linear_training_work(
         step: job.step,
         weight_root_before: job.weight_root_before,
         weight_root_after,
+    })?;
+    Ok(Some(SyntheticCpuWorkResult {
+        tensors: canonical_receipt.served_tensors(),
+    }))
+}
+
+fn produce_synthetic_graph_work(
+    chain: &mut Chain,
+    scheduler: &JobScheduler,
+    job: GraphJob,
+) -> Result<Option<SyntheticCpuWorkResult>> {
+    let beacon = chain.state().finalized_randomness();
+    let graph = SyntheticLocalJobSource::graph_execution_graph();
+    let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+    if graph.validate_for_consensus()? != job.graph_id {
+        return Ok(None);
+    }
+    chain.apply_command(ChainCommand::RegisterProgramBody {
+        graph_id: job.graph_id,
+        bytes: graph.canonical_json().into_bytes(),
+    })?;
+    let job_state = JobState::GraphExecution(job.clone());
+    chain.apply_command(ChainCommand::SubmitJob(job_state.clone()))?;
+    let miner_assignment_seed = chain.miner_assignment_seed(&job.job_id);
+    let miner_assignment = scheduler.assign_miners(chain, job.job_id, &miner_assignment_seed);
+    let mut receipts = Vec::new();
+    for (index, miner_address) in miner_assignment.miners.iter().copied().enumerate() {
+        let receipt = CpuReferenceMinerRole::new(miner_address).execute_graph_job(
+            &job,
+            &graph,
+            &inputs,
+            chain.state().height(),
+            1 + index as u64,
+        )?;
+        chain.apply_command(ChainCommand::SubmitReceipt(receipt.receipt.clone()))?;
+        receipts.push(receipt);
+    }
+    attest_receipt_bundles(chain, scheduler, &job_state, &receipts, &beacon)?;
+    let Some(canonical_receipt) = receipts.first() else {
+        return Ok(None);
+    };
+    if !chain.has_attestation_quorum(&canonical_receipt.receipt_id())
+        || !chain.has_redundant_agreement(&canonical_receipt.receipt_id())
+    {
+        return Ok(None);
+    }
+    chain.apply_command(ChainCommand::SettleEpoch {
+        miner_reward_pool: 1_000,
+        validator_reward_pool: 500,
     })?;
     Ok(Some(SyntheticCpuWorkResult {
         tensors: canonical_receipt.served_tensors(),
@@ -340,6 +389,13 @@ mod tests {
                 .values()
                 .any(|job| matches!(job, JobState::LinearTrainingStep(_)))
         );
+        assert!(
+            !chain
+                .state()
+                .jobs()
+                .values()
+                .any(|job| matches!(job, JobState::GraphExecution(_)))
+        );
         assert_eq!(chain.state().model_states().len(), 1);
         assert_eq!(
             chain.state().model_states().values().next().unwrap().step,
@@ -366,6 +422,20 @@ mod tests {
         let third_block = third_block.clone();
         finalize_local_cpu_block(&mut chain, &third_block).unwrap();
         assert!(chain.is_block_finalized(&third_block.hash()));
+        assert!(
+            chain
+                .state()
+                .jobs()
+                .values()
+                .any(|job| matches!(job, JobState::GraphExecution(_)))
+        );
+        assert!(
+            chain
+                .state()
+                .receipts()
+                .values()
+                .any(|receipt| matches!(receipt, ReceiptState::GraphExecution(_)))
+        );
     }
 
     #[test]

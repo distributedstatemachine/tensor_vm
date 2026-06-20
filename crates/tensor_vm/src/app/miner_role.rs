@@ -1,8 +1,8 @@
 use std::collections::BTreeSet;
 
 use crate::{
-    Chain, ChainCommand, ChainEngine, JobScheduler, NodeRuntimeState, NodeStore, RpcHttpServer,
-    RpcNode, Tensor, TensorVmLibp2pService,
+    Chain, ChainCommand, ChainEngine, JobScheduler, JobState, NodeRuntimeState, NodeStore,
+    RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
     hash::hex,
     roles::CpuReferenceMinerRole,
     types::{Address, Hash},
@@ -69,9 +69,7 @@ pub fn submit_miner_role_receipt(
     let Some(job) = node.chain.state().jobs().get(&job_id).cloned() else {
         return Ok(None);
     };
-    let bundle = CpuReferenceMinerRole::new(miner)
-        .execute_job(&job, node.chain.state().height(), 1)
-        .map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))?;
+    let bundle = execute_miner_role_job(node, miner, &job, job_id)?;
     if bundle.receipt.job_id() != job_id || bundle.receipt.miner() != miner {
         return Err("miner role produced receipt for the wrong job or miner".to_owned());
     }
@@ -94,6 +92,50 @@ pub fn submit_miner_role_receipt(
         tensors_inserted,
         served_tensors,
     }))
+}
+
+fn execute_miner_role_job(
+    node: &RpcNode,
+    miner: Address,
+    job: &JobState,
+    job_id: Hash,
+) -> std::result::Result<crate::RoleReceiptBundle, String> {
+    let role = CpuReferenceMinerRole::new(miner);
+    match job {
+        JobState::GraphExecution(graph_job) => {
+            let graph = graph_from_program_body(node, &graph_job.graph_id)?;
+            let mut inputs = std::collections::BTreeMap::new();
+            for (name, root) in &graph_job.input_roots {
+                let Some(tensor) = node.tensor_by_commitment_root(root).cloned() else {
+                    return Err(format!(
+                        "miner role missing graph input tensor {} for job {}",
+                        name,
+                        hex(&job_id)
+                    ));
+                };
+                inputs.insert(name.clone(), tensor);
+            }
+            role.execute_graph_job(graph_job, &graph, &inputs, node.chain.state().height(), 1)
+        }
+        JobState::TensorOp(_) | JobState::LinearTrainingStep(_) => {
+            role.execute_job(job, node.chain.state().height(), 1)
+        }
+    }
+    .map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))
+}
+
+fn graph_from_program_body(
+    node: &RpcNode,
+    graph_id: &Hash,
+) -> std::result::Result<TensorGraph, String> {
+    let Some(bytes) = node.chain.state().program_body(graph_id) else {
+        return Err(format!(
+            "miner role missing graph program body {}",
+            hex(graph_id)
+        ));
+    };
+    TensorGraph::from_canonical_json_bytes(bytes)
+        .map_err(|error| format!("miner role failed to parse graph program body: {error}"))
 }
 
 pub fn tick_miner_role_work_once(

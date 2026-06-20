@@ -1,8 +1,8 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     BlockVote, Chain, ChainCommand, ChainEngine, JobScheduler, JobState, ReceiptState, RpcNode,
-    SyntheticLocalJobSource,
+    SyntheticLocalJobSource, TensorGraph,
     chain::ValidatorAuditReport,
     hash::hex,
     jobs::LinearTrainingStepOutput,
@@ -469,6 +469,129 @@ fn role_receipt_bundle_from_local_tensors(
                 },
             })
         }
+        (JobState::GraphExecution(job), ReceiptState::GraphExecution(receipt)) => {
+            let graph = graph_from_program_body(node, &job.graph_id)?;
+            let mut inputs = BTreeMap::new();
+            for (name, root) in &job.input_roots {
+                inputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
+            }
+            let mut outputs = BTreeMap::new();
+            for (name, root) in &receipt.output_roots {
+                outputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
+            }
+            Some(RoleReceiptBundle {
+                receipt: ReceiptState::GraphExecution(receipt.clone()),
+                artifacts: RoleReceiptArtifacts::GraphExecution {
+                    graph,
+                    inputs,
+                    outputs,
+                },
+            })
+        }
         _ => None,
+    }
+}
+
+fn graph_from_program_body(node: &RpcNode, graph_id: &Hash) -> Option<TensorGraph> {
+    let bytes = node.chain.state().program_body(graph_id)?;
+    let graph = TensorGraph::from_canonical_json_bytes(bytes).ok()?;
+    if graph.validate_for_consensus().ok()? != *graph_id {
+        return None;
+    }
+    Some(graph)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::{
+        ChainParams, RpcNode,
+        app::miner_role::submit_miner_role_receipt,
+        scheduler::SyntheticLocalJobSource,
+        types::{address, hash_bytes},
+        verify::FreivaldsParams,
+    };
+
+    #[test]
+    fn role_runtime_submits_and_attests_graph_execution_from_local_artifacts() {
+        let params = ChainParams {
+            replication_factor: 1,
+            agreement_quorum: 1,
+            freivalds: FreivaldsParams {
+                validators_per_job: 1,
+                minimum_validators: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let miner = address(b"app-graph-miner");
+        let validator = address(b"app-graph-validator");
+        let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"app-graph-role"]));
+        chain
+            .apply_command(ChainCommand::RegisterMiner {
+                address: miner,
+                stake: chain.params().miner_min_stake,
+            })
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::RegisterValidator {
+                address: validator,
+                stake: chain.params().validator_min_stake,
+            })
+            .unwrap();
+        chain.set_position_for_testing(2, 0);
+        let mut source = SyntheticLocalJobSource::default();
+        let job = source.next_graph_job(&chain);
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: job.graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+                job.clone(),
+            )))
+            .unwrap();
+        let mut node = RpcNode::new(chain);
+        for tensor in SyntheticLocalJobSource::graph_execution_inputs().into_values() {
+            node.insert_tensor(tensor);
+        }
+
+        let submission = submit_miner_role_receipt(&mut node, miner, job.job_id)
+            .unwrap()
+            .expect("miner role should submit a graph receipt");
+        for tensor in submission.served_tensors {
+            node.insert_tensor(tensor);
+        }
+        let receipt_id = node
+            .chain
+            .state()
+            .receipts()
+            .keys()
+            .copied()
+            .next()
+            .expect("graph receipt must be stored");
+        let observation = validator_role_work_observation(&node, validator);
+        assert!(observation.artifact_ready_receipts.contains(&receipt_id));
+
+        let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id)
+            .unwrap()
+            .expect("validator role should attest the graph receipt");
+
+        assert_eq!(attestation.attestations_submitted, 1);
+        assert!(matches!(
+            node.chain.state().receipts().get(&receipt_id),
+            Some(ReceiptState::GraphExecution(_))
+        ));
+        assert_eq!(
+            node.chain
+                .state()
+                .attestations()
+                .get(&receipt_id)
+                .map(Vec::len),
+            Some(1)
+        );
     }
 }

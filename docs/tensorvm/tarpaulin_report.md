@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 90 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 97 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 90 coverage could not
-be regenerated. Iterations 78 through 90 rechecked the same command and hit the same missing-binary blocker.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 97 coverage could not
+be regenerated. Iterations 78 through 97 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -120,6 +120,9 @@ non-producer payload convergence.
 Iteration 95 added state-rooted invalid-output miner stake slashing. Focused attestation, economic
 calibration, status/explorer, and storage tests cover one-shot miner slash records, treasury credit,
 delayed reward voiding, fraud-path calibration, and chain-state persistence.
+Iteration 97 added role-owned local graph execution production. Focused scheduler, localnet, graph-job,
+role, and app validator-role tests cover synthetic graph job emission, graph work settlement, and miner plus
+validator role submission from registered graph bodies and node-local tensors.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

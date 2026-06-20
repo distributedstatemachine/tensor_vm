@@ -5,21 +5,21 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 96 complete - automatic side-branch deep reorg.
+- Active feature: Iteration 97 complete - role-owned graph execution production.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
-  unfinalized side-branch deep reorg, and delayed challenge rewards are implemented locally. Late
-  invalid-output attestations now contest settled receipts by voiding delayed pending receipt rewards and
-  slashing miner stake before reward maturity.
+  unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
+  implemented locally. Miner and validator role helpers can now execute and attest `GraphExecution` jobs
+  from registered graph bodies and local tensor artifacts.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue verifier-transcript disputes, remaining fraud-path/slashing work, graph-runtime
-  production, or rerun the full Docker scenario after the `/health` blocker clears.
+- Next action: continue verifier-transcript disputes, remaining fraud-path/slashing work, external
+  randomness, or rerun the full Docker scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -33,7 +33,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, and role-owned local graph execution | Continue exact Tier-B verifier coverage, const blobs, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
@@ -41,58 +41,46 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 96: Automatic Side-Branch Deep Reorg
+### Iteration 97: Role-Owned Graph Execution Production
 
-Feature capability: promote a strictly longer valid side branch into canonical state automatically while
-preserving finalized canonical blocks.
+Feature capability: produce, execute, verify, and settle a local synthetic `GraphExecution` job through the
+same role-owned job/receipt/attestation path as fixed TensorOp and LinearTrainingStep jobs.
 
-Canonical owner: `chain::blocks` fork-choice/admission and `Chain` side-branch state.
-Adapter callers: `ChainCommand::SubmitBlock`, p2p/node payload application, storage/node-store snapshots,
-and tests call the same chain admission boundary.
-Old shortcut being removed: valid multi-block side branches were retained but never promoted automatically
-even when they overtook canonical unfinalized height.
+Canonical owner: `scheduler::SyntheticLocalJobSource`, `localnet`, role helpers, and chain
+`RegisterProgramBody`/`SubmitJob`/`SubmitReceipt`/`SubmitAttestation`.
+Adapter callers: local producer, miner role, validator role, p2p program/tensor serving, and tests.
+Old shortcut being removed: graph jobs existed in chain/codec/verifier code but local synthetic work and
+role loops skipped or rejected them unless explicit test-only graph artifacts were supplied.
 Regression test that proves the shortcut is gone:
-`chain::tests::longer_side_branch_reorganizes_unfinalized_canonical_suffix`.
-Behavior with local synthetic block production disabled: inbound block payloads can trigger the same
-chain-owned reorg without synthetic block production.
-Behavior for producer and non-producer roles: both converge through `SubmitBlock`/payload admission;
-canonical head changes only through shared chain fork-choice.
-Structured evidence source: canonical `blocks`, `block_parent_states`, `side_branch_blocks`,
-`side_branch_child_states`, state root/height/head, and node payload application.
-Finality source: `ChainState::finalized_blocks` and `is_block_finalized` prevent reorg across finalized
-canonical blocks.
-Wire-size and codec boundary: no p2p wire change; reuse persisted side-branch maps already in the
-chain-state codec.
-
-Files/modules likely touched: `chain/blocks.rs`, `chain/engine.rs`, `chain/commands.rs`, node payload
-application, focused tests, docs, and this plan.
-Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Tests/checkers/docs to add or update: focused fork-choice/reorg and node payload tests plus consensus docs.
-Narrow validation commands: `cargo test -p tensor_vm side_branch --quiet`,
-`cargo test -p tensor_vm reorg --quiet`, `cargo test -p tensor_vm blocks --quiet`, and
-`cargo test -p tensor_vm block_payload_application --quiet`.
-Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
-workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: a longer side branch replaces only the unfinalized canonical suffix; old
-canonical suffix moves into side-branch storage; finalized canonical blocks reject conflicting branches.
-Out of scope: public Docker rerun, verifier transcript fraud proofs, external drand/VRF, or p2p wire
-changes.
-Split trigger: if cumulative-work scoring beyond strict branch length is required, split that policy work
-from this deterministic longer-branch promotion.
+`app::validator_role::tests::role_runtime_submits_and_attests_graph_execution_from_local_artifacts`.
+Behavior with local synthetic block production disabled: inbound graph jobs still require registered graph
+bodies and tensors before role execution; no block-production gate is involved.
+Behavior for producer and non-producer roles: producer registers the graph body and input tensors; miner and
+validator roles execute/attest only from node-local artifacts and shared chain commands.
+Structured evidence source: `program_bodies`, graph job/receipt/attestation state, local tensor store,
+role work observations, and settled receipt state.
+Finality source: unchanged; graph receipts enter normal settled blockspace and finality remains block-vote
+driven.
+Wire-size and codec boundary: no new wire codec; graph job/receipt variants and `RequestProgram` serving
+are reused, with tensor payloads remaining commitment-addressed artifacts.
 
 Implementation summary:
-- Added `BlockAdmission::Reorganized` / `ChainEvent::ChainReorganized`.
-- Side-branch admission now records selected-receipt metadata in branch child states and promotes strictly
-  longer branches when no replaced canonical block is finalized.
-- Node block payload application now lets known side-branch descendants reach chain admission.
+- Added a deterministic synthetic exact Tier-B graph (`add` then `relu`) and graph input tensors to the
+  local job source, cycling TensorOp, LinearTrainingStep, and GraphExecution jobs.
+- Local CPU helper rounds now register the graph body, execute graph receipts, attest them, and settle them.
+- Long-running miner/validator role helpers reconstruct graph jobs from registered program bodies plus
+  node-local tensor artifacts instead of rejecting graph jobs.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm side_branch --quiet`,
-  `cargo test -p tensor_vm reorg --quiet`, `cargo test -p tensor_vm blocks --quiet`, and
-  `cargo test -p tensor_vm block_payload_application --quiet` passed.
+- Focused: `cargo test -p tensor_vm synthetic_job_source --quiet`,
+  `cargo test -p tensor_vm synthetic_cpu_round --quiet`,
+  `cargo test -p tensor_vm graph_jobs --quiet`,
+  `cargo test -p tensor_vm role --quiet`, and
+  `cargo test -p tensor_vm role_runtime_submits_and_attests_graph_execution_from_local_artifacts --quiet`
+  passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 428 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 430 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -100,6 +88,13 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 96: Automatic Side-Branch Deep Reorg
+
+Strictly longer valid unfinalized side branches now promote into canonical state through chain-owned
+fork-choice while finalized canonical blocks remain protected. Validation passed focused side-branch,
+reorg, block, node-payload, full crate, clippy, workspace release, and first/final Gate 0. Commit
+`4d585f8` is pushed to `origin/main`.
 
 ### Iteration 95: Invalid-Output Miner Stake Slashing
 

@@ -1,8 +1,9 @@
 use crate::chain::{Chain, JobState};
-use crate::jobs::{LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
+use crate::ir::{GraphOutput, IrRef, OpNode, TensorGraph, TensorSpec};
+use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
 use crate::tensor::{DType, Tensor};
 use crate::types::{Address, Hash, hash_bytes, hash_to_u128};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ValidatorAssignment {
@@ -73,6 +74,80 @@ impl SyntheticLocalJobSource {
         })
     }
 
+    pub fn next_graph_job(&mut self, chain: &Chain) -> GraphJob {
+        let graph = Self::graph_execution_graph();
+        let inputs = Self::graph_execution_inputs();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        GraphJob::new(
+            chain.state().epoch(),
+            graph.graph_id(),
+            input_roots,
+            BTreeMap::new(),
+            chain
+                .state()
+                .height()
+                .saturating_add(chain.params().receipt_submission_window),
+            1,
+            12,
+        )
+    }
+
+    pub fn graph_execution_graph() -> TensorGraph {
+        TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                TensorSpec::field("a", vec![2, 3]),
+                TensorSpec::field("b", vec![2, 3]),
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "add".to_owned(),
+                    args: vec![
+                        IrRef::Input {
+                            name: "a".to_owned(),
+                        },
+                        IrRef::Input {
+                            name: "b".to_owned(),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec::field("sum", vec![2, 3])],
+                },
+                OpNode {
+                    id: 1,
+                    op: "relu".to_owned(),
+                    args: vec![IrRef::Op { id: 0, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec::field("activated", vec![2, 3])],
+                },
+            ],
+            outputs: vec![GraphOutput {
+                name: "activated".to_owned(),
+                value: IrRef::Op { id: 1, idx: 0 },
+            }],
+        }
+    }
+
+    pub fn graph_execution_inputs() -> BTreeMap<String, Tensor> {
+        BTreeMap::from([
+            (
+                "a".to_owned(),
+                Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
+                    .expect("static synthetic graph input a must be valid"),
+            ),
+            (
+                "b".to_owned(),
+                Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![7, 8, 9, 10, 11, 12])
+                    .expect("static synthetic graph input b must be valid"),
+            ),
+        ])
+    }
+
     pub fn linear_training_weights() -> Tensor {
         Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
             .expect("static synthetic linear weights must be valid")
@@ -95,12 +170,12 @@ impl Default for SyntheticLocalJobSource {
 
 impl JobSource for SyntheticLocalJobSource {
     fn next_job(&mut self, chain: &Chain) -> Option<JobState> {
-        if chain.state().height().is_multiple_of(2) {
-            Some(JobState::TensorOp(self.next_matmul_job(chain)))
-        } else {
-            Some(JobState::LinearTrainingStep(
+        match chain.state().height() % 3 {
+            0 => Some(JobState::TensorOp(self.next_matmul_job(chain))),
+            1 => Some(JobState::LinearTrainingStep(
                 self.next_linear_training_job(chain),
-            ))
+            )),
+            _ => Some(JobState::GraphExecution(self.next_graph_job(chain))),
         }
     }
 }
@@ -238,7 +313,7 @@ mod tests {
     fn synthetic_job_source_uses_chain_epoch_height_and_deadline() {
         let beacon = hash_bytes(b"test", &[b"synthetic-source"]);
         let mut chain = Chain::new(beacon);
-        chain.set_position_for_testing(10, 7);
+        chain.set_position_for_testing(12, 7);
         chain.set_receipt_submission_window_for_testing(13);
         let mut source = SyntheticLocalJobSource::new(JobScheduler::with_small_shape((2, 3, 4)));
 
@@ -248,11 +323,11 @@ mod tests {
 
         assert_eq!(job.epoch, 7);
         assert_eq!((job.m, job.k, job.n), (2, 3, 4));
-        assert_eq!(job.deadline_block, 23);
+        assert_eq!(job.deadline_block, 25);
         assert_eq!(
             job.job_id,
             JobScheduler::with_small_shape((2, 3, 4))
-                .generate_small_matmul(7, 10, &beacon, 23)
+                .generate_small_matmul(7, 12, &beacon, 25)
                 .job_id
         );
     }
@@ -271,10 +346,10 @@ mod tests {
     }
 
     #[test]
-    fn synthetic_job_source_emits_linear_training_steps_on_odd_heights() {
+    fn synthetic_job_source_emits_linear_training_steps_on_second_slot() {
         let beacon = hash_bytes(b"test", &[b"synthetic-linear-source"]);
         let mut chain = Chain::new(beacon);
-        chain.set_position_for_testing(11, 3);
+        chain.set_position_for_testing(13, 3);
         chain.set_receipt_submission_window_for_testing(13);
         let mut source = SyntheticLocalJobSource::new(JobScheduler::with_small_shape((2, 3, 4)));
         let weights = SyntheticLocalJobSource::linear_training_weights();
@@ -288,14 +363,36 @@ mod tests {
         assert_eq!(job.input_shape, vec![4, 3]);
         assert_eq!(job.weight_shape, vec![3, 2]);
         assert_eq!(job.target_shape, vec![4, 2]);
-        assert_eq!(job.deadline_block, 24);
+        assert_eq!(job.deadline_block, 26);
         assert_eq!(
             job.model_id,
             hash_bytes(
                 b"tensor-vm-local-linear-model-v1",
-                &[&beacon, &11u64.to_le_bytes()]
+                &[&beacon, &13u64.to_le_bytes()]
             )
         );
+    }
+
+    #[test]
+    fn synthetic_job_source_emits_graph_jobs_on_third_slot() {
+        let beacon = hash_bytes(b"test", &[b"synthetic-graph-source"]);
+        let mut chain = Chain::new(beacon);
+        chain.set_position_for_testing(14, 4);
+        chain.set_receipt_submission_window_for_testing(13);
+        let mut source = SyntheticLocalJobSource::new(JobScheduler::with_small_shape((2, 3, 4)));
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+
+        let Some(JobState::GraphExecution(job)) = source.next_job(&chain) else {
+            panic!("synthetic local job source must emit GraphExecution jobs on third slots");
+        };
+
+        assert_eq!(job.epoch, 4);
+        assert_eq!(job.graph_id, graph.validate_for_consensus().unwrap());
+        assert_eq!(job.deadline_block, 27);
+        for (name, tensor) in inputs {
+            assert_eq!(job.input_roots.get(&name), Some(&tensor.commitment_root()));
+        }
     }
 
     #[test]

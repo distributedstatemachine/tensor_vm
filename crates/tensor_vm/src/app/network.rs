@@ -136,6 +136,26 @@ pub fn produce_and_publish_synthetic_job(
                 .map_err(|error| format!("synthetic linear model registration failed: {error}"))?;
         }
     }
+    if let JobState::GraphExecution(job) = &job {
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        if graph.graph_id() != job.graph_id {
+            return Err("synthetic graph job does not match configured graph body".to_owned());
+        }
+        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+        {
+            let node = &mut server.gateway_mut().node;
+            node.chain
+                .apply_command(ChainCommand::RegisterProgramBody {
+                    graph_id: job.graph_id,
+                    bytes: graph.canonical_json().into_bytes(),
+                })
+                .map_err(|error| format!("synthetic graph program registration failed: {error}"))?;
+            for tensor in inputs.values() {
+                node.insert_tensor(tensor.clone());
+                p2p_service.register_tensor(tensor.clone());
+            }
+        }
+    }
     server
         .gateway_mut()
         .node
