@@ -5,8 +5,8 @@ use crate::types::Address;
 use tensor_vm_explorer::{
     ExplorerAccount, ExplorerBlock, ExplorerFraudPathEconomicCalibration,
     ExplorerFraudPathEconomicCalibrationSummary, ExplorerJob, ExplorerMiner, ExplorerOverview,
-    ExplorerPendingReward, ExplorerReceipt, ExplorerSummary, ExplorerValidator,
-    ExplorerValidatorAuditEconomicCalibration,
+    ExplorerPendingReward, ExplorerRandomnessBindingEvidence, ExplorerReceipt, ExplorerSummary,
+    ExplorerValidator, ExplorerValidatorAuditEconomicCalibration,
 };
 
 pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
@@ -227,6 +227,28 @@ pub(super) fn explorer_fraud_path_economic_calibration(
     }
 }
 
+pub(super) fn explorer_randomness_binding_evidence(
+    chain: &Chain,
+) -> ExplorerRandomnessBindingEvidence {
+    let evidence = chain.state().randomness_binding_evidence();
+    ExplorerRandomnessBindingEvidence {
+        beacon_source: evidence.beacon_source.to_owned(),
+        drand_round_mapping: evidence.drand_round_mapping.to_owned(),
+        vrf_construction: evidence.vrf_construction.to_owned(),
+        assignment_seed_domain: evidence.assignment_seed_domain.to_owned(),
+        validation_seed_commitment_domain: evidence.validation_seed_commitment_domain.to_owned(),
+        validation_seed_reveal_domain: evidence.validation_seed_reveal_domain.to_owned(),
+        commit_reveal_ordering: evidence.commit_reveal_ordering.to_owned(),
+        current_block_hash_randomness_allowed: evidence.current_block_hash_randomness_allowed,
+        receipt_anchor_count: evidence.receipt_anchor_count,
+        finalized_beacon_anchor_count: evidence.finalized_beacon_anchor_count,
+        receipt_bound_anchor_count: evidence.receipt_bound_anchor_count,
+        consistent_anchor_count: evidence.consistent_anchor_count,
+        current_block_hash_anchor_count: evidence.current_block_hash_anchor_count,
+        all_receipt_anchors_consistent: evidence.all_receipt_anchors_consistent,
+    }
+}
+
 fn reward_claim_key_label(key: RewardClaimKey) -> String {
     match key {
         RewardClaimKey::BlockHeight(height) => height.to_string(),
@@ -284,6 +306,7 @@ pub(super) fn explorer_overview(
         pending_rewards: explorer_pending_rewards(chain, receipt_limit),
         validator_audit_economic_calibration: explorer_validator_audit_economic_calibration(chain),
         fraud_path_economic_calibration: explorer_fraud_path_economic_calibration(chain),
+        randomness_binding_evidence: explorer_randomness_binding_evidence(chain),
         jobs: explorer_jobs(chain, job_limit),
     }
 }

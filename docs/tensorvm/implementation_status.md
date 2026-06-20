@@ -209,7 +209,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   receipt; validator assignment and `Chain::validation_seed` use the persisted anchor so later
   finalized-beacon advancement cannot change an admitted receipt's assigned validators or challenge-vector
   seed. Attestation admission rejects stored receipts missing that anchor instead of falling back to mutable
-  current chain randomness. Full VRF/drand and external commit-reveal lifecycle wiring remain open.
+  current chain randomness. `ChainState::randomness_binding_evidence`, service status, and explorer
+  overview now expose the local finalized-beacon source, assignment/commitment/reveal seed domains,
+  commit-reveal ordering, receipt-anchor consistency counts, and an explicit current-block-hash randomness
+  ban. Full VRF/drand and external commit-reveal lifecycle wiring remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

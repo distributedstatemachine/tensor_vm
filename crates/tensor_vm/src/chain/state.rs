@@ -392,6 +392,24 @@ pub struct FraudPathEconomicCalibrationSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RandomnessBindingEvidence {
+    pub beacon_source: &'static str,
+    pub drand_round_mapping: &'static str,
+    pub vrf_construction: &'static str,
+    pub assignment_seed_domain: &'static str,
+    pub validation_seed_commitment_domain: &'static str,
+    pub validation_seed_reveal_domain: &'static str,
+    pub commit_reveal_ordering: &'static str,
+    pub current_block_hash_randomness_allowed: bool,
+    pub receipt_anchor_count: usize,
+    pub finalized_beacon_anchor_count: usize,
+    pub receipt_bound_anchor_count: usize,
+    pub consistent_anchor_count: usize,
+    pub current_block_hash_anchor_count: usize,
+    pub all_receipt_anchors_consistent: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ReceiptRandomnessAnchor {
     pub receipt_id: Hash,
     pub beacon_round: u64,
@@ -1175,6 +1193,53 @@ impl ChainState {
 
     pub fn receipt_randomness_anchors(&self) -> &BTreeMap<Hash, ReceiptRandomnessAnchor> {
         &self.receipt_randomness_anchors
+    }
+
+    pub fn randomness_binding_evidence(&self) -> RandomnessBindingEvidence {
+        let mut finalized_beacon_anchor_count = 0_usize;
+        let mut receipt_bound_anchor_count = 0_usize;
+        let mut consistent_anchor_count = 0_usize;
+        for (receipt_id, anchor) in &self.receipt_randomness_anchors {
+            if anchor.finalized_randomness != [0; 32] {
+                finalized_beacon_anchor_count += 1;
+            }
+            if anchor.receipt_id == *receipt_id {
+                receipt_bound_anchor_count += 1;
+            }
+            if anchor.receipt_id == *receipt_id
+                && anchor.assignment_seed
+                    == super::validation::assignment_seed(
+                        anchor.beacon_round,
+                        &anchor.finalized_randomness,
+                        receipt_id,
+                    )
+                && anchor.validation_seed_commitment
+                    == super::validation::validation_seed_commitment(
+                        anchor.beacon_round,
+                        &anchor.finalized_randomness,
+                        receipt_id,
+                    )
+            {
+                consistent_anchor_count += 1;
+            }
+        }
+        let receipt_anchor_count = self.receipt_randomness_anchors.len();
+        RandomnessBindingEvidence {
+            beacon_source: super::validation::RANDOMNESS_BEACON_SOURCE,
+            drand_round_mapping: super::validation::RANDOMNESS_DRAND_ROUND_MAPPING,
+            vrf_construction: super::validation::RANDOMNESS_VRF_CONSTRUCTION,
+            assignment_seed_domain: super::validation::ASSIGNMENT_SEED_DOMAIN,
+            validation_seed_commitment_domain: super::validation::VALIDATION_SEED_COMMITMENT_DOMAIN,
+            validation_seed_reveal_domain: super::validation::VALIDATION_SEED_REVEAL_DOMAIN,
+            commit_reveal_ordering: "commit=receipt_id+finalized_beacon_round;reveal=validator+job+round",
+            current_block_hash_randomness_allowed: false,
+            receipt_anchor_count,
+            finalized_beacon_anchor_count,
+            receipt_bound_anchor_count,
+            consistent_anchor_count,
+            current_block_hash_anchor_count: 0,
+            all_receipt_anchors_consistent: receipt_anchor_count == consistent_anchor_count,
+        }
     }
 
     pub fn attestations(&self) -> &BTreeMap<Hash, Vec<ValidatorAttestation>> {

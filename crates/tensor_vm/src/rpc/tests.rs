@@ -1,6 +1,8 @@
 use super::*;
 use crate::chain::{
-    Chain, ChainParams, HardwareClass, JobState, PendingReceiptReward, ReceiptRewardKind,
+    ASSIGNMENT_SEED_DOMAIN, Chain, ChainParams, HardwareClass, JobState, PendingReceiptReward,
+    RANDOMNESS_BEACON_SOURCE, ReceiptRewardKind, VALIDATION_SEED_COMMITMENT_DOMAIN,
+    VALIDATION_SEED_REVEAL_DOMAIN,
 };
 use crate::faucet::Faucet;
 use crate::hash::hex;

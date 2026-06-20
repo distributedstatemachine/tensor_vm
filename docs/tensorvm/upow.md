@@ -433,7 +433,12 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 - Challenge vectors and audit selection MUST be **unpredictable until after the miner commits**, otherwise a miner can compute correctly only where it knows it will be checked (a sample/seed that is visible at commit time is directly exploitable).
 - Source: a **VRF per validator** seeded by finalized chain state, and/or an external **drand-style randomness beacon**. Block-hash-derived randomness is **banned** for these purposes because a proposer can grind the block hash.
 
-> TODO: pin the exact beacon (drand round mapping to epoch) and the VRF construction; specify the commit→reveal ordering so `r` is bound to `(receipt_id, beacon_round)`.
+> Status: the local reference exposes chain-owned randomness binding evidence through service status and
+> explorer overview. Admitted receipts persist a finalized-beacon anchor, assignment seed, and validation
+> seed commitment; `ChainState::randomness_binding_evidence` reports the exact local seed domains,
+> commit→reveal ordering (`receipt_id + finalized_beacon_round` committed before validator/job/round seed
+> reveal), zero current-block-hash anchors, and consistency counts for persisted receipt anchors. External
+> drand round mapping and validator VRF construction remain TODO before claiming the full §10 construction.
 
 ---
 
@@ -626,7 +631,9 @@ This section is non-normative guidance on how the spec components partition into
   where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
   mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
-- [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
+- [~] Beacon binding: local finalized-beacon receipt anchors now expose chain-owned seed-domain,
+  commit→reveal, and current-block-hash-ban evidence through status/explorer; external drand round ↔ epoch
+  mapping and validator VRF construction remain TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
 - [~] Economic calibration: live calibration now reports the configured validator-audit detection
   probability, current pending validator reward exposure, implemented miner data-unavailability and

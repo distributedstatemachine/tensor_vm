@@ -579,6 +579,37 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
             && path["required_slashable_bond"].as_u64() == Some(0)
             && path["invariant_holds"].as_bool() == Some(true)
     }));
+
+    let randomness = &overview["randomness_binding_evidence"];
+    assert_eq!(
+        randomness["beacon_source"].as_str(),
+        Some(RANDOMNESS_BEACON_SOURCE)
+    );
+    assert_eq!(
+        randomness["assignment_seed_domain"].as_str(),
+        Some(ASSIGNMENT_SEED_DOMAIN)
+    );
+    assert_eq!(
+        randomness["validation_seed_commitment_domain"].as_str(),
+        Some(VALIDATION_SEED_COMMITMENT_DOMAIN)
+    );
+    assert_eq!(
+        randomness["validation_seed_reveal_domain"].as_str(),
+        Some(VALIDATION_SEED_REVEAL_DOMAIN)
+    );
+    assert_eq!(
+        randomness["current_block_hash_randomness_allowed"].as_bool(),
+        Some(false)
+    );
+    assert_eq!(randomness["receipt_anchor_count"].as_u64(), Some(0));
+    assert_eq!(
+        randomness["current_block_hash_anchor_count"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(
+        randomness["all_receipt_anchors_consistent"].as_bool(),
+        Some(true)
+    );
 }
 
 #[test]

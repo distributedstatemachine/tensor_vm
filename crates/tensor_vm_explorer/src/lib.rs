@@ -309,6 +309,46 @@ impl ExplorerReceipt {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerRandomnessBindingEvidence {
+    pub beacon_source: String,
+    pub drand_round_mapping: String,
+    pub vrf_construction: String,
+    pub assignment_seed_domain: String,
+    pub validation_seed_commitment_domain: String,
+    pub validation_seed_reveal_domain: String,
+    pub commit_reveal_ordering: String,
+    pub current_block_hash_randomness_allowed: bool,
+    pub receipt_anchor_count: usize,
+    pub finalized_beacon_anchor_count: usize,
+    pub receipt_bound_anchor_count: usize,
+    pub consistent_anchor_count: usize,
+    pub current_block_hash_anchor_count: usize,
+    pub all_receipt_anchors_consistent: bool,
+}
+
+impl ExplorerRandomnessBindingEvidence {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"all_receipt_anchors_consistent\":{}}}",
+            escape_json(&self.beacon_source),
+            escape_json(&self.drand_round_mapping),
+            escape_json(&self.vrf_construction),
+            escape_json(&self.assignment_seed_domain),
+            escape_json(&self.validation_seed_commitment_domain),
+            escape_json(&self.validation_seed_reveal_domain),
+            escape_json(&self.commit_reveal_ordering),
+            self.current_block_hash_randomness_allowed,
+            self.receipt_anchor_count,
+            self.finalized_beacon_anchor_count,
+            self.receipt_bound_anchor_count,
+            self.consistent_anchor_count,
+            self.current_block_hash_anchor_count,
+            self.all_receipt_anchors_consistent
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerJob {
     pub job_id: String,
     pub primitive_type: String,
@@ -338,13 +378,14 @@ pub struct ExplorerOverview {
     pub pending_rewards: Vec<ExplorerPendingReward>,
     pub validator_audit_economic_calibration: ExplorerValidatorAuditEconomicCalibration,
     pub fraud_path_economic_calibration: ExplorerFraudPathEconomicCalibrationSummary,
+    pub randomness_binding_evidence: ExplorerRandomnessBindingEvidence,
     pub jobs: Vec<ExplorerJob>,
 }
 
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"randomness_binding_evidence\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
@@ -353,6 +394,7 @@ impl ExplorerOverview {
             json_array(&self.pending_rewards, ExplorerPendingReward::to_json),
             self.validator_audit_economic_calibration.to_json(),
             self.fraud_path_economic_calibration.to_json(),
+            self.randomness_binding_evidence.to_json(),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
     }
@@ -759,6 +801,28 @@ mod tests {
         };
         assert!(pending.to_json().contains("\"claimable_at_height\":11"));
         assert!(pending.to_json().contains("\"voided_by_challenge\":false"));
+        let randomness = ExplorerRandomnessBindingEvidence {
+            beacon_source: "local_finalized_chain_beacon_v1".to_owned(),
+            drand_round_mapping: "not_configured_local_finalized_beacon".to_owned(),
+            vrf_construction: "not_configured_local_finalized_beacon".to_owned(),
+            assignment_seed_domain: "tensor-vm-validator-assignment-seed-v1".to_owned(),
+            validation_seed_commitment_domain: "tensor-vm-validation-seed-commitment-v1".to_owned(),
+            validation_seed_reveal_domain: "tensor-vm-committed-validation-seed-v1".to_owned(),
+            commit_reveal_ordering: "commit=receipt_id;reveal=validator".to_owned(),
+            current_block_hash_randomness_allowed: false,
+            receipt_anchor_count: 2,
+            finalized_beacon_anchor_count: 2,
+            receipt_bound_anchor_count: 2,
+            consistent_anchor_count: 2,
+            current_block_hash_anchor_count: 0,
+            all_receipt_anchors_consistent: true,
+        };
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"current_block_hash_randomness_allowed\":false")
+        );
+        assert!(randomness.to_json().contains("\"receipt_anchor_count\":2"));
         assert!(summary.to_json().contains("\"model_count\":1"));
         assert!(summary.to_json().contains("\"attestation_count\":30"));
         let receipts = receipts_json(&[ExplorerReceipt {

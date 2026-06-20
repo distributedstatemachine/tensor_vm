@@ -172,6 +172,48 @@ fn admitted_receipt_attestation_requires_randomness_anchor() {
 }
 
 #[test]
+fn randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy() {
+    let beacon = hash_bytes(b"test", &[b"randomness-binding-evidence"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"randomness-binding-miner");
+    let validator = address(b"randomness-binding-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+
+    let evidence = chain.state().randomness_binding_evidence();
+    assert_eq!(evidence.beacon_source, validation::RANDOMNESS_BEACON_SOURCE);
+    assert_eq!(
+        evidence.assignment_seed_domain,
+        validation::ASSIGNMENT_SEED_DOMAIN
+    );
+    assert_eq!(
+        evidence.validation_seed_commitment_domain,
+        validation::VALIDATION_SEED_COMMITMENT_DOMAIN
+    );
+    assert_eq!(
+        evidence.validation_seed_reveal_domain,
+        validation::VALIDATION_SEED_REVEAL_DOMAIN
+    );
+    assert!(!evidence.current_block_hash_randomness_allowed);
+    assert_eq!(evidence.receipt_anchor_count, 1);
+    assert_eq!(evidence.finalized_beacon_anchor_count, 1);
+    assert_eq!(evidence.receipt_bound_anchor_count, 1);
+    assert_eq!(evidence.consistent_anchor_count, 1);
+    assert_eq!(evidence.current_block_hash_anchor_count, 0);
+    assert!(evidence.all_receipt_anchors_consistent);
+
+    chain.produce_block(validator, 1_000).unwrap();
+    let later_evidence = chain.state().randomness_binding_evidence();
+    assert_eq!(later_evidence.receipt_anchor_count, 1);
+    assert_eq!(later_evidence.consistent_anchor_count, 1);
+    assert!(later_evidence.all_receipt_anchors_consistent);
+}
+
+#[test]
 fn proposer_selection_uses_validator_stake() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);

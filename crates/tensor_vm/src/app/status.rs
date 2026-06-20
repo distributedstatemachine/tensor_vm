@@ -327,6 +327,57 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         );
         report.field(&format!("{prefix}_invariant_holds"), path.invariant_holds);
     }
+    let randomness = chain.state().randomness_binding_evidence();
+    report.field("randomness_beacon_source", randomness.beacon_source);
+    report.field(
+        "randomness_drand_round_mapping",
+        randomness.drand_round_mapping,
+    );
+    report.field("randomness_vrf_construction", randomness.vrf_construction);
+    report.field(
+        "randomness_assignment_seed_domain",
+        randomness.assignment_seed_domain,
+    );
+    report.field(
+        "randomness_validation_seed_commitment_domain",
+        randomness.validation_seed_commitment_domain,
+    );
+    report.field(
+        "randomness_validation_seed_reveal_domain",
+        randomness.validation_seed_reveal_domain,
+    );
+    report.field(
+        "randomness_commit_reveal_ordering",
+        randomness.commit_reveal_ordering,
+    );
+    report.field(
+        "randomness_current_block_hash_allowed",
+        randomness.current_block_hash_randomness_allowed,
+    );
+    report.field(
+        "randomness_receipt_anchor_count",
+        randomness.receipt_anchor_count,
+    );
+    report.field(
+        "randomness_finalized_beacon_anchor_count",
+        randomness.finalized_beacon_anchor_count,
+    );
+    report.field(
+        "randomness_receipt_bound_anchor_count",
+        randomness.receipt_bound_anchor_count,
+    );
+    report.field(
+        "randomness_consistent_anchor_count",
+        randomness.consistent_anchor_count,
+    );
+    report.field(
+        "randomness_current_block_hash_anchor_count",
+        randomness.current_block_hash_anchor_count,
+    );
+    report.field(
+        "randomness_all_receipt_anchors_consistent",
+        randomness.all_receipt_anchors_consistent,
+    );
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
     report.field(
@@ -482,8 +533,9 @@ fn claim_key_label(key: RewardClaimKey) -> String {
 mod tests {
     use super::*;
     use crate::chain::{
-        ChainCommand, ChainEngine, ChainParams, PendingChallengeReward, PendingReceiptReward,
-        ReceiptRewardKind,
+        ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, PendingChallengeReward,
+        PendingReceiptReward, RANDOMNESS_BEACON_SOURCE, ReceiptRewardKind,
+        VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
     };
     use crate::types::{address, hash_bytes};
     use std::time::{SystemTime, UNIX_EPOCH};
@@ -679,6 +731,73 @@ mod tests {
         );
         assert_eq!(
             fields.value("fraud_path_economic_block_check_invariant_holds"),
+            Some("true")
+        );
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn service_status_exports_randomness_binding_evidence() {
+        let beacon = hash_bytes(b"test", &[b"status-randomness-binding"]);
+        let mut chain = Chain::new(beacon);
+        chain.anchor_receipt_randomness_for_testing(hash_bytes(
+            b"test",
+            &[b"status-randomness-receipt"],
+        ));
+
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-status-randomness-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = NodeStore::open(data_dir.clone());
+        store.persist_chain(&chain).unwrap();
+
+        let status = service_status(data_dir.to_str().unwrap()).unwrap();
+        let fields = KeyValueReport::parse_strict(&status).unwrap();
+        assert_eq!(
+            fields.value("randomness_beacon_source"),
+            Some(RANDOMNESS_BEACON_SOURCE)
+        );
+        assert_eq!(
+            fields.value("randomness_assignment_seed_domain"),
+            Some(ASSIGNMENT_SEED_DOMAIN)
+        );
+        assert_eq!(
+            fields.value("randomness_validation_seed_commitment_domain"),
+            Some(VALIDATION_SEED_COMMITMENT_DOMAIN)
+        );
+        assert_eq!(
+            fields.value("randomness_validation_seed_reveal_domain"),
+            Some(VALIDATION_SEED_REVEAL_DOMAIN)
+        );
+        assert_eq!(
+            fields.value("randomness_current_block_hash_allowed"),
+            Some("false")
+        );
+        assert_eq!(fields.value("randomness_receipt_anchor_count"), Some("1"));
+        assert_eq!(
+            fields.value("randomness_finalized_beacon_anchor_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_receipt_bound_anchor_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_consistent_anchor_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_current_block_hash_anchor_count"),
+            Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_all_receipt_anchors_consistent"),
             Some("true")
         );
 

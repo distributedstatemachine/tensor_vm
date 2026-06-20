@@ -35,13 +35,18 @@ pub use state::{
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
     ChainState, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardClaimKey,
-    RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock,
-    Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
-    ValidatorAuditAssignment, ValidatorAuditEconomicCalibration, ValidatorAuditReport,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    RandomnessBindingEvidence, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState,
+    RewardAllocation, RewardClaimKey, RewardClaimLedger, RewardClaimView, RewardState,
+    SelectedReceiptOpening, TensorBlock, Transaction, ValidatorAuditAppeal,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditEconomicCalibration, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
+pub use validation::{
+    ASSIGNMENT_SEED_DOMAIN, RANDOMNESS_BEACON_SOURCE, RANDOMNESS_DRAND_ROUND_MAPPING,
+    RANDOMNESS_VRF_CONSTRUCTION, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
+};
 
 impl Chain {
     pub fn new(finalized_randomness: Hash) -> Self {

@@ -10,6 +10,12 @@ use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::BTreeSet;
 
 const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
+pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
+pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str = "not_configured_local_finalized_beacon";
+pub const RANDOMNESS_VRF_CONSTRUCTION: &str = "not_configured_local_finalized_beacon";
+pub const ASSIGNMENT_SEED_DOMAIN: &str = "tensor-vm-validator-assignment-seed-v1";
+pub const VALIDATION_SEED_COMMITMENT_DOMAIN: &str = "tensor-vm-validation-seed-commitment-v1";
+pub const VALIDATION_SEED_REVEAL_DOMAIN: &str = "tensor-vm-committed-validation-seed-v1";
 
 pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) -> Result<()> {
     let validator_stake = chain
@@ -561,7 +567,7 @@ pub fn has_block_finality(chain: &Chain, block_hash: &Hash) -> bool {
 
 pub fn assignment_seed(beacon_round: u64, finalized_randomness: &Hash, receipt_id: &Hash) -> Hash {
     hash_bytes(
-        b"tensor-vm-validator-assignment-seed-v1",
+        ASSIGNMENT_SEED_DOMAIN.as_bytes(),
         &[
             &beacon_round.to_le_bytes(),
             finalized_randomness,
@@ -576,7 +582,7 @@ pub fn validation_seed_commitment(
     receipt_id: &Hash,
 ) -> Hash {
     hash_bytes(
-        b"tensor-vm-validation-seed-commitment-v1",
+        VALIDATION_SEED_COMMITMENT_DOMAIN.as_bytes(),
         &[
             &beacon_round.to_le_bytes(),
             finalized_randomness,
@@ -593,7 +599,7 @@ pub fn committed_seed(
     validation_round: u64,
 ) -> Hash {
     hash_bytes(
-        b"tensor-vm-committed-validation-seed-v1",
+        VALIDATION_SEED_REVEAL_DOMAIN.as_bytes(),
         &[
             validation_seed_commitment,
             receipt_id,

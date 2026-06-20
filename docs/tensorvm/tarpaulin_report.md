@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 89 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 90 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 89 coverage could not
-be regenerated. Iterations 78 through 89 rechecked the same command and hit the same missing-binary blocker.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 90 coverage could not
+be regenerated. Iterations 78 through 90 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -81,6 +81,9 @@ application, without a manual adapter-side release command.
 Iteration 83 added receipt-bound validation challenge seed evidence. Focused randomness/proposer and
 storage tests cover persisted validation seed commitments, stable challenge-vector seeds after later beacon
 advancement, and attestation rejection when stored receipts are missing their randomness anchor.
+Iteration 90 added chain-owned randomness binding evidence for the local finalized-beacon construction.
+Focused randomness, status, RPC, and explorer tests cover seed-domain labels, commit-reveal ordering,
+receipt-anchor consistency counts, and the current-block-hash randomness ban.
 Iteration 84 added governed validator-audit stake-slash reversal. Focused audit and storage tests cover
 upheld appeals retaining the slash, reversed appeals refunding treasury back to validator stake, recording
 the refunded amount in state-rooted appeal records, and preserving the reversal across chain-state

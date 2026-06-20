@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 89 complete - receipt reward fraud exposure follows delayed settlement.
+- Active feature: Iteration 90 complete - chain-owned randomness binding evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -16,7 +16,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue measured economics, full multi-branch fork-tree work, or rerun the full Docker
+- Next action: continue full multi-branch fork-tree work, measured economics, or rerun the full Docker
   scenario after the `/health` blocker clears.
 
 ## Readiness Matrix
@@ -33,70 +33,75 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy | Remaining: full transcript disputes, full multi-branch fork trees, fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface | Continue exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor | Pin full VRF/drand construction and external commit-reveal ordering |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit and fraud-path calibration | Add measured detection probabilities, remaining fraud paths, and broader invalid-output slashing |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 89: Delayed Receipt Reward Fraud Exposure
+### Iteration 90: Chain-Owned Randomness Binding Evidence
 
-Feature capability: make validator-audit and data-unavailability economics use the same delayed-settlement
-model as block-check proposer rewards: immature pending receipt rewards are slashable/voidable escrow, and
-only mature claims count as already-extractable fraud proceeds.
+Feature capability: expose the local v0 randomness construction as a canonical chain-state view covering
+the finalized-beacon source, receipt-bound commit/reveal seed domains, assignment seed domains, and the
+enforced ban on current-block-hash validation randomness.
 
-Readiness requirements covered: `upow.md` §12 economics/slashing invariant and the local readiness gap for
-measured reward exposure without adapter workarounds.
+Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` §12.5/Acceptance 6 for unbiasable,
+receipt-bound validation randomness evidence. This does not claim external drand/VRF networking is live.
 
-Canonical owner: `ChainState::fraud_path_economic_calibration` and
-`ChainState::validator_audit_economic_calibration` derive exposure from canonical pending reward ledgers.
+Canonical owner: `ChainState` derives randomness policy/evidence from persisted receipt randomness anchors
+and canonical `chain::validation` seed domains.
 Adapter callers: status and explorer/RPC render chain-owned evidence; runtime, p2p, and checkers remain
-read-only consumers of that state.
-Old shortcut being removed: receipt fraud paths counted every non-voided pending miner/validator reward as
-`reward_from_fraud`, even when delayed settlement still allowed the chain to void the claim before spend.
-Regression test that proves the shortcut is gone: focused reward/status/RPC tests show immature receipt
-claims contribute slashable exposure but zero fraud proceeds until their `claimable_at_height` matures.
-Behavior with local synthetic block production disabled: calibration is a read-only state view over pending
-claims and chain params, independent of synthetic job/block production.
-Behavior for producer and non-producer roles: all roles replay the same pending reward ledgers and derive
-identical fraud exposure; no role-local branch owns economics.
-Structured evidence source: pending receipt reward claims, claim maturity heights, void flags,
-fraud-path calibration fields, service status, and explorer overview JSON.
-Finality source: finalized/replayed chain state and canonical pending reward ledgers; no adapter clocks or
-checker-local counters decide spendability.
-Wire-size and codec boundary: no p2p, block, RPC request, or storage codec shape changes; only derived
-status/explorer values and docs change.
+read-only consumers of the same state.
+Old shortcut being removed: randomness readiness currently depends on prose plus individual receipt-anchor
+tests; status/explorer do not expose whether anchors use finalized-beacon domains or whether block-hash
+randomness is disallowed.
+Regression test that proves the shortcut is gone: focused chain/status/explorer tests prove the derived
+view reports finalized-beacon anchoring, receipt-bound commitment/reveal domains, zero current-block-hash
+anchors, and stable values after beacon advancement.
+Behavior with local synthetic block production disabled: the view is derived from admitted receipts and
+finalized chain state, independent of synthetic job production.
+Behavior for producer and non-producer roles: producers and non-producers replay identical receipt anchors
+and therefore expose identical randomness evidence.
+Structured evidence source: `ReceiptRandomnessAnchor`, `ChainState::randomness_binding_evidence`, service
+status fields, and explorer overview JSON.
+Finality source: finalized beacon round/randomness captured in receipt anchors; no adapter clocks,
+current block hashes, or checker-local counters feed validation seeds.
+Wire-size and codec boundary: no p2p, block, storage, or request codec change; additive status/explorer
+response fields only.
 
-Files/modules likely touched: `chain/state.rs`, focused reward/status/RPC tests, status docs, and this
-plan.
+Files/modules likely touched: `chain/state.rs`, `chain/validation.rs`, status, explorer overview structs,
+focused chain/status/RPC tests, docs, and this plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
 Parallelizable implementation workstreams: read-only discovery and validation only.
-Tests/checkers/docs to add or update: focused reward/status/explorer tests and coverage/status/upow/readiness
-text.
-Narrow validation commands: `cargo test -p tensor_vm reward --quiet`,
+Tests/checkers/docs to add or update: focused randomness/proposer/status/explorer tests and
+coverage/status/upow/readiness text.
+Narrow validation commands: `cargo test -p tensor_vm randomness --quiet`,
 `cargo test -p tensor_vm status --quiet`, and `cargo test -p tensor_vm explorer_overview_exports --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: immature miner/validator receipt rewards no longer inflate
-`reward_from_fraud`; mature receipt claims still do.
-Out of scope: new slash amounts, full transcript disputes, fork-choice policy, CUDA evidence, or Docker
-rerun.
-Split trigger: if fixing exposure requires changing reward ledger storage or wire payloads, split that
-from this derived-calibration change.
+Expected observable evidence: operators can inspect a structured randomness-binding view proving the local
+reference does not derive validation seeds from current block hashes and that every admitted receipt anchor
+is tied to a finalized beacon round and receipt ID.
+Out of scope: external drand networking, validator VRF signature verification, delayed-reveal scheduling
+changes, or Docker rerun.
+Split trigger: if this requires changing receipt/block/p2p/storage codecs or delaying attestation
+admission, split that from the additive evidence view.
 
 Implementation summary:
-- Validator-audit and data-unavailability calibration now count `reward_from_fraud` only from non-voided
-  receipt claims whose `claimable_at_height` is at or below canonical chain height.
-- Immature pending miner and validator receipt rewards still count as at-risk claims and remain visible
-  through service status and explorer fraud-path evidence, but no longer inflate immediate fraud proceeds.
-- Docs now describe receipt and proposer delayed rewards as slashable/voidable escrow until claimability.
+- Added canonical seed-domain constants and `ChainState::randomness_binding_evidence` for local
+  finalized-beacon receipt anchors.
+- Service status and explorer overview now expose beacon source, assignment/commitment/reveal domains,
+  commit-reveal ordering, anchor consistency counts, and the current-block-hash randomness ban.
+- Updated `upow.md`, implementation status, coverage matrix, and tarpaulin notes while preserving external
+  drand/VRF as open work.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm status --quiet`, and
-  `cargo test -p tensor_vm explorer_overview_exports --quiet` passed.
+- Focused: `cargo test -p tensor_vm randomness --quiet`, `cargo test -p tensor_vm status --quiet`,
+  `cargo test -p tensor_vm explorer_overview_exports --quiet`, and
+  `cargo test -p tensor_vm_explorer --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 419 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 421 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -104,6 +109,14 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 89: Delayed Receipt Reward Fraud Exposure
+
+Validator-audit and data-unavailability calibration now count `reward_from_fraud` only from non-voided
+receipt claims whose `claimable_at_height` is at or below canonical chain height. Immature pending miner
+and validator receipt rewards remain at-risk escrow but no longer inflate immediate fraud proceeds.
+Validation passed focused reward/status/explorer tests, full crate, clippy, workspace release, and
+first/final Gate 0. Commit `ece08ff` is pushed to `origin/main`.
 
 ### Iteration 88: Competing-Head Fork-Choice And Withholding Policy
 
@@ -169,13 +182,14 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 88 on June 20, 2026:
+Latest full validation is Iteration 90 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm fork --quiet
-cargo test -p tensor_vm block --quiet
-cargo test -p tensor_vm block_payload_application_replaces_current_head_with_better_useful_pow --quiet
+cargo test -p tensor_vm randomness --quiet
+cargo test -p tensor_vm status --quiet
+cargo test -p tensor_vm explorer_overview_exports --quiet
+cargo test -p tensor_vm_explorer --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
