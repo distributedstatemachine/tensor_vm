@@ -5,9 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 44, wider exact Tier-B Tensor IR interpreter coverage.
-- Current status: implementation and validation are complete on June 20, 2026; commit/push evidence is
-  pending.
+- Active feature: none; Iteration 44 is complete.
+- Current status: Iteration 44 implemented, validated, committed, and pushed on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,10 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 44, record commit/push evidence, then continue toward arbitrary
-  graph-backed jobs/receipts, remaining admitted-registry replay/conformance coverage, full VRF/drand
-  commit-reveal lifecycle, multi-validator proposer competition/fork-choice policy, or the Docker
-  `/health` blocker if the environment changes.
+- Next action after Iteration 44: continue toward arbitrary graph-backed jobs/receipts, remaining
+  admitted-registry replay/conformance coverage, full VRF/drand commit-reveal lifecycle, multi-validator
+  proposer competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
 
 ## Readiness Matrix
 
@@ -91,6 +89,9 @@ Validation evidence:
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - `cargo tarpaulin --workspace --offline` failed as expected because `cargo-tarpaulin` is not installed:
   `error: no such command: tarpaulin`.
+- Feature commit: `ce3deea` (`Widen exact Tensor IR replay coverage`).
+- Feature push: `git push` to `github.com:distributedstatemachine/tensor_vm.git` updated `main -> main`
+  from `699193e` to `ce3deea`.
 
 Out of scope: arbitrary graph-backed job/receipt records, role/runtime receipt production through
 `TensorGraph::execute_exact`, const-blob fetching, mixed-dtype conformance-vector schema, exact replay for
