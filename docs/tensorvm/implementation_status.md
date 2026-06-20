@@ -86,9 +86,10 @@ blocker clears. See
 - Synthetic matmul jobs, TensorOp receipts, and trace commitments
 - Full-output Freivalds verification and row-sampled audit checks
 - Row-sampling sparse-corruption probability calculator
-- Milestone -1 study utilities for threat model, Freivalds false-accept bounds, randomness grindability,
-  data withholding, collusion thresholds, TensorWork concentration, verification cost, and zero-work
-  liveness fallback
+- Milestone -1 study utilities for the current UVPoW threat model, Freivalds false-accept bounds,
+  randomness grindability, data withholding, collusion thresholds, TensorWork concentration, verification
+  cost, the strict expected-slash-cost versus reward-from-fraud economic invariant, and zero-work liveness
+  fallback
 - LinearTrainingStep execution and verification
 - Random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`, backed by registry-level
   verifier classification that distinguishes random-linear relations from exact replay and deferred

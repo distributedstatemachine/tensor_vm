@@ -5,7 +5,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 57, registry-admitted conformance guard, implemented and validated.
+- Active feature: Iteration 58, economic invariant assessment, implemented and validated.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
@@ -18,7 +18,8 @@ feature-sized iterations are summarized after validation and push, and older det
   Iteration 56 feature commit `d66f8c9` is pushed and adds explicit `sum` conformance coverage for the
   admitted registry spelling that aliases `reduce_sum` at execution time. Iteration 57 adds a
   registry-derived guard so every consensus-admitted frozen op spelling must have conformance vector and
-  CPU profile evidence.
+  CPU profile evidence. Iteration 58 adds a reusable study helper and tests for the `expected cost of
+  getting caught > reward from faking work` invariant.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -26,13 +27,13 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 58, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 57 first and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 58 first and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -43,10 +44,98 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial; Iteration 52 byte-packed quantization implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary, Iteration 51 admitted exact per-channel quantize/dequantize replay, and Iteration 52 admitted flat `uint8` packed quantize/dequantize replay | Continue toward remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 57 registry guard implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `sum`/`mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 fixed-point scale-aware `cast`/`round` vectors, Iteration 51 multi-output exact per-channel quantize plus dequantize vectors, Iteration 52 byte-exact pack/unpack vectors, Iteration 54 comparison/selection vectors, Iteration 56 `sum` vector, Iteration 57 registry-derived admitted-op guard, CPU pass profile, and default CUDA non-admission | Add CUDA conformance evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 55 uniform proposer reward delay implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; useful and fallback proposer claims both use full reward maturity; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
+| Economics and slashing invariant | Partial; Iteration 58 invariant assessment implemented | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; useful and fallback proposer claims both use full reward maturity; data-unavailability and validator-audit slashing; no proposer reward useful-successor latch; executable `study::economic_invariant_study` strict expected-slash-cost assessment | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, live parameter calibration, and broader invariant enforcement |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 58: Economic Invariant Assessment
+
+Feature capability: the local reference exposes an executable study helper for the core §12 economic
+condition `expected slash cost = slashable bond * P(detection) > reward from faking work`. Tests cover the
+strict inequality, required slash amount, and detection-probability clamping so future parameter changes can
+re-verify the invariant instead of leaving it as prose only.
+
+Readiness requirements covered:
+- `upow.md` §12.2-§12.3: state and re-verify the bond/slash versus gain-from-fraud invariant whenever
+  parameters change.
+- `mvp_spec.md` §34-§35: report economic/security metrics without over-claiming production security.
+- `local_chain_production_readiness.md`: bond calibration remains open; this adds the executable
+  calibration primitive used by later parameter hardening.
+
+Canonical owner: `study` owns non-consensus parameter/soundness/economics assessment helpers; chain
+parameters and slashing paths provide inputs but do not perform the report calculation.
+Adapter callers: telemetry, future checker/reporting code, and docs can consume the helper; consensus
+mutation remains in `chain`.
+Old shortcut being removed: the economic inequality existed only as prose in `upow.md` and docs, so
+parameter changes had no focused executable invariant check.
+Regression test that proves the shortcut is gone: study tests fail when expected slash cost only equals or
+falls below the cheating reward, and pass only when the strict inequality holds.
+Behavior with local synthetic block production disabled: unchanged; this is analysis/reporting only.
+Behavior for producer and non-producer roles: unchanged; roles do not compute or mutate this invariant.
+Structured evidence source: `study::tests::economic_invariant_study_reports_required_slash_margin` and
+status/coverage docs.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p, storage, block, or evidence codec changes.
+
+Parallel subagents:
+- Not spawned because the available subagent tool is restricted to explicit user requests; parent owns this
+  single-writer study/test/docs slice.
+
+Implementation workstreams:
+- Add an `EconomicInvariantStudy` report and `economic_invariant_study` helper to `study`.
+- Add focused tests for strict inequality, required slash amount, and clamped detection probability.
+- Update implementation status, coverage matrix, and tarpaulin report after validation.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm study::tests::economic_invariant_study_reports_required_slash_margin`
+- `cargo test -p tensor_vm study::tests::economic_invariant_study_clamps_detection_probability`
+- `cargo test -p tensor_vm study::tests`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: callers can compute the exact slash amount required for a configured
+detection probability and cheating reward, and tests encode that equal cost is insufficient.
+
+Out of scope: changing live chain parameters, enforcing parameter validation in consensus constructors,
+auditor-selection policy, appeal paths, and public deployment economics evidence.
+
+Split trigger: split smaller only if this needs to change stored `ChainParams` or consensus slashing
+semantics.
+
+Implementation summary:
+- Added `EconomicInvariantStudy` and `study::economic_invariant_study`, which clamps detection probability,
+  computes `slashable_bond * P(detection)`, reports the strict safety margin, and calculates the minimum
+  slashable bond required for `expected_slash_cost > reward_from_fraud`.
+- Updated the study threat model wording for the current UVPoW/TensorWork architecture.
+- Updated implementation status and coverage docs so reward/economics evidence includes the executable
+  invariant helper and focused tests.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 filtered library tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused invariant tests passed:
+  `cargo test -p tensor_vm study::tests::economic_invariant_study_reports_required_slash_margin` and
+  `cargo test -p tensor_vm study::tests::economic_invariant_study_clamps_detection_probability`.
+- Focused study suite: `cargo test -p tensor_vm study::tests` passed 11 tests.
+- Formatting and diff hygiene: `cargo fmt --check --all` and `git diff --check` passed.
+- Package suite: `cargo test -p tensor_vm` passed 384 library tests, 1 `local_cpu_compose` integration
+  test, 8 `tvmd_cli` integration tests, 31 `tvmd_runtime` integration tests, and doc-tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed 14 `experiments` tests, 384 `tensor_vm`
+  library tests, `tensor_vm` integration tests, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
+  and workspace doc-tests.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 filtered library tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is
+  not installed (`error: no such command: tarpaulin`).
 
 ### Iteration 57: Registry-Admitted Conformance Guard
 

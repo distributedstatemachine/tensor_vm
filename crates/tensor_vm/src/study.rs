@@ -64,8 +64,9 @@ impl ThreatModel {
                     ],
                     mitigations: vec![
                         "receipt-bound finalized randomness",
-                        "settled prior TensorWork proposer selection",
-                        "zero-work fallback proposer selection",
+                        "useful-verification PoW over checks_root",
+                        "TensorWork never selects block proposers",
+                        "zero-receipt PoW-skip fallback",
                     ],
                 },
                 ThreatActor {
@@ -258,6 +259,48 @@ pub fn matmul_verification_cost_study(
     }
 }
 
+#[derive(Clone, Copy, Debug, PartialEq)]
+pub struct EconomicInvariantStudy {
+    pub reward_from_fraud: u64,
+    pub slashable_bond: u64,
+    pub detection_probability: f64,
+    pub expected_slash_cost: f64,
+    pub required_slashable_bond: u64,
+    pub safety_margin: f64,
+    pub invariant_holds: bool,
+}
+
+pub fn economic_invariant_study(
+    slashable_bond: u64,
+    detection_probability: f64,
+    reward_from_fraud: u64,
+) -> EconomicInvariantStudy {
+    let detection_probability = detection_probability.clamp(0.0, 1.0);
+    let expected_slash_cost = slashable_bond as f64 * detection_probability;
+    let reward_from_fraud_f64 = reward_from_fraud as f64;
+    let required_slashable_bond =
+        required_slashable_bond_for_strict_margin(reward_from_fraud, detection_probability);
+    EconomicInvariantStudy {
+        reward_from_fraud,
+        slashable_bond,
+        detection_probability,
+        expected_slash_cost,
+        required_slashable_bond,
+        safety_margin: expected_slash_cost - reward_from_fraud_f64,
+        invariant_holds: expected_slash_cost > reward_from_fraud_f64,
+    }
+}
+
+fn required_slashable_bond_for_strict_margin(
+    reward_from_fraud: u64,
+    detection_probability: f64,
+) -> u64 {
+    if detection_probability <= 0.0 {
+        return u64::MAX;
+    }
+    ((reward_from_fraud as f64 / detection_probability).floor() as u64).saturating_add(1)
+}
+
 #[derive(Clone, Debug, PartialEq)]
 pub struct CollusionRiskInput {
     pub validator_stakes: Vec<u64>,
@@ -405,7 +448,14 @@ mod tests {
                 .actor(ThreatActorKind::Proposer)
                 .unwrap()
                 .mitigations
-                .contains(&"settled prior TensorWork proposer selection")
+                .contains(&"useful-verification PoW over checks_root")
+        );
+        assert!(
+            model
+                .actor(ThreatActorKind::Proposer)
+                .unwrap()
+                .mitigations
+                .contains(&"TensorWork never selects block proposers")
         );
     }
 
@@ -488,6 +538,37 @@ mod tests {
         let degenerate = matmul_verification_cost_study(0, 1024, 1024, 0);
         assert_eq!(degenerate.execution_ops, 0);
         assert_eq!(degenerate.verification_to_execution_ratio, 0.0);
+    }
+
+    #[test]
+    fn economic_invariant_study_reports_required_slash_margin() {
+        let safe = economic_invariant_study(11, 1.0, 10);
+        assert!(safe.invariant_holds);
+        assert_eq!(safe.required_slashable_bond, 11);
+        assert_eq!(safe.safety_margin, 1.0);
+
+        let equal_cost = economic_invariant_study(10, 1.0, 10);
+        assert!(!equal_cost.invariant_holds);
+        assert_eq!(equal_cost.required_slashable_bond, 11);
+        assert_eq!(equal_cost.safety_margin, 0.0);
+
+        let probabilistic = economic_invariant_study(101, 0.5, 50);
+        assert!(probabilistic.invariant_holds);
+        assert_eq!(probabilistic.required_slashable_bond, 101);
+        assert_eq!(probabilistic.expected_slash_cost, 50.5);
+    }
+
+    #[test]
+    fn economic_invariant_study_clamps_detection_probability() {
+        let over_one = economic_invariant_study(2, 2.0, 1);
+        assert_eq!(over_one.detection_probability, 1.0);
+        assert!(over_one.invariant_holds);
+
+        let negative = economic_invariant_study(100, -0.25, 1);
+        assert_eq!(negative.detection_probability, 0.0);
+        assert_eq!(negative.expected_slash_cost, 0.0);
+        assert_eq!(negative.required_slashable_bond, u64::MAX);
+        assert!(!negative.invariant_holds);
     }
 
     #[test]
