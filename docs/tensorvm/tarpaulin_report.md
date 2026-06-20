@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 36 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 37 with:
 
 ```bash
 cargo tarpaulin --workspace --offline

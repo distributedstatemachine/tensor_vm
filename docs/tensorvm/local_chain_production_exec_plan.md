@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 36 is complete.
-- Current status: Iteration 36 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 37, validator proposer tick without synthetic-producer gating.
+- Current status: Iteration 37 is in progress after the required Gate 0 passed first on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,8 +14,9 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: move validator block proposal observation/submission out from under the local synthetic job
+  producer flag, then validate with focused runtime/network tests. Standing blockers remain the missing
+  workflow document, missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -35,6 +36,78 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 37: Validator Proposer Tick Without Synthetic-Producer Gating
+
+Feature capability: let a validator role propose a useful block from already network-visible accepted state
+even when it is not the timed local synthetic job producer. The synthetic producer flag should control only
+local deterministic job publication, not whether a validator can assemble/propose a block from settled,
+artifact-ready, attested receipts it has observed through the shared chain/node path.
+
+Readiness requirements covered: `upow.md` §2 and §11 require validator-owned block proposal over
+deterministic settled-receipt blockspace; `mvp_spec.md` §4.6 forbids producer capability from disabling
+inbound sync or hiding consensus work in adapters; the local readiness plan requires replacing the
+remaining service-owned synthetic round helper with role-owned proposer/block assembly evidence.
+
+Files/modules likely touched: `crates/tensor_vm/src/app/runtime_validator.rs`,
+`crates/tensor_vm/tests/tvmd_runtime/runtime_roles.rs`, `docs/tensorvm/coverage_matrix.md`,
+`docs/tensorvm/implementation_status.md`, `docs/tensorvm/tarpaulin_report.md`, and this exec plan.
+
+Parallel subagents to run:
+- Readiness mapper for this proposer-networking slice.
+- Codebase explorer for `local_synthetic_producer`/validator proposal call paths.
+- Test coverage explorer for runtime and network proposal regressions.
+
+Parallelizable implementation workstreams: parent/integrator owns the runtime change and test/docs edits
+because the same validator role tick and runtime tests are coupled; subagents remain read-only.
+
+Tests/checkers/docs to add or update: add a focused runtime test proving a validator configured with
+`local_synthetic_producer=false` still records proposer readiness and publishes a useful block from
+settled, artifact-ready, attested state; keep the scheduled job-production test proving the timed local
+producer only publishes jobs; update coverage/status docs to narrow the remaining Docker/full-network
+boundary.
+
+Narrow validation commands: `cargo test -p tensor_vm --test tvmd_runtime runtime_roles -- --nocapture`,
+`cargo test -p tensor_vm --test tvmd_runtime network_payloads -- --nocapture`,
+`cargo test -p tensor_vm --test tvmd_runtime validator_role -- --nocapture`, and
+`cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape`.
+
+Broad validation commands before commit: `cargo fmt --check --all`, `git diff --check`, final
+`cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+`cargo tarpaulin --workspace --offline` if available.
+
+Expected observable evidence: a validator runtime config with the producer duty enabled but no synthetic
+block interval has `local_synthetic_producer=false`, still observes settled/artifact-ready/attested receipts,
+submits one useful proposal, publishes the block payload, and creates a delayed pending proposer reward.
+
+Architecture shortcut answers:
+- Canonical owner: `chain` remains the owner of parent-state preparation, settlement, block production,
+  useful-verification PoW, selected receipts, delayed rewards, and finality commands.
+- Adapter callers: validator role tick observes local chain/node state, calls existing chain commands, and
+  publishes the resulting block payload; runtime/status/checker surfaces only record structured evidence.
+- Old shortcut being removed: validator proposal observation and block proposal are gated by
+  `config.node.local_synthetic_producer()`, coupling block assembly to the timed synthetic job producer.
+- Regression test that proves the shortcut is gone: a validator with `local_synthetic_producer=false`
+  proposes a useful block from settled accepted state and records proposer counters without becoming the
+  local synthetic producer.
+- Behavior with local synthetic block production disabled: accepted, settled, artifact-ready work can still
+  be proposed by a validator role; deterministic local job publication remains disabled.
+- Behavior for producer and non-producer roles: validators can propose from ready state; miners, gateways,
+  and the legacy proposer role still cannot produce local blocks through the role tick.
+- Structured evidence source: `NodeRuntimeState` proposer counters, `ChainState` selected receipts and
+  pending proposer rewards, and Rust runtime tests.
+- Finality source: unchanged stake-weighted `SubmitBlockVote`; this feature does not synthesize votes.
+- Wire-size and codec boundary: no new payloads or codecs; existing bounded `TensorBlock` publication is
+  reused.
+
+Out of scope: full Docker rerun while `/health` remains blocked, multi-validator proposer competition,
+deterministic live bad-block generation, randomness commit-reveal, generic arbitrary-IR execution, and
+public-run evidence.
+
+Split trigger: if removing the synthetic-producer gate requires changing job-source scheduling, p2p
+topology, or block-vote/finality semantics, split those into separate iterations and keep this one to
+validator proposal from already accepted state.
 
 ### Iteration 36: Block Transitions Release Matured Rewards
 

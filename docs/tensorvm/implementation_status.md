@@ -10,7 +10,9 @@ parent-root checks before counting stake. Long-running validator roles can now s
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Remaining consensus gaps are full verifier-transcript challenge semantics, exact parent-state snapshots and
 child-state apply semantics, difficulty retargeting, zero-receipt skip fallback economics, deterministic
-live invalid-block challenge generation, and live validator proposer/block-assembly networking. See
+live invalid-block challenge generation, multi-validator proposer competition/fork-choice policy, and a
+fresh full Docker proof of live validator proposer/block-assembly networking after the current `/health`
+blocker clears. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
 
 ## Implemented In `crates/tensor_vm`
@@ -140,11 +142,14 @@ live invalid-block challenge generation, and live validator proposer/block-assem
 - Validator proposer role status now distinguishes useful settled-receipt block proposals from empty
   fallback blocks. The scheduled local producer publishes deterministic jobs only; the validator role tick
   observes settled receipts with local tensor artifacts and validator attestations before submitting useful
-  block proposals through the chain engine. Runtime status records settled-receipt proposer readiness,
-  artifact-ready receipt count, attested receipt count, total proposed blocks, useful proposal count,
-  fallback proposal count, and selected receipt count; `tvmd node status` passes those fields through and
-  the local CPU checker requires positive useful proposal, proposed-receipt, artifact-ready, and attested
-  receipt evidence instead of accepting a generic produced-block counter.
+  block proposals through the chain engine. Validator proposal is gated by the configured validator
+  proposer duty, not by the local synthetic job producer path, so a validator can propose from already
+  accepted settled state even when synthetic job production is disabled. Runtime status records
+  settled-receipt proposer readiness, artifact-ready receipt count, attested receipt count, total proposed
+  blocks, useful proposal count, fallback proposal count, and selected receipt count; `tvmd node status`
+  passes those fields through and the local CPU checker requires positive useful proposal,
+  proposed-receipt, artifact-ready, and attested receipt evidence instead of accepting a generic
+  produced-block counter.
 - `CpuReferenceMinerRole`, `ReferenceValidatorRole`, and `RoleReceiptBundle` boundaries for CPU role work,
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine
@@ -364,7 +369,8 @@ live invalid-block challenge generation, and live validator proposer/block-assem
   that report assigned-job and unreceipted-job readiness from loaded chain state and can submit assigned
   unreceipted receipts through the shared chain engine while inserting served tensor artifacts locally,
   validator role loops that can submit assigned attestations through the shared chain engine when local tensor
-  artifacts are available and submit block votes for unvoted valid blocks, miner rewards, finality, data
+  artifacts are available, submit block votes for unvoted valid blocks, and propose useful blocks from
+  ready settled state without depending on synthetic job production, miner rewards, finality, data
   availability, a standalone explorer service that polls the TensorVM `/explorer/ws`
   WebSocket endpoint, a rolling
   all-operator restart-continuity gate with node-store recovery from torn local writes, all-operator

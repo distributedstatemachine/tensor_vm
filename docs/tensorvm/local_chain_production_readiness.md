@@ -151,7 +151,9 @@ The local bundle is useful and should remain the first operational target:
   proposal. The scheduled producer publishes only deterministic local jobs; the validator role tick then
   observes settled receipts with local tensor artifacts and validator attestations, prepares chain-owned
   parent state, applies a rewarded block command only when settled receipts are available, and publishes
-  the resulting block payload/header/hash. Producer-local
+  the resulting block payload/header/hash. Validator block proposal is no longer gated by the local
+  synthetic job producer path: a configured validator proposer can assemble a useful block from already
+  accepted settled state even when synthetic job production is disabled. Producer-local
   receipt and attestation synthesis is no longer on the scheduled runtime path; the Docker checker now
   consumes structured role status and fails unless live miner and validator role loops produce positive
   receipt/tensor and attestation counters from those jobs, unless the validator producer reports positive
@@ -248,23 +250,25 @@ The first chain-core cleanup slices are already in the tree:
 - `tvmd miner run`, `tvmd validator run`, and `tvmd proposer run` now construct explicit role-run loop
   wrappers before entering the shared runtime. The runtime loop has named steps for status writes, RPC
   serving, network ingestion, role-owned miner receipt submission, role-owned validator attestation
-  submission, and optional local production, preserving current consensus behavior while narrowing the
-  remaining proposer/block-assembly gap.
+  submission, and optional validator proposer work, preserving current consensus behavior while narrowing
+  the remaining full-Docker proposer/block-assembly evidence gap.
 
-These are foundation pieces, not completion. Miner receipts, validator attestations, and validator block
-votes now have role-owned submission paths for locally available work, and validators can fetch missing
-tensors remotely. The local runtime still needs network-visible validator proposer/block assembly before it
-satisfies the local CPU spec as a production-grade local chain.
+These are foundation pieces, not completion. Miner receipts, validator attestations, validator block votes,
+and configured validator proposer ticks now have role-owned submission paths for locally available work, and
+validators can fetch missing tensors remotely. The local runtime still needs a fresh full Docker proof of
+that proposer path after the standing `/health` blocker clears, plus broader multi-validator proposer
+competition/fork-choice policy, before it satisfies the local CPU spec as a production-grade local chain.
 
 ## Highest-Priority Gaps
 
 ### 1. Local Production Is Still Single-Process
 
-Current live production now runs inside `validator-00`'s validator runtime, but still reaches block
-production through the deterministic local synthetic-round helper for job, receipt, attestation,
-settlement, and block assembly. Finality votes now come from explicit validator role block-vote
-submissions, but the full gate still relies on deterministic producer orchestration before final block
-assembly is available as an independent role-owned validator proposer tick.
+Current live production now runs inside `validator-00`'s validator runtime. Deterministic local job
+publication remains a local producer duty, but receipt execution, attestation, settlement preparation,
+block proposal, and finality voting run through role-owned ticks and shared chain commands. Finality votes
+come from explicit validator role block-vote submissions. The full gate still needs fresh Docker evidence
+after the gateway `/health` blocker clears and still needs broader multi-validator proposer competition
+policy beyond the single configured local proposer.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
 
@@ -714,7 +718,8 @@ before submitting attestations, validators submit explicit block votes for local
 and the local validator producer assembles useful proposals from the validator-owned role tick after seeing
 settled, artifact-ready, attested receipts. Runtime role policy now prevents service, miner, and legacy
 proposer roles from becoming local block producers even if they inherit local block-interval configuration;
-validators require the explicit producer flag plus interval.
+validators require the explicit producer flag for proposal, while the interval and local synthetic job
+source only control deterministic local job publication.
 
 ### Phase 4: Make Compose Participants Actually Participate
 

@@ -536,3 +536,133 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
     drop(p2p_service);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }
+
+#[test]
+fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let miner = address(b"ungated-proposer-miner");
+    let validator = address(b"ungated-proposer-validator");
+    let mut chain = Chain::with_params(params, local_cpu_seed_beacon());
+    register_miner(&mut chain, miner);
+    register_validator(&mut chain, validator);
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([34; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+
+    let job_id =
+        produce_and_publish_synthetic_job(&mut server, &p2p_service, &ChainProfile::local_cpu())
+            .unwrap()
+            .expect("local profile should publish a synthetic job");
+    let receipt_submission =
+        submit_miner_role_receipt(&mut server.gateway_mut().node, miner, job_id)
+            .unwrap()
+            .expect("assigned miner should submit receipt");
+    assert_eq!(receipt_submission.receipts_submitted, 1);
+    let receipt_id = server
+        .gateway()
+        .node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("receipt should be stored")
+        .receipt_id();
+    let attestation_submission =
+        submit_validator_role_attestation(&mut server.gateway_mut().node, validator, receipt_id)
+            .unwrap()
+            .expect("assigned validator should attest receipt");
+    assert_eq!(attestation_submission.attestations_submitted, 1);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .settled_receipts()
+            .is_empty()
+    );
+
+    let data_dir = unique_temp_data_dir("ungated-validator-proposal-tick");
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&server.gateway().node.chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(validator),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_local_producer(true),
+    };
+    assert!(config.node.local_block_proposer());
+    assert!(!config.node.local_synthetic_producer());
+    let mut runtime_state = NodeRuntimeState::default();
+
+    let changed = tick_validator_role_work_once(
+        &config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+
+    assert!(changed);
+    assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_useful_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_receipts_proposed(), 1);
+    assert_eq!(runtime_state.validator_proposer_settled_receipts_seen(), 1);
+    assert_eq!(
+        runtime_state.validator_proposer_artifact_ready_receipts_seen(),
+        1
+    );
+    assert_eq!(runtime_state.validator_proposer_attested_receipts_seen(), 1);
+    assert!(runtime_state.validator_proposer_work_ready());
+    let block = server
+        .gateway()
+        .node
+        .chain
+        .blocks()
+        .last()
+        .expect("validator tick should propose a block");
+    assert_eq!(block.proposer, validator);
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .selected_receipts_for_block(block),
+        vec![receipt_id]
+    );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+
+    drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}

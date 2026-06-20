@@ -157,7 +157,7 @@ pub fn tick_validator_role_work_once(
         runtime_state.record_validator_block_vote_submission(submission.block_votes_submitted);
         status_changed = true;
     }
-    if config.node.local_synthetic_producer() {
+    if config.node.local_block_proposer() {
         server
             .gateway_mut()
             .node
