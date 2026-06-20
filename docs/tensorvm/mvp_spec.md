@@ -1729,8 +1729,9 @@ proposer_reward = fixed_block_reward_for_valid_useful_verification_pow
 ```
 
 The proposer is the winning validator, not a miner selected by TensorWork. In v0 there is no fee market and
-no miner inclusion bid. The proposer reward is paid only after `verification_challenge_window` closes without
-a successful `checks_root` challenge.
+no miner inclusion bid. The proposer reward is first recorded as a pending claim and becomes spendable only
+after the reward-settlement delay plus `verification_challenge_window` closes without a successful
+`checks_root` challenge.
 
 ---
 

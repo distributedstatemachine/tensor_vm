@@ -138,7 +138,7 @@ pub(super) fn receipt_reward_claimable_height(chain: &Chain) -> u64 {
     chain
         .state
         .height
-        .saturating_add(chain.params.tensor_retention_window_blocks())
+        .saturating_add(chain.params.reward_maturity_delay_blocks())
 }
 
 fn enqueue_pending_receipt_reward(

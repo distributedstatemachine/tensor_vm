@@ -187,7 +187,13 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
                 && reward.kind == ReceiptRewardKind::Validator
         })
         .expect("validator reward should be pending before audit assignment");
-    assert_eq!(pending_validator_claim.claimable_at_height, 0);
+    assert_eq!(
+        pending_validator_claim.claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
     assert!(!pending_validator_claim.voided_by_challenge);
 
     let starting_treasury = chain.state().rewards().treasury();
@@ -341,7 +347,13 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
                 && reward.kind == ReceiptRewardKind::Validator
         })
         .expect("audited validator reward should be pending before assignment");
-    assert_eq!(pending_validator_claim.claimable_at_height, 0);
+    assert_eq!(
+        pending_validator_claim.claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
     let starting_stake = chain.state().validators().get(&audited).unwrap().stake;
     let starting_treasury = chain.state().rewards().treasury();
     chain.produce_block(validators[0], 1_000).unwrap();

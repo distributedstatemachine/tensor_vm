@@ -205,6 +205,68 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
 }
 
 #[test]
+fn receipt_rewards_use_minimum_reward_maturity_delay_when_epochs_are_zero() {
+    let beacon = hash_bytes(b"test", &[b"zero-epoch-receipt-delay"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        epoch_length: 7,
+        reward_settlement_delay_epochs: 0,
+        challenge_window_epochs: 0,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"zero-epoch-delay-miner");
+    let validator = address(b"zero-epoch-delay-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: VerificationResult::Valid,
+                checks_root: hash_bytes(b"test", &[b"zero-epoch-delay-checks"]),
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    chain.settle_epoch(1_000, 500);
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id && reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    assert_eq!(chain.params().tensor_retention_window_blocks(), 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+}
+
+#[test]
 fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let params = ChainParams {

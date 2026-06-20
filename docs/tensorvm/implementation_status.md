@@ -111,7 +111,8 @@ blocker clears. See
 - Content roots for jobs, receipts, attestations, rewards, and full chain state through the internal
   `chain::roots` boundary
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
-  delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims,
+  delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims using
+  the explicit reward-settlement plus challenge-window maturity rule with the chain's minimum maturity floor,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
   pending challenge reward claims, delayed generic/faucet credits through a state-rooted pending credit
   reward ledger, a block `reward_root` that binds spendable rewards plus pending proposer, receipt,

@@ -5,7 +5,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 60, exact structural Tier-B admission, implemented and validated.
+- Active feature: Iteration 61, canonical receipt reward maturity delay, implemented and validated.
 - Current status: Iteration 52 admits exact deterministic `quantize_int8_per_channel`,
   `dequantize_int8_per_channel`, `quantize_pack_int8`, and `unpack_dequantize_int8`
   execution/conformance. Packed quantization uses a flat `uint8` payload with explicit `TVQ8`
@@ -22,7 +22,9 @@ feature-sized iterations are summarized after validation and push, and older det
   getting caught > reward from faking work` invariant. Iteration 59 adds exact `clamp` replay,
   conformance coverage, and graph verifier profile gating for the v0 Tier-B selection/shaping surface.
   Iteration 60 adds exact single-output structural replay, conformance coverage, and graph verifier profile
-  gating for `squeeze`, `unsqueeze`, `slice`, `tril`, and `triu`.
+  gating for `squeeze`, `unsqueeze`, `slice`, `tril`, and `triu`. Iteration 61 makes receipt reward
+  settlement use the explicit reward-settlement plus challenge-window maturity rule directly instead of
+  relying on the tensor-retention window as a proxy.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -30,7 +32,7 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 60, then select the next goal-aligned implementation slice.
+- Next action: commit and push Iteration 61, then select the next goal-aligned implementation slice.
 
 ## Readiness Matrix
 
@@ -51,6 +53,95 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 61: Canonical Receipt Reward Maturity Delay
+
+Feature capability: receipt rewards use the same explicit reward maturity delay as proposer, challenge, and
+generic credit rewards: spendability is delayed by `reward_settlement_delay_epochs + challenge_window_epochs`
+with the chain's minimum one-epoch maturity floor. This removes the remaining receipt-reward shortcut where
+settlement used the tensor-retention window directly and could become immediately claimable when retention
+parameters were zeroed in tests.
+
+Readiness requirements covered:
+- `upow.md` §12.1: miner and validator rewards derived from verifier-dependent receipt settlement are
+  pending claims until the reward-settlement delay plus challenge window matures.
+- `local_chain_production_readiness.md`: local evidence must separately show pending reward claims and
+  matured release into spendable balances.
+
+Canonical owner: `chain::settlement::receipt_reward_claimable_height` owns initial receipt claim maturity;
+`chain::blocks::apply_block_to_parent_state` keeps block inclusion maturity as an additional floor; reward
+roots commit the pending claim height.
+Adapter callers: runtimes, checkers, and RPC surfaces observe pending and released rewards only.
+Old shortcut being removed: receipt reward maturity was computed from `tensor_retention_window_blocks()`
+instead of the canonical reward maturity delay.
+Regression test that proves the shortcut is gone: receipt rewards remain pending until
+`ChainParams::reward_maturity_delay_blocks()` even when reward/challenge epochs are configured to zero.
+Behavior with local synthetic block production disabled: unchanged; receipt settlement creates the same
+state-rooted pending claims.
+Behavior for producer and non-producer roles: unchanged; all nodes release matured receipt claims through
+the shared chain command/block-transition path.
+Structured evidence source: reward/settlement/block tests and reward-root assertions.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: no p2p, storage, block, or shared-codec changes.
+
+Implementation workstreams:
+- Change receipt settlement claimable height to use `ChainParams::reward_maturity_delay_blocks()`.
+- Add/adjust regression tests for zero-epoch reward parameters and current settlement evidence.
+- Update status docs after validation.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm chain::tests::settlement::chain_settles_valid_tensorwork_and_rewards_participants`
+- `cargo test -p tensor_vm chain::tests::blocks::produced_blocks_delay_receipt_rewards_from_inclusion_height`
+- `cargo test -p tensor_vm chain::tests::rewards::reward_root_commits_to_all_pending_reward_ledgers`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Implementation summary:
+- Changed initial pending receipt reward maturity to use `ChainParams::reward_maturity_delay_blocks()`.
+- Added a regression proving receipt rewards remain pending for the chain's minimum reward maturity delay
+  even when reward-settlement and challenge epochs are configured to zero.
+- Updated validator-audit tests that previously relied on zero-epoch immediate maturity, so audit-delayed
+  validator rewards now follow the same minimum reward maturity rule before audit deadlines extend them.
+- Updated MVP, implementation-status, coverage, execution-plan, and tarpaulin docs to describe the explicit
+  reward delay instead of a retention-window proxy.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused zero-epoch regression:
+  `cargo test -p tensor_vm chain::tests::settlement::receipt_rewards_use_minimum_reward_maturity_delay_when_epochs_are_zero`
+  passed.
+- Focused settlement:
+  `cargo test -p tensor_vm chain::tests::settlement::chain_settles_valid_tensorwork_and_rewards_participants`
+  passed.
+- Focused block receipt delay:
+  `cargo test -p tensor_vm chain::tests::blocks::produced_blocks_delay_receipt_rewards_from_inclusion_height`
+  passed.
+- Focused reward-root:
+  `cargo test -p tensor_vm chain::tests::rewards::reward_root_commits_to_all_pending_reward_ledgers`
+  passed.
+- Focused validator-audit regressions:
+  `cargo test -p tensor_vm chain::tests::attestations::mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply`
+  and
+  `cargo test -p tensor_vm chain::tests::attestations::validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result`
+  passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm` passed 389 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
+  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+Out of scope: reward amount calibration, unified reward claim object/status, auditor-selection policy,
+appeals, live parameter calibration, Docker `/health`, and public-run reward settlement evidence.
 
 ### Iteration 60: Exact Single-Output Structural Tier-B Admission
 

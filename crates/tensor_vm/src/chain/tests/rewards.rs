@@ -68,7 +68,7 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
         .expect("settled receipt should enqueue a delayed reward");
     assert_eq!(
         pending_reward.claimable_at_height,
-        chain.state().height() + chain.params().tensor_retention_window_blocks()
+        chain.state().height() + chain.params().reward_maturity_delay_blocks()
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     receipt.receipt_id
