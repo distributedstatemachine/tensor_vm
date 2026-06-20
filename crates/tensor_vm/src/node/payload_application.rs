@@ -873,7 +873,14 @@ mod tests {
             })
             .expect("accepted network challenge should delay challenger reward");
         assert_eq!(pending_reward.amount, 500);
-        assert_eq!(pending_reward.claimable_at_height, 5);
+        assert_eq!(
+            pending_reward.claimable_at_height,
+            apply_chain
+                .state()
+                .height()
+                .saturating_add(apply_chain.params().reward_maturity_delay_blocks())
+        );
+        let challenge_reward_claimable_at_height = pending_reward.claimable_at_height;
         assert_eq!(
             apply_chain.state().rewards().balance(&challenge.challenger),
             0
@@ -888,7 +895,7 @@ mod tests {
             apply_chain.state().rewards().balance(&challenge.challenger),
             0
         );
-        apply_chain.set_position_for_testing(5, 1);
+        apply_chain.set_position_for_testing(challenge_reward_claimable_at_height, 1);
         assert_eq!(
             apply_chain
                 .release_matured_challenge_rewards()

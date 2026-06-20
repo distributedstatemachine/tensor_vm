@@ -173,7 +173,13 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     assert_eq!(receipt_id, receipt.receipt_id);
     assert_eq!(pending_challenger, challenger);
     assert_eq!(amount, 500);
-    assert_eq!(claimable_at_height, 5);
+    assert_eq!(
+        claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
     assert_eq!(
         chain
             .state()
@@ -191,7 +197,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
                 && reward.receipt_id == receipt.receipt_id
                 && reward.challenger == challenger
                 && reward.amount == 500
-                && reward.claimable_at_height == 5
+                && reward.claimable_at_height == claimable_at_height
                 && !reward.voided_by_challenge
     ));
     assert!(
@@ -239,7 +245,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .is_empty()
     );
     assert_eq!(chain.state().rewards().balance(&challenger), 0);
-    chain.set_position_for_testing(5, 1);
+    chain.set_position_for_testing(claimable_at_height, 1);
     let release_events = chain.release_matured_challenge_rewards().unwrap();
     assert!(
         release_events.contains(&ChainEvent::ChallengeRewardReleased {

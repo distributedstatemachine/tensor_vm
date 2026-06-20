@@ -406,8 +406,9 @@ Required fix:
   release into spendable balances once the reward-settlement delay plus challenge window has elapsed.
 - Query pending block-check challenger reward claims after a successful live challenge scenario, and
   separately verify mature release into spendable balances instead of immediate bounty credit. The shared
-  p2p/node payload path, status counters, and conditional checker gate for future-maturity challenge
-  reward claims now exist; deterministic live bad-block generation remains open.
+  p2p/node payload path, status counters, chain-owned full reward-maturity delay for challenge bounties,
+  and conditional checker gate for future-maturity challenge reward claims now exist; deterministic live
+  bad-block generation remains open.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.
@@ -792,8 +793,8 @@ blocks are produced from network-visible receipts and attestations
 block finality votes are produced by validator containers and gossiped/applied by non-producers
 TensorOp and LinearTrainingStep live jobs both settle after startup
 tensor rows/chunks/openings are fetched through the local tensor-server path
-live pending reward claims accrue to miners, validators, and observed successful block-check challengers, and matured
-claims release into spendable balances
+live pending reward claims accrue to miners, validators, and observed successful block-check challengers,
+and matured claims release into spendable balances
 telemetry reflects live post-startup work
 local evidence remains explicitly non-public
 ```

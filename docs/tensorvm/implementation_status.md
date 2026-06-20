@@ -116,14 +116,16 @@ blocker clears. See
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims using
   the explicit reward-settlement plus challenge-window maturity rule with the chain's minimum maturity floor,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
-  pending challenge reward claims, delayed generic/faucet credits through a state-rooted pending credit
+  pending challenge reward claims using the same explicit reward maturity rule instead of the proposer
+  throttle height, delayed generic/faucet credits through a state-rooted pending credit
   reward ledger, a block `reward_root` that binds spendable rewards plus pending proposer, receipt,
   challenge, and credit ledgers, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
   Validator-owned useful proposals and empty fallback proposals now both create proposer claims with the
   explicit full reward-maturity delay, with fallback claims carrying the reduced reward amount. Pending
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
   Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
-  released only after maturity. Normal block transitions first apply the current block's receipt-inclusion
+  released only after maturity. Challenge bounty spendability is separate from proposer penalty duration.
+  Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
   and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check

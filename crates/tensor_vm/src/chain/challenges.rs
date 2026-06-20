@@ -190,12 +190,10 @@ fn apply_block_check_resolution(
             .proposer_reward_clawback
             .saturating_sub(record.challenger_reward);
         if record.challenger_reward > 0 {
-            enqueue_pending_challenge_reward(
-                chain,
-                challenge_id,
-                &record,
-                record.penalty_until_height,
-            );
+            let claimable_at_height = record
+                .challenged_at_height
+                .saturating_add(chain.params.reward_maturity_delay_blocks());
+            enqueue_pending_challenge_reward(chain, challenge_id, &record, claimable_at_height);
         }
         if treasury_reward > 0 {
             chain.state.rewards.credit_treasury(treasury_reward);
