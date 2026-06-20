@@ -1796,6 +1796,9 @@ fn dtype_from_name(value: &str) -> Option<DType> {
         "int64" => Some(DType::Int64),
         "fixed32" => Some(DType::Fixed32),
         "field" | "field_element" => Some(DType::FieldElement),
+        "int8" => Some(DType::Int8),
+        "uint8" => Some(DType::Uint8),
+        "bool" => Some(DType::Bool),
         _ => None,
     }
 }
@@ -1806,6 +1809,9 @@ fn dtype_name(dtype: DType) -> &'static str {
         DType::Int64 => "int64",
         DType::Fixed32 => "fixed32",
         DType::FieldElement => "field",
+        DType::Int8 => "int8",
+        DType::Uint8 => "uint8",
+        DType::Bool => "bool",
     }
 }
 
@@ -2120,7 +2126,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 42] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -2501,6 +2507,46 @@ const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
         verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },
+    OpSpec {
+        name: "quantize_int8_per_channel",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 2,
+        allowed_kwargs: &["dim"],
+        required_kwargs: &["dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "dequantize_int8_per_channel",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(2),
+        output_count: 1,
+        allowed_kwargs: &[],
+        required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "quantize_pack_int8",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["dim"],
+        required_kwargs: &["dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "unpack_dequantize_int8",
+        tier: IrOpTier::B,
+        arity: IrArity::Exact(1),
+        output_count: 1,
+        allowed_kwargs: &["dim", "shape", "scale_dim"],
+        required_kwargs: &["dim", "shape", "scale_dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
 ];
 
 #[cfg(test)]
@@ -2519,6 +2565,41 @@ mod tests {
         let mut changed = graph.clone();
         changed.inputs[0].shape = vec![2, 4];
         assert_ne!(graph.graph_id(), changed.graph_id());
+    }
+
+    #[test]
+    fn graph_json_roundtrips_narrow_integer_dtypes() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("x", vec![3], DType::Int8, 0),
+                tensor_spec("mask", vec![3], DType::Bool, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "cast".to_owned(),
+                args: vec![input_ref("x")],
+                kwargs: BTreeMap::from([(
+                    "dtype".to_owned(),
+                    IrValue::Literal(IrLiteral::String("uint8".to_owned())),
+                )]),
+                out: vec![tensor_spec("y", vec![3], DType::Uint8, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        let canonical = graph.canonical_json();
+        assert!(canonical.contains("\"dtype\":\"int8\""));
+        assert!(canonical.contains("\"dtype\":\"uint8\""));
+        assert!(canonical.contains("\"dtype\":\"bool\""));
+        let parsed = TensorGraph::from_canonical_json_bytes(canonical.as_bytes()).unwrap();
+        assert_eq!(parsed, graph);
+        let mut changed = graph.clone();
+        changed.inputs[0].dtype = DType::Uint8;
+        assert_ne!(changed.graph_id(), graph.graph_id());
     }
 
     #[test]
@@ -2572,6 +2653,61 @@ mod tests {
 
         assert!(op_spec("softmax").is_some());
         assert!(graph.validate(false).is_ok());
+        assert!(graph.validate_for_consensus().is_err());
+    }
+
+    #[test]
+    fn quantization_vocabulary_is_carried_but_not_consensus_admitted() {
+        let expected = [
+            (
+                "quantize_int8_per_channel",
+                IrArity::Exact(1),
+                2,
+                &["dim"][..],
+            ),
+            ("dequantize_int8_per_channel", IrArity::Exact(2), 1, &[][..]),
+            ("quantize_pack_int8", IrArity::Exact(1), 1, &["dim"][..]),
+            (
+                "unpack_dequantize_int8",
+                IrArity::Exact(1),
+                1,
+                &["dim", "shape", "scale_dim"][..],
+            ),
+        ];
+        for (name, arity, output_count, kwargs) in expected {
+            let spec = op_spec(name).expect("quantization op vocabulary must be present");
+            assert_eq!(spec.tier, IrOpTier::B);
+            assert_eq!(spec.arity, arity);
+            assert_eq!(spec.output_count, output_count);
+            assert_eq!(spec.allowed_kwargs, kwargs);
+            assert_eq!(spec.required_kwargs, kwargs);
+            assert_eq!(
+                spec.verification,
+                IrVerificationClass::CanonicalReferenceRequired
+            );
+            assert!(!spec.consensus_admitted);
+        }
+
+        let mut graph = canonical_matmul_graph(2, 3, 4, DType::Fixed32);
+        graph.ops[0].op = "quantize_int8_per_channel".to_owned();
+        graph.ops[0].args = vec![input_ref("a")];
+        graph.ops[0]
+            .kwargs
+            .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)));
+        graph.ops[0].out = vec![
+            tensor_spec("q", vec![2, 3], DType::Int8, 0),
+            tensor_spec("scale", vec![2], DType::Fixed32, 0),
+        ];
+        graph.outputs = vec![
+            GraphOutput {
+                name: "q".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            },
+            GraphOutput {
+                name: "scale".to_owned(),
+                value: IrRef::Op { id: 0, idx: 1 },
+            },
+        ];
         assert!(graph.validate_for_consensus().is_err());
     }
 

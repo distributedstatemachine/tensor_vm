@@ -5,9 +5,11 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 49, fixed-point scale metadata and round-half-even rescale foundation.
-- Current status: Iteration 49 implementation, validation, and feature push complete on June 20, 2026;
-  read-only subagents complete.
+- Active feature: Iteration 50, quantization dtype and gated registry foundation, implemented and validated;
+  commit/push evidence pending.
+- Current status: Iteration 50 added consensus-visible `int8`, `uint8`, and `bool` tensor dtype tags,
+  canonical IR dtype names, bounded random/test tensor generation, shared codec/p2p decode coverage, and
+  frozen quantization op vocabulary that remains non-consensus-admitted.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,14 +17,14 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: move to exact quantization replay, full VRF/drand commit-reveal lifecycle, multi-validator
-  proposer competition/fork-choice policy, or the Docker `/health` blocker if the environment changes.
+- Next action: pin exact per-channel quantization scale, saturation, byte-packing, and multi-output
+  conformance-vector semantics before admitting quantization execution.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 49 first command and final gate: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 50 first command: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -30,13 +32,112 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; Iteration 49 scale/rounding foundation implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, and Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale | Add exact quantization, additional mixed-dtype vectors, and remaining admitted-registry executor coverage |
-| Per-op `F_p` conformance vectors | Partial; Iteration 49 scale-aware schema implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, and Iteration 49 fixed-point scale-aware `cast`/`round` vectors; CPU pass profile; default CUDA non-admission | Add exact quantization vectors, additional mixed-dtype vectors, remaining admitted-registry vectors, CUDA pass evidence when compiled |
+| Tensor IR graph language | Partial; Iteration 50 quantization dtype/registry foundation implemented | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, Iteration 49 tensor scale metadata plus half-even fixed-point `cast`/`round` rescale, and Iteration 50 `int8`/`uint8`/`bool` dtype tags plus gated quantization registry vocabulary | Pin and implement exact quantization execution/conformance before consensus admission |
+| Per-op `F_p` conformance vectors | Partial; Iteration 50 quantization foundation implemented | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`, and Iteration 49 fixed-point scale-aware `cast`/`round` vectors; Iteration 50 keeps quantization ops non-admitted until exact vectors exist; CPU pass profile; default CUDA non-admission | Add multi-output vector support and exact quantization vectors after per-channel scale and byte-packing semantics are pinned |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 50: Quantization DType And Gated Registry Foundation
+
+Feature capability: the IR and tensor metadata can represent the spec's exact integer dtypes needed by
+quantization (`int8`, `uint8`, and `bool`), and the frozen op registry carries the four quantization/packing
+op names with arity/kwarg/output metadata while keeping them non-consensus-admitted until their per-channel
+scale, saturation, and byte-packing semantics have executable conformance vectors.
+
+Readiness requirements covered:
+- `upow.md` §4.1: the value model includes `int8`, `uint8`, and `bool`; the code currently cannot parse or
+  commit those dtypes.
+- `upow.md` §4.7 and §16: quantization/packing ops are part of the frozen vocabulary but exact
+  quantization semantics and conformance vectors are still TODO.
+- `mvp_spec.md` §4.1, §7.2, §8.3, and §35: deterministic integer/fixed-point arithmetic requires
+  canonical dtype/layout metadata before quantization execution can be admitted.
+
+Canonical owner: `tensor::DType` owns consensus-visible dtype tags and tensor commitment metadata;
+`ir::FROZEN_OP_REGISTRY` owns quantization op vocabulary/admission state; shared codecs own dtype tag
+roundtrips.
+Adapter callers: job payload codecs, p2p tensor payloads, storage snapshots, graph canonical JSON, and
+runtime tensor serving consume dtype tags/names; no adapter gets quantization execution policy.
+Old shortcut being removed: the spec's `int8`/`uint8`/`bool` value model can no longer be silently absent
+from graph parsing and tensor commitments, and quantization ops can no longer be unknown rather than
+explicitly carried but gated.
+Regression test that proves the shortcut is gone: dtype tag/name/canonical JSON tests accept the new dtypes;
+registry tests find all four quantization ops with exact metadata; consensus graph validation rejects those
+ops because they are deliberately non-admitted.
+Behavior with local synthetic block production disabled: unchanged; this is metadata and validation
+vocabulary only.
+Behavior for producer and non-producer roles: unchanged; all roles decode the same dtype tags and continue
+rejecting unadmitted quantization graphs.
+Structured evidence source: dtype roundtrip tests, tensor commitment tests, codec/p2p decode tests, IR
+registry/validation tests, and docs status.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: shared dtype tags gain new values; no block/job/receipt enum variants or
+payload length formats change.
+
+Parallel subagents:
+- Socrates mapped quantization requirements and recommended a foundation slice.
+- Bohr inspected IR/conformance/code paths and hazards.
+- Euler mapped focused tests and validation targets.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns edits because dtype tags touch shared tensor, codec, p2p, and IR parsing code.
+- Subagents are read-only; no parallel writers.
+
+Tests/checkers/docs to add or update:
+- Tensor dtype tag/range/commitment tests for `int8`, `uint8`, and `bool`.
+- Shared codec and p2p tensor payload dtype roundtrip tests.
+- IR dtype JSON/canonical graph tests and quantization registry-gating tests.
+
+Implemented scope:
+- Added `DType::Int8`, `DType::Uint8`, and `DType::Bool` with stable tags `5`, `6`, and `7`.
+- Tensor construction validates canonical int8, uint8, and bool ranges before normalizing field elements.
+- `Tensor::random` now emits in-range random elements for the new narrow dtypes.
+- Shared codec and p2p tensor payload decoding accept the new dtype tags and reject malformed bool payloads.
+- Tensor IR canonical JSON parses/renders `int8`, `uint8`, and `bool`, and graph IDs commit those dtype names.
+- `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`, and
+  `unpack_dequantize_int8` are present in the frozen registry with exact metadata but
+  `consensus_admitted: false`.
+
+Validation:
+- First and final `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026.
+- Focused tests passed: `cargo test -p tensor_vm tensor::tests -- --nocapture`,
+  `cargo test -p tensor_vm codec::tests -- --nocapture`,
+  `cargo test -p tensor_vm p2p::wire::tests -- --nocapture`, and
+  `cargo test -p tensor_vm ir::tests -- --nocapture`.
+- Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
+- `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
+- Status/coverage/exec docs clarifying that dtype/registry foundation is implemented while exact
+  quantization execution/conformance remains open.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm tensor::tests -- --nocapture`
+- `cargo test -p tensor_vm codec::tests -- --nocapture`
+- `cargo test -p tensor_vm p2p::wire::tests -- --nocapture`
+- `cargo test -p tensor_vm ir::tests -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `git diff --check`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline` expected blocked while `cargo-tarpaulin` is missing.
+
+Expected observable evidence: canonical Tensor IR accepts and commits `int8`/`uint8`/`bool` metadata, wire
+codecs roundtrip those dtype tags, quantization ops appear in the frozen registry with deterministic metadata,
+and consensus validation rejects quantization graphs until executable exact semantics and conformance vectors
+exist.
+
+Out of scope: executing quantization ops, per-channel scale tensors, byte-packed tensor storage layout,
+multi-output conformance vectors, CUDA quantization evidence, VRF/drand, fork-choice, runtime role changes,
+and Docker `/health`.
+
+Split trigger: if adding dtype tags requires broad codec/storage migrations beyond additive tag parsing,
+split before registry entries and keep this iteration to dtype support only.
 
 ### Iteration 49: Fixed-Point Scale Metadata And Round-Half-Even Rescale Foundation
 
@@ -487,10 +588,10 @@ passed; tarpaulin remained blocked by missing `cargo-tarpaulin`. Feature commit 
 - Latest current-iteration Gate 0: `cargo test -p tensor_vm local_testnet --release` passed first and
   final on June 20, 2026 with 5 local-testnet library tests plus
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
-- Latest focused tests: `cargo test -p tensor_vm graph -- --nocapture` passed 10 focused graph tests;
-  `cargo test -p tensor_vm codec::tests` passed 6 codec/storage-codec tests;
-  `cargo test -p tensor_vm storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`
-  passed.
+- Latest focused tests: `cargo test -p tensor_vm tensor::tests -- --nocapture` passed 10 tensor tests;
+  `cargo test -p tensor_vm codec::tests -- --nocapture` passed 6 codec/storage-codec tests;
+  `cargo test -p tensor_vm p2p::wire::tests -- --nocapture` passed 15 p2p wire tests; and
+  `cargo test -p tensor_vm ir::tests -- --nocapture` passed 17 IR tests.
 - Latest broad gates: `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
   passed after `cargo fmt --all`.

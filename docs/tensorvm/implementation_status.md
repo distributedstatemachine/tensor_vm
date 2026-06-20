@@ -45,7 +45,14 @@ blocker clears. See
   half-even `round`, `reshape`, `broadcast`, comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`,
   scale-aware `cast`, `concat`, `stack`, `full`, and `arange`. Runtime `Tensor` values now carry
   consensus-visible `scale` metadata, tensor descriptors and commitment roots bind that scale, and
-  graph execution rejects bound tensors whose dtype/scale does not match `TensorSpec`. The interpreter validates bound tensors
+  graph execution rejects bound tensors whose dtype/scale does not match `TensorSpec`. The value model now
+  also carries consensus-visible `int8`, `uint8`, and `bool` dtype tags through tensor commitments,
+  shared codecs, p2p tensor payloads, and canonical IR JSON. Tensor construction and deterministic random
+  tensor generation enforce canonical int8, uint8, and bool ranges. The frozen registry carries
+  `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`, and
+  `unpack_dequantize_int8` with fixed arity, kwarg, output-count, and verifier metadata, but those ops
+  remain non-consensus-admitted until exact scale, saturation, byte-packing, and conformance-vector
+  semantics are pinned. The interpreter validates bound tensors
   and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
   output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
@@ -55,8 +62,8 @@ blocker clears. See
   settlement all carry the graph variant. Graph receipts replay through `TensorGraph::execute_exact` and
   settle through the same delayed pending receipt reward path after valid attestations. Role-runtime
   production for arbitrary graph jobs outside explicit graph artifacts, const-blob fetching, fixed-point
-  arithmetic scale policy beyond `cast`/`round`, exact quantization, and CUDA generic graph execution
-  remain open.
+  arithmetic scale policy beyond `cast`/`round`, exact quantization execution/conformance, and CUDA generic
+  graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,

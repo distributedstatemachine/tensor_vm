@@ -845,6 +845,17 @@ mod tests {
         let payload = encode_tensor_payload(&tensor);
         assert_eq!(decode_tensor_payload(&payload).unwrap(), tensor);
 
+        for tensor in [
+            Tensor::from_vec(vec![2], DType::Int8, vec![crate::field::MODULUS - 1, 127]).unwrap(),
+            Tensor::from_vec(vec![2], DType::Uint8, vec![0, 255]).unwrap(),
+            Tensor::from_vec(vec![2], DType::Bool, vec![0, 1]).unwrap(),
+        ] {
+            assert_eq!(
+                decode_tensor_payload(&encode_tensor_payload(&tensor)).unwrap(),
+                tensor
+            );
+        }
+
         let mut trailing = payload.clone();
         trailing.push(0);
         assert!(decode_tensor_payload(&trailing).is_err());
@@ -858,6 +869,13 @@ mod tests {
         oversized_values.push(DType::FieldElement.tag());
         write_u64(&mut oversized_values, (MAX_TENSOR_VALUES + 1) as u64);
         assert!(decode_tensor_payload(&oversized_values).is_err());
+
+        let mut bad_bool = Vec::new();
+        write_usize_vec(&mut bad_bool, &[1]);
+        bad_bool.push(DType::Bool.tag());
+        write_u64(&mut bad_bool, 1);
+        write_u64(&mut bad_bool, 2);
+        assert!(decode_tensor_payload(&bad_bool).is_err());
     }
 
     #[test]

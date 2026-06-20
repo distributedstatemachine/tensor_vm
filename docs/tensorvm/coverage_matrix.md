@@ -49,7 +49,11 @@ deterministic exact interpreter foundation for validated, consensus-admitted
 graphs over the currently implemented tensor runtime ops (`matmul`, broadcast-aware `add`/`sub`/`mul`,
 `scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, `neg`, signed-residue
 `abs`/`sign`/`relu`, fixed-point scale-aware half-even `round`, `reshape`, `broadcast`, comparisons
-`gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`). Interpreter output includes named
+`gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`). Tensor
+metadata now also carries canonical `int8`, `uint8`, and `bool` dtype tags through tensor commitments,
+shared codecs, p2p tensor payloads, and canonical IR JSON. The frozen registry carries the four exact
+quantization/packing op names with fixed metadata while keeping them non-consensus-admitted pending exact
+scale, saturation, byte-packing, and vector semantics. Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Focused
@@ -66,6 +70,10 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::exact_interpreter_supports_field_scalar_params`,
 `ir::tests::exact_interpreter_rejects_deferred_or_unimplemented_ops`,
 `ir::tests::graph_validation_rejects_inconsistent_exact_tier_b_shapes`,
+`ir::tests::graph_json_roundtrips_narrow_integer_dtypes`,
+`ir::tests::quantization_vocabulary_is_carried_but_not_consensus_admitted`,
+`tensor::tests::narrow_integer_tensors_enforce_canonical_ranges_and_commit_dtype`,
+`tensor::tests::random_narrow_integer_tensors_are_canonical`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
 `jobs::tests::linear_receipt_commits_to_learning_step`,

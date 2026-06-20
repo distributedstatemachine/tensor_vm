@@ -49,6 +49,9 @@ pub(crate) fn dtype_from_tag(tag: u8) -> Option<DType> {
         2 => Some(DType::Int64),
         3 => Some(DType::Fixed32),
         4 => Some(DType::FieldElement),
+        5 => Some(DType::Int8),
+        6 => Some(DType::Uint8),
+        7 => Some(DType::Bool),
         _ => None,
     }
 }
@@ -713,6 +716,9 @@ mod tests {
             DType::Int64,
             DType::Fixed32,
             DType::FieldElement,
+            DType::Int8,
+            DType::Uint8,
+            DType::Bool,
         ] {
             assert_eq!(dtype_from_tag(dtype_tag(dtype)), Some(dtype));
         }

@@ -15,6 +15,9 @@ pub enum DType {
     Int64,
     Fixed32,
     FieldElement,
+    Int8,
+    Uint8,
+    Bool,
 }
 
 impl DType {
@@ -24,6 +27,9 @@ impl DType {
             Self::Int64 => 2,
             Self::Fixed32 => 3,
             Self::FieldElement => 4,
+            Self::Int8 => 5,
+            Self::Uint8 => 6,
+            Self::Bool => 7,
         }
     }
 }
@@ -111,6 +117,7 @@ impl Tensor {
                 actual: data.len(),
             });
         }
+        validate_dtype_values(dtype, &data)?;
         Ok(Self {
             shape,
             dtype,
@@ -130,7 +137,7 @@ impl Tensor {
         let len = checked_len(&shape)?;
         let mut data = Vec::with_capacity(len);
         for _ in 0..len {
-            data.push(rng.next_field());
+            data.push(random_elem_for_dtype(&mut rng, dtype));
         }
         Self::from_vec(shape, dtype, data)
     }
@@ -559,6 +566,51 @@ pub fn signed_i128_to_elem(value: i128) -> Elem {
     value.rem_euclid(modulus) as Elem
 }
 
+fn validate_dtype_values(dtype: DType, data: &[Elem]) -> Result<()> {
+    match dtype {
+        DType::Int8 => {
+            for value in data {
+                let signed = signed_elem_to_i128(*value);
+                if !(-128..=127).contains(&signed) {
+                    return Err(TvmError::InvalidReceipt("int8 tensor value out of range"));
+                }
+            }
+        }
+        DType::Uint8 => {
+            for value in data {
+                if field::normalize(*value) > 255 {
+                    return Err(TvmError::InvalidReceipt("uint8 tensor value out of range"));
+                }
+            }
+        }
+        DType::Bool => {
+            for value in data {
+                if !matches!(field::normalize(*value), 0 | 1) {
+                    return Err(TvmError::InvalidReceipt("bool tensor value out of range"));
+                }
+            }
+        }
+        DType::Int32 | DType::Int64 | DType::Fixed32 | DType::FieldElement => {}
+    }
+    Ok(())
+}
+
+fn random_elem_for_dtype(rng: &mut OracleRng, dtype: DType) -> Elem {
+    match dtype {
+        DType::Int8 => {
+            let byte = (rng.next_field() % 256) as i128;
+            if byte <= 127 {
+                byte as Elem
+            } else {
+                signed_i128_to_elem(byte - 256)
+            }
+        }
+        DType::Uint8 => rng.next_field() % 256,
+        DType::Bool => rng.next_field() % 2,
+        DType::Int32 | DType::Int64 | DType::Fixed32 | DType::FieldElement => rng.next_field(),
+    }
+}
+
 pub fn rescale_signed_elem_half_even(value: Elem, from_scale: i64, to_scale: i64) -> Result<Elem> {
     let signed = signed_elem_to_i128(value);
     let delta = to_scale
@@ -640,6 +692,32 @@ mod tests {
         let a = Tensor::random(&seed, vec![3, 4], DType::FieldElement).unwrap();
         let b = Tensor::random(&seed, vec![3, 4], DType::FieldElement).unwrap();
         assert_eq!(a, b);
+    }
+
+    #[test]
+    fn random_narrow_integer_tensors_are_canonical() {
+        let seed = hash_bytes(b"test", &[b"narrow-random-seed"]);
+        let int8 = Tensor::random(&seed, vec![64], DType::Int8).unwrap();
+        let uint8 = Tensor::random(&seed, vec![64], DType::Uint8).unwrap();
+        let bools = Tensor::random(&seed, vec![64], DType::Bool).unwrap();
+
+        assert!(
+            int8.as_slice()
+                .iter()
+                .all(|value| (-128..=127).contains(&signed_elem_to_i128(*value)))
+        );
+        assert!(
+            uint8
+                .as_slice()
+                .iter()
+                .all(|value| field::normalize(*value) <= 255)
+        );
+        assert!(
+            bools
+                .as_slice()
+                .iter()
+                .all(|value| matches!(field::normalize(*value), 0 | 1))
+        );
     }
 
     #[test]
@@ -788,6 +866,9 @@ mod tests {
         assert_eq!(DType::Int64.tag(), 2);
         assert_eq!(DType::Fixed32.tag(), 3);
         assert_eq!(DType::FieldElement.tag(), 4);
+        assert_eq!(DType::Int8.tag(), 5);
+        assert_eq!(DType::Uint8.tag(), 6);
+        assert_eq!(DType::Bool.tag(), 7);
         assert_eq!(Layout::RowMajor.tag(), 1);
         assert_eq!(Layout::ChunkedRowMajor.tag(), 2);
         assert_eq!(
@@ -806,6 +887,28 @@ mod tests {
         assert_eq!(
             random_field_vector(&seed, b"label", 3),
             random_field_vector(&seed, b"label", 3)
+        );
+    }
+
+    #[test]
+    fn narrow_integer_tensors_enforce_canonical_ranges_and_commit_dtype() {
+        let int8 =
+            Tensor::from_vec(vec![3], DType::Int8, vec![field::MODULUS - 128, 0, 127]).unwrap();
+        let uint8 = Tensor::from_vec(vec![3], DType::Uint8, vec![0, 127, 255]).unwrap();
+        let bools = Tensor::from_vec(vec![2], DType::Bool, vec![0, 1]).unwrap();
+        assert_ne!(int8.tensor_id(), uint8.tensor_id());
+        assert_ne!(uint8.tensor_id(), bools.tensor_id());
+        assert_eq!(
+            Tensor::from_vec(vec![1], DType::Int8, vec![128]),
+            Err(TvmError::InvalidReceipt("int8 tensor value out of range"))
+        );
+        assert_eq!(
+            Tensor::from_vec(vec![1], DType::Uint8, vec![256]),
+            Err(TvmError::InvalidReceipt("uint8 tensor value out of range"))
+        );
+        assert_eq!(
+            Tensor::from_vec(vec![1], DType::Bool, vec![2]),
+            Err(TvmError::InvalidReceipt("bool tensor value out of range"))
         );
     }
 
