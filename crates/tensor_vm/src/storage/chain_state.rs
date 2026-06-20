@@ -1,7 +1,8 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
-    ChainStateParts, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
-    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState, ValidatorState,
+    ChainStateParts, HardwareClass, JobState, MinerState, ModelState, PendingChallengeReward,
+    PendingProposerReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardState,
+    ValidatorState,
 };
 use crate::codec as payload_codec;
 use crate::error::{Result, TvmError};
@@ -213,6 +214,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_u64_by_hash_map(out, state.proposer_penalty_until());
     encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
     encode_pending_receipt_rewards(out, state.pending_receipt_rewards());
+    encode_pending_challenge_rewards(out, state.pending_challenge_rewards());
     encode_model_states(out, state.model_states());
     encode_rewards(out, state.rewards());
 }
@@ -243,6 +245,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         proposer_penalty_until: decode_u64_by_hash_map(reader)?,
         pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
         pending_receipt_rewards: decode_pending_receipt_rewards(reader)?,
+        pending_challenge_rewards: decode_pending_challenge_rewards(reader)?,
         model_states: decode_model_states(reader)?,
         rewards: decode_rewards(reader)?,
     }))
@@ -755,6 +758,63 @@ fn decode_pending_receipt_rewards(
     Ok(rewards)
 }
 
+fn encode_pending_challenge_rewards(
+    out: &mut Vec<u8>,
+    rewards: &BTreeMap<Hash, PendingChallengeReward>,
+) {
+    write_len(out, rewards.len());
+    for (claim_id, reward) in rewards {
+        write_hash(out, claim_id);
+        write_hash(out, &reward.claim_id);
+        write_hash(out, &reward.challenge_id);
+        write_hash(out, &reward.block_hash);
+        write_hash(out, &reward.receipt_id);
+        write_hash(out, &reward.challenger);
+        write_u64(out, reward.amount);
+        write_u64(out, reward.claimable_at_height);
+        out.push(u8::from(reward.voided_by_challenge));
+    }
+}
+
+fn decode_pending_challenge_rewards(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, PendingChallengeReward>> {
+    let mut rewards = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let claim_id = reader.read_hash()?;
+        let challenge_id = reader.read_hash()?;
+        let block_hash = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let challenger = reader.read_hash()?;
+        let amount = reader.read_u64()?;
+        let claimable_at_height = reader.read_u64()?;
+        let voided_by_challenge = match reader.read_u8()? {
+            0 => false,
+            1 => true,
+            _ => {
+                return Err(TvmError::Storage(
+                    "invalid pending challenge reward boolean",
+                ));
+            }
+        };
+        rewards.insert(
+            key,
+            PendingChallengeReward {
+                claim_id,
+                challenge_id,
+                block_hash,
+                receipt_id,
+                challenger,
+                amount,
+                claimable_at_height,
+                voided_by_challenge,
+            },
+        );
+    }
+    Ok(rewards)
+}
+
 fn hardware_class_code(hardware_class: HardwareClass) -> u8 {
     match hardware_class {
         HardwareClass::Cpu => 1,
@@ -898,6 +958,18 @@ mod tests {
         chain.mark_receipt_data_unavailable_for_testing(linear_receipt.receipt_id);
         credit_reward(&mut chain, miner, 77);
         chain.set_reward_treasury_for_testing(11);
+        let challenge_id = hash_bytes(b"test", &[b"durable-block-check-challenge"]);
+        let claim_id = hash_bytes(b"test", &[b"durable-pending-challenge-reward"]);
+        chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+            claim_id,
+            challenge_id,
+            block_hash: hash_bytes(b"test", &[b"durable-challenged-block"]),
+            receipt_id: receipt.receipt_id,
+            challenger: validator,
+            amount: 33,
+            claimable_at_height: 42,
+            voided_by_challenge: false,
+        });
 
         let block = produce_block(&mut chain, validator, 1_000);
         let validator_stake = chain.params().validator_min_stake;
@@ -942,6 +1014,10 @@ mod tests {
             loaded.state().pending_receipt_rewards(),
             chain.state().pending_receipt_rewards()
         );
+        assert_eq!(
+            loaded.state().pending_challenge_rewards(),
+            chain.state().pending_challenge_rewards()
+        );
         assert!(
             loaded
                 .state()
@@ -951,6 +1027,17 @@ mod tests {
                     && reward.kind == ReceiptRewardKind::Miner
                     && reward.claim_id != [0; 32]
                     && reward.claimable_at_height > chain.state().height()
+                    && !reward.voided_by_challenge)
+        );
+        assert!(
+            loaded
+                .state()
+                .pending_challenge_rewards()
+                .values()
+                .any(|reward| reward.amount == 33
+                    && reward.claimable_at_height == 42
+                    && reward.challenger == address(b"durable-validator")
+                    && reward.claim_id != [0; 32]
                     && !reward.voided_by_challenge)
         );
         assert_eq!(

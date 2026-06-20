@@ -186,6 +186,14 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
     );
     report.field("attestation_count", attestation_count);
     report.field("reward_account_count", reward_account_count);
+    report.field(
+        "pending_receipt_reward_count",
+        chain.state().pending_receipt_rewards().len(),
+    );
+    report.field(
+        "pending_challenge_reward_count",
+        chain.state().pending_challenge_rewards().len(),
+    );
     report.field("model_count", chain.state().model_states().len());
     report.field("bootstrap_peer_count", bootstrap_peer_count);
     report.field("node_store_ready", true);

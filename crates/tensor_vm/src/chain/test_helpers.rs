@@ -1,4 +1,4 @@
-use super::{BlockVote, Chain, ReceiptState, RewardState, TensorBlock};
+use super::{BlockVote, Chain, PendingChallengeReward, ReceiptState, RewardState, TensorBlock};
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash};
 use crate::verify::ValidatorAttestation;
@@ -143,5 +143,14 @@ impl Chain {
 
     pub(crate) fn credit_reward_for_testing(&mut self, address: Address, amount: u64) {
         self.state.rewards.credit(address, amount);
+    }
+
+    pub(crate) fn insert_pending_challenge_reward_for_testing(
+        &mut self,
+        reward: PendingChallengeReward,
+    ) {
+        self.state
+            .pending_challenge_rewards
+            .insert(reward.claim_id, reward);
     }
 }

@@ -1,5 +1,5 @@
 use super::Chain;
-use super::state::BlockCheckChallengeRecord;
+use super::state::{BlockCheckChallengeRecord, PendingChallengeReward};
 use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::{Result, TvmError};
 use crate::merkle::verify_proof;
@@ -190,10 +190,12 @@ fn apply_block_check_resolution(
             .proposer_reward_clawback
             .saturating_sub(record.challenger_reward);
         if record.challenger_reward > 0 {
-            chain
-                .state
-                .rewards
-                .credit(record.challenger, record.challenger_reward);
+            enqueue_pending_challenge_reward(
+                chain,
+                challenge_id,
+                &record,
+                record.penalty_until_height,
+            );
         }
         if treasury_reward > 0 {
             chain.state.rewards.credit_treasury(treasury_reward);
@@ -215,6 +217,39 @@ fn apply_block_check_resolution(
         .block_check_challenges
         .insert(challenge_id, record);
     Ok(())
+}
+
+fn enqueue_pending_challenge_reward(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    record: &BlockCheckChallengeRecord,
+    claimable_at_height: u64,
+) {
+    if record.challenger_reward == 0 {
+        return;
+    }
+    let claim_id = challenge_reward_claim_id(&challenge_id, &record.challenger);
+    chain
+        .state
+        .pending_challenge_rewards
+        .entry(claim_id)
+        .or_insert(PendingChallengeReward {
+            claim_id,
+            challenge_id,
+            block_hash: record.block_hash,
+            receipt_id: record.receipt_id,
+            challenger: record.challenger,
+            amount: record.challenger_reward,
+            claimable_at_height,
+            voided_by_challenge: false,
+        });
+}
+
+pub(super) fn challenge_reward_claim_id(challenge_id: &Hash, challenger: &Hash) -> Hash {
+    hash_bytes(
+        b"tensor-vm-challenge-reward-claim-id-v1",
+        &[challenge_id, challenger],
+    )
 }
 
 pub(super) fn block_check_challenge_id(block_hash: &Hash, receipt_id: &Hash) -> Hash {

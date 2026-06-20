@@ -1,7 +1,7 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, JobState, MinerState,
-    ModelState, PendingProposerReward, PendingReceiptReward, ReceiptState, RewardState,
-    ValidatorState,
+    ModelState, PendingChallengeReward, PendingProposerReward, PendingReceiptReward, ReceiptState,
+    RewardState, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -57,6 +57,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
         &state.pending_proposer_rewards,
     ));
     parts.extend_from_slice(&pending_receipt_reward_root(&state.pending_receipt_rewards));
+    parts.extend_from_slice(&pending_challenge_reward_root(
+        &state.pending_challenge_rewards,
+    ));
     parts.extend_from_slice(&model_state_root(&state.model_states));
     parts.extend_from_slice(&reward_root(&state.rewards));
     hash_bytes(b"tensor-vm-state-root-v1", &[&parts])
@@ -130,6 +133,24 @@ pub(super) fn pending_receipt_reward_root(rewards: &BTreeMap<Hash, PendingReceip
         encoded.push(u8::from(reward.voided_by_challenge));
     }
     hash_bytes(b"tensor-vm-pending-receipt-reward-root-v1", &[&encoded])
+}
+
+pub(super) fn pending_challenge_reward_root(
+    rewards: &BTreeMap<Hash, PendingChallengeReward>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (claim_id, reward) in rewards {
+        encoded.extend_from_slice(claim_id);
+        encoded.extend_from_slice(&reward.claim_id);
+        encoded.extend_from_slice(&reward.challenge_id);
+        encoded.extend_from_slice(&reward.block_hash);
+        encoded.extend_from_slice(&reward.receipt_id);
+        encoded.extend_from_slice(&reward.challenger);
+        encoded.extend_from_slice(&reward.amount.to_le_bytes());
+        encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
+        encoded.push(u8::from(reward.voided_by_challenge));
+    }
+    hash_bytes(b"tensor-vm-pending-challenge-reward-root-v1", &[&encoded])
 }
 
 pub(super) fn block_finality_root(

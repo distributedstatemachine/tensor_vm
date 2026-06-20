@@ -139,15 +139,53 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
         });
     let events = chain.submit_block_check_challenge(challenge).unwrap();
 
+    assert_eq!(events.len(), 2);
     assert!(matches!(
-        events.as_slice(),
-        [ChainEvent::BlockCheckChallengeProven {
+        &events[0],
+        ChainEvent::BlockCheckChallengeProven {
             proposer: event_proposer,
             challenger: event_challenger,
             proposer_reward_clawback: 1000,
             challenger_reward: 500,
             ..
-        }] if *event_proposer == proposer && *event_challenger == challenger
+        } if *event_proposer == proposer && *event_challenger == challenger
+    ));
+    let ChainEvent::ChallengeRewardPending {
+        claim_id,
+        challenge_id,
+        block_hash,
+        receipt_id,
+        challenger: pending_challenger,
+        amount,
+        claimable_at_height,
+    } = events[1]
+    else {
+        panic!("expected pending challenge reward event");
+    };
+    assert_eq!(block_hash, bad_block.hash());
+    assert_eq!(receipt_id, receipt.receipt_id);
+    assert_eq!(pending_challenger, challenger);
+    assert_eq!(amount, 500);
+    assert_eq!(claimable_at_height, 5);
+    assert_eq!(
+        chain
+            .state()
+            .block_check_challenges()
+            .get(&challenge_id)
+            .unwrap()
+            .challenger,
+        challenger
+    );
+    assert!(matches!(
+        chain.state().pending_challenge_rewards().get(&claim_id),
+        Some(reward)
+            if reward.challenge_id == challenge_id
+                && reward.block_hash == bad_block.hash()
+                && reward.receipt_id == receipt.receipt_id
+                && reward.challenger == challenger
+                && reward.amount == 500
+                && reward.claimable_at_height == 5
+                && !reward.voided_by_challenge
     ));
     assert!(
         chain
@@ -165,7 +203,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge)
     );
-    assert_eq!(chain.state().rewards().balance(&challenger), 500);
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
     assert_eq!(chain.state().rewards().treasury(), 500);
     assert!(
         chain
@@ -186,6 +224,41 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     assert_eq!(
         chain.produce_block(proposer, 1_006),
         Err(TvmError::InvalidReceipt("proposer is challenge-throttled"))
+    );
+    assert!(
+        chain
+            .release_matured_challenge_rewards()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    chain.set_position_for_testing(5, 1);
+    let release_events = chain.release_matured_challenge_rewards().unwrap();
+    assert!(
+        release_events.contains(&ChainEvent::ChallengeRewardReleased {
+            claim_id,
+            challenge_id,
+            challenger,
+            amount: 500,
+        })
+    );
+    assert!(release_events.contains(&ChainEvent::RewardCredited {
+        address: challenger,
+        amount: 500,
+    }));
+    assert_eq!(chain.state().rewards().balance(&challenger), 500);
+    assert!(
+        chain
+            .state()
+            .pending_challenge_rewards()
+            .get(&claim_id)
+            .is_none()
+    );
+    assert!(
+        chain
+            .release_matured_challenge_rewards()
+            .unwrap()
+            .is_empty()
     );
     chain.set_position_for_testing(100, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

@@ -57,9 +57,10 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
   `chain::roots` boundary
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims,
-  delayed proposer rewards through a pending reward ledger, treasury rewards, reward accounting without
-  repeated payout, and no-quorum rejection. Receipt reward claims are state-rooted, persisted, released
-  only after maturity, and voided/pruned if a block-check challenge succeeds before release.
+  delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
+  pending challenge reward claims, treasury rewards, reward accounting without repeated payout, and
+  no-quorum rejection. Receipt and challenge reward claims are state-rooted, persisted, released only after
+  maturity, and receipt claims are voided/pruned if a block-check challenge succeeds before release.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
@@ -75,8 +76,8 @@ zero-receipt skip fallback economics, and live validator proposer/block-assembly
 - Model registration and linear-training model-state transitions through the internal `chain::models`
   boundary
 - Challenge outcome application, miner/validator slashing, local block `checks_root` challenge admission,
-  pending proposer reward invalidation, challenger reward payment, challenged-receipt quarantine, and
-  proposer throttle windows through the internal `chain::challenges` boundary
+  pending proposer reward invalidation, delayed pending challenger reward creation, challenged-receipt
+  quarantine, and proposer throttle windows through the internal `chain::challenges` boundary
 - Profile-neutral `ChainCommand`, `ChainEvent`, and `ChainEngine` facade types through the internal
   `chain::engine` boundary
 - `ChainEngine` command dispatch, event emission, and view accessors through the internal

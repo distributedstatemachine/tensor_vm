@@ -377,6 +377,8 @@ Required fix:
 - Query live receipt details and prove at least one new post-startup receipt has validator attestations.
 - Query pending miner and validator receipt reward claims after live jobs, and separately verify mature
   release into spendable balances once the reward-settlement delay plus challenge window has elapsed.
+- Query pending block-check challenger reward claims after a successful challenge scenario, and separately
+  verify mature release into spendable balances instead of immediate bounty credit.
 - Perform a live tensor row/chunk/opening fetch through the local tensor-server path.
 - Assert telemetry counters advance with the live chain.
 - Record exact observed values in checker output.
@@ -756,7 +758,8 @@ blocks are produced from network-visible receipts and attestations
 block finality votes are produced by validator containers and gossiped/applied by non-producers
 TensorOp and LinearTrainingStep live jobs both settle after startup
 tensor rows/chunks/openings are fetched through the local tensor-server path
-live pending reward claims accrue to miners and validators, and matured claims release into spendable balances
+live pending reward claims accrue to miners, validators, and successful block-check challengers, and matured
+claims release into spendable balances
 telemetry reflects live post-startup work
 local evidence remains explicitly non-public
 ```

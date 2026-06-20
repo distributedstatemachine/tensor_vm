@@ -5,10 +5,10 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none. The next feature-sized slice is delayed challenge reward finality or the next
-  highest-priority v0 gap from the readiness matrix.
-- Current status: Iteration 25, graph-body propagation/storage, is implemented, locally validated, and
-  pushed as `0363bb6` (`Store Tensor IR graph bodies`).
+- Active feature: Iteration 26, delayed challenger reward finality.
+- Current status: Iteration 26 is implemented and locally validated. Feature commit/push evidence is still
+  pending. Iteration 25, graph-body propagation/storage, is implemented, locally validated, and pushed as
+  `0363bb6` (`Store Tensor IR graph bodies`).
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -16,14 +16,14 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: start delayed challenge reward finality, generic IR execution, or the next highest-priority
+- Next action: commit and push Iteration 26, record push evidence, then continue with the next highest
   v0 gap.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 25: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 26: `cargo test -p tensor_vm local_testnet --release` passed first on June 20, 2026 and again after implementation | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`, Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -33,76 +33,98 @@ feature-sized iterations are summarized after validation and push, and older det
 | Tensor IR graph language | Partial, current-job graph body storage implemented locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, current-job `program_hash` binding, current-job graph body state-root/storage, and P2P `RequestProgram` serving | Add generic arbitrary-IR execution and user-submitted graph body admission/fetch |
 | Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops, stable suite hash, CPU pass profile, default CUDA non-admission, verifier gates | Remaining: broader executable admitted registry vectors, generic graph interpreter coverage, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Finalized-beacon binding exists; no full commit-reveal/VRF lifecycle | Add after IR/conformance and remaining block validity gaps |
-| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, local challenge penalties, and challenge voiding for pending receipt claims exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
+| Economics and slashing invariant | Partial | Delayed proposer rewards, delayed receipt reward claims, delayed challenger reward claims, local challenge penalties, and challenge voiding for pending receipt claims exist; hard miner/validator bond invariant not complete | Add slashable bond/audit/data-withholding invariant slice |
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 25: Graph-Body Propagation and Storage
+### Iteration 26: Delayed Challenger Reward Finality
 
 Feature capability:
-Store canonical Tensor IR graph bodies in chain state keyed by `graph_id` whenever current TensorOp or
-LinearTrainingStep jobs are admitted, commit those bodies in the state root and node-store snapshot, and
-serve canonical graph bytes through the existing `RequestProgram`/`ProgramResponse` request-response
-protocol. Current fixed jobs remain the admitted execution surface; generic arbitrary-IR execution remains
-out of scope.
+Replace immediate spendable crediting of successful block-check challenger bounties with a state-rooted
+pending challenger reward claim. A successful block-check challenge still voids the proposer reward, sends
+the clawback remainder to treasury, quarantines affected receipt rewards, and throttles the proposer, but
+the challenger bounty becomes spendable only after maturity through an explicit release command.
 
 Readiness requirements covered:
-- `upow.md` §4.5: jobs reference immutable content-addressed programs by `graph_id`.
-- `upow.md` §4.6 and §4.9: admitted graph bodies are structurally validated before storage/use.
-- `mvp_spec.md` §8.4 and §29: canonical program hashing plus required `RequestProgram`/`ProgramResponse`
-  message family.
-- `goal.md` known gap: graph-body propagation/storage after the content-addressed Tensor IR foundation.
+- `upow.md` §12.1: challenger rewards are part of the fraud-detection incentive path and must remain
+  challenge-window aware.
+- `mvp_spec.md` §19 and §20.4: rewards are calculated/finalized after verification challenge windows,
+  while block finality and reward finality are distinct.
+- `mvp_spec.md` §20.7 and §25.5: successful checks-root challenges claw back proposer rewards and reward
+  challengers without bypassing consensus reward finality.
+- `goal.md` economics gap: move reward finality from immediate spendable balances into explicit
+  consensus state instead of adapter workarounds.
 
 Subagents run:
-- `readiness-mapper`: mapped graph-body storage/fetch to `upow.md` §4, `mvp_spec.md` §4.6/§29, docs, and
-  shortcut risks.
-- `tensorvm-codebase-explorer`: identified `TensorGraph::canonical_json()` as the canonical body bytes and
-  recommended chain-state registration plus existing program request-response serving.
-- `tensorvm-test-coverage-explorer`: mapped focused chain/storage/p2p/job tests and validation commands.
+- `readiness-mapper`: maps delayed challenger rewards to reward-finality and challenge-window
+  requirements.
+- `tensorvm-codebase-explorer`: maps chain/state/root/storage/RPC-status implementation path.
+- `tensorvm-test-coverage-explorer`: maps focused reward/challenge/storage tests and validation commands.
 
 Architecture shortcut answers:
-- Canonical owner: `chain::state` and job admission own the durable graph-body registry; `ir` owns graph
-  canonicalization and validation.
-- Adapter callers: P2P/runtime/RPC can register or serve canonical bytes already accepted by chain state;
-  adapters do not decide graph validity.
-- Old shortcut being removed: current nodes could reconstruct fixed-job graph bodies locally, but graph
-  bodies were not stored or served as content-addressed programs.
-- Regression test that proves the shortcut is gone: submitted jobs create durable program-body entries and
-  P2P `RequestProgram` returns registered bytes instead of an empty placeholder response.
-- Behavior with local synthetic block production disabled: unchanged; inbound network job admission still
-  registers graph bodies through `ChainCommand::SubmitJob`.
-- Behavior for producer and non-producer roles: both store graph bodies after accepting the same job
-  payload through chain admission; producers register newly announced bodies with their P2P service.
-- Structured evidence source: chain, storage, and P2P tests plus docs/status; no shell-only evidence.
-- Finality source: unchanged, signed validator block votes through `SubmitBlockVote`.
-- Wire-size and codec boundary: uses the existing bounded P2P `ProgramResponse` bytes field and existing
-  job payload codec; no parallel block/job/receipt codec was added.
+- Canonical owner: `chain` owns challenge resolution, pending challenger reward claims, release, roots, and
+  storage; adapters may only observe events or request commands.
+- Adapter callers: RPC/runtime/checkers can surface pending and released rewards, but they do not decide
+  challenger spendability.
+- Old shortcut being removed: successful block-check challenges credited the challenger directly into
+  spendable `RewardState` during challenge resolution.
+- Regression test that proves the shortcut is gone: successful block-check challenge records a pending
+  challenger claim, leaves the challenger spendable reward balance at zero until maturity, and release later
+  credits exactly the pending amount once.
+- Behavior with local synthetic block production disabled: unchanged; inbound challenge commands mutate the
+  same chain state regardless of local producer policy.
+- Behavior for producer and non-producer roles: both validate and persist the same delayed reward state
+  after applying the challenge command.
+- Structured evidence source: chain challenge/reward tests, chain-state storage roundtrip test, status/docs
+  updates; no shell-only assertion.
+- Finality source: unchanged, signed validator block votes finalize blocks; reward finality is separate and
+  state-rooted.
+- Wire-size and codec boundary: no new P2P or storage wire family; storage extends the existing bounded
+  chain-state snapshot codec.
 
+Implementation plan:
 Implementation summary:
-- Added `JobState::program_hash`, `JobState::tensor_ir_graph`, and `JobState::canonical_program_body`
-  helpers.
-- Added `ChainState.program_bodies`, state accessors, genesis/from-parts wiring, state-root commitment, and
-  chain-state snapshot encoding/decoding.
-- `chain::receipts::submit_job` now validates the current job graph and stores canonical graph bytes keyed
-  by graph ID before accepting the job.
-- `TensorVmLibp2pService` now has a program store and `register_program`; program request-response returns
-  registered graph bytes for `RequestProgram`.
-- New-chain announcement publishing registers graph bytes with the local P2P service before gossiping job
-  payloads.
-- Updated `upow.md`, coverage/status/audit/Tarpaulin docs with current-job graph body scope and remaining
-  arbitrary-IR gaps.
+- Added `PendingChallengeReward` state keyed by deterministic claim id.
+- Included pending challenge rewards in `ChainState`, state roots, genesis/from-parts, and node-store
+  snapshot encode/decode.
+- Changed block-check challenge resolution to enqueue the challenger bounty instead of crediting it
+  immediately; the clawback remainder still credits treasury.
+- Added `ReleaseMaturedChallengeRewards` command/event handling matching existing proposer/receipt release
+  commands.
+- Surfaced `pending_challenge_reward_count` in node status and explorer summary output.
+- Updated chain/storage/docs tests to prove delayed spendability, single release, and persistence.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`
+- `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`
+- `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo test -p tensor_vm`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test --workspace --release`
+- `git diff --check`
+- `cargo tarpaulin --workspace --offline` (expected blocked here unless `cargo-tarpaulin` is installed)
+
+Expected observable evidence:
+- A proven block-check challenge no longer immediately increases the challenger reward balance.
+- Pending challenger rewards are committed in the state root and survive storage roundtrip.
+- Matured pending challenger rewards release once into spendable reward balances.
 
 Validation:
-- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
-  local-testnet library tests and `local_testnet_service_gateway_does_not_produce_local_blocks`.
-- `cargo test -p tensor_vm --lib chain::tests -- --nocapture` passed with 48 focused chain tests.
-- `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture` passed with 2 storage tests.
-- `cargo test -p tensor_vm --lib p2p -- --nocapture` passed with 30 focused P2P tests.
-- `cargo test -p tensor_vm --lib jobs -- --nocapture` passed with 11 filtered tests.
-- `cargo fmt --check --all` passed after applying `cargo fmt --all`.
-- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused validation passed:
+  - `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`: 3 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 2 tests passed.
+  - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`: 2 tests passed.
+  - `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`: 8 tests passed.
+  - `cargo test -p tensor_vm_explorer --lib`: 1 test passed.
+- `cargo fmt --check --all` passed.
 - `git diff --check` passed.
+- Final release Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - `cargo test -p tensor_vm` passed with 333 library tests, 1 local CPU Compose integration test, 8
   `tvmd_cli` integration tests, 28 `tvmd_runtime` integration tests, and doc-test targets.
 - `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -112,66 +134,54 @@ Validation:
 - `cargo tarpaulin --workspace --offline` was attempted and blocked because this environment does not have
   the `cargo-tarpaulin` subcommand installed.
 
-Push evidence:
-- Feature commit: `0363bb6` (`Store Tensor IR graph bodies`).
-- Remote/branch: `origin/main`.
-- Push result: `b0fe92c..0363bb6  main -> main`.
-
-Expected observable evidence:
-- Chain state exposes nonempty canonical program bytes for submitted TensorOp and LinearTrainingStep jobs.
-- State roots and node-store snapshots commit and roundtrip the program-body registry.
-- Existing P2P `RequestProgram` returns registered canonical graph body bytes.
-
 Out of scope:
-- Generic arbitrary-IR graph execution.
-- New consensus transaction type for user-submitted arbitrary graph bodies.
-- A second P2P or storage codec for graph payloads.
-- CUDA kernel implementation or GPU-readiness claims.
+- Full network/RPC challenge gossip.
+- Hard stake slashing for invalid attestations or data withholding.
+- Interactive trace fraud proofs.
+
+Split trigger:
+Split only if status/RPC exposure needs a broader typed snapshot refactor beyond the chain/storage/docs
+surface.
 
 ## Recent Iterations
+
+### Iteration 25: Graph-Body Propagation and Storage
+
+Implemented and pushed as `0363bb6` (`Store Tensor IR graph bodies`), with evidence update `f734a69`.
+
+Summary:
+- Current TensorOp and LinearTrainingStep job admission stores validated canonical graph bodies keyed by
+  `graph_id`.
+- State roots and node-store snapshots commit and roundtrip the graph-body registry.
+- The existing libp2p `RequestProgram`/`ProgramResponse` path serves registered canonical graph bytes.
+- Generic arbitrary-IR admission/execution remains out of scope.
+
+Validation:
+- Required Gate 0 first and final Gate 0 passed.
+- Focused chain/storage/p2p/jobs tests passed.
+- `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
+- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
+- Push result: `b0fe92c..0363bb6  main -> main`; evidence push `0363bb6..f734a69  main -> main`.
 
 ### Iteration 24: Per-Op `F_p` Conformance Vector Gate
 
 Implemented and pushed as `f4d4491` (`Add Fp conformance vector gate`).
 
 Summary:
-- Added deterministic `F_p` conformance vectors for current executable admitted ops used by TensorOp and
-  LinearTrainingStep: `add`, `sub`, `mul`, `scalar_mul`, `transpose`, `reduce_sum`, `matmul`, and
-  `mse_loss`.
-- Added a stable conformance suite hash and `ConformanceProfile`.
-- CPU reference reports a passing profile; default non-CUDA builds reject GPU conformance with
-  `cuda kernels not compiled`.
-- TensorOp and LinearTrainingStep verification now reject otherwise-valid receipts when the required
-  conformance profile is unavailable.
-
-Validation:
-- Required Gate 0 first and final Gate 0 passed.
-- Focused conformance/runtime/verifier/jobs tests passed.
-- `cargo fmt --check --all`, `cargo test -p tensor_vm`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace --release`, and `git diff --check` passed.
+- Added deterministic current-job `F_p` conformance vectors, a stable suite hash, CPU pass reporting,
+  default-build CUDA non-admission, and TensorOp/LinearTrainingStep verifier gates.
+- Required Gate 0, focused conformance/runtime/verifier/jobs tests, fmt, full tensor_vm tests, clippy,
+  release workspace tests, and diff check passed.
 - `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
-- Push result: `94c8007..f4d4491  main -> main` on `origin/main`.
+- Push result: `94c8007..f4d4491  main -> main`.
 
 ### Iteration 23: Delayed Receipt Reward Finality
 
-Implemented and pushed as `388c4d6` (`Delay receipt reward finality`).
-
-Summary:
-- Replaced immediate miner/validator receipt reward crediting with state-rooted pending receipt reward
-  claims.
-- Receipt settlement creates pending claims; block inclusion extends maturity to
-  `reward_settlement_delay + challenge_window`; release credits only mature non-void claims.
-- Successful block-check challenges void affected pending receipt rewards before spendability.
-- Storage, RPC/explorer summary, local checker evidence, tests, and docs distinguish pending claims from
-  spendable balances.
-
-Validation:
-- Required Gate 0 first and final Gate 0 passed.
-- Focused delayed reward, challenge, storage, local compose, and CLI tests passed.
-- `cargo fmt --check --all`, `cargo test -p tensor_vm`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace --release`, and `git diff --check` passed.
-- `cargo tarpaulin --workspace --offline` blocked because `cargo-tarpaulin` is missing.
-- Push result: `c08f340..388c4d6  main -> main` on `origin/main`.
+Implemented and pushed as `388c4d6` (`Delay receipt reward finality`): receipt settlement creates
+state-rooted miner/validator pending reward claims, block inclusion extends maturity through the
+settlement/challenge window, release credits only mature non-void claims, and successful block-check
+challenges void affected pending receipt rewards before spendability.
 
 ## Decision Log
 
@@ -193,22 +203,22 @@ Validation:
 
 Latest current-iteration evidence:
 - Starting branch state: `## main...origin/main`.
-- Iteration 25 required Gate 0 first:
+- Iteration 26 required Gate 0 first:
   `cargo test -p tensor_vm local_testnet --release` passed.
-- Iteration 25 validation before feature commit:
-  - `cargo test -p tensor_vm --lib chain::tests -- --nocapture`: 48 tests passed.
+- Iteration 26 validation before feature commit:
+  - `cargo test -p tensor_vm --lib chain::tests::challenges -- --nocapture`: 3 tests passed.
+  - `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`: 2 tests passed.
   - `cargo test -p tensor_vm --lib storage::chain_state -- --nocapture`: 2 tests passed.
-  - `cargo test -p tensor_vm --lib p2p -- --nocapture`: 30 tests passed.
-  - `cargo test -p tensor_vm --lib jobs -- --nocapture`: 11 tests passed.
+  - `cargo test -p tensor_vm --lib rpc::tests::routes -- --nocapture`: 8 tests passed.
+  - `cargo test -p tensor_vm_explorer --lib`: 1 test passed.
   - `cargo fmt --check --all`: passed.
-  - Final `cargo test -p tensor_vm local_testnet --release`: passed.
   - `git diff --check`: passed.
+  - Final `cargo test -p tensor_vm local_testnet --release`: passed.
   - `cargo test -p tensor_vm`: passed.
   - `cargo clippy --workspace --all-targets -- -D warnings`: passed.
   - `cargo test --workspace --release`: passed.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 25 feature commit: `0363bb6` (`Store Tensor IR graph bodies`).
-- Iteration 25 push result: `b0fe92c..0363bb6  main -> main` on `origin/main`.
+- Iteration 26 feature commit/push: pending.
 
 Latest unresolved full-gate blocker:
 

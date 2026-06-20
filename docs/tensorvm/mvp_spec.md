@@ -1552,7 +1552,7 @@ If the challenge proves the block proposer committed to a wrong verification res
 
 ```text
 proposer block reward is clawed back
-challenger receives the challenge reward
+challenger receives a pending challenge reward claim that releases only after maturity
 proposer's future PoW eligibility is throttled for a penalty window
 the affected receipt is removed from reward settlement until reverified
 ```

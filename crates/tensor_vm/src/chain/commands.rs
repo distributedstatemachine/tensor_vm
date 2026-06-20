@@ -165,6 +165,42 @@ impl ChainEngine for Chain {
                 }
                 Ok(events)
             }
+            ChainCommand::ReleaseMaturedChallengeRewards => {
+                let mut events = Vec::new();
+                let matured = self
+                    .state
+                    .pending_challenge_rewards
+                    .iter()
+                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
+                    .map(|(claim_id, reward)| {
+                        (
+                            *claim_id,
+                            reward.challenge_id,
+                            reward.challenger,
+                            reward.amount,
+                            reward.voided_by_challenge,
+                        )
+                    })
+                    .collect::<Vec<_>>();
+                for (claim_id, challenge_id, challenger, amount, voided_by_challenge) in matured {
+                    self.state.pending_challenge_rewards.remove(&claim_id);
+                    if voided_by_challenge {
+                        continue;
+                    }
+                    self.state.rewards.credit(challenger, amount);
+                    events.push(ChainEvent::ChallengeRewardReleased {
+                        claim_id,
+                        challenge_id,
+                        challenger,
+                        amount,
+                    });
+                    events.push(ChainEvent::RewardCredited {
+                        address: challenger,
+                        amount,
+                    });
+                }
+                Ok(events)
+            }
             ChainCommand::RegisterModel {
                 model_id,
                 architecture_hash,
@@ -235,7 +271,8 @@ impl ChainEngine for Chain {
                 else {
                     unreachable!("block check challenge returns block check outcome")
                 };
-                Ok(vec![ChainEvent::BlockCheckChallengeProven {
+                let challenge_id = challenges::block_check_challenge_id(&block_hash, &receipt_id);
+                let mut events = vec![ChainEvent::BlockCheckChallengeProven {
                     block_hash,
                     receipt_id,
                     proposer,
@@ -244,7 +281,20 @@ impl ChainEngine for Chain {
                     challenger_reward,
                     penalty_until_height,
                     reason,
-                }])
+                }];
+                let claim_id = challenges::challenge_reward_claim_id(&challenge_id, &challenger);
+                if let Some(reward) = self.state.pending_challenge_rewards.get(&claim_id) {
+                    events.push(ChainEvent::ChallengeRewardPending {
+                        claim_id,
+                        challenge_id,
+                        block_hash,
+                        receipt_id,
+                        challenger,
+                        amount: reward.amount,
+                        claimable_at_height: reward.claimable_at_height,
+                    });
+                }
+                Ok(events)
             }
         }
     }

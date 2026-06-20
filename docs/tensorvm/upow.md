@@ -465,6 +465,9 @@ TensorBlock {
   challenge before maturity voids the affected pending claims. This reward-finality delay is distinct from,
   but must be at least as long as, the tensor/trace retention window needed for verification and challenge
   data availability.
+- Successful block-check challenger bounties are also pending consensus claims before spendability. The
+  challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
+  and released only after its maturity height.
 
 ### 12.2 Slashing
 - Miner: committing a receipt that fails verification (Freivalds/random-linear/fraud-proof) → slash bond.

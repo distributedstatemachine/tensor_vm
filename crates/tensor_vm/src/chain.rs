@@ -32,9 +32,9 @@ use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
     AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
     BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
-    ChainState, HardwareClass, JobState, MinerState, ModelState, PendingProposerReward,
-    PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardState,
-    SelectedReceiptOpening, TensorBlock, Transaction, ValidatorState,
+    ChainState, HardwareClass, JobState, MinerState, ModelState, PendingChallengeReward,
+    PendingProposerReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, RewardAllocation,
+    RewardState, SelectedReceiptOpening, TensorBlock, Transaction, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -208,6 +208,10 @@ impl Chain {
 
     pub fn release_matured_receipt_rewards(&mut self) -> Result<Vec<ChainEvent>> {
         self.apply_command(ChainCommand::ReleaseMaturedReceiptRewards)
+    }
+
+    pub fn release_matured_challenge_rewards(&mut self) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::ReleaseMaturedChallengeRewards)
     }
 
     pub fn validator_assignment_seed(&self, receipt_id: &Hash) -> Hash {

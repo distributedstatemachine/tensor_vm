@@ -22,6 +22,7 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         finalized_block_count: chain.state().finalized_blocks().len(),
         treasury_balance: chain.state().rewards().treasury(),
         pending_receipt_reward_count: chain.state().pending_receipt_rewards().len(),
+        pending_challenge_reward_count: chain.state().pending_challenge_rewards().len(),
         total_reward_balance: chain.state().rewards().total_balance(),
     }
 }
