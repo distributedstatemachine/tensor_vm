@@ -48,6 +48,7 @@ pub struct TensorDescriptor {
     pub tensor_id: Hash,
     pub shape: Vec<usize>,
     pub dtype: DType,
+    pub scale: i64,
     pub layout: Layout,
     pub chunk_shape: Vec<usize>,
     pub commitment: MerkleCommitment,
@@ -76,6 +77,7 @@ impl TensorOpening {
 pub struct Tensor {
     shape: Vec<usize>,
     dtype: DType,
+    scale: i64,
     layout: Layout,
     data: Vec<Elem>,
 }
@@ -86,12 +88,22 @@ impl Tensor {
         Ok(Self {
             shape,
             dtype,
+            scale: 0,
             layout: Layout::RowMajor,
             data: vec![0; len],
         })
     }
 
     pub fn from_vec(shape: Vec<usize>, dtype: DType, data: Vec<Elem>) -> Result<Self> {
+        Self::from_vec_with_scale(shape, dtype, 0, data)
+    }
+
+    pub fn from_vec_with_scale(
+        shape: Vec<usize>,
+        dtype: DType,
+        scale: i64,
+        data: Vec<Elem>,
+    ) -> Result<Self> {
         let expected = checked_len(&shape)?;
         if expected != data.len() {
             return Err(TvmError::InvalidTensorData {
@@ -102,6 +114,7 @@ impl Tensor {
         Ok(Self {
             shape,
             dtype,
+            scale,
             layout: Layout::RowMajor,
             data: data.into_iter().map(field::normalize).collect(),
         })
@@ -128,6 +141,10 @@ impl Tensor {
 
     pub fn dtype(&self) -> DType {
         self.dtype
+    }
+
+    pub fn scale(&self) -> i64 {
+        self.scale
     }
 
     pub fn layout(&self) -> Layout {
@@ -211,35 +228,38 @@ impl Tensor {
 
     pub fn add(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
+        self.check_same_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
             .map(|(lhs, rhs)| field::add(*lhs, *rhs))
             .collect();
-        Self::from_vec(self.shape.clone(), self.dtype, data)
+        Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
     pub fn sub(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
+        self.check_same_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
             .map(|(lhs, rhs)| field::sub(*lhs, *rhs))
             .collect();
-        Self::from_vec(self.shape.clone(), self.dtype, data)
+        Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
     pub fn mul(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
+        self.check_same_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
             .map(|(lhs, rhs)| field::mul(*lhs, *rhs))
             .collect();
-        Self::from_vec(self.shape.clone(), self.dtype, data)
+        Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
     pub fn scalar_mul(&self, scalar: Elem) -> Result<Self> {
@@ -249,7 +269,7 @@ impl Tensor {
             .iter()
             .map(|value| field::mul(*value, scalar))
             .collect();
-        Self::from_vec(self.shape.clone(), self.dtype, data)
+        Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
     pub fn transpose(&self) -> Result<Self> {
@@ -262,7 +282,7 @@ impl Tensor {
                 out[col * rows + row] = self.data[row * cols + col];
             }
         }
-        Self::from_vec(vec![cols, rows], self.dtype, out)
+        Self::from_vec_with_scale(vec![cols, rows], self.dtype, self.scale, out)
     }
 
     pub fn matmul(&self, rhs: &Self) -> Result<Self> {
@@ -277,6 +297,7 @@ impl Tensor {
             });
         }
         let cols = rhs.shape[1];
+        self.check_same_encoding(rhs)?;
         let rhs_t = rhs.transpose()?;
         let mut data = vec![0; rows * cols];
         for row in 0..rows {
@@ -290,7 +311,7 @@ impl Tensor {
                 data[row * cols + col] = field::reduce_u128(acc);
             }
         }
-        Self::from_vec(vec![rows, cols], self.dtype, data)
+        Self::from_vec_with_scale(vec![rows, cols], self.dtype, self.scale, data)
     }
 
     pub fn reduce_sum(&self, axis: usize) -> Result<Self> {
@@ -305,7 +326,7 @@ impl Tensor {
                         *out_cell = field::add(*out_cell, self.data[row * cols + col]);
                     }
                 }
-                Self::from_vec(vec![cols], self.dtype, out)
+                Self::from_vec_with_scale(vec![cols], self.dtype, self.scale, out)
             }
             1 => {
                 let mut out = vec![0; rows];
@@ -316,7 +337,7 @@ impl Tensor {
                     }
                     *out_cell = acc;
                 }
-                Self::from_vec(vec![rows], self.dtype, out)
+                Self::from_vec_with_scale(vec![rows], self.dtype, self.scale, out)
             }
             _ => Err(TvmError::InvalidAxis { axis, rank: 2 }),
         }
@@ -375,6 +396,7 @@ impl Tensor {
 
     pub fn squared_error_sum(&self, rhs: &Self) -> Result<Elem> {
         self.check_same_shape(rhs)?;
+        self.check_same_encoding(rhs)?;
         let mut acc = 0_u128;
         for (lhs, rhs) in self.data.iter().zip(&rhs.data) {
             let diff = field::sub(*lhs, *rhs);
@@ -409,6 +431,7 @@ impl Tensor {
             tensor_id,
             shape: self.shape.clone(),
             dtype: self.dtype,
+            scale: self.scale,
             layout: self.layout,
             chunk_shape: vec![chunk_size],
             commitment: MerkleCommitment {
@@ -470,6 +493,7 @@ impl Tensor {
             hasher.update_u64(*dim as u64);
         }
         hasher.update(&[self.dtype.tag(), self.layout.tag()]);
+        hasher.update(&self.scale.to_le_bytes());
     }
 
     fn require_rank(&self, rank: usize) -> Result<()> {
@@ -486,6 +510,16 @@ impl Tensor {
             return Err(TvmError::ShapeMismatch {
                 left: self.shape.clone(),
                 right: rhs.shape.clone(),
+            });
+        }
+        Ok(())
+    }
+
+    fn check_same_encoding(&self, rhs: &Self) -> Result<()> {
+        if self.dtype != rhs.dtype || self.scale != rhs.scale {
+            return Err(TvmError::InvalidTensorData {
+                expected: self.dtype.tag() as usize,
+                actual: rhs.dtype.tag() as usize,
             });
         }
         Ok(())
@@ -509,6 +543,77 @@ pub fn encode_shape(shape: &[usize]) -> Vec<u8> {
         out.extend_from_slice(&(*dim as u64).to_le_bytes());
     }
     out
+}
+
+pub fn signed_elem_to_i128(value: Elem) -> i128 {
+    let value = field::normalize(value);
+    if value > field::MODULUS / 2 {
+        value as i128 - field::MODULUS as i128
+    } else {
+        value as i128
+    }
+}
+
+pub fn signed_i128_to_elem(value: i128) -> Elem {
+    let modulus = field::MODULUS as i128;
+    value.rem_euclid(modulus) as Elem
+}
+
+pub fn rescale_signed_elem_half_even(value: Elem, from_scale: i64, to_scale: i64) -> Result<Elem> {
+    let signed = signed_elem_to_i128(value);
+    let delta = to_scale
+        .checked_sub(from_scale)
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let rescaled = if delta >= 0 {
+        let shift = u32::try_from(delta)
+            .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+        signed
+            .checked_mul(
+                1_i128
+                    .checked_shl(shift)
+                    .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
+            )
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?
+    } else {
+        let shift = u32::try_from(
+            delta
+                .checked_neg()
+                .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
+        )
+        .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+        round_div_pow2_half_even(signed, shift)?
+    };
+    Ok(signed_i128_to_elem(rescaled))
+}
+
+fn round_div_pow2_half_even(value: i128, shift: u32) -> Result<i128> {
+    if shift == 0 {
+        return Ok(value);
+    }
+    let divisor = 1_i128
+        .checked_shl(shift)
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let magnitude = value
+        .checked_abs()
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let quotient = magnitude / divisor;
+    let remainder = magnitude % divisor;
+    let half = divisor / 2;
+    let round_up = remainder > half || (remainder == half && quotient % 2 == 1);
+    let rounded = if round_up {
+        quotient
+            .checked_add(1)
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?
+    } else {
+        quotient
+    };
+    if value.is_negative() {
+        rounded
+            .checked_neg()
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))
+    } else {
+        Ok(rounded)
+    }
 }
 
 fn checked_len(shape: &[usize]) -> Result<usize> {
@@ -568,6 +673,26 @@ mod tests {
         assert_eq!(descriptor.byte_size, 0);
         assert_eq!(descriptor.commitment.leaf_count, 1);
         assert!(empty.opening(0, 4).unwrap().verify(&descriptor));
+    }
+
+    #[test]
+    fn tensor_scale_is_metadata_and_commitment_bound() {
+        let unscaled =
+            Tensor::from_vec(vec![2], DType::Fixed32, vec![1, field::MODULUS - 1]).unwrap();
+        let scaled =
+            Tensor::from_vec_with_scale(vec![2], DType::Fixed32, 1, vec![1, field::MODULUS - 1])
+                .unwrap();
+        assert_eq!(unscaled.scale(), 0);
+        assert_eq!(scaled.scale(), 1);
+        assert_eq!(scaled.descriptor().scale, 1);
+        assert_ne!(unscaled.tensor_id(), scaled.tensor_id());
+        assert_ne!(unscaled.commitment_root(), scaled.commitment_root());
+        assert_eq!(signed_elem_to_i128(field::MODULUS - 1), -1);
+        assert_eq!(rescale_signed_elem_half_even(3, 1, 0).unwrap(), 2);
+        assert_eq!(
+            rescale_signed_elem_half_even(field::MODULUS - 3, 1, 0).unwrap(),
+            field::MODULUS - 2
+        );
     }
 
     #[test]

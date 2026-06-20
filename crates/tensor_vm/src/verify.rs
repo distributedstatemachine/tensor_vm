@@ -897,6 +897,89 @@ mod tests {
     }
 
     #[test]
+    fn graph_verifier_accepts_fixed_point_rescale_receipt() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![8],
+                dtype: DType::Fixed32,
+                scale: 1,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "round".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "y".to_owned(),
+                    shape: vec![8],
+                    dtype: DType::Fixed32,
+                    scale: 0,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let data = vec![1, 3, p - 1, p - 3, 5, 7, p - 5, p - 7];
+        let input = Tensor::from_vec_with_scale(vec![8], DType::Fixed32, 1, data).unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-fixed-round-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["y"],
+            Tensor::from_vec_with_scale(
+                vec![8],
+                DType::Fixed32,
+                0,
+                vec![0, 2, 0, p - 2, 2, 4, p - 2, p - 4]
+            )
+            .unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-fixed-round-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-fixed-round-validation"]),
+                conformance_profile: &ConformanceProfile::empty_for_testing(),
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
     fn tensor_op_verifier_rejects_metadata_and_shape_mismatches() {
         let beacon = hash_bytes(b"test", &[b"beacon"]);
         let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);

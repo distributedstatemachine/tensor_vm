@@ -77,8 +77,15 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     .unwrap();
     chain.submit_job(JobState::TensorOp(job));
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let assigned_validator = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators
+        .into_iter()
+        .next()
+        .unwrap();
     chain.insert_attestation_for_testing(ValidatorAttestation::new(
-        proposer,
+        assigned_validator,
         10_000,
         AttestationStatement {
             receipt_id: receipt.receipt_id,

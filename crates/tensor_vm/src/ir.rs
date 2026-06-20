@@ -3,7 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
-use crate::tensor::{DType, Tensor};
+use crate::tensor::{DType, Tensor, rescale_signed_elem_half_even};
 use crate::types::{Hash, hash_bytes};
 use serde_json::Value as JsonValue;
 
@@ -344,6 +344,7 @@ fn validate_execution_inputs(graph: &TensorGraph, inputs: &IrExecutionInputs) ->
                 "missing tensor ir execution input",
             ))?;
         if tensor.dtype() != spec.dtype
+            || tensor.scale() != spec.scale
             || tensor_shape_matches_spec(tensor.shape(), &spec.shape).is_err()
         {
             return Err(TvmError::InvalidReceipt(
@@ -490,7 +491,7 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "identity" => one_tensor_value(&args)?.clone(),
         "abs" => unary_tensor(one_tensor_value(&args)?, signed_abs)?,
         "sign" => unary_tensor(one_tensor_value(&args)?, signed_sign)?,
-        "round" => one_tensor_value(&args)?.clone(),
+        "round" => round_tensor(one_tensor_value(&args)?)?,
         "relu" => unary_tensor(one_tensor_value(&args)?, signed_relu)?,
         "reshape" => reshape_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "broadcast" => broadcast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
@@ -563,7 +564,7 @@ fn reduce_tensor(
             *value = field::mul(*value, inverse);
         }
     }
-    Tensor::from_vec(output_shape, tensor.dtype(), data)
+    Tensor::from_vec_with_scale(output_shape, tensor.dtype(), tensor.scale(), data)
 }
 
 fn reduction_output_index(
@@ -598,7 +599,12 @@ fn reshape_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result
             "tensor ir reshape element mismatch",
         ));
     }
-    Tensor::from_vec(shape, tensor.dtype(), tensor.as_slice().to_vec())
+    Tensor::from_vec_with_scale(
+        shape,
+        tensor.dtype(),
+        tensor.scale(),
+        tensor.as_slice().to_vec(),
+    )
 }
 
 fn broadcast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -613,7 +619,7 @@ fn broadcast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Resu
     for index in 0..checked_usize_product(&shape)? {
         data.push(broadcast_value(tensor, &shape, index)?);
     }
-    Tensor::from_vec(shape, tensor.dtype(), data)
+    Tensor::from_vec_with_scale(shape, tensor.dtype(), tensor.scale(), data)
 }
 
 fn binary_elementwise_tensor(
@@ -621,7 +627,7 @@ fn binary_elementwise_tensor(
     rhs: &Tensor,
     op: impl Fn(Elem, Elem) -> Elem,
 ) -> Result<Tensor> {
-    if lhs.dtype() != rhs.dtype() {
+    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
@@ -633,13 +639,14 @@ fn binary_elementwise_tensor(
             broadcast_value(rhs, &shape, index)?,
         ));
     }
-    Tensor::from_vec(shape, lhs.dtype(), data)
+    Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
 
 fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
-    Tensor::from_vec(
+    Tensor::from_vec_with_scale(
         tensor.shape().to_vec(),
         tensor.dtype(),
+        tensor.scale(),
         tensor.as_slice().iter().map(|value| op(*value)).collect(),
     )
 }
@@ -680,7 +687,7 @@ fn compare_tensors(
     predicate: impl Fn(Elem, Elem) -> bool,
 ) -> Result<Tensor> {
     let [lhs, rhs] = two_tensor_values(values)?;
-    if lhs.dtype() != rhs.dtype() {
+    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
@@ -713,7 +720,11 @@ fn where_tensor(values: &[RuntimeValue]) -> Result<Tensor> {
             ));
         }
     };
-    if cond.dtype() != DType::Int32 || when_true.dtype() != when_false.dtype() {
+    if cond.dtype() != DType::Int32
+        || cond.scale() != 0
+        || when_true.dtype() != when_false.dtype()
+        || when_true.scale() != when_false.scale()
+    {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[
@@ -731,16 +742,17 @@ fn where_tensor(values: &[RuntimeValue]) -> Result<Tensor> {
         };
         data.push(broadcast_value(selected, &shape, index)?);
     }
-    Tensor::from_vec(shape, when_true.dtype(), data)
+    Tensor::from_vec_with_scale(shape, when_true.dtype(), when_true.scale(), data)
 }
 
 fn full_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
     let shape = concrete_shape_kwarg(kwargs, "shape")?;
     let dtype = dtype_kwarg(kwargs, "dtype")?;
     let value = field_kwarg(kwargs, "value")?;
-    Tensor::from_vec(
+    Tensor::from_vec_with_scale(
         shape.clone(),
         dtype,
+        scale_kwarg(kwargs, "scale")?.unwrap_or(0),
         vec![value; checked_usize_product(&shape)?],
     )
 }
@@ -762,15 +774,46 @@ fn arange_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
             .checked_add(step)
             .ok_or(TvmError::InvalidReceipt("invalid tensor ir arange bounds"))?;
     }
-    Tensor::from_vec(vec![len], dtype, data)
+    Tensor::from_vec_with_scale(
+        vec![len],
+        dtype,
+        scale_kwarg(kwargs, "scale")?.unwrap_or(0),
+        data,
+    )
 }
 
 fn cast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
-    Tensor::from_vec(
-        tensor.shape().to_vec(),
-        dtype_kwarg(kwargs, "dtype")?,
-        tensor.as_slice().to_vec(),
-    )
+    let dtype = dtype_kwarg(kwargs, "dtype")?;
+    let target_scale = scale_kwarg(kwargs, "scale")?.unwrap_or_else(|| {
+        if dtype == DType::Fixed32 {
+            tensor.scale()
+        } else {
+            0
+        }
+    });
+    if dtype != DType::Fixed32 && target_scale != 0 {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir non-fixed scale mismatch",
+        ));
+    }
+    let data = tensor
+        .as_slice()
+        .iter()
+        .map(|value| rescale_signed_elem_half_even(*value, tensor.scale(), target_scale))
+        .collect::<Result<Vec<_>>>()?;
+    Tensor::from_vec_with_scale(tensor.shape().to_vec(), dtype, target_scale, data)
+}
+
+fn round_tensor(tensor: &Tensor) -> Result<Tensor> {
+    if tensor.dtype() != DType::Fixed32 {
+        return Ok(tensor.clone());
+    }
+    let data = tensor
+        .as_slice()
+        .iter()
+        .map(|value| rescale_signed_elem_half_even(*value, tensor.scale(), 0))
+        .collect::<Result<Vec<_>>>()?;
+    Tensor::from_vec_with_scale(tensor.shape().to_vec(), tensor.dtype(), 0, data)
 }
 
 fn concat_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -806,7 +849,7 @@ fn concat_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -
         source_coords[dim] -= dim_starts[source_index];
         data.push(source.as_slice()[ravel_index(source.shape(), &source_coords)?]);
     }
-    Tensor::from_vec(output_shape, tensors[0].dtype(), data)
+    Tensor::from_vec_with_scale(output_shape, tensors[0].dtype(), tensors[0].scale(), data)
 }
 
 fn stack_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
@@ -828,7 +871,7 @@ fn stack_tensors(values: &[RuntimeValue], kwargs: &BTreeMap<String, IrValue>) ->
             .collect::<Vec<_>>();
         data.push(source.as_slice()[ravel_index(source.shape(), &source_coords)?]);
     }
-    Tensor::from_vec(output_shape, tensors[0].dtype(), data)
+    Tensor::from_vec_with_scale(output_shape, tensors[0].dtype(), tensors[0].scale(), data)
 }
 
 fn infer_concat_shape_from_tensors(tensors: &[&Tensor], dim: usize) -> Result<Vec<usize>> {
@@ -1350,7 +1393,19 @@ fn infer_outputs(
                 scale: arg.scale,
             }
         }
-        "identity" | "neg" | "abs" | "sign" | "round" | "relu" => one_arg(args)?.clone(),
+        "identity" | "neg" | "abs" | "sign" | "relu" => one_arg(args)?.clone(),
+        "round" => {
+            let arg = one_arg(args)?;
+            ValueShape {
+                shape: arg.shape.clone(),
+                dtype: arg.dtype,
+                scale: if arg.dtype == DType::Fixed32 {
+                    0
+                } else {
+                    arg.scale
+                },
+            }
+        }
         "exp" | "log" | "sqrt" | "softmax" => one_arg(args)?.clone(),
         "gather" | "embedding" => {
             if args.len() != 2 {
@@ -1394,10 +1449,22 @@ fn infer_outputs(
         "cast" => {
             let arg = one_arg(args)?;
             let dtype = dtype_kwarg(kwargs, "dtype")?;
+            let scale = scale_kwarg(kwargs, "scale")?.unwrap_or_else(|| {
+                if dtype == DType::Fixed32 {
+                    arg.scale
+                } else {
+                    0
+                }
+            });
+            if dtype != DType::Fixed32 && scale != 0 {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir non-fixed scale mismatch",
+                ));
+            }
             ValueShape {
                 shape: arg.shape.clone(),
                 dtype,
-                scale: arg.scale,
+                scale,
             }
         }
         "concat" => infer_concat_shape(args, kwargs)?,
@@ -1405,7 +1472,7 @@ fn infer_outputs(
         "full" => ValueShape {
             shape: shape_kwarg(kwargs, "shape")?,
             dtype: dtype_kwarg(kwargs, "dtype")?,
-            scale: 0,
+            scale: scale_kwarg(kwargs, "scale")?.unwrap_or(0),
         },
         "arange" => ValueShape {
             shape: vec![arange_len(
@@ -1414,7 +1481,7 @@ fn infer_outputs(
                 integer_kwarg(kwargs, "step")?,
             )? as i64],
             dtype: dtype_kwarg(kwargs, "dtype")?,
-            scale: 0,
+            scale: scale_kwarg(kwargs, "scale")?.unwrap_or(0),
         },
         "topk" => {
             let arg = one_arg(args)?;
@@ -1600,6 +1667,17 @@ fn integer_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<i64> {
     match kwargs.get(key) {
         Some(IrValue::Literal(IrLiteral::Int(value))) => Ok(*value),
         Some(IrValue::Literal(IrLiteral::Uint(value))) => i64::try_from(*value)
+            .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
+    }
+}
+
+fn scale_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Option<i64>> {
+    match kwargs.get(key) {
+        None => Ok(None),
+        Some(IrValue::Literal(IrLiteral::Int(value))) => Ok(Some(*value)),
+        Some(IrValue::Literal(IrLiteral::Uint(value))) => i64::try_from(*value)
+            .map(Some)
             .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
         _ => Err(TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
     }
@@ -2298,7 +2376,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
         tier: IrOpTier::B,
         arity: IrArity::Exact(1),
         output_count: 1,
-        allowed_kwargs: &["dtype"],
+        allowed_kwargs: &["dtype", "scale"],
         required_kwargs: &["dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
@@ -2328,7 +2406,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
         tier: IrOpTier::B,
         arity: IrArity::Exact(0),
         output_count: 1,
-        allowed_kwargs: &["shape", "value", "dtype"],
+        allowed_kwargs: &["shape", "value", "dtype", "scale"],
         required_kwargs: &["shape", "value", "dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
@@ -2338,7 +2416,7 @@ const FROZEN_OP_REGISTRY: [OpSpec; 38] = [
         tier: IrOpTier::B,
         arity: IrArity::Exact(0),
         output_count: 1,
-        allowed_kwargs: &["start", "end", "step", "dtype"],
+        allowed_kwargs: &["start", "end", "step", "dtype", "scale"],
         required_kwargs: &["start", "end", "step", "dtype"],
         verification: IrVerificationClass::ExactDeterministicReplay,
         consensus_admitted: true,
@@ -2884,6 +2962,79 @@ mod tests {
                 })
                 .unwrap()
                 .trace_root
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_enforces_scale_and_executes_fixed_rounding() {
+        let p = field::MODULUS;
+        let mut cast_kwargs = BTreeMap::new();
+        cast_kwargs.insert(
+            "dtype".to_owned(),
+            IrValue::Literal(IrLiteral::String("fixed32".to_owned())),
+        );
+        cast_kwargs.insert("scale".to_owned(), IrValue::Literal(IrLiteral::Int(0)));
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![8], DType::Fixed32, 1)],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "cast".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: cast_kwargs,
+                    out: vec![tensor_spec("cast", vec![8], DType::Fixed32, 0)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "round".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("round", vec![8], DType::Fixed32, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "cast".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "round".to_owned(),
+                    value: op_ref(1),
+                },
+            ],
+        };
+        graph.validate_for_consensus().unwrap();
+        let data = vec![1, 3, p - 1, p - 3, 5, 7, p - 5, p - 7];
+        let input = Tensor::from_vec_with_scale(vec![8], DType::Fixed32, 1, data.clone()).unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), input)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+        let expected = Tensor::from_vec_with_scale(
+            vec![8],
+            DType::Fixed32,
+            0,
+            vec![0, 2, 0, p - 2, 2, 4, p - 2, p - 4],
+        )
+        .unwrap();
+        assert_eq!(execution.outputs["cast"], expected);
+        assert_eq!(execution.outputs["round"], expected);
+        assert_eq!(execution.outputs["cast"].scale(), 0);
+        assert_eq!(execution.outputs["round"].scale(), 0);
+
+        let mismatched_input = Tensor::from_vec(vec![8], DType::Fixed32, data).unwrap();
+        assert_eq!(
+            graph.execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), mismatched_input)]),
+                field_params: BTreeMap::new(),
+            }),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir execution input mismatch"
+            ))
         );
     }
 

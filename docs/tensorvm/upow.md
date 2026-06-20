@@ -89,9 +89,10 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 
 > Status: the local reference now publishes a conformance vector suite for the current executable exact
 > `F_p` ops used by TensorOp and LinearTrainingStep, and receipt verification gates those current jobs on
-> the matching suite profile. Broader admitted-registry vectors, generic graph execution coverage, CUDA
-> pass evidence, and Tier-C/transcendental vector references remain TODO before claiming complete §3.3
-> coverage for every runtime.
+> the matching suite profile. The suite now carries per-input and expected output dtype/scale metadata for
+> fixed-point `cast`/`round` half-even rescale vectors. Broader admitted-registry vectors, CUDA pass
+> evidence, exact quantization vectors, and Tier-C/transcendental vector references remain TODO before
+> claiming complete §3.3 coverage for every runtime.
 
 ---
 
@@ -367,9 +368,10 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > LinearTrainingStep verifier (`add`/`sub`, scalar multiplication, `sum`/`mean`) are classified as
 > random-linear-checkable; exact but non-affine structural/pointwise Tier-B ops require deterministic
 > replay through the graph verifier and conformance profile; and `gather`/`scatter`/`embedding` are
-> present only as non-admitted index-consistency-gated vocabulary. Fixed-point rescale/rounding beyond the
-> current field/integer exact path, exact quantization, and full verifier coverage for every exact Tier-B
-> op remain TODO.
+> present only as non-admitted index-consistency-gated vocabulary. Runtime tensors now carry scale
+> metadata, exact replay enforces `TensorSpec.scale`, and fixed-point `cast`/`round` use canonical
+> round-half-even rescale. Fixed-point arithmetic scale policy beyond `cast`/`round`, exact quantization,
+> and full verifier coverage for every exact Tier-B op remain TODO.
 
 ---
 
@@ -575,12 +577,14 @@ This section is non-normative guidance on how the spec components partition into
 - [~] **Determinism conformance suite**: current executable TensorOp/LinearTrainingStep exact-op `F_p`
   vectors exist and gate those receipt verifiers; broader admitted-op and CUDA/Tier-C coverage remains
   blocking for full §3.3 safety.
-- [ ] Exact `F_p` choice and fixed-point scale discipline (range, rescale-after-mul rounding, saturation).
+- [~] Exact `F_p` choice and fixed-point scale discipline: runtime tensor scale metadata, input-scale
+  enforcement, and fixed-point `cast`/`round` round-half-even rescale are implemented; range,
+  rescale-after-mul policy, saturation, and quantization scale discipline remain open.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
-  index-consistency proofs exist; graph-backed exact replay now covers the current field/integer unary,
-  structural, comparison, generator, and reduction surface with conformance gating where the field-vector
-  schema fits. Fixed-point rescale/rounding, exact quantization, mixed-dtype vectors, and full verifier
+  index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,
+  comparison, generator, reduction, and fixed-point `cast`/`round` rescale surface with conformance gating
+  where the vector schema fits. Exact quantization, additional mixed-dtype vectors, and full verifier
   coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).

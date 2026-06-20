@@ -4,7 +4,7 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem, MODULUS};
 use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::jobs::{LinearTrainingStepJob, MatmulJob};
-use crate::tensor::{DType, Tensor};
+use crate::tensor::{DType, Tensor, rescale_signed_elem_half_even};
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
 
@@ -16,9 +16,13 @@ pub struct ConformanceVector {
     pub op_name: &'static str,
     pub tier: &'static str,
     pub dtype: DType,
+    pub input_dtypes: Vec<DType>,
+    pub input_scales: Vec<i64>,
     pub input_shapes: Vec<Vec<usize>>,
     pub params: Vec<(&'static str, u64)>,
     pub input_data: Vec<Vec<Elem>>,
+    pub expected_dtype: DType,
+    pub expected_scale: i64,
     pub expected_data: Vec<Elem>,
     pub expected_shape: Vec<usize>,
 }
@@ -145,6 +149,48 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
             &[0, 1, 0, (p - 1) / 2, 0, 5, 0],
             &[7],
+        ),
+        scaled_vector(
+            "fixed32-round-half-even-scale1-to-scale0-v1",
+            "round",
+            "B",
+            &[&[8]],
+            &[DType::Fixed32],
+            &[1],
+            &[],
+            &[&[1, 3, p - 1, p - 3, 5, 7, p - 5, p - 7]],
+            DType::Fixed32,
+            0,
+            &[0, 2, 0, p - 2, 2, 4, p - 2, p - 4],
+            &[8],
+        ),
+        scaled_vector(
+            "fixed32-cast-half-even-scale1-to-scale0-v1",
+            "cast",
+            "B",
+            &[&[8]],
+            &[DType::Fixed32],
+            &[1],
+            &[("scale", 0)],
+            &[&[1, 3, p - 1, p - 3, 5, 7, p - 5, p - 7]],
+            DType::Fixed32,
+            0,
+            &[0, 2, 0, p - 2, 2, 4, p - 2, p - 4],
+            &[8],
+        ),
+        scaled_vector(
+            "fixed32-cast-scale0-to-scale2-v1",
+            "cast",
+            "B",
+            &[&[4]],
+            &[DType::Fixed32],
+            &[0],
+            &[("scale", 2)],
+            &[&[0, 2, p - 2, 5]],
+            DType::Fixed32,
+            2,
+            &[0, 8, p - 8, 20],
+            &[4],
         ),
         vector(
             "field-transpose-row-major-v1",
@@ -354,17 +400,19 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
         "neg" => unary_tensor(&tensors[0], |value| field::sub(0, value)),
         "abs" => unary_tensor(&tensors[0], signed_abs),
         "sign" => unary_tensor(&tensors[0], signed_sign),
-        "round" => Ok(tensors[0].clone()),
+        "round" => round_tensor(&tensors[0]),
         "relu" => unary_tensor(&tensors[0], signed_relu),
         "transpose" => tensors[0].transpose(),
-        "reshape" => Tensor::from_vec(
+        "reshape" => Tensor::from_vec_with_scale(
             vec![
                 param(vector, "rows")? as usize,
                 param(vector, "cols")? as usize,
             ],
             tensors[0].dtype(),
+            tensors[0].scale(),
             tensors[0].as_slice().to_vec(),
         ),
+        "cast" => cast_tensor(&tensors[0], vector.expected_dtype, vector.expected_scale),
         "broadcast" => {
             let rows = param(vector, "rows")? as usize;
             let cols = param(vector, "cols")? as usize;
@@ -377,7 +425,12 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
                     data.push(tensors[0].as_slice()[row]);
                 }
             }
-            Tensor::from_vec(vec![rows, cols], tensors[0].dtype(), data)
+            Tensor::from_vec_with_scale(
+                vec![rows, cols],
+                tensors[0].dtype(),
+                tensors[0].scale(),
+                data,
+            )
         }
         "reduce_sum" => tensors[0].reduce_sum(param(vector, "axis")? as usize),
         "mean" => mean_tensor(&tensors[0], param(vector, "axis")? as usize),
@@ -392,12 +445,13 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
                 loss.iter().map(|byte| *byte as Elem).collect(),
             )
         }
-        "full" => Tensor::from_vec(
+        "full" => Tensor::from_vec_with_scale(
             vec![
                 param(vector, "rows")? as usize,
                 param(vector, "cols")? as usize,
             ],
-            DType::FieldElement,
+            vector.expected_dtype,
+            vector.expected_scale,
             vec![
                 field::normalize(param(vector, "value")?);
                 (param(vector, "rows")? * param(vector, "cols")?) as usize
@@ -412,18 +466,43 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
                 data.push(field::normalize(value));
                 value += step;
             }
-            Tensor::from_vec(vec![data.len()], DType::FieldElement, data)
+            Tensor::from_vec_with_scale(
+                vec![data.len()],
+                vector.expected_dtype,
+                vector.expected_scale,
+                data,
+            )
         }
         _ => Err(TvmError::InvalidReceipt("unknown conformance op")),
     }
 }
 
 fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
-    Tensor::from_vec(
+    Tensor::from_vec_with_scale(
         tensor.shape().to_vec(),
         tensor.dtype(),
+        tensor.scale(),
         tensor.as_slice().iter().map(|value| op(*value)).collect(),
     )
+}
+
+fn cast_tensor(tensor: &Tensor, dtype: DType, scale: i64) -> Result<Tensor> {
+    if dtype != DType::Fixed32 && scale != 0 {
+        return Err(TvmError::InvalidReceipt("invalid conformance cast scale"));
+    }
+    let data = tensor
+        .as_slice()
+        .iter()
+        .map(|value| rescale_signed_elem_half_even(*value, tensor.scale(), scale))
+        .collect::<Result<Vec<_>>>()?;
+    Tensor::from_vec_with_scale(tensor.shape().to_vec(), dtype, scale, data)
+}
+
+fn round_tensor(tensor: &Tensor) -> Result<Tensor> {
+    if tensor.dtype() != DType::Fixed32 {
+        return Ok(tensor.clone());
+    }
+    cast_tensor(tensor, tensor.dtype(), 0)
 }
 
 fn signed_abs(value: Elem) -> Elem {
@@ -475,7 +554,7 @@ fn mean_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
             for value in &mut out {
                 *value = field::mul(*value, inv);
             }
-            Tensor::from_vec(vec![cols], tensor.dtype(), out)
+            Tensor::from_vec_with_scale(vec![cols], tensor.dtype(), tensor.scale(), out)
         }
         1 => {
             let inv = field_inverse(cols as Elem)?;
@@ -487,7 +566,7 @@ fn mean_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
                 }
                 out.push(field::mul(acc, inv));
             }
-            Tensor::from_vec(vec![rows], tensor.dtype(), out)
+            Tensor::from_vec_with_scale(vec![rows], tensor.dtype(), tensor.scale(), out)
         }
         _ => Err(TvmError::InvalidReceipt("invalid conformance mean")),
     }
@@ -497,7 +576,7 @@ fn concat_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
     if tensors.len() != 2 || tensors[0].shape().len() != 2 || tensors[1].shape().len() != 2 {
         return Err(TvmError::InvalidReceipt("invalid conformance concat"));
     }
-    if tensors[0].dtype() != tensors[1].dtype() {
+    if tensors[0].dtype() != tensors[1].dtype() || tensors[0].scale() != tensors[1].scale() {
         return Err(TvmError::InvalidReceipt("invalid conformance concat"));
     }
     let [a_rows, a_cols] = [tensors[0].shape()[0], tensors[0].shape()[1]];
@@ -506,7 +585,12 @@ fn concat_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
         0 if a_cols == b_cols => {
             let mut out = tensors[0].as_slice().to_vec();
             out.extend_from_slice(tensors[1].as_slice());
-            Tensor::from_vec(vec![a_rows + b_rows, a_cols], tensors[0].dtype(), out)
+            Tensor::from_vec_with_scale(
+                vec![a_rows + b_rows, a_cols],
+                tensors[0].dtype(),
+                tensors[0].scale(),
+                out,
+            )
         }
         1 if a_rows == b_rows => {
             let mut out = Vec::with_capacity((a_cols + b_cols) * a_rows);
@@ -514,7 +598,12 @@ fn concat_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
                 out.extend_from_slice(&tensors[0].as_slice()[row * a_cols..(row + 1) * a_cols]);
                 out.extend_from_slice(&tensors[1].as_slice()[row * b_cols..(row + 1) * b_cols]);
             }
-            Tensor::from_vec(vec![a_rows, a_cols + b_cols], tensors[0].dtype(), out)
+            Tensor::from_vec_with_scale(
+                vec![a_rows, a_cols + b_cols],
+                tensors[0].dtype(),
+                tensors[0].scale(),
+                out,
+            )
         }
         _ => Err(TvmError::InvalidReceipt("invalid conformance concat")),
     }
@@ -527,7 +616,7 @@ fn stack_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
     {
         return Err(TvmError::InvalidReceipt("invalid conformance stack"));
     }
-    if tensors[0].dtype() != tensors[1].dtype() {
+    if tensors[0].dtype() != tensors[1].dtype() || tensors[0].scale() != tensors[1].scale() {
         return Err(TvmError::InvalidReceipt("invalid conformance stack"));
     }
     let len = tensors[0].shape()[0];
@@ -535,7 +624,7 @@ fn stack_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
         0 => {
             let mut out = tensors[0].as_slice().to_vec();
             out.extend_from_slice(tensors[1].as_slice());
-            Tensor::from_vec(vec![2, len], tensors[0].dtype(), out)
+            Tensor::from_vec_with_scale(vec![2, len], tensors[0].dtype(), tensors[0].scale(), out)
         }
         1 => {
             let mut out = Vec::with_capacity(len * 2);
@@ -543,7 +632,7 @@ fn stack_tensors(tensors: &[Tensor], axis: usize) -> Result<Tensor> {
                 out.push(tensors[0].as_slice()[index]);
                 out.push(tensors[1].as_slice()[index]);
             }
-            Tensor::from_vec(vec![len, 2], tensors[0].dtype(), out)
+            Tensor::from_vec_with_scale(vec![len, 2], tensors[0].dtype(), tensors[0].scale(), out)
         }
         _ => Err(TvmError::InvalidReceipt("invalid conformance stack")),
     }
@@ -570,9 +659,10 @@ fn field_pow(mut base: Elem, mut exponent: Elem) -> Elem {
 }
 
 fn expected_tensor(vector: &ConformanceVector) -> Result<Tensor> {
-    Tensor::from_vec(
+    Tensor::from_vec_with_scale(
         vector.expected_shape.clone(),
-        vector.dtype,
+        vector.expected_dtype,
+        vector.expected_scale,
         vector.expected_data.clone(),
     )
 }
@@ -590,8 +680,12 @@ impl ConformanceVector {
         self.input_shapes
             .iter()
             .cloned()
+            .zip(self.input_dtypes.iter().copied())
+            .zip(self.input_scales.iter().copied())
             .zip(self.input_data.iter().cloned())
-            .map(|(shape, data)| Tensor::from_vec(shape, self.dtype, data))
+            .map(|(((shape, dtype), scale), data)| {
+                Tensor::from_vec_with_scale(shape, dtype, scale, data)
+            })
             .collect()
     }
 }
@@ -612,9 +706,45 @@ fn vector(
         op_name,
         tier,
         dtype: DType::FieldElement,
+        input_dtypes: vec![DType::FieldElement; input_shapes.len()],
+        input_scales: vec![0; input_shapes.len()],
         input_shapes: input_shapes.iter().map(|shape| shape.to_vec()).collect(),
         params: params.to_vec(),
         input_data: input_data.iter().map(|data| data.to_vec()).collect(),
+        expected_dtype: DType::FieldElement,
+        expected_scale: 0,
+        expected_data: expected_data.to_vec(),
+        expected_shape: expected_shape.to_vec(),
+    }
+}
+
+#[allow(clippy::too_many_arguments)]
+fn scaled_vector(
+    id: &'static str,
+    op_name: &'static str,
+    tier: &'static str,
+    input_shapes: &[&[usize]],
+    input_dtypes: &[DType],
+    input_scales: &[i64],
+    params: &[(&'static str, u64)],
+    input_data: &[&[Elem]],
+    expected_dtype: DType,
+    expected_scale: i64,
+    expected_data: &[Elem],
+    expected_shape: &[usize],
+) -> ConformanceVector {
+    ConformanceVector {
+        id,
+        op_name,
+        tier,
+        dtype: expected_dtype,
+        input_dtypes: input_dtypes.to_vec(),
+        input_scales: input_scales.to_vec(),
+        input_shapes: input_shapes.iter().map(|shape| shape.to_vec()).collect(),
+        params: params.to_vec(),
+        input_data: input_data.iter().map(|data| data.to_vec()).collect(),
+        expected_dtype,
+        expected_scale,
         expected_data: expected_data.to_vec(),
         expected_shape: expected_shape.to_vec(),
     }
@@ -644,7 +774,14 @@ fn encode_vector(vector: &ConformanceVector, out: &mut Vec<u8>) {
     encode_str(vector.tier, out);
     out.push(vector.dtype.tag());
     out.extend_from_slice(&(vector.input_shapes.len() as u64).to_le_bytes());
-    for shape in &vector.input_shapes {
+    for ((shape, dtype), scale) in vector
+        .input_shapes
+        .iter()
+        .zip(vector.input_dtypes.iter())
+        .zip(vector.input_scales.iter())
+    {
+        out.push(dtype.tag());
+        out.extend_from_slice(&scale.to_le_bytes());
         encode_shape(shape, out);
     }
     out.extend_from_slice(&(vector.params.len() as u64).to_le_bytes());
@@ -656,6 +793,8 @@ fn encode_vector(vector: &ConformanceVector, out: &mut Vec<u8>) {
     for data in &vector.input_data {
         encode_field_slice(data, out);
     }
+    out.push(vector.expected_dtype.tag());
+    out.extend_from_slice(&vector.expected_scale.to_le_bytes());
     encode_field_slice(&vector.expected_data, out);
     encode_shape(&vector.expected_shape, out);
 }
@@ -698,6 +837,7 @@ mod tests {
         assert!(op_names.contains("abs"));
         assert!(op_names.contains("sign"));
         assert!(op_names.contains("round"));
+        assert!(op_names.contains("cast"));
         assert!(op_names.contains("relu"));
         assert!(op_names.contains("transpose"));
         assert!(op_names.contains("reshape"));
@@ -708,6 +848,13 @@ mod tests {
         assert!(op_names.contains("full"));
         assert!(op_names.contains("arange"));
         assert!(op_names.contains("mse_loss"));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-round-half-even-scale1-to-scale0-v1"
+                && vector.input_dtypes == vec![DType::Fixed32]
+                && vector.input_scales == vec![1]
+                && vector.expected_dtype == DType::Fixed32
+                && vector.expected_scale == 0
+        }));
         assert_eq!(conformance_suite_hash(), conformance_suite_hash());
     }
 
@@ -725,6 +872,7 @@ mod tests {
             "abs",
             "sign",
             "round",
+            "cast",
             "relu",
             "transpose",
             "reshape",
