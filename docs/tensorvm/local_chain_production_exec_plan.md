@@ -6,8 +6,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Current State
 
 - Active feature: Iteration 48, exact unary Tier-B IR replay and conformance.
-- Current status: Iteration 48 implementation and validation complete locally on June 20, 2026; feature
-  commit `46050d2` created; push evidence pending.
+- Current status: Iteration 48 implementation and validation pushed to `main` on June 20, 2026
+  (`1ac2197..e12ab32`).
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,8 +15,8 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit/push Iteration 48 evidence, then move to full VRF/drand commit-reveal lifecycle,
-  multi-validator proposer competition/fork-choice policy, exact quantization replay, fixed-point
+- Next action: move to full VRF/drand commit-reveal lifecycle, multi-validator proposer
+  competition/fork-choice policy, exact quantization replay, fixed-point
   rescale/round-half-even semantics beyond current field/integer identity rounding, or the Docker `/health`
   blocker if the environment changes.
 
@@ -116,7 +116,8 @@ VRF/drand, fork-choice, and Docker `/health`.
 
 Commit evidence:
 - Feature commit: `46050d2` (`Add exact unary IR conformance`).
-- Evidence/push commit: pending.
+- Evidence commit: `e12ab32` (`Record exact unary validation evidence`), pushed to `main` on June 20,
+  2026 (`1ac2197..e12ab32`).
 
 ## Recent Iterations
 
