@@ -182,8 +182,8 @@ The op set is **frozen per protocol version**. Each op has a fixed arity, a fixe
 `add`, `sub`, `mul`, `div`*, `pow`*
 
 **Elementwise unary** (arity 1, no kwargs):
-- Tier B (exact in `F_p`): `neg`, `abs`, `sign`, `identity`, `round`
-- Tier C (transcendental — require canonical fixed-point approximation, §4.8): `exp`, `log`, `sqrt`*, `sin`, `cos`, `sigmoid`, `tanh`, `gelu`, `silu`, `relu`†
+- Tier B (exact in `F_p`): `neg`, `abs`, `sign`, `identity`, `round`, `relu`†
+- Tier C (transcendental — require canonical fixed-point approximation, §4.8): `exp`, `log`, `sqrt`*, `sin`, `cos`, `sigmoid`, `tanh`, `gelu`, `silu`
 
 **Comparison** (Tier B) — arity 2, no kwargs, output `bool`:
 `gt`, `lt`, `ge`, `le`, `eq`
@@ -366,9 +366,10 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > Tier-A `matmul` uses full Freivalds; affine/reduction Tier-B relations used by the current
 > LinearTrainingStep verifier (`add`/`sub`, scalar multiplication, `sum`/`mean`) are classified as
 > random-linear-checkable; exact but non-affine structural/pointwise Tier-B ops require deterministic
-> replay or a future generic verifier; and `gather`/`scatter`/`embedding` are present only as
-> non-admitted index-consistency-gated vocabulary. Generic arbitrary-IR execution and a full verifier for
-> every exact Tier-B op remain TODO.
+> replay through the graph verifier and conformance profile; and `gather`/`scatter`/`embedding` are
+> present only as non-admitted index-consistency-gated vocabulary. Fixed-point rescale/rounding beyond the
+> current field/integer exact path, exact quantization, and full verifier coverage for every exact Tier-B
+> op remain TODO.
 
 ---
 
@@ -577,8 +578,10 @@ This section is non-normative guidance on how the spec components partition into
 - [ ] Exact `F_p` choice and fixed-point scale discipline (range, rescale-after-mul rounding, saturation).
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
-  index-consistency proofs exist; generic arbitrary-IR execution and full verifier coverage for every
-  exact Tier-B op remain TODO (§7).
+  index-consistency proofs exist; graph-backed exact replay now covers the current field/integer unary,
+  structural, comparison, generator, and reduction surface with conformance gating where the field-vector
+  schema fits. Fixed-point rescale/rounding, exact quantization, mixed-dtype vectors, and full verifier
+  coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [ ] Beacon binding: drand round ↔ epoch mapping, VRF construction, commit→reveal ordering for challenge vectors (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).

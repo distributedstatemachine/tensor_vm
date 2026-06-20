@@ -488,19 +488,15 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "sum" | "reduce_sum" => reduce_tensor(one_tensor_value(&args)?, &op.kwargs, false)?,
         "mean" => reduce_tensor(one_tensor_value(&args)?, &op.kwargs, true)?,
         "identity" => one_tensor_value(&args)?.clone(),
+        "abs" => unary_tensor(one_tensor_value(&args)?, signed_abs)?,
+        "sign" => unary_tensor(one_tensor_value(&args)?, signed_sign)?,
+        "round" => one_tensor_value(&args)?.clone(),
+        "relu" => unary_tensor(one_tensor_value(&args)?, signed_relu)?,
         "reshape" => reshape_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "broadcast" => broadcast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "neg" => {
             let tensor = one_tensor_value(&args)?;
-            Tensor::from_vec(
-                tensor.shape().to_vec(),
-                tensor.dtype(),
-                tensor
-                    .as_slice()
-                    .iter()
-                    .map(|value| field::sub(0, *value))
-                    .collect(),
-            )?
+            unary_tensor(tensor, |value| field::sub(0, value))?
         }
         "gt" => compare_tensors(&args, |lhs, rhs| lhs > rhs)?,
         "lt" => compare_tensors(&args, |lhs, rhs| lhs < rhs)?,
@@ -638,6 +634,45 @@ fn binary_elementwise_tensor(
         ));
     }
     Tensor::from_vec(shape, lhs.dtype(), data)
+}
+
+fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
+    Tensor::from_vec(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.as_slice().iter().map(|value| op(*value)).collect(),
+    )
+}
+
+fn signed_abs(value: Elem) -> Elem {
+    if signed_field_is_negative(value) {
+        field::sub(0, value)
+    } else {
+        field::normalize(value)
+    }
+}
+
+fn signed_sign(value: Elem) -> Elem {
+    let value = field::normalize(value);
+    if value == 0 {
+        0
+    } else if signed_field_is_negative(value) {
+        field::MODULUS - 1
+    } else {
+        1
+    }
+}
+
+fn signed_relu(value: Elem) -> Elem {
+    if signed_field_is_negative(value) {
+        0
+    } else {
+        field::normalize(value)
+    }
+}
+
+fn signed_field_is_negative(value: Elem) -> bool {
+    field::normalize(value) > field::MODULUS / 2
 }
 
 fn compare_tensors(
@@ -2677,7 +2712,7 @@ mod tests {
     }
 
     #[test]
-    fn exact_interpreter_rejects_deferred_or_unimplemented_ops() {
+    fn exact_interpreter_rejects_deferred_ops() {
         let mut softmax = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
         softmax.ops[0].op = "softmax".to_owned();
         softmax.ops[0].args = vec![input_ref("a")];
@@ -2711,37 +2746,144 @@ mod tests {
             err,
             TvmError::InvalidReceipt("tensor ir op is not consensus admitted")
         );
+    }
 
-        let mut abs = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
-        abs.ops[0].op = "abs".to_owned();
-        abs.ops[0].args = vec![input_ref("a")];
-        abs.ops[0].kwargs.clear();
-        abs.ops[0].out[0] = tensor_spec("abs", vec![2, 3], DType::FieldElement, 0);
-        abs.outputs[0].value = op_ref(0);
-        let err = abs
+    #[test]
+    fn exact_interpreter_executes_unary_tier_b_ops() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![7], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "identity".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("identity", vec![7], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "neg".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("neg", vec![7], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 2,
+                    op: "abs".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("abs", vec![7], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 3,
+                    op: "sign".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("sign", vec![7], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 4,
+                    op: "round".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("round", vec![7], DType::FieldElement, 0)],
+                },
+                OpNode {
+                    id: 5,
+                    op: "relu".to_owned(),
+                    args: vec![input_ref("x")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("relu", vec![7], DType::FieldElement, 0)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "identity".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "neg".to_owned(),
+                    value: op_ref(1),
+                },
+                GraphOutput {
+                    name: "abs".to_owned(),
+                    value: op_ref(2),
+                },
+                GraphOutput {
+                    name: "sign".to_owned(),
+                    value: op_ref(3),
+                },
+                GraphOutput {
+                    name: "round".to_owned(),
+                    value: op_ref(4),
+                },
+                GraphOutput {
+                    name: "relu".to_owned(),
+                    value: op_ref(5),
+                },
+            ],
+        };
+        let data = vec![0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5];
+        let input = Tensor::from_vec(vec![7], DType::FieldElement, data.clone()).unwrap();
+
+        let execution = graph
             .execute_exact(&IrExecutionInputs {
-                tensors: BTreeMap::from([
-                    (
-                        "a".to_owned(),
-                        Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])
-                            .unwrap(),
-                    ),
-                    (
-                        "b".to_owned(),
-                        Tensor::from_vec(
-                            vec![3, 4],
-                            DType::FieldElement,
-                            vec![1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12],
-                        )
-                        .unwrap(),
-                    ),
-                ]),
+                tensors: BTreeMap::from([("x".to_owned(), input)]),
                 field_params: BTreeMap::new(),
             })
-            .unwrap_err();
+            .unwrap();
+
+        let expected =
+            |values: Vec<Elem>| Tensor::from_vec(vec![7], DType::FieldElement, values).unwrap();
+        assert_eq!(execution.outputs["identity"], expected(data.clone()));
         assert_eq!(
-            err,
-            TvmError::InvalidReceipt("tensor ir op is not executable by exact interpreter")
+            execution.outputs["neg"],
+            expected(vec![0, p - 1, 1, p.div_ceil(2), (p - 1) / 2, p - 5, 5])
+        );
+        assert_eq!(
+            execution.outputs["abs"],
+            expected(vec![0, 1, 1, (p - 1) / 2, (p - 1) / 2, 5, 5])
+        );
+        assert_eq!(
+            execution.outputs["sign"],
+            expected(vec![0, 1, p - 1, 1, p - 1, 1, p - 1])
+        );
+        assert_eq!(execution.outputs["round"], expected(data));
+        assert_eq!(
+            execution.outputs["relu"],
+            expected(vec![0, 1, 0, (p - 1) / 2, 0, 5, 0])
+        );
+        assert_eq!(execution.op_traces.len(), 6);
+        for (trace, output_name) in execution
+            .op_traces
+            .iter()
+            .zip(["identity", "neg", "abs", "sign", "round", "relu"])
+        {
+            assert_eq!(
+                trace.output_roots[0],
+                execution.outputs[output_name].commitment_root()
+            );
+        }
+        assert_eq!(
+            execution.trace_root,
+            graph
+                .execute_exact(&IrExecutionInputs {
+                    tensors: BTreeMap::from([(
+                        "x".to_owned(),
+                        Tensor::from_vec(
+                            vec![7],
+                            DType::FieldElement,
+                            vec![0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5],
+                        )
+                        .unwrap()
+                    )]),
+                    field_params: BTreeMap::new(),
+                })
+                .unwrap()
+                .trace_root
         );
     }
 

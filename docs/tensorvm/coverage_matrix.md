@@ -47,8 +47,9 @@ node-store snapshot, hydrated into the runtime program server at startup, and se
 `RequestProgram`/`ProgramResponse` libp2p request-response path. The IR module now also exposes a
 deterministic exact interpreter foundation for validated, consensus-admitted
 graphs over the currently implemented tensor runtime ops (`matmul`, broadcast-aware `add`/`sub`/`mul`,
-`scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, `neg`, `reshape`, `broadcast`,
-comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`). Interpreter output includes named
+`scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, `neg`, signed-residue
+`abs`/`sign`/`relu`, field/integer identity `round`, `reshape`, `broadcast`, comparisons
+`gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`). Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Focused
@@ -59,6 +60,7 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::frozen_registry_declares_verifier_class_for_every_op`,
 `ir::tests::index_ops_require_index_consistency_and_are_not_consensus_admitted`,
 `ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace`,
+`ir::tests::exact_interpreter_executes_unary_tier_b_ops`,
 `ir::tests::exact_interpreter_executes_shaping_comparison_generators_and_where`,
 `ir::tests::exact_interpreter_executes_mean_cast_concat_and_stack`,
 `ir::tests::exact_interpreter_supports_field_scalar_params`,
@@ -76,8 +78,9 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `scalar_mul`,
-`transpose`, `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`,
-and `mse_loss`. The suite
+`identity`, `neg`, signed-residue `abs`, `sign`, `relu`, field/integer identity `round`, `transpose`,
+`reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`, and
+`mse_loss`. The suite
 has a stable hash, the CPU reference backend must pass it through `runtime::backend_conformance_profile`,
 and `verify_tensor_op` / `verify_linear_training_step` reject otherwise-valid receipts when their required
 conformance profile is unavailable or missing an op. Mixed-dtype comparison and `where` coverage is
@@ -91,10 +94,10 @@ single-dtype; `cast` is likewise covered through IR execution because it has a m
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: arbitrary graph-backed job/receipt admission and role execution,
-const-blob fetching, conformance vectors and executable verifiers for the remaining admitted registry that
-is not yet executable by the exact interpreter (exact signed/fixed-point unary ops and exact quantization),
-index-consistency proofs for `gather`/`scatter`/`embedding`, mixed-dtype
+Remaining Tensor IR/conformance gaps: role-runtime production for arbitrary graph-backed jobs,
+const-blob fetching, fixed-point rescale/round-half-even semantics beyond the current field/integer unary
+identity path, exact quantization execution/conformance, index-consistency proofs for
+`gather`/`scatter`/`embedding`, mixed-dtype
 conformance-vector schema, and CUDA conformance evidence when `cuda-kernels` is not compiled in this
 environment. Tier-C, index-consistency, transcendental, and order-dependent ops remain registry vocabulary
 only and are still gated out of consensus when their verifier class is deferred.

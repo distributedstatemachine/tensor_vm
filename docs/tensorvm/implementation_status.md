@@ -41,8 +41,9 @@ blocker clears. See
   `RequestProgram`/`ProgramResponse` path. `TensorGraph::execute_exact` now provides a deterministic
   interpreter foundation for validated, consensus-admitted graphs over the currently implemented exact
   tensor ops: `matmul`, broadcast-aware `add`/`sub`/`mul`, `scalar_mul`, `transpose`, explicit-dim
-  `sum`/`reduce_sum`, `identity`, `neg`, `reshape`, `broadcast`, comparisons `gt`/`lt`/`ge`/`le`/`eq`,
-  `where`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`. The interpreter validates bound tensors
+  `sum`/`reduce_sum`, `identity`, `neg`, signed-residue `abs`/`sign`/`relu`, field/integer identity
+  `round`, `reshape`, `broadcast`, comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, `mean`, `cast`,
+  `concat`, `stack`, `full`, and `arange`. The interpreter validates bound tensors
   and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
   output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
@@ -52,12 +53,12 @@ blocker clears. See
   settlement all carry the graph variant. Graph receipts replay through `TensorGraph::execute_exact` and
   settle through the same delayed pending receipt reward path after valid attestations. Role-runtime
   production for arbitrary graph jobs outside explicit graph artifacts, const-blob fetching, mixed-dtype
-  conformance vectors, exact replay for the remaining admitted registry (exact signed/fixed-point unary ops
-  and exact quantization), and CUDA generic graph execution remain open.
+  conformance vectors, fixed-point rescale/round-half-even semantics beyond current field/integer identity
+  `round`, exact quantization, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
-  and LinearTrainingStep plus field-only shaping/generator coverage (`add`, `sub`, `mul`, `scalar_mul`,
-  `transpose`, `reshape`, `broadcast`, `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`,
-  and `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA
+  and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`,
+  `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
+  `reduce_sum`, `mean`, `concat`, `stack`, `matmul`, `full`, `arange`, and `mse_loss`), with a stable suite hash, CPU reference backend pass reporting, default-build CUDA
   non-admission, and receipt verification gates that reject otherwise-valid TensorOp or LinearTrainingStep
   receipts when the required conformance profile is unavailable or missing an op. Mixed-dtype
   comparison/`where`/`cast` conformance vectors remain pending a richer vector schema and are currently

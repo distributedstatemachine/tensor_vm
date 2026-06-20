@@ -640,11 +640,13 @@ fn linear_relation(left: Elem, right: Elem) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorSpec};
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, TensorOpReceipt,
     };
     use crate::tensor::DType;
     use crate::types::{address, hash_bytes};
+    use std::collections::BTreeMap;
 
     #[test]
     fn full_freivalds_accepts_honest_and_rejects_corruption() {
@@ -814,6 +816,83 @@ mod tests {
                 &FreivaldsParams::default()
             ),
             Err(TvmError::InvalidReceipt("trace root mismatch"))
+        );
+    }
+
+    #[test]
+    fn graph_verifier_accepts_unary_tier_b_graph_receipt() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![4],
+                dtype: DType::FieldElement,
+                scale: 0,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "relu".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "y".to_owned(),
+                    shape: vec![4],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input =
+            Tensor::from_vec(vec![4], DType::FieldElement, vec![0, 3, p - 2, p - 1]).unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-unary-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["y"],
+            Tensor::from_vec(vec![4], DType::FieldElement, vec![0, 3, 0, 0]).unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-unary-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-unary-validation"]),
+                conformance_profile: &ConformanceProfile::empty_for_testing(),
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
         );
     }
 

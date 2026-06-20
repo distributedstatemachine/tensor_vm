@@ -87,6 +87,66 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2, 3],
         ),
         vector(
+            "field-identity-unary-v1",
+            "identity",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5],
+            &[7],
+        ),
+        vector(
+            "field-neg-unary-v1",
+            "neg",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, p - 1, 1, p.div_ceil(2), (p - 1) / 2, p - 5, 5],
+            &[7],
+        ),
+        vector(
+            "field-abs-signed-unary-v1",
+            "abs",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, 1, 1, (p - 1) / 2, (p - 1) / 2, 5, 5],
+            &[7],
+        ),
+        vector(
+            "field-sign-signed-unary-v1",
+            "sign",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, 1, p - 1, 1, p - 1, 1, p - 1],
+            &[7],
+        ),
+        vector(
+            "field-round-identity-unary-v1",
+            "round",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5],
+            &[7],
+        ),
+        vector(
+            "field-relu-signed-unary-v1",
+            "relu",
+            "B",
+            &[&[7]],
+            &[],
+            &[&[0, 1, p - 1, (p - 1) / 2, p.div_ceil(2), 5, p - 5]],
+            &[0, 1, 0, (p - 1) / 2, 0, 5, 0],
+            &[7],
+        ),
+        vector(
             "field-transpose-row-major-v1",
             "transpose",
             "B",
@@ -290,6 +350,12 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
         "sub" => tensors[0].sub(&tensors[1]),
         "mul" => tensors[0].mul(&tensors[1]),
         "scalar_mul" => tensors[0].scalar_mul(param(vector, "scalar")?),
+        "identity" => Ok(tensors[0].clone()),
+        "neg" => unary_tensor(&tensors[0], |value| field::sub(0, value)),
+        "abs" => unary_tensor(&tensors[0], signed_abs),
+        "sign" => unary_tensor(&tensors[0], signed_sign),
+        "round" => Ok(tensors[0].clone()),
+        "relu" => unary_tensor(&tensors[0], signed_relu),
         "transpose" => tensors[0].transpose(),
         "reshape" => Tensor::from_vec(
             vec![
@@ -350,6 +416,45 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
         }
         _ => Err(TvmError::InvalidReceipt("unknown conformance op")),
     }
+}
+
+fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
+    Tensor::from_vec(
+        tensor.shape().to_vec(),
+        tensor.dtype(),
+        tensor.as_slice().iter().map(|value| op(*value)).collect(),
+    )
+}
+
+fn signed_abs(value: Elem) -> Elem {
+    if signed_field_is_negative(value) {
+        field::sub(0, value)
+    } else {
+        field::normalize(value)
+    }
+}
+
+fn signed_sign(value: Elem) -> Elem {
+    let value = field::normalize(value);
+    if value == 0 {
+        0
+    } else if signed_field_is_negative(value) {
+        MODULUS - 1
+    } else {
+        1
+    }
+}
+
+fn signed_relu(value: Elem) -> Elem {
+    if signed_field_is_negative(value) {
+        0
+    } else {
+        field::normalize(value)
+    }
+}
+
+fn signed_field_is_negative(value: Elem) -> bool {
+    field::normalize(value) > MODULUS / 2
 }
 
 fn mean_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
@@ -588,6 +693,12 @@ mod tests {
         assert!(op_names.contains("matmul"));
         assert!(op_names.contains("sub"));
         assert!(op_names.contains("scalar_mul"));
+        assert!(op_names.contains("identity"));
+        assert!(op_names.contains("neg"));
+        assert!(op_names.contains("abs"));
+        assert!(op_names.contains("sign"));
+        assert!(op_names.contains("round"));
+        assert!(op_names.contains("relu"));
         assert!(op_names.contains("transpose"));
         assert!(op_names.contains("reshape"));
         assert!(op_names.contains("broadcast"));
@@ -609,6 +720,12 @@ mod tests {
             "sub",
             "mul",
             "scalar_mul",
+            "identity",
+            "neg",
+            "abs",
+            "sign",
+            "round",
+            "relu",
             "transpose",
             "reshape",
             "broadcast",

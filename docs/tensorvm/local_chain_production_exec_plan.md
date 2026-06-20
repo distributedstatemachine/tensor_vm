@@ -5,9 +5,9 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 47, graph-backed exact job and receipt admission.
-- Current status: implementation and validation complete on June 20, 2026; feature commit `decdf91`
-  created; push pending.
+- Active feature: Iteration 48, exact unary Tier-B IR replay and conformance.
+- Current status: Iteration 48 implementation and validation complete locally on June 20, 2026; commit/push
+  evidence pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -15,15 +15,16 @@ feature-sized iterations are summarized after validation and push, and older det
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 47, then move to full VRF/drand commit-reveal
-  lifecycle, multi-validator proposer competition/fork-choice policy, remaining exact signed/fixed-point
-  unary or quantization replay, or the Docker `/health` blocker if the environment changes.
+- Next action: commit/push Iteration 48 evidence, then move to full VRF/drand commit-reveal lifecycle,
+  multi-validator proposer competition/fork-choice policy, exact quantization replay, fixed-point
+  rescale/round-half-even semantics beyond current field/integer identity rounding, or the Docker `/health`
+  blocker if the environment changes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing for current iteration | Iteration 46 first command and final gate: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing for current iteration | Iteration 48 first command and final gate: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker requires positive live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches missing tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -31,13 +32,91 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards | Rerun full Docker checker after `/health`; add multi-validator proposer competition/fork-choice policy |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, block votes, validator audit reports, and block-check challenges | Continue extending only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback mode, delayed rewards, and network-visible block-check challenges | Remaining: full transcript disputes, exact replayable snapshots/apply theorem, deterministic live bad-block challenge generation |
-| Tensor IR graph language | Partial; Iteration 46 current-job trace binding complete | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, and Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution | Add arbitrary graph-backed jobs/receipts and remaining admitted-registry executor coverage |
-| Per-op `F_p` conformance vectors | Partial current-job gate implemented locally | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors and Iteration 45 `mean`/`concat`/`stack` vectors; CPU pass profile; default CUDA non-admission | Add mixed-dtype vector schema, remaining admitted-registry vectors, CUDA pass evidence when compiled |
+| Tensor IR graph language | Partial; Iteration 48 exact unary replay complete locally | `ir::TensorGraph`, canonical JSON, `graph_id`, registry validation, state/storage/runtime program serving, exact interpreter for current core plus Iteration 44 shaping/generator/comparison coverage, Iteration 45 `mean`/`cast`/`concat`/`stack` replay, Iteration 46 current TensorOp/LinearTrainingStep receipt trace roots from canonical graph execution, Iteration 47 graph-backed jobs/receipts, and Iteration 48 exact unary Tier-B replay for `identity`, `neg`, `abs`, `sign`, `round`, and `relu` | Add exact quantization, fixed-point rescale/round-half-even beyond current field/integer identity rounding, mixed-dtype schema, and remaining admitted-registry executor coverage |
+| Per-op `F_p` conformance vectors | Partial; Iteration 48 unary profile complete locally | Deterministic vectors for current executable ops plus Iteration 44 field-only shaping/generator vectors, Iteration 45 `mean`/`concat`/`stack` vectors, and Iteration 48 unary vectors for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`; CPU pass profile; default CUDA non-admission | Add mixed-dtype vector schema, exact quantization/fixed-point vectors, remaining admitted-registry vectors, CUDA pass evidence when compiled |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
 | Economics and slashing invariant | Partial | Delayed proposer, reduced delayed fallback proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; data-unavailability and validator-audit slashing | Add auditor-selection policy, appeal paths, unified formal reward-claim objects, and broader invariant calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 48: Exact Unary Tier-B IR Replay And Conformance
+
+Feature capability: consensus-admitted exact unary Tier-B ops `identity`, `neg`, `abs`, `sign`, `round`,
+and `relu` execute
+through `TensorGraph::execute_exact`, receive deterministic `F_p` conformance vectors, and can be used by
+graph-backed receipts without failing the conformance gate.
+
+Readiness requirements covered:
+- `upow.md` §3.3 and §16: the CPU reference conformance suite must cover admitted deterministic `F_p`
+  semantics before receipts are accepted.
+- `upow.md` §4.7-§4.9: exact Tier-B unary ops carried as consensus-admitted registry entries must have
+  executable deterministic semantics rather than validate-but-fail interpreter behavior.
+- `mvp_spec.md` §8 and §35: deterministic TensorVM operation semantics and cross-runtime conformance
+  evidence for block-eligible receipts.
+
+Canonical owner: `ir::TensorGraph::execute_exact` owns exact unary op execution; `conformance` owns the
+runtime pass profile and suite hash used by graph receipt verification.
+Adapter callers: `verify_graph_execution`, role graph verification, and graph receipt tests consume the
+conformance profile; no adapter gets new consensus logic.
+Old shortcut being removed: registry admission can no longer list these unary Tier-B ops as admitted while
+the exact interpreter rejects them or the conformance profile lacks pass evidence.
+Regression test that proves the shortcut is gone: IR tests execute a graph containing unary ops and graph
+verification tests accept a graph receipt using one of the newly covered ops only when the CPU conformance
+profile includes it.
+Behavior with local synthetic block production disabled: unchanged; this is pure IR/conformance capability.
+Behavior for producer and non-producer roles: unchanged; validators that see graph receipts use the same
+conformance profile and exact replay path.
+Structured evidence source: `IrExecution` outputs/traces, conformance vector suite hash/pass set, graph
+verification report, and focused tests.
+Finality source: unchanged stake-weighted block votes.
+Wire-size and codec boundary: unchanged; no payload format changes.
+
+Parallel subagents:
+- Meitner mapped exact unary Tier-B coverage to `upow.md`/MVP requirements and risks.
+- Linnaeus inspected `ir`, `conformance`, and verifier touch points.
+- Dewey identified focused tests and stale docs.
+
+Parallelizable implementation workstreams:
+- Parent/integrator owns edits because the slice is small and centered on shared IR/conformance modules.
+- Subagents remain read-only support; no parallel writers.
+
+Tests/checkers/docs to add or update:
+- Focused IR execution test for unary ops.
+- Conformance vector coverage/pass tests for `identity`, `neg`, `abs`, `sign`, `round`, and `relu`.
+- Graph verification test proving a graph receipt using a newly covered op is accepted.
+- Update status/exec/tarpaulin docs after validation.
+
+Validation evidence:
+- Required first gate: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused IR module: `cargo test -p tensor_vm ir::tests -- --nocapture` passed 14 tests.
+- Focused unary IR: `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_unary_tier_b_ops -- --nocapture`
+  passed.
+- Focused conformance: `cargo test -p tensor_vm conformance::tests -- --nocapture` passed 3 tests.
+- Focused graph verifier: `cargo test -p tensor_vm verify::tests::graph_verifier_accepts_unary_tier_b_graph_receipt -- --nocapture`
+  passed.
+- After clippy's `manual_div_ceil` finding was fixed, `cargo test -p tensor_vm ir::tests::exact_interpreter_executes_unary_tier_b_ops -- --nocapture`
+  and `cargo test -p tensor_vm conformance::tests::cpu_reference_passes_all_vectors -- --nocapture` passed.
+- `cargo fmt --check --all` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm` passed 367 library tests plus integration tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo test --workspace --release` passed.
+- Final `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet library tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
+
+Expected observable evidence: a consensus-valid graph containing exact unary Tier-B ops can exact-execute,
+its receipt can be verified through the graph verifier using the CPU conformance profile, and missing
+conformance still rejects it.
+
+Out of scope: exact quantization, fixed-point rescale/round-half-even semantics beyond identity rounding for
+current field/integer tensors, Tier-C/transcendental admission, runtime role changes, codec changes,
+VRF/drand, fork-choice, and Docker `/health`.
+
+Commit evidence: pending.
+
+## Recent Iterations
 
 ### Iteration 47: Graph-Backed Exact Job And Receipt Admission
 
@@ -101,6 +180,8 @@ Broad validation commands before commit:
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
 - Feature commit: `decdf91` (`Add graph execution jobs and receipts`).
+- Evidence commit: `1ac2197` (`Record graph execution validation evidence`), pushed to `main` on June 20,
+  2026 (`c3706cc..1ac2197`).
 
 Observable evidence: a registered non-fixed graph can be submitted as a graph job, produce an
 exact trace-root receipt, survive codec/storage/root paths, receive a valid graph attestation, and settle
@@ -112,8 +193,6 @@ completion, VRF/drand lifecycle, multi-validator fork-choice, and Docker `/healt
 
 Split trigger: split smaller if the app role runtime or p2p payload admission changes require unrelated
 status/checker rewrites beyond compiling the new variants and proving shared-codec roundtrips.
-
-## Recent Iterations
 
 ### Iteration 46: Canonical Current-Job IR Trace Roots
 
