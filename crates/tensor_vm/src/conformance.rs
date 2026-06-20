@@ -97,6 +97,26 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[3, 2],
         ),
         vector(
+            "field-reshape-row-major-v1",
+            "reshape",
+            "B",
+            &[&[2, 3]],
+            &[("rows", 3), ("cols", 2)],
+            &[&[1, 2, 3, 4, 5, 6]],
+            &[1, 2, 3, 4, 5, 6],
+            &[3, 2],
+        ),
+        vector(
+            "field-broadcast-row-major-v1",
+            "broadcast",
+            "B",
+            &[&[2, 1]],
+            &[("rows", 2), ("cols", 3)],
+            &[&[7, 9]],
+            &[7, 7, 7, 9, 9, 9],
+            &[2, 3],
+        ),
+        vector(
             "field-reduce-sum-axis0-v1",
             "reduce_sum",
             "B",
@@ -135,6 +155,26 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[&[0, 1, p - 1, 9], &[p - 1, 3, 1, p - 4]],
             &mse_loss_expected(&[0, 1, p - 1, 9], &[p - 1, 3, 1, p - 4]),
             &[32],
+        ),
+        vector(
+            "field-full-v1",
+            "full",
+            "B",
+            &[],
+            &[("rows", 2), ("cols", 3), ("value", p + 5)],
+            &[],
+            &[5, 5, 5, 5, 5, 5],
+            &[2, 3],
+        ),
+        vector(
+            "field-arange-v1",
+            "arange",
+            "B",
+            &[],
+            &[("start", 3), ("end", 10), ("step", 2)],
+            &[],
+            &[3, 5, 7, 9],
+            &[4],
         ),
     ]
 }
@@ -221,6 +261,28 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
         "mul" => tensors[0].mul(&tensors[1]),
         "scalar_mul" => tensors[0].scalar_mul(param(vector, "scalar")?),
         "transpose" => tensors[0].transpose(),
+        "reshape" => Tensor::from_vec(
+            vec![
+                param(vector, "rows")? as usize,
+                param(vector, "cols")? as usize,
+            ],
+            tensors[0].dtype(),
+            tensors[0].as_slice().to_vec(),
+        ),
+        "broadcast" => {
+            let rows = param(vector, "rows")? as usize;
+            let cols = param(vector, "cols")? as usize;
+            if tensors[0].shape() != [rows, 1] {
+                return Err(TvmError::InvalidReceipt("invalid conformance broadcast"));
+            }
+            let mut data = Vec::with_capacity(rows * cols);
+            for row in 0..rows {
+                for _ in 0..cols {
+                    data.push(tensors[0].as_slice()[row]);
+                }
+            }
+            Tensor::from_vec(vec![rows, cols], tensors[0].dtype(), data)
+        }
         "reduce_sum" => tensors[0].reduce_sum(param(vector, "axis")? as usize),
         "matmul" => tensors[0].matmul(&tensors[1]),
         "mse_loss" => {
@@ -230,6 +292,28 @@ fn execute_vector(vector: &ConformanceVector) -> Result<Tensor> {
                 DType::FieldElement,
                 loss.iter().map(|byte| *byte as Elem).collect(),
             )
+        }
+        "full" => Tensor::from_vec(
+            vec![
+                param(vector, "rows")? as usize,
+                param(vector, "cols")? as usize,
+            ],
+            DType::FieldElement,
+            vec![
+                field::normalize(param(vector, "value")?);
+                (param(vector, "rows")? * param(vector, "cols")?) as usize
+            ],
+        ),
+        "arange" => {
+            let mut data = Vec::new();
+            let mut value = param(vector, "start")?;
+            let end = param(vector, "end")?;
+            let step = param(vector, "step")?;
+            while value < end {
+                data.push(field::normalize(value));
+                value += step;
+            }
+            Tensor::from_vec(vec![data.len()], DType::FieldElement, data)
         }
         _ => Err(TvmError::InvalidReceipt("unknown conformance op")),
     }
@@ -360,6 +444,10 @@ mod tests {
         assert!(op_names.contains("sub"));
         assert!(op_names.contains("scalar_mul"));
         assert!(op_names.contains("transpose"));
+        assert!(op_names.contains("reshape"));
+        assert!(op_names.contains("broadcast"));
+        assert!(op_names.contains("full"));
+        assert!(op_names.contains("arange"));
         assert!(op_names.contains("mse_loss"));
         assert_eq!(conformance_suite_hash(), conformance_suite_hash());
     }
@@ -374,8 +462,12 @@ mod tests {
             "mul",
             "scalar_mul",
             "transpose",
+            "reshape",
+            "broadcast",
             "reduce_sum",
             "matmul",
+            "full",
+            "arange",
             "mse_loss",
         ] {
             assert!(profile.passes(op), "missing conformance pass for {op}");

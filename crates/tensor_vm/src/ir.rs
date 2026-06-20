@@ -470,15 +470,15 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
         "add" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            lhs.add(rhs)?
+            binary_elementwise_tensor(lhs, rhs, field::add)?
         }
         "sub" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            lhs.sub(rhs)?
+            binary_elementwise_tensor(lhs, rhs, field::sub)?
         }
         "mul" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            lhs.mul(rhs)?
+            binary_elementwise_tensor(lhs, rhs, field::mul)?
         }
         "scalar_mul" => {
             let (tensor, scalar) = tensor_and_scalar_values(&args)?;
@@ -492,6 +492,8 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
             one_tensor_value(&args)?.reduce_sum(axis)?
         }
         "identity" => one_tensor_value(&args)?.clone(),
+        "reshape" => reshape_tensor(one_tensor_value(&args)?, &op.kwargs)?,
+        "broadcast" => broadcast_tensor(one_tensor_value(&args)?, &op.kwargs)?,
         "neg" => {
             let tensor = one_tensor_value(&args)?;
             Tensor::from_vec(
@@ -504,6 +506,14 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
                     .collect(),
             )?
         }
+        "gt" => compare_tensors(&args, |lhs, rhs| lhs > rhs)?,
+        "lt" => compare_tensors(&args, |lhs, rhs| lhs < rhs)?,
+        "ge" => compare_tensors(&args, |lhs, rhs| lhs >= rhs)?,
+        "le" => compare_tensors(&args, |lhs, rhs| lhs <= rhs)?,
+        "eq" => compare_tensors(&args, |lhs, rhs| lhs == rhs)?,
+        "where" => where_tensor(&args)?,
+        "full" => full_tensor(&op.kwargs)?,
+        "arange" => arange_tensor(&op.kwargs)?,
         _ => {
             return Err(TvmError::InvalidReceipt(
                 "tensor ir op is not executable by exact interpreter",
@@ -511,6 +521,185 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
     };
     Ok(vec![RuntimeValue::Tensor(output)])
+}
+
+fn reshape_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let shape = concrete_shape_kwarg(kwargs, "shape")?;
+    if checked_usize_product(&shape)? != tensor.len() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir reshape element mismatch",
+        ));
+    }
+    Tensor::from_vec(shape, tensor.dtype(), tensor.as_slice().to_vec())
+}
+
+fn broadcast_tensor(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let shape = concrete_shape_kwarg(kwargs, "shape")?;
+    let expected = broadcast_shape_usize(&[tensor.shape().to_vec(), shape.clone()])?;
+    if expected != shape {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir broadcast shape mismatch",
+        ));
+    }
+    let mut data = Vec::with_capacity(checked_usize_product(&shape)?);
+    for index in 0..checked_usize_product(&shape)? {
+        data.push(broadcast_value(tensor, &shape, index)?);
+    }
+    Tensor::from_vec(shape, tensor.dtype(), data)
+}
+
+fn binary_elementwise_tensor(
+    lhs: &Tensor,
+    rhs: &Tensor,
+    op: impl Fn(Elem, Elem) -> Elem,
+) -> Result<Tensor> {
+    if lhs.dtype() != rhs.dtype() {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
+    let len = checked_usize_product(&shape)?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        data.push(op(
+            broadcast_value(lhs, &shape, index)?,
+            broadcast_value(rhs, &shape, index)?,
+        ));
+    }
+    Tensor::from_vec(shape, lhs.dtype(), data)
+}
+
+fn compare_tensors(
+    values: &[RuntimeValue],
+    predicate: impl Fn(Elem, Elem) -> bool,
+) -> Result<Tensor> {
+    let [lhs, rhs] = two_tensor_values(values)?;
+    if lhs.dtype() != rhs.dtype() {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
+    let len = checked_usize_product(&shape)?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        let value = if predicate(
+            broadcast_value(lhs, &shape, index)?,
+            broadcast_value(rhs, &shape, index)?,
+        ) {
+            1
+        } else {
+            0
+        };
+        data.push(value);
+    }
+    Tensor::from_vec(shape, DType::Int32, data)
+}
+
+fn where_tensor(values: &[RuntimeValue]) -> Result<Tensor> {
+    let [cond, when_true, when_false] = match values {
+        [
+            RuntimeValue::Tensor(cond),
+            RuntimeValue::Tensor(when_true),
+            RuntimeValue::Tensor(when_false),
+        ] => [cond, when_true, when_false],
+        _ => {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir expected tensor arguments",
+            ));
+        }
+    };
+    if cond.dtype() != DType::Int32 || when_true.dtype() != when_false.dtype() {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    let shape = broadcast_shape_usize(&[
+        cond.shape().to_vec(),
+        when_true.shape().to_vec(),
+        when_false.shape().to_vec(),
+    ])?;
+    let len = checked_usize_product(&shape)?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        let selected = if broadcast_value(cond, &shape, index)? == 0 {
+            when_false
+        } else {
+            when_true
+        };
+        data.push(broadcast_value(selected, &shape, index)?);
+    }
+    Tensor::from_vec(shape, when_true.dtype(), data)
+}
+
+fn full_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let shape = concrete_shape_kwarg(kwargs, "shape")?;
+    let dtype = dtype_kwarg(kwargs, "dtype")?;
+    let value = field_kwarg(kwargs, "value")?;
+    Tensor::from_vec(
+        shape.clone(),
+        dtype,
+        vec![value; checked_usize_product(&shape)?],
+    )
+}
+
+fn arange_tensor(kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
+    let start = integer_kwarg(kwargs, "start")?;
+    let end = integer_kwarg(kwargs, "end")?;
+    let step = integer_kwarg(kwargs, "step")?;
+    if step <= 0 || end < start {
+        return Err(TvmError::InvalidReceipt("invalid tensor ir arange bounds"));
+    }
+    let len = arange_len(start, end, step)?;
+    let dtype = dtype_kwarg(kwargs, "dtype")?;
+    let mut data = Vec::with_capacity(len);
+    let mut value = start;
+    while value < end {
+        data.push(signed_field(value));
+        value = value
+            .checked_add(step)
+            .ok_or(TvmError::InvalidReceipt("invalid tensor ir arange bounds"))?;
+    }
+    Tensor::from_vec(vec![len], dtype, data)
+}
+
+fn broadcast_value(tensor: &Tensor, output_shape: &[usize], output_index: usize) -> Result<Elem> {
+    let mut coords = vec![0usize; output_shape.len()];
+    let mut remainder = output_index;
+    for axis in (0..output_shape.len()).rev() {
+        let dim = output_shape[axis];
+        if dim == 0 {
+            return Err(TvmError::InvalidReceipt("tensor ir zero-dim broadcast"));
+        }
+        coords[axis] = remainder % dim;
+        remainder /= dim;
+    }
+    let rank_offset =
+        output_shape
+            .len()
+            .checked_sub(tensor.shape().len())
+            .ok_or(TvmError::InvalidReceipt(
+                "tensor ir broadcast rank mismatch",
+            ))?;
+    let mut flat = 0usize;
+    for (axis, dim) in tensor.shape().iter().enumerate() {
+        let coord = if *dim == 1 {
+            0
+        } else {
+            coords[rank_offset + axis]
+        };
+        if coord >= *dim {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir broadcast shape mismatch",
+            ));
+        }
+        flat = flat
+            .checked_mul(*dim)
+            .and_then(|value| value.checked_add(coord))
+            .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    }
+    tensor
+        .as_slice()
+        .get(flat)
+        .copied()
+        .ok_or(TvmError::InvalidReceipt(
+            "tensor ir broadcast index mismatch",
+        ))
 }
 
 fn one_tensor_value(values: &[RuntimeValue]) -> Result<&Tensor> {
@@ -841,8 +1030,12 @@ fn infer_outputs(
         }
         "add" | "sub" | "mul" => {
             let [lhs, rhs] = two_args(args)?;
-            same_tensor(lhs, rhs)?;
-            lhs.clone()
+            same_dtype(lhs, rhs)?;
+            ValueShape {
+                shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
+                dtype: lhs.dtype,
+                scale: lhs.scale,
+            }
         }
         "scalar_mul" => {
             if args.len() != 2 || args[0].shape.is_empty() || !args[1].shape.is_empty() {
@@ -870,6 +1063,18 @@ fn infer_outputs(
         "reshape" | "broadcast" => {
             let arg = one_arg(args)?;
             let shape = shape_kwarg(kwargs, "shape")?;
+            if op == "reshape" && shape_element_count(&arg.shape)? != shape_element_count(&shape)? {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir reshape element mismatch",
+                ));
+            }
+            if op == "broadcast"
+                && broadcast_shape_i64(&[arg.shape.clone(), shape.clone()])? != shape
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir broadcast shape mismatch",
+                ));
+            }
             ValueShape {
                 shape,
                 dtype: arg.dtype,
@@ -892,9 +1097,9 @@ fn infer_outputs(
         }
         "gt" | "lt" | "ge" | "le" | "eq" => {
             let [lhs, rhs] = two_args(args)?;
-            same_tensor(lhs, rhs)?;
+            same_dtype(lhs, rhs)?;
             ValueShape {
-                shape: lhs.shape.clone(),
+                shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
                 dtype: DType::Int32,
                 scale: 0,
             }
@@ -903,9 +1108,16 @@ fn infer_outputs(
             if args.len() != 3 {
                 return Err(TvmError::InvalidReceipt("tensor ir where arity mismatch"));
             }
-            same_tensor(&args[1], &args[2])?;
+            if args[0].dtype != DType::Int32 {
+                return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+            }
+            same_dtype(&args[1], &args[2])?;
             ValueShape {
-                shape: args[1].shape.clone(),
+                shape: broadcast_shape_i64(&[
+                    args[0].shape.clone(),
+                    args[1].shape.clone(),
+                    args[2].shape.clone(),
+                ])?,
                 dtype: args[1].dtype,
                 scale: args[1].scale,
             }
@@ -920,9 +1132,18 @@ fn infer_outputs(
             }
         }
         "concat" | "stack" => infer_variadic_same(args)?,
-        "full" | "arange" => ValueShape {
-            shape: shape_kwarg(kwargs, "shape").unwrap_or_else(|_| vec![1]),
-            dtype: dtype_kwarg(kwargs, "dtype").unwrap_or(DType::FieldElement),
+        "full" => ValueShape {
+            shape: shape_kwarg(kwargs, "shape")?,
+            dtype: dtype_kwarg(kwargs, "dtype")?,
+            scale: 0,
+        },
+        "arange" => ValueShape {
+            shape: vec![arange_len(
+                integer_kwarg(kwargs, "start")?,
+                integer_kwarg(kwargs, "end")?,
+                integer_kwarg(kwargs, "step")?,
+            )? as i64],
+            dtype: dtype_kwarg(kwargs, "dtype")?,
             scale: 0,
         },
         "topk" => {
@@ -1026,6 +1247,16 @@ fn shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<i64>
     }
 }
 
+fn concrete_shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<usize>> {
+    shape_kwarg(kwargs, key)?
+        .into_iter()
+        .map(|dim| {
+            usize::try_from(dim)
+                .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir shape kwarg"))
+        })
+        .collect()
+}
+
 fn dtype_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<DType> {
     match kwargs.get(key) {
         Some(IrValue::Literal(IrLiteral::String(value))) => {
@@ -1050,6 +1281,95 @@ fn optional_bool_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<
         Some(IrValue::Literal(IrLiteral::Bool(value))) => Ok(Some(*value)),
         _ => Err(TvmError::InvalidReceipt("invalid tensor ir bool kwarg")),
     }
+}
+
+fn integer_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<i64> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::Int(value))) => Ok(*value),
+        Some(IrValue::Literal(IrLiteral::Uint(value))) => i64::try_from(*value)
+            .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir integer kwarg")),
+    }
+}
+
+fn field_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Elem> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(value)) => literal_field(value),
+        _ => Err(TvmError::InvalidReceipt("invalid tensor ir field kwarg")),
+    }
+}
+
+fn signed_field(value: i64) -> Elem {
+    let modulus = field::MODULUS as i128;
+    let reduced = (value as i128).rem_euclid(modulus);
+    reduced as Elem
+}
+
+fn arange_len(start: i64, end: i64, step: i64) -> Result<usize> {
+    if step <= 0 || end < start {
+        return Err(TvmError::InvalidReceipt("invalid tensor ir arange bounds"));
+    }
+    let span = end - start;
+    usize::try_from((span + step - 1) / step)
+        .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir arange bounds"))
+}
+
+fn shape_element_count(shape: &[i64]) -> Result<i128> {
+    let mut product = 1i128;
+    for dim in shape {
+        if *dim < 0 {
+            return Err(TvmError::InvalidReceipt("invalid tensor ir shape kwarg"));
+        }
+        product = product
+            .checked_mul(*dim as i128)
+            .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+    }
+    Ok(product)
+}
+
+fn checked_usize_product(shape: &[usize]) -> Result<usize> {
+    shape.iter().try_fold(1usize, |product, dim| {
+        product
+            .checked_mul(*dim)
+            .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))
+    })
+}
+
+fn broadcast_shape_i64(shapes: &[Vec<i64>]) -> Result<Vec<i64>> {
+    let concrete = shapes
+        .iter()
+        .map(|shape| {
+            shape
+                .iter()
+                .map(|dim| {
+                    usize::try_from(*dim)
+                        .map_err(|_| TvmError::InvalidReceipt("tensor ir broadcast shape mismatch"))
+                })
+                .collect::<Result<Vec<_>>>()
+        })
+        .collect::<Result<Vec<_>>>()?;
+    broadcast_shape_usize(&concrete).map(|shape| shape.into_iter().map(|dim| dim as i64).collect())
+}
+
+fn broadcast_shape_usize(shapes: &[Vec<usize>]) -> Result<Vec<usize>> {
+    let rank = shapes.iter().map(Vec::len).max().unwrap_or(0);
+    let mut output = vec![1usize; rank];
+    for shape in shapes {
+        for (offset, dim) in shape.iter().rev().enumerate() {
+            let output_index = rank - 1 - offset;
+            match (output[output_index], *dim) {
+                (1, value) => output[output_index] = value,
+                (_, 1) => {}
+                (current, value) if current == value => {}
+                _ => {
+                    return Err(TvmError::InvalidReceipt(
+                        "tensor ir broadcast shape mismatch",
+                    ));
+                }
+            }
+        }
+    }
+    Ok(output)
 }
 
 fn literal_shape(value: &IrLiteral) -> Vec<i64> {
@@ -2094,18 +2414,15 @@ mod tests {
             TvmError::InvalidReceipt("tensor ir op is not consensus admitted")
         );
 
-        let mut reshape = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
-        reshape.ops[0].op = "reshape".to_owned();
-        reshape.ops[0].args = vec![input_ref("a")];
-        reshape.ops[0].kwargs.insert(
-            "shape".to_owned(),
-            IrValue::Literal(IrLiteral::List(vec![
-                IrLiteral::Uint(3),
-                IrLiteral::Uint(2),
-            ])),
-        );
-        reshape.ops[0].out[0] = tensor_spec("reshaped", vec![3, 2], DType::FieldElement, 0);
-        let err = reshape
+        let mut mean = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        mean.ops[0].op = "mean".to_owned();
+        mean.ops[0].args = vec![input_ref("a")];
+        mean.ops[0]
+            .kwargs
+            .insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)));
+        mean.ops[0].out[0] = tensor_spec("mean", vec![2], DType::FieldElement, 0);
+        mean.outputs[0].value = op_ref(0);
+        let err = mean
             .execute_exact(&IrExecutionInputs {
                 tensors: BTreeMap::from([
                     (
@@ -2130,6 +2447,194 @@ mod tests {
             err,
             TvmError::InvalidReceipt("tensor ir op is not executable by exact interpreter")
         );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_shaping_comparison_generators_and_where() {
+        let mut graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("x", vec![2, 1], DType::FieldElement, 0),
+                tensor_spec("y", vec![1, 3], DType::FieldElement, 0),
+            ],
+            params: Vec::new(),
+            ops: Vec::new(),
+            outputs: vec![
+                GraphOutput {
+                    name: "sum".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "selected".to_owned(),
+                    value: op_ref(7),
+                },
+            ],
+        };
+        graph.ops.push(OpNode {
+            id: 0,
+            op: "add".to_owned(),
+            args: vec![input_ref("x"), input_ref("y")],
+            kwargs: BTreeMap::new(),
+            out: vec![tensor_spec("sum", vec![2, 3], DType::FieldElement, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 1,
+            op: "broadcast".to_owned(),
+            args: vec![input_ref("x")],
+            kwargs: BTreeMap::from([(
+                "shape".to_owned(),
+                IrValue::Literal(IrLiteral::List(vec![
+                    IrLiteral::Uint(2),
+                    IrLiteral::Uint(3),
+                ])),
+            )]),
+            out: vec![tensor_spec("wide", vec![2, 3], DType::FieldElement, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 2,
+            op: "reshape".to_owned(),
+            args: vec![op_ref(1)],
+            kwargs: BTreeMap::from([(
+                "shape".to_owned(),
+                IrValue::Literal(IrLiteral::List(vec![
+                    IrLiteral::Uint(3),
+                    IrLiteral::Uint(2),
+                ])),
+            )]),
+            out: vec![tensor_spec("reshaped", vec![3, 2], DType::FieldElement, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 3,
+            op: "full".to_owned(),
+            args: Vec::new(),
+            kwargs: BTreeMap::from([
+                (
+                    "shape".to_owned(),
+                    IrValue::Literal(IrLiteral::List(vec![
+                        IrLiteral::Uint(3),
+                        IrLiteral::Uint(2),
+                    ])),
+                ),
+                ("value".to_owned(), IrValue::Literal(IrLiteral::Field(3))),
+                (
+                    "dtype".to_owned(),
+                    IrValue::Literal(IrLiteral::String("field".to_owned())),
+                ),
+            ]),
+            out: vec![tensor_spec("threshold", vec![3, 2], DType::FieldElement, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 4,
+            op: "gt".to_owned(),
+            args: vec![op_ref(2), op_ref(3)],
+            kwargs: BTreeMap::new(),
+            out: vec![tensor_spec("mask", vec![3, 2], DType::Int32, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 5,
+            op: "arange".to_owned(),
+            args: Vec::new(),
+            kwargs: BTreeMap::from([
+                ("start".to_owned(), IrValue::Literal(IrLiteral::Int(10))),
+                ("end".to_owned(), IrValue::Literal(IrLiteral::Int(16))),
+                ("step".to_owned(), IrValue::Literal(IrLiteral::Int(1))),
+                (
+                    "dtype".to_owned(),
+                    IrValue::Literal(IrLiteral::String("field".to_owned())),
+                ),
+            ]),
+            out: vec![tensor_spec("range", vec![6], DType::FieldElement, 0)],
+        });
+        graph.ops.push(OpNode {
+            id: 6,
+            op: "reshape".to_owned(),
+            args: vec![op_ref(5)],
+            kwargs: BTreeMap::from([(
+                "shape".to_owned(),
+                IrValue::Literal(IrLiteral::List(vec![
+                    IrLiteral::Uint(3),
+                    IrLiteral::Uint(2),
+                ])),
+            )]),
+            out: vec![tensor_spec(
+                "range_matrix",
+                vec![3, 2],
+                DType::FieldElement,
+                0,
+            )],
+        });
+        graph.ops.push(OpNode {
+            id: 7,
+            op: "where".to_owned(),
+            args: vec![op_ref(4), op_ref(6), op_ref(2)],
+            kwargs: BTreeMap::new(),
+            out: vec![tensor_spec("selected", vec![3, 2], DType::FieldElement, 0)],
+        });
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "x".to_owned(),
+                        Tensor::from_vec(vec![2, 1], DType::FieldElement, vec![1, 4]).unwrap(),
+                    ),
+                    (
+                        "y".to_owned(),
+                        Tensor::from_vec(vec![1, 3], DType::FieldElement, vec![10, 20, 30])
+                            .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["sum"],
+            Tensor::from_vec(
+                vec![2, 3],
+                DType::FieldElement,
+                vec![11, 21, 31, 14, 24, 34]
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            execution.outputs["selected"],
+            Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![1, 1, 1, 13, 14, 15]).unwrap()
+        );
+        assert_eq!(execution.op_traces.len(), 8);
+    }
+
+    #[test]
+    fn graph_validation_rejects_inconsistent_exact_tier_b_shapes() {
+        let mut reshape = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        reshape.ops[0].op = "reshape".to_owned();
+        reshape.ops[0].args = vec![input_ref("a")];
+        reshape.ops[0].kwargs.insert(
+            "shape".to_owned(),
+            IrValue::Literal(IrLiteral::List(vec![IrLiteral::Uint(5)])),
+        );
+        reshape.ops[0].out[0] = tensor_spec("bad", vec![5], DType::FieldElement, 0);
+        assert_eq!(
+            reshape.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir reshape element mismatch"
+            ))
+        );
+
+        let mut arange = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        arange.ops[0].op = "arange".to_owned();
+        arange.ops[0].args = Vec::new();
+        arange.ops[0].kwargs = BTreeMap::from([
+            ("start".to_owned(), IrValue::Literal(IrLiteral::Int(0))),
+            ("end".to_owned(), IrValue::Literal(IrLiteral::Int(5))),
+            ("step".to_owned(), IrValue::Literal(IrLiteral::Int(2))),
+            (
+                "dtype".to_owned(),
+                IrValue::Literal(IrLiteral::String("field".to_owned())),
+            ),
+        ]);
+        arange.ops[0].out[0] = tensor_spec("bad_range", vec![5], DType::FieldElement, 0);
+        assert!(arange.validate_for_consensus().is_err());
     }
 
     #[test]

@@ -43,8 +43,9 @@ byte-for-byte canonical encoding checks. The registry is committed in the state 
 node-store snapshot, hydrated into the runtime program server at startup, and servable through the existing
 `RequestProgram`/`ProgramResponse` libp2p request-response path. The IR module now also exposes a
 deterministic exact interpreter foundation for validated, consensus-admitted
-graphs over the currently implemented tensor runtime ops (`matmul`, `add`, `sub`, `mul`, `scalar_mul`,
-`transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, and `neg`). Interpreter output includes named
+graphs over the currently implemented tensor runtime ops (`matmul`, broadcast-aware `add`/`sub`/`mul`,
+`scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, `neg`, `reshape`, `broadcast`,
+comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, `full`, and `arange`). Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Focused
@@ -55,8 +56,10 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::frozen_registry_declares_verifier_class_for_every_op`,
 `ir::tests::index_ops_require_index_consistency_and_are_not_consensus_admitted`,
 `ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace`,
+`ir::tests::exact_interpreter_executes_shaping_comparison_generators_and_where`,
 `ir::tests::exact_interpreter_supports_field_scalar_params`,
 `ir::tests::exact_interpreter_rejects_deferred_or_unimplemented_ops`,
+`ir::tests::graph_validation_rejects_inconsistent_exact_tier_b_shapes`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
 `jobs::tests::linear_receipt_commits_to_learning_step`,
@@ -69,10 +72,12 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `scalar_mul`,
-`transpose`, `reduce_sum`, `matmul`, and `mse_loss`. The suite has a stable hash, the CPU reference backend
-must pass it through `runtime::backend_conformance_profile`, and `verify_tensor_op` /
-`verify_linear_training_step` reject otherwise-valid receipts when their required conformance profile is
-unavailable or missing an op. Focused evidence:
+`transpose`, `reshape`, `broadcast`, `reduce_sum`, `matmul`, `full`, `arange`, and `mse_loss`. The suite
+has a stable hash, the CPU reference backend must pass it through `runtime::backend_conformance_profile`,
+and `verify_tensor_op` / `verify_linear_training_step` reject otherwise-valid receipts when their required
+conformance profile is unavailable or missing an op. Mixed-dtype comparison and `where` coverage is
+currently exercised through the IR execution tests while the conformance-vector schema remains
+single-dtype. Focused evidence:
 `conformance::tests::conformance_vectors_are_stable_and_cover_current_ops`,
 `conformance::tests::cpu_reference_passes_all_vectors`,
 `conformance::tests::required_conformance_gates_current_jobs`,
@@ -82,11 +87,12 @@ unavailable or missing an op. Focused evidence:
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: arbitrary graph-backed job/receipt admission and role execution,
-const-blob fetching, conformance vectors and executable verifiers for the wider admitted registry that is
-not yet executable by the exact interpreter, index-consistency proofs for `gather`/`scatter`/`embedding`,
-and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment. Tier-C,
-index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are still
-gated out of consensus when their verifier class is deferred.
+const-blob fetching, conformance vectors and executable verifiers for the remaining admitted registry that
+is not yet executable by the exact interpreter (`mean`, `cast`, exact unary fixed-point ops, concat/stack,
+and exact quantization), index-consistency proofs for `gather`/`scatter`/`embedding`, mixed-dtype
+conformance-vector schema, and CUDA conformance evidence when `cuda-kernels` is not compiled in this
+environment. Tier-C, index-consistency, transcendental, and order-dependent ops remain registry vocabulary
+only and are still gated out of consensus when their verifier class is deferred.
 
 ## Local CPU Compose Gate
 
@@ -138,7 +144,7 @@ continues finalizing blocks after restart.
 
 | # | Criterion | Evidence |
 | --- | --- | --- |
-| 1 | Miners execute deterministic tensor jobs. | Current TensorOp and LinearTrainingStep jobs are backed by validated content-addressed IR graph IDs. The exact IR interpreter foundation can execute hand-built validated graphs over the currently implemented deterministic tensor ops and commits per-op output roots plus a trace root, but role-owned chain admission still uses the current canonical job types. Evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`, `ir::tests::linear_training_step_graph_validates_and_commits_shapes`, `ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace`, `ir::tests::exact_interpreter_supports_field_scalar_params`, `ir::tests::exact_interpreter_rejects_deferred_or_unimplemented_ops`, `jobs::tests::matmul_receipt_commits_to_outputs`, `jobs::tests::linear_receipt_commits_to_learning_step`, `miner::tests::miner_solves_matmul_and_serves_tensors`, `miner::tests::miner_solves_linear_step_and_serves_intermediates`, `runtime::tests::cpu_and_gpu_backends_match_canonical_matmul` |
+| 1 | Miners execute deterministic tensor jobs. | Current TensorOp and LinearTrainingStep jobs are backed by validated content-addressed IR graph IDs. The exact IR interpreter foundation can execute hand-built validated graphs over the currently implemented deterministic tensor ops, including shaping, generators, comparisons, and `where`, and commits per-op output roots plus a trace root, but role-owned chain admission still uses the current canonical job types. Evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`, `ir::tests::linear_training_step_graph_validates_and_commits_shapes`, `ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace`, `ir::tests::exact_interpreter_executes_shaping_comparison_generators_and_where`, `ir::tests::exact_interpreter_supports_field_scalar_params`, `ir::tests::exact_interpreter_rejects_deferred_or_unimplemented_ops`, `jobs::tests::matmul_receipt_commits_to_outputs`, `jobs::tests::linear_receipt_commits_to_learning_step`, `miner::tests::miner_solves_matmul_and_serves_tensors`, `miner::tests::miner_solves_linear_step_and_serves_intermediates`, `runtime::tests::cpu_and_gpu_backends_match_canonical_matmul` |
 | 2 | Validators verify block-eligible matmul jobs with full-output Freivalds or bounded equivalent. | `verify::full_freivalds`, `verify::tests::full_freivalds_accepts_honest_and_rejects_corruption`, `verify::tests::tensor_op_verifier_rejects_metadata_and_shape_mismatches`, `validator::tests::validator_verifies_matmul_from_tensor_server` |
 | 3 | Row-sampled checks are audits unless false-accept bounds are documented. | `verify::row_sample_detection_probability`, `study::row_sampling_study`, `study::tests::row_sampling_study_blocks_sparse_row_sampled_only_acceptance` |
 | 4 | Blocks are produced by validators winning useful-verification PoW over deterministic settled-receipt blockspace. | Partially implemented locally. `TensorBlock` now commits `settled_receipt_set_root`, block-level `checks_root`, beacon, proposer reward amount, difficulty target, and nonce; `chain::proposer` selects registered validators and ignores miner TensorWork; selected receipts are marked included once; `submit_block_vote` validates known blocks with strict parent-root checks before counting votes; bounded network-visible block-check challenge payloads can disprove a committed check leaf through the shared p2p/node event path, retry while the challenged block is missing, apply through `ChainCommand::SubmitBlockCheckChallenge`, throttle the proposer, and enqueue delayed challenger reward claims; validator role loops submit and gossip explicit block votes so append and finality are separate runtime events; local synthetic scheduling now publishes deterministic jobs only, while the validator role tick observes settled receipts with local tensor artifacts and attestations before submitting useful proposals. Validator proposal is no longer gated by `local_synthetic_producer`; a configured validator proposer can build a useful block from already accepted settled state even when synthetic job production is disabled. Validator runtime status separates useful settled-receipt block proposals from empty fallback proposals, and the local checker requires positive useful proposal, proposed-receipt, artifact-ready, attested-receipt, and delayed pending proposer reward evidence from the sole validator producer. Evidence: `chain::tests::proposer_selection_ignores_tensorwork`, `chain::tests::block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values`, `chain::tests::block_votes_reject_invalid_useful_pow_and_checks_root`, `chain::tests::produced_blocks_mark_selected_settled_receipts_included_once`, `chain::tests::block_check_challenge_voids_pending_reward_and_throttles_proposer`, `p2p::wire::tests::block_check_challenge_payloads_roundtrip_and_reject_malformed_edges`, `node::payload_application::tests::block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges`, `node::pending_payloads::tests::pending_payloads_retry_keeps_pending_payloads`, `node::tests::block_payload_application_admits_next_head_and_rejects_bad_edges`, `p2p::tests::block_vote_payloads_roundtrip_and_reject_malformed_edges`, `node::runtime_state::tests::runtime_state_tracks_loop_counters`, `tvmd` binary `tests::validator_role_block_vote_submission_finalizes_only_through_votes`, `tvmd` binary `tests::producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks`, `tvmd` binary `tests::validator_proposer_tick_runs_without_synthetic_producer_gate`, `tvmd` binary `tests::network_applied_receipt_and_attestation_make_validator_proposal_useful`, `tvmd` CLI `role_run_commands_serve_through_role_specific_surfaces`, `local_cpu_compose::local_cpu_compose_bundle_matches_spec_artifact_shape`, `storage::tests::block_log_store_appends_loads_and_detects_tampering`, `localnet::tests::synthetic_cpu_round_settles_work_and_advances_finalized_chain`, and service-block evidence fields. Remaining gaps: full verifier-transcript fraud proofs, exact parent-state snapshots and child-state apply theorem, deterministic live bad-block challenge generation, multi-validator proposer competition/fork-choice policy, and a fresh full Docker proof after the current `/health` blocker clears. |
