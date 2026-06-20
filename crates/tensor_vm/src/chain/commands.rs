@@ -101,6 +101,14 @@ impl ChainEngine for Chain {
                 }
                 Ok(events)
             }
+            ChainCommand::SubmitValidatorAuditAppeal(appeal) => {
+                let record = super::validation::submit_validator_audit_appeal(self, appeal)?;
+                Ok(vec![ChainEvent::ValidatorAuditAppealAccepted {
+                    audit_id: record.audit_id,
+                    validator: record.validator,
+                    deadline_height: record.deadline_height,
+                }])
+            }
             ChainCommand::SubmitBlock(block) => match self.admit_block(block)? {
                 BlockAdmission::Applied { height, hash } => {
                     Ok(vec![ChainEvent::BlockAccepted { height, hash }])

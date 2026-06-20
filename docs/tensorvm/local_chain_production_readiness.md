@@ -213,7 +213,9 @@ The local bundle is useful and should remain the first operational target:
   Registered validator roles now observe only their assigned local audit work, submit signed audit reports
   through the shared chain command path, gossip bounded audit-report payloads, let non-producers apply or
   retry those payloads through node ingest, and expose submitted plus network-applied audit-report
-  counters. Appeal paths and bond calibration remain open economics work.
+  counters. Slashed audited validators can now submit signed, bounded appeal records that are rooted and
+  persisted with the audit slash state. Appeal adjudication/refund mechanics and bond calibration remain
+  open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

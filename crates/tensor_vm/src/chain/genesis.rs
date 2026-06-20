@@ -27,6 +27,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             validator_audit_assignments: BTreeMap::new(),
             validator_audit_results: BTreeMap::new(),
             validator_audit_slashes: BTreeMap::new(),
+            validator_audit_appeals: BTreeMap::new(),
             settled_receipts: BTreeSet::new(),
             included_receipts: BTreeSet::new(),
             block_selected_receipts: BTreeMap::new(),

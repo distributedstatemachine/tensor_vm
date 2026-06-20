@@ -1,12 +1,15 @@
 use super::{
-    BlockVote, Chain, ReceiptRewardKind, ValidatorAuditAssignment, ValidatorAuditReport,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
+    BlockVote, Chain, ReceiptRewardKind, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
+    ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, blocks,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
 use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::BTreeSet;
+
+const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
 
 pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) -> Result<()> {
     let validator_stake = chain
@@ -204,6 +207,70 @@ pub fn submit_validator_audit_report(
         ))
     };
     Ok((result, slash))
+}
+
+pub fn submit_validator_audit_appeal(
+    chain: &mut Chain,
+    appeal: ValidatorAuditAppeal,
+) -> Result<ValidatorAuditAppealRecord> {
+    if !chain.state.validators.contains_key(&appeal.validator) {
+        return Err(TvmError::UnknownValidator);
+    }
+    if appeal.reason.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "validator audit appeal reason empty",
+        ));
+    }
+    if appeal.reason.len() > VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES {
+        return Err(TvmError::InvalidReceipt(
+            "validator audit appeal reason too long",
+        ));
+    }
+    if !appeal.verify_signature() {
+        return Err(TvmError::InvalidReceipt(
+            "bad validator audit appeal signature",
+        ));
+    }
+    if chain
+        .state
+        .validator_audit_appeals
+        .contains_key(&appeal.audit_id)
+    {
+        return Err(TvmError::InvalidReceipt("duplicate validator audit appeal"));
+    }
+    let slash = chain
+        .state
+        .validator_audit_slashes
+        .get(&appeal.audit_id)
+        .cloned()
+        .ok_or(TvmError::InvalidReceipt("unknown validator audit slash"))?;
+    if appeal.validator != slash.validator {
+        return Err(TvmError::InvalidReceipt(
+            "validator audit appeal signer mismatch",
+        ));
+    }
+    let deadline_height = slash
+        .slashed_at_height
+        .saturating_add(chain.params.validator_audit_window_blocks.max(1));
+    if chain.state.height > deadline_height {
+        return Err(TvmError::InvalidReceipt("validator audit appeal expired"));
+    }
+    let record = ValidatorAuditAppealRecord {
+        audit_id: slash.audit_id,
+        receipt_id: slash.receipt_id,
+        validator: slash.validator,
+        auditor: slash.auditor,
+        slash_amount: slash.amount,
+        appealed_at_height: chain.state.height,
+        deadline_height,
+        reason: appeal.reason,
+        signature: appeal.signature,
+    };
+    chain
+        .state
+        .validator_audit_appeals
+        .insert(record.audit_id, record.clone());
+    Ok(record)
 }
 
 pub(super) fn apply_validator_audit_slash(

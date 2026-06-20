@@ -125,5 +125,21 @@ fn state_root_commits_to_validator_audit_records() {
             .validator_audit_slashes()
             .contains_key(&audit_id)
     );
-    assert_ne!(after_assignment, chain.state_root());
+    let after_slash = chain.state_root();
+    assert_ne!(after_assignment, after_slash);
+
+    chain
+        .submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            audit_id,
+            validator,
+            "rooted appeal evidence",
+        ))
+        .unwrap();
+    assert!(
+        chain
+            .state()
+            .validator_audit_appeals()
+            .contains_key(&audit_id)
+    );
+    assert_ne!(after_slash, chain.state_root());
 }

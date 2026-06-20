@@ -3,7 +3,8 @@ use crate::chain::{
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
     PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardState,
-    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorAuditAppealRecord, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -222,6 +223,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_validator_audit_assignments(out, state.validator_audit_assignments());
     encode_validator_audit_results(out, state.validator_audit_results());
     encode_validator_audit_slashes(out, state.validator_audit_slashes());
+    encode_validator_audit_appeals(out, state.validator_audit_appeals());
     encode_hash_set(out, state.settled_receipts());
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
@@ -259,6 +261,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         validator_audit_assignments: decode_validator_audit_assignments(reader)?,
         validator_audit_results: decode_validator_audit_results(reader)?,
         validator_audit_slashes: decode_validator_audit_slashes(reader)?,
+        validator_audit_appeals: decode_validator_audit_appeals(reader)?,
         settled_receipts: decode_hash_set(reader)?,
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
@@ -813,6 +816,62 @@ fn decode_validator_audit_slashes(
     Ok(slashes)
 }
 
+fn encode_validator_audit_appeals(
+    out: &mut Vec<u8>,
+    appeals: &BTreeMap<Hash, ValidatorAuditAppealRecord>,
+) {
+    write_len(out, appeals.len());
+    for (audit_id, appeal) in appeals {
+        write_hash(out, audit_id);
+        write_hash(out, &appeal.audit_id);
+        write_hash(out, &appeal.receipt_id);
+        write_hash(out, &appeal.validator);
+        write_hash(out, &appeal.auditor);
+        write_u64(out, appeal.slash_amount);
+        write_u64(out, appeal.appealed_at_height);
+        write_u64(out, appeal.deadline_height);
+        write_len(out, appeal.reason.len());
+        out.extend_from_slice(appeal.reason.as_bytes());
+        out.extend_from_slice(&appeal.signature);
+    }
+}
+
+fn decode_validator_audit_appeals(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ValidatorAuditAppealRecord>> {
+    let mut appeals = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let audit_id = reader.read_hash()?;
+        let record_audit_id = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let validator = reader.read_hash()?;
+        let auditor = reader.read_hash()?;
+        let slash_amount = reader.read_u64()?;
+        let appealed_at_height = reader.read_u64()?;
+        let deadline_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid validator audit appeal reason"))?
+            .to_owned();
+        let signature = reader.read_hash()?;
+        appeals.insert(
+            audit_id,
+            ValidatorAuditAppealRecord {
+                audit_id: record_audit_id,
+                receipt_id,
+                validator,
+                auditor,
+                slash_amount,
+                appealed_at_height,
+                deadline_height,
+                reason,
+                signature,
+            },
+        );
+    }
+    Ok(appeals)
+}
+
 fn read_bool(reader: &mut StateReader<'_>, error: &'static str) -> Result<bool> {
     match reader.read_u8()? {
         0 => Ok(false),
@@ -1141,7 +1200,7 @@ mod tests {
         submit_block_vote, submit_job, submit_receipt, transfer,
     };
     use super::*;
-    use crate::chain::{ChainCommand, ChainEngine};
+    use crate::chain::{ChainCommand, ChainEngine, ValidatorAuditAppeal};
     use crate::ir::canonical_matmul_graph;
     use crate::jobs::{
         GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt,
@@ -1322,6 +1381,20 @@ mod tests {
             BlockVote::new(validator, validator_stake, &block),
         );
         produce_block(&mut chain, validator, 1_006);
+        let audit_id = *chain
+            .state()
+            .validator_audit_slashes()
+            .keys()
+            .next()
+            .expect("durable fixture should include an audit slash");
+        let appealed_validator = chain.state().validator_audit_slashes()[&audit_id].validator;
+        chain
+            .submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+                audit_id,
+                appealed_validator,
+                "durable appeal evidence",
+            ))
+            .unwrap();
         chain
     }
 
@@ -1346,6 +1419,7 @@ mod tests {
         assert_eq!(loaded.state_root(), chain.state_root());
         assert_eq!(loaded.state().validator_audit_assignments().len(), 1);
         assert_eq!(loaded.state().validator_audit_slashes().len(), 1);
+        assert_eq!(loaded.state().validator_audit_appeals().len(), 1);
         assert_eq!(
             loaded
                 .state()
@@ -1355,6 +1429,16 @@ mod tests {
                 .unwrap()
                 .amount,
             17
+        );
+        assert_eq!(
+            loaded
+                .state()
+                .validator_audit_appeals()
+                .values()
+                .next()
+                .unwrap()
+                .reason,
+            "durable appeal evidence"
         );
         assert_eq!(
             loaded.state().program_bodies(),

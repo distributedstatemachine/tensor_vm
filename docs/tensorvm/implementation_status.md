@@ -130,6 +130,10 @@ blocker clears. See
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
   and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
   challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
+  Slashed validators can submit signed, bounded mandatory-audit appeal records through the shared chain
+  command path; those records are tied to an existing audit slash, accepted only from the slashed
+  validator before the audit appeal deadline, committed in the state root, and persisted in chain-state
+  snapshots. Appeal adjudication/refund mechanics remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable

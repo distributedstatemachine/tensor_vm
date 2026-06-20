@@ -2,8 +2,8 @@ use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
     JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
     PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
-    RewardState, ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord,
-    ValidatorState,
+    RewardState, ValidatorAuditAppealRecord, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -69,6 +69,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     ));
     parts.extend_from_slice(&validator_audit_result_root(&state.validator_audit_results));
     parts.extend_from_slice(&validator_audit_slash_root(&state.validator_audit_slashes));
+    parts.extend_from_slice(&validator_audit_appeal_root(&state.validator_audit_appeals));
     parts.extend_from_slice(&settled_receipt_root(&state.settled_receipts));
     parts.extend_from_slice(&hash_set_root(
         b"tensor-vm-included-receipt-root-v1",
@@ -210,6 +211,26 @@ pub(super) fn validator_audit_slash_root(
         encoded.extend_from_slice(slash.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-validator-audit-slash-root-v1", &[&encoded])
+}
+
+pub(super) fn validator_audit_appeal_root(
+    appeals: &BTreeMap<Hash, ValidatorAuditAppealRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (audit_id, appeal) in appeals {
+        encoded.extend_from_slice(audit_id);
+        encoded.extend_from_slice(&appeal.audit_id);
+        encoded.extend_from_slice(&appeal.receipt_id);
+        encoded.extend_from_slice(&appeal.validator);
+        encoded.extend_from_slice(&appeal.auditor);
+        encoded.extend_from_slice(&appeal.slash_amount.to_le_bytes());
+        encoded.extend_from_slice(&appeal.appealed_at_height.to_le_bytes());
+        encoded.extend_from_slice(&appeal.deadline_height.to_le_bytes());
+        encoded.extend_from_slice(&(appeal.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(appeal.reason.as_bytes());
+        encoded.extend_from_slice(&appeal.signature);
+    }
+    hash_bytes(b"tensor-vm-validator-audit-appeal-root-v1", &[&encoded])
 }
 
 pub(super) fn proposer_penalty_root(penalties: &BTreeMap<Address, u64>) -> Hash {

@@ -482,6 +482,7 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .state()
         .validator_audit_slashes()
         .get(&audit_id)
+        .cloned()
         .unwrap();
     assert_eq!(slash.validator, audited);
     assert_eq!(slash.auditor, auditor);
@@ -491,6 +492,97 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         starting_stake - 55
     );
     assert_eq!(chain.state().rewards().treasury(), starting_treasury + 55);
+    assert_eq!(
+        chain.submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            hash_bytes(b"test", &[b"unknown-audit-appeal"]),
+            audited,
+            "audit evidence references the wrong receipt",
+        )),
+        Err(TvmError::InvalidReceipt("unknown validator audit slash"))
+    );
+    assert_eq!(
+        chain.submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            audit_id,
+            unauthorized_auditor,
+            "only the slashed validator may appeal",
+        )),
+        Err(TvmError::InvalidReceipt(
+            "validator audit appeal signer mismatch"
+        ))
+    );
+    let mut bad_signature = ValidatorAuditAppeal::new(
+        audit_id,
+        audited,
+        "signature does not match the appeal body",
+    );
+    bad_signature.signature = [0; 32];
+    assert_eq!(
+        chain.submit_validator_audit_appeal(bad_signature),
+        Err(TvmError::InvalidReceipt(
+            "bad validator audit appeal signature"
+        ))
+    );
+    let mut expired_chain = chain.clone();
+    expired_chain.set_position_for_testing(
+        slash
+            .slashed_at_height
+            .saturating_add(expired_chain.params().validator_audit_window_blocks.max(1))
+            .saturating_add(1),
+        0,
+    );
+    assert_eq!(
+        expired_chain.submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            audit_id,
+            audited,
+            "appeal after the audit appeal window",
+        )),
+        Err(TvmError::InvalidReceipt("validator audit appeal expired"))
+    );
+    let appeal_events = chain
+        .submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            audit_id,
+            audited,
+            "auditor recomputation omitted the served output chunk",
+        ))
+        .unwrap();
+    let appeal = chain
+        .state()
+        .validator_audit_appeals()
+        .get(&audit_id)
+        .unwrap();
+    assert_eq!(appeal.receipt_id, receipt.receipt_id);
+    assert_eq!(appeal.validator, audited);
+    assert_eq!(appeal.auditor, auditor);
+    assert_eq!(appeal.slash_amount, 55);
+    assert_eq!(appeal.appealed_at_height, chain.state().height());
+    assert_eq!(
+        appeal.deadline_height,
+        slash
+            .slashed_at_height
+            .saturating_add(chain.params().validator_audit_window_blocks.max(1))
+    );
+    assert_eq!(
+        appeal.reason,
+        "auditor recomputation omitted the served output chunk"
+    );
+    assert!(appeal_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ValidatorAuditAppealAccepted {
+            audit_id: event_audit_id,
+            validator: event_validator,
+            deadline_height,
+        } if *event_audit_id == audit_id
+            && *event_validator == audited
+            && *deadline_height == appeal.deadline_height
+    )));
+    assert_eq!(
+        chain.submit_validator_audit_appeal(ValidatorAuditAppeal::new(
+            audit_id,
+            audited,
+            "duplicate appeal",
+        )),
+        Err(TvmError::InvalidReceipt("duplicate validator audit appeal"))
+    );
     let voided_validator_claim = chain
         .state()
         .pending_receipt_rewards()

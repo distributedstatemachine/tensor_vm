@@ -464,6 +464,55 @@ pub struct ValidatorAuditSlashRecord {
     pub reason: String,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditAppeal {
+    pub audit_id: Hash,
+    pub validator: Address,
+    pub reason: String,
+    pub signature: Signature,
+}
+
+impl ValidatorAuditAppeal {
+    pub fn new(audit_id: Hash, validator: Address, reason: impl Into<String>) -> Self {
+        let reason = reason.into();
+        let message = Self::message_hash(&audit_id, &validator, &reason);
+        Self {
+            audit_id,
+            validator,
+            reason,
+            signature: sign(&validator, &message),
+        }
+    }
+
+    pub fn verify_signature(&self) -> bool {
+        verify_signature(
+            &self.validator,
+            &Self::message_hash(&self.audit_id, &self.validator, &self.reason),
+            &self.signature,
+        )
+    }
+
+    fn message_hash(audit_id: &Hash, validator: &Address, reason: &str) -> Hash {
+        hash_bytes(
+            b"tensor-vm-validator-audit-appeal-v1",
+            &[audit_id, validator, reason.as_bytes()],
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorAuditAppealRecord {
+    pub audit_id: Hash,
+    pub receipt_id: Hash,
+    pub validator: Address,
+    pub auditor: Address,
+    pub slash_amount: u64,
+    pub appealed_at_height: u64,
+    pub deadline_height: u64,
+    pub reason: String,
+    pub signature: Signature,
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub struct RewardAllocation {
     pub miner_reward_pool: u64,
@@ -903,6 +952,7 @@ pub struct ChainState {
     pub(in crate::chain) validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
     pub(in crate::chain) validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
     pub(in crate::chain) validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
+    pub(in crate::chain) validator_audit_appeals: BTreeMap<Hash, ValidatorAuditAppealRecord>,
     pub(in crate::chain) settled_receipts: BTreeSet<Hash>,
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -940,6 +990,7 @@ pub(crate) struct ChainStateParts {
     pub validator_audit_assignments: BTreeMap<Hash, ValidatorAuditAssignment>,
     pub validator_audit_results: BTreeMap<Hash, ValidatorAuditResult>,
     pub validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
+    pub validator_audit_appeals: BTreeMap<Hash, ValidatorAuditAppealRecord>,
     pub settled_receipts: BTreeSet<Hash>,
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
@@ -978,6 +1029,7 @@ impl ChainState {
             validator_audit_assignments: parts.validator_audit_assignments,
             validator_audit_results: parts.validator_audit_results,
             validator_audit_slashes: parts.validator_audit_slashes,
+            validator_audit_appeals: parts.validator_audit_appeals,
             settled_receipts: parts.settled_receipts,
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
@@ -1079,6 +1131,10 @@ impl ChainState {
 
     pub fn validator_audit_slashes(&self) -> &BTreeMap<Hash, ValidatorAuditSlashRecord> {
         &self.validator_audit_slashes
+    }
+
+    pub fn validator_audit_appeals(&self) -> &BTreeMap<Hash, ValidatorAuditAppealRecord> {
+        &self.validator_audit_appeals
     }
 
     pub fn settled_receipts(&self) -> &BTreeSet<Hash> {

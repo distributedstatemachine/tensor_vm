@@ -5,12 +5,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 70, chain-owned validator auditor selection, pushed.
+- Active feature: Iteration 71, chain-owned validator audit appeals.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
-  challenger reward claims. Mandatory validator audits exist, but assignments still need explicit
-  chain-owned auditor selection and authorization.
+  challenger reward claims. Mandatory validator audits now include deterministic chain-owned auditor
+  selection, report authorization, and signed state-rooted appeal records for existing audit slashes.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -18,8 +18,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with deterministic live bad-block generation, appeal paths, live calibration, or
-  Docker `/health`.
+- Next action: continue with appeal adjudication/refund mechanics, live parameter calibration,
+  deterministic live bad-block generation, or Docker `/health`.
 
 ## Readiness Matrix
 
@@ -36,39 +36,52 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 70 auditor selection implemented locally | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable `study::economic_invariant_study` | Add appeal paths and live parameter calibration |
+| Economics and slashing invariant | Partial; Iteration 70 auditor selection implemented locally | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable `study::economic_invariant_study` | Add audit appeal records and live parameter calibration |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 70: Chain-Owned Validator Auditor Selection
+### Iteration 71: Chain-Owned Validator Audit Appeals
 
-Feature capability: mandatory validator audit assignments should name the validator responsible for the
-audit, exclude the audited validator, and reject reports from non-assigned auditors.
+Feature capability: validators slashed by a mandatory audit can submit a signed, bounded appeal that is
+state-rooted, persisted, and tied to the existing audit slash record.
 
 Readiness requirements covered:
-- `upow.md` §12.2 and `mvp_spec.md` §25.5: mandatory audits must be randomized, accountable, and slashable.
-- `local_chain_production_readiness.md` economics gap: full auditor-selection policy must move out of
-  role-side discovery.
+- `upow.md` §12.2 and `mvp_spec.md` §26: hard slashing needs battle-tested appeal/challenge flow evidence.
+- `coverage_matrix.md` criterion 5: appeals are the remaining local economics gap after assigned auditors.
 
-Canonical owner: chain block transition and validator audit assignment state.
-Old shortcut being removed: any registered non-audited validator can no longer submit any open audit.
-Validation plan: focused audit assignment/report tests, storage/root tests, role runtime audit test,
-formatting/whitespace, crate/workspace checks, final Gate 0, tarpaulin attempt.
+Canonical owner: chain audit/slash state and command validation.
+Adapter callers: none in this slice; future p2p/runtime appeal gossip must call the same command.
+Old shortcut being removed: audit slashes currently have no canonical dispute marker.
+Regression test that proves the shortcut is gone: focused chain test accepts exactly one signed validator
+appeal for an existing slash and rejects unknown, wrong-signer, duplicate, and expired appeals.
+Behavior with local synthetic block production disabled: appeal submission is independent of producers.
+Behavior for producer and non-producer roles: no role-specific path yet; future network ingestion must
+apply the same command.
+Structured evidence source: `ChainState::validator_audit_appeals()` and the state root/storage snapshot.
+Finality source: appeal records do not alter block finality in this slice.
+Wire-size and codec boundary: no wire format in this slice; reason text is bounded before state insertion.
+
+Files/modules likely touched: chain state/validation/commands/roots/tests, storage snapshot tests,
+status/coverage/readiness docs, exec plan.
+Narrow validation commands: focused audit/root/storage tests.
+Broad validation commands before commit: fmt, diff check, full crate, clippy, workspace release, final Gate 0,
+tarpaulin attempt.
+Out of scope: adjudication/refund mechanics, p2p appeal gossip, data-unavailability appeals, live parameter
+calibration, Docker `/health`.
+Split trigger: if state persistence or root integration forces network codec changes, split network gossip
+into a later iteration.
 
 Implementation summary:
-- Added a persisted `auditor` to validator audit assignments and committed it in the audit-assignment
-  root.
-- Deterministically selects a registered auditor distinct from the audited validator, and skips assignment
-  when no separate auditor exists.
-- Rejects chain and network audit reports from non-assigned auditors, and limits validator role audit
-  observation to locally assigned audits.
-- Updated audit, storage, root, node-ingest, role-runtime, and docs coverage.
+- Added signed `ValidatorAuditAppeal` submissions and persisted `ValidatorAuditAppealRecord` state.
+- Accepted appeals only for existing audit slashes, from the slashed validator, before a bounded deadline.
+- Committed appeal records in the state root and persisted them through chain-state snapshots.
+- Updated audit, root, storage, and economics/readiness docs while leaving adjudication/refund mechanics
+  out of scope.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused tests passed for mandatory separate-auditor assignment, contradicted/missed audits,
-  state-root/storage persistence, node payload ingest, and validator role audit reporting.
+- Focused tests passed for audit appeal admission/rejection, audit state roots, and chain-state persistence.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 401 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -77,9 +90,16 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `79b4d12` (`Assign validator audit auditors in chain`) is pushed to `main`.
 
 ## Recent Iterations
+
+### Iteration 70: Chain-Owned Validator Auditor Selection
+
+Mandatory audit assignments now persist a deterministic auditor distinct from the audited validator,
+reject reports from non-assigned auditors, and limit validator role observation to local assignments.
+Validation passed focused audit/root/storage/node/role tests, full crate, clippy, workspace release, and
+first/final Gate 0; tarpaulin remained blocked. Feature commit `79b4d12` and evidence commit `94767bd`
+are pushed.
 
 ### Iteration 69: Full Challenge-Reward Maturity Delay
 
@@ -202,21 +222,6 @@ IR/conformance/verifier tests, `cargo test -p tensor_vm`, formatting/whitespace,
 and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and evidence commit
 `1019527` are pushed.
 
-### Iteration 61: Canonical Receipt Reward Maturity Delay
-
-Receipt rewards now use the explicit reward maturity delay rather than the tensor-retention window proxy.
-`chain::settlement::receipt_reward_claimable_height` computes initial receipt claim maturity with
-`ChainParams::reward_maturity_delay_blocks()`, while block application keeps inclusion maturity as an
-additional floor. Validation passed focused settlement/block/reward/audit tests, `cargo test -p tensor_vm`,
-clippy, workspace release, and first/final Gate 0. Tarpaulin remained blocked by the missing subcommand.
-Feature commit `8c297d9` (`Delay receipt rewards by maturity rule`) is pushed to `main`.
-
-### Iteration 60: Exact Single-Output Structural Tier-B Admission
-
-Admitted `squeeze`, `unsqueeze`, `slice`, `tril`, and `triu` into exact Tier-B replay with shape inference,
-row-major execution, conformance vectors, and graph verifier profile gating. Dynamic-output `split` was
-explicitly deferred to Iteration 62.
-
 ## Decision Log
 
 - `upow.md` is canonical; `mvp_spec.md` wins where `upow.md` is silent. Stale readiness/exec text should be
@@ -231,12 +236,13 @@ explicitly deferred to Iteration 62.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 70 on June 20, 2026:
+Latest full validation is Iteration 71 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape
-bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
+cargo test -p tensor_vm validator_audit --quiet
+cargo test -p tensor_vm state_root_commits_to_validator_audit_records --quiet
+cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
