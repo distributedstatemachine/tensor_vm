@@ -523,6 +523,14 @@ pub struct ValidatorAuditAppealRecord {
     pub deadline_height: u64,
     pub reason: String,
     pub signature: Signature,
+    pub resolved_at_height: Option<u64>,
+    pub resolution: Option<ValidatorAuditAppealResolution>,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ValidatorAuditAppealResolution {
+    UpholdSlash,
+    ReverseRewardVoid,
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

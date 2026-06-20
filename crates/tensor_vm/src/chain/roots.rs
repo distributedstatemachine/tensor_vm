@@ -2,8 +2,8 @@ use super::{
     AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
     JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
     PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
-    RewardState, ValidatorAuditAppealRecord, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    RewardState, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -229,6 +229,18 @@ pub(super) fn validator_audit_appeal_root(
         encoded.extend_from_slice(&(appeal.reason.len() as u64).to_le_bytes());
         encoded.extend_from_slice(appeal.reason.as_bytes());
         encoded.extend_from_slice(&appeal.signature);
+        match appeal.resolved_at_height {
+            Some(height) => {
+                encoded.push(1);
+                encoded.extend_from_slice(&height.to_le_bytes());
+            }
+            None => encoded.push(0),
+        }
+        encoded.push(match appeal.resolution {
+            Some(ValidatorAuditAppealResolution::UpholdSlash) => 1,
+            Some(ValidatorAuditAppealResolution::ReverseRewardVoid) => 2,
+            None => 0,
+        });
     }
     hash_bytes(b"tensor-vm-validator-audit-appeal-root-v1", &[&encoded])
 }

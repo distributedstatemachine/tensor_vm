@@ -109,6 +109,19 @@ impl ChainEngine for Chain {
                     deadline_height: record.deadline_height,
                 }])
             }
+            ChainCommand::ResolveValidatorAuditAppeal {
+                audit_id,
+                resolution,
+            } => {
+                let outcome =
+                    super::validation::resolve_validator_audit_appeal(self, audit_id, resolution)?;
+                Ok(vec![ChainEvent::ValidatorAuditAppealResolved {
+                    audit_id,
+                    validator: outcome.validator,
+                    resolution,
+                    receipt_reward_reinstated: outcome.receipt_reward_reinstated,
+                }])
+            }
             ChainCommand::SubmitBlock(block) => match self.admit_block(block)? {
                 BlockAdmission::Applied { height, hash } => {
                     Ok(vec![ChainEvent::BlockAccepted { height, hash }])

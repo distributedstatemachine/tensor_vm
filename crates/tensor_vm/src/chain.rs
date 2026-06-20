@@ -36,9 +36,9 @@ pub use state::{
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
     ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardAllocation, RewardClaimKey,
     RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock,
-    Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAssignment,
-    ValidatorAuditEconomicCalibration, ValidatorAuditReport, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditEconomicCalibration, ValidatorAuditReport,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 
@@ -166,6 +166,17 @@ impl Chain {
         appeal: ValidatorAuditAppeal,
     ) -> Result<Vec<ChainEvent>> {
         self.apply_command(ChainCommand::SubmitValidatorAuditAppeal(appeal))
+    }
+
+    pub fn resolve_validator_audit_appeal(
+        &mut self,
+        audit_id: Hash,
+        resolution: ValidatorAuditAppealResolution,
+    ) -> Result<Vec<ChainEvent>> {
+        self.apply_command(ChainCommand::ResolveValidatorAuditAppeal {
+            audit_id,
+            resolution,
+        })
     }
 
     pub fn has_attestation_quorum(&self, receipt_id: &Hash) -> bool {

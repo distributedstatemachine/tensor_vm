@@ -1,6 +1,6 @@
 use super::state::{
     BlockVote, ChainParams, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditAppeal,
-    ValidatorAuditReport,
+    ValidatorAuditAppealResolution, ValidatorAuditReport,
 };
 use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::Result;
@@ -64,6 +64,10 @@ pub enum ChainCommand {
     SubmitAttestation(ValidatorAttestation),
     SubmitValidatorAuditReport(ValidatorAuditReport),
     SubmitValidatorAuditAppeal(ValidatorAuditAppeal),
+    ResolveValidatorAuditAppeal {
+        audit_id: Hash,
+        resolution: ValidatorAuditAppealResolution,
+    },
     SubmitBlock(TensorBlock),
     SubmitBlockVote(BlockVote),
     SettleEpoch {
@@ -135,6 +139,12 @@ pub enum ChainEvent {
         audit_id: Hash,
         validator: Address,
         deadline_height: u64,
+    },
+    ValidatorAuditAppealResolved {
+        audit_id: Hash,
+        validator: Address,
+        resolution: ValidatorAuditAppealResolution,
+        receipt_reward_reinstated: bool,
     },
     BlockVoteAccepted {
         block_hash: Hash,

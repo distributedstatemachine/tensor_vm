@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 73, live validator-audit economic calibration.
+- Active feature: Iteration 74, validator audit appeal reward-delay resolution.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
@@ -13,7 +13,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   selection, report authorization, signed state-rooted appeal records, and pending validator-reward holds
   through the audit appeal deadline after a slash. Chain state, service status, and explorer overview now
   expose live validator-audit economic calibration from current params and pending validator reward
-  exposure.
+  exposure. Appeal resolution now mutates delayed pending validator reward claims directly, without
+  immediate spendable credit or adapter-side release.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -21,8 +22,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue with appeal adjudication outcome mechanics, broader bond calibration,
-  deterministic live bad-block generation, multi-validator proposer/fork-choice, or Docker `/health`.
+- Next action: continue with broader bond calibration, deterministic live bad-block generation,
+  multi-validator proposer/fork-choice, governed stake-slash reversal, or Docker `/health`.
 
 ## Readiness Matrix
 
@@ -39,70 +40,81 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 73 live audit calibration implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add appeal outcome mechanics and broader bond calibration |
+| Economics and slashing invariant | Partial; Iteration 74 appeal reward resolution implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add broader bond calibration and governed stake-slash reversal |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 73: Live Validator-Audit Economic Calibration
+### Iteration 74: Validator Audit Appeal Reward-Delay Resolution
 
-Feature capability: canonical chain state reports whether the configured validator-audit slash is greater
-than the observed at-risk pending validator reward divided by the live audit detection probability.
+Feature capability: resolve an existing validator audit appeal through the chain command path by either
+keeping the delayed validator receipt reward voided until normal pruning, or reversing the reward void so
+the existing maturity sweep releases it only after `claimable_at_height`.
 
 Readiness requirements covered:
-- `upow.md` §12.2 and §16: state and re-verify the bond ≥ gain-from-fraud invariant whenever parameters
-  change.
-- `mvp_spec.md` §25-§26 and criterion 15: economic success metrics report slashable bonds, detection
-  probability, and data needed to judge fraud incentives.
-- `coverage_matrix.md` criterion 5/15 and `implementation_status.md`: replace study-only calibration with
-  live state evidence for the current mandatory-audit parameters.
+- `upow.md` §12: validator rewards remain slash/appeal subject to delayed settlement instead of immediate
+  credit or adapter-owned release.
+- `mvp_spec.md` §20.7/§26 and coverage criterion 5: challenge/audit outcomes operate on delayed
+  state-rooted reward claims before maturity.
+- `implementation_status.md`: close the open appeal outcome mechanics gap without bypassing the delayed
+  reward ledger.
 
-Canonical owner: `ChainState` economic calibration view over `ChainParams` and pending validator receipt
-rewards.
-Adapter callers: service status and explorer overview render scalar fields from that chain view.
-Old shortcut being removed: economics docs/tests could cite only the standalone study helper, not the
-current chain's configured sampling rate, slash amount, and at-risk reward exposure.
-Regression test that proves the shortcut is gone: focused chain/status/RPC tests prove calibration fields
-change from live pending validator rewards and configured audit parameters.
-Behavior with local synthetic block production disabled: the view reads persisted chain state only.
-Behavior for producer and non-producer roles: any node with the same state/params reports identical
-calibration fields.
-Structured evidence source: `ChainState::validator_audit_economic_calibration`, service status fields, and
-explorer overview JSON.
-Finality source: read-only status; no block-finality changes.
-Wire-size and codec boundary: no p2p codec changes; bounded scalar RPC/status fields only.
+Canonical owner: `chain::validation` resolves audit appeals and mutates `ChainState::pending_receipt_rewards`.
+Adapter callers: none in this slice; callers use `ChainCommand`/`ChainEvent` only.
+Old shortcut being removed: appeal outcome work could have been modeled as an adapter release/prune action
+outside the pending reward ledger.
+Regression test that proves the shortcut is gone: focused chain tests show a reversed appeal unvoids the
+pending validator receipt claim but does not credit spendable balance until `release_matured_receipt_rewards`.
+Behavior with local synthetic block production disabled: resolution is independent of production and reads
+only persisted audit/slash/appeal/reward state.
+Behavior for producer and non-producer roles: any node applying the same command reaches the same pending
+claim void/release state.
+Structured evidence source: chain events, `validator_audit_appeals`, and `pending_receipt_rewards`.
+Finality source: no finality changes; resolution is a chain command that must be included/applied by the
+same engine path as other consensus mutations.
+Wire-size and codec boundary: no p2p wire changes in this slice; command is local chain API only.
 
-Files/modules likely touched: `chain/state.rs`, `app/status.rs`, `rpc/explorer.rs`, focused tests, and
-economics/readiness docs.
-Narrow validation commands: focused economic calibration, status, and explorer tests.
+Files/modules likely touched: `chain/state.rs`, `chain/engine.rs`, `chain/validation.rs`,
+`chain/commands.rs`, `chain.rs`, focused audit tests, and docs/status updates.
+Narrow validation commands: focused `validator_audit` tests and reward-release tests.
 Broad validation commands before commit: fmt, diff check, full crate, clippy, workspace release, final
 Gate 0, tarpaulin attempt.
-Out of scope: appeal adjudication outcomes, changing slash parameters, p2p appeal gossip, deterministic
-live bad-block generation, Docker `/health`.
-Split trigger: if calibration needs persisted schema or parameter mutation commands, split storage/schema
-from read-only evidence.
+Expected observable evidence: reversed appeals restore delayed claim eligibility without immediate spendable
+credit; upheld appeals keep the claim voided for normal pruning.
+Out of scope: p2p appeal-resolution gossip, central adjudicator networking, stake slash reversal, broader
+bond calibration, deterministic live bad-block generation, Docker `/health`.
+Split trigger: if persistence schema changes require broad codec migration, split storage/schema from
+appeal reward behavior.
 
 Implementation summary:
-- Added `ChainState::validator_audit_economic_calibration` with integer/rational strict-margin logic over
-  configured audit sampling, slash amount, and live non-voided pending validator receipt rewards.
-- Exposed detection probability, slashable bond, reward exposure, required slash, at-risk claim count, and
-  invariant pass/fail through service status and explorer overview.
-- Updated focused chain/status/RPC tests and economics/readiness docs.
+- Added `ValidatorAuditAppealResolution` and `ChainCommand::ResolveValidatorAuditAppeal`.
+- Stored one-shot appeal resolution in the state-rooted/persisted appeal record.
+- Reversed reward-void outcomes clear the delayed validator receipt claim's void flag but do not credit
+  spendable balance; release still goes through `release_matured_receipt_rewards`.
+- Upheld outcomes keep the delayed claim voided for normal pruning.
+- Updated focused chain/storage tests and economics/readiness docs.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused tests passed for live audit economic calibration, status fields, and explorer overview JSON.
+- Focused tests: `cargo test -p tensor_vm validator_audit --quiet` and
+  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 404 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed: 5 local-testnet library tests
-  plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `493191c` (`Expose audit economic calibration`) is pushed to `origin/main`.
+- Feature commit: pending.
 
 ## Recent Iterations
+
+### Iteration 73: Live Validator-Audit Economic Calibration
+
+Chain state, service status, and explorer overview expose live validator-audit economic calibration from
+configured audit sampling, slash amount, and current non-voided pending validator reward exposure.
+Validation passed focused chain/status/RPC tests, full crate, clippy, workspace release, and first/final
+Gate 0; tarpaulin remained blocked. Feature commit `493191c` and evidence commit `8dbb654` are pushed.
 
 ### Iteration 72: Validator Audit Reward Hold-Through Appeal Window
 
@@ -114,9 +126,9 @@ commit `4ae1610` and evidence commit `e9077a9` are pushed.
 ### Iteration 71: Chain-Owned Validator Audit Appeals
 
 Validators slashed by a mandatory audit can submit a signed, bounded appeal tied to an existing audit slash.
-Appeal records are state-rooted and persisted; adjudication outcome mechanics remain open. Validation
-passed focused audit/root/storage tests, full crate, clippy, workspace release, and first/final Gate 0;
-tarpaulin remained blocked. Feature commit `09b2a49` and evidence commit `af2c377` are pushed.
+Appeal records are state-rooted and persisted. Validation passed focused audit/root/storage tests, full
+crate, clippy, workspace release, and first/final Gate 0; tarpaulin remained blocked. Feature commit
+`09b2a49` and evidence commit `af2c377` are pushed.
 
 ### Iteration 70: Chain-Owned Validator Auditor Selection
 
@@ -190,16 +202,15 @@ and first/final Gate 0. Tarpaulin remained blocked. Feature commit `903cf9b` and
 - Consensus mutation belongs in the shared chain/IR/verifier layers, not `tvmd`, p2p/RPC adapters,
   deployment scripts, or checker-only branches.
 - Multi-agent writer work is not used unless explicitly requested and file ownership is non-overlapping;
-  this iteration stayed single-writer because IR/conformance/verifier edits were tightly coupled.
+  this iteration stayed single-writer because chain state, storage, roots, and tests were tightly coupled.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 72 on June 20, 2026:
+Latest full validation is Iteration 74 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
 cargo test -p tensor_vm validator_audit --quiet
-cargo test -p tensor_vm state_root_commits_to_validator_audit_records --quiet
 cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
 cargo fmt --check --all
 git diff --check

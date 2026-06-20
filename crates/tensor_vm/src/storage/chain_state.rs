@@ -3,8 +3,8 @@ use crate::chain::{
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
     PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptState, RewardState,
-    ValidatorAuditAppealRecord, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
 use crate::error::{Result, TvmError};
@@ -833,6 +833,18 @@ fn encode_validator_audit_appeals(
         write_len(out, appeal.reason.len());
         out.extend_from_slice(appeal.reason.as_bytes());
         out.extend_from_slice(&appeal.signature);
+        match appeal.resolved_at_height {
+            Some(height) => {
+                out.push(1);
+                write_u64(out, height);
+            }
+            None => out.push(0),
+        }
+        out.push(match appeal.resolution {
+            Some(ValidatorAuditAppealResolution::UpholdSlash) => 1,
+            Some(ValidatorAuditAppealResolution::ReverseRewardVoid) => 2,
+            None => 0,
+        });
     }
 }
 
@@ -854,6 +866,25 @@ fn decode_validator_audit_appeals(
             .map_err(|_| TvmError::Storage("invalid validator audit appeal reason"))?
             .to_owned();
         let signature = reader.read_hash()?;
+        let resolved_at_height = match reader.read_u8()? {
+            0 => None,
+            1 => Some(reader.read_u64()?),
+            _ => {
+                return Err(TvmError::Storage(
+                    "invalid validator audit appeal resolution height",
+                ));
+            }
+        };
+        let resolution = match reader.read_u8()? {
+            0 => None,
+            1 => Some(ValidatorAuditAppealResolution::UpholdSlash),
+            2 => Some(ValidatorAuditAppealResolution::ReverseRewardVoid),
+            _ => {
+                return Err(TvmError::Storage(
+                    "invalid validator audit appeal resolution",
+                ));
+            }
+        };
         appeals.insert(
             audit_id,
             ValidatorAuditAppealRecord {
@@ -866,6 +897,8 @@ fn decode_validator_audit_appeals(
                 deadline_height,
                 reason,
                 signature,
+                resolved_at_height,
+                resolution,
             },
         );
     }
@@ -1396,6 +1429,12 @@ mod tests {
             ))
             .unwrap();
         chain
+            .resolve_validator_audit_appeal(
+                audit_id,
+                ValidatorAuditAppealResolution::ReverseRewardVoid,
+            )
+            .unwrap();
+        chain
     }
 
     #[test]
@@ -1439,6 +1478,20 @@ mod tests {
                 .unwrap()
                 .reason,
             "durable appeal evidence"
+        );
+        let loaded_appeal = loaded
+            .state()
+            .validator_audit_appeals()
+            .values()
+            .next()
+            .unwrap();
+        assert_eq!(
+            loaded_appeal.resolution,
+            Some(ValidatorAuditAppealResolution::ReverseRewardVoid)
+        );
+        assert_eq!(
+            loaded_appeal.resolved_at_height,
+            Some(chain.state().height())
         );
         assert_eq!(
             loaded.state().program_bodies(),

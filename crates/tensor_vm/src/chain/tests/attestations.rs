@@ -612,6 +612,91 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
             .slashed_at_height
             .saturating_add(chain.params().validator_audit_window_blocks.max(1))
     );
+    let claimable_at_height = voided_validator_claim.claimable_at_height;
+    let mut upheld_chain = chain.clone();
+    let upheld_events = upheld_chain
+        .resolve_validator_audit_appeal(audit_id, ValidatorAuditAppealResolution::UpholdSlash)
+        .unwrap();
+    assert!(upheld_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ValidatorAuditAppealResolved {
+            audit_id: event_audit_id,
+            validator: event_validator,
+            resolution: ValidatorAuditAppealResolution::UpholdSlash,
+            receipt_reward_reinstated: false,
+        } if *event_audit_id == audit_id && *event_validator == audited
+    )));
+    assert!(
+        upheld_chain
+            .state()
+            .validator_audit_appeals()
+            .get(&audit_id)
+            .unwrap()
+            .resolution
+            .is_some()
+    );
+    assert!(
+        upheld_chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .find(|reward| {
+                reward.receipt_id == receipt.receipt_id
+                    && reward.beneficiary == audited
+                    && reward.kind == ReceiptRewardKind::Validator
+            })
+            .unwrap()
+            .voided_by_challenge
+    );
+    assert_eq!(
+        upheld_chain.resolve_validator_audit_appeal(
+            audit_id,
+            ValidatorAuditAppealResolution::ReverseRewardVoid,
+        ),
+        Err(TvmError::InvalidReceipt(
+            "validator audit appeal already resolved"
+        ))
+    );
+
+    let reverse_events = chain
+        .resolve_validator_audit_appeal(audit_id, ValidatorAuditAppealResolution::ReverseRewardVoid)
+        .unwrap();
+    assert!(reverse_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ValidatorAuditAppealResolved {
+            audit_id: event_audit_id,
+            validator: event_validator,
+            resolution: ValidatorAuditAppealResolution::ReverseRewardVoid,
+            receipt_reward_reinstated: true,
+        } if *event_audit_id == audit_id && *event_validator == audited
+    )));
+    let reinstated_validator_claim = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id
+                && reward.beneficiary == audited
+                && reward.kind == ReceiptRewardKind::Validator
+        })
+        .expect("reversed appeal should keep the delayed validator reward claim pending");
+    assert!(!reinstated_validator_claim.voided_by_challenge);
+    assert_eq!(
+        reinstated_validator_claim.claimable_at_height,
+        claimable_at_height
+    );
+    assert_eq!(chain.state().rewards().balance(&audited), 0);
+    chain.set_position_for_testing(claimable_at_height.saturating_sub(1), 0);
+    let early_release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(!early_release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            receipt_id: event_receipt_id,
+            beneficiary,
+            ..
+        } if *event_receipt_id == receipt.receipt_id && *beneficiary == audited
+    )));
+    assert_eq!(chain.state().rewards().balance(&audited), 0);
     assert_eq!(
         chain.submit_validator_audit_report(ValidatorAuditReport::new(
             audit_id,
@@ -622,6 +707,17 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         )),
         Err(TvmError::InvalidReceipt("duplicate validator audit result"))
     );
+    chain.set_position_for_testing(claimable_at_height, 0);
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            receipt_id: event_receipt_id,
+            beneficiary,
+            ..
+        } if *event_receipt_id == receipt.receipt_id && *beneficiary == audited
+    )));
+    assert_eq!(chain.state().rewards().balance(&audited), 10);
 
     let mut passing_chain = Chain::with_params(chain.params().clone(), beacon);
     passing_chain.register_miner(miner, 100).unwrap();

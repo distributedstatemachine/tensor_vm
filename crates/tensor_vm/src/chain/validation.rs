@@ -1,7 +1,7 @@
 use super::{
     BlockVote, Chain, ReceiptRewardKind, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
-    ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, blocks,
+    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditReport,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
@@ -265,12 +265,76 @@ pub fn submit_validator_audit_appeal(
         deadline_height,
         reason: appeal.reason,
         signature: appeal.signature,
+        resolved_at_height: None,
+        resolution: None,
     };
     chain
         .state
         .validator_audit_appeals
         .insert(record.audit_id, record.clone());
     Ok(record)
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub(super) struct ValidatorAuditAppealResolutionOutcome {
+    pub validator: crate::types::Address,
+    pub receipt_reward_reinstated: bool,
+}
+
+pub fn resolve_validator_audit_appeal(
+    chain: &mut Chain,
+    audit_id: crate::types::Hash,
+    resolution: ValidatorAuditAppealResolution,
+) -> Result<ValidatorAuditAppealResolutionOutcome> {
+    let appeal = chain
+        .state
+        .validator_audit_appeals
+        .get(&audit_id)
+        .cloned()
+        .ok_or(TvmError::InvalidReceipt("unknown validator audit appeal"))?;
+    if appeal.resolution.is_some() {
+        return Err(TvmError::InvalidReceipt(
+            "validator audit appeal already resolved",
+        ));
+    }
+    let slash = chain
+        .state
+        .validator_audit_slashes
+        .get(&audit_id)
+        .ok_or(TvmError::InvalidReceipt("unknown validator audit slash"))?;
+    if slash.validator != appeal.validator || slash.receipt_id != appeal.receipt_id {
+        return Err(TvmError::InvalidReceipt("validator audit appeal mismatch"));
+    }
+
+    let mut receipt_reward_reinstated = false;
+    let mut matched_reward = false;
+    for reward in chain.state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == appeal.receipt_id
+            && reward.beneficiary == appeal.validator
+            && reward.kind == ReceiptRewardKind::Validator
+        {
+            matched_reward = true;
+            reward.claimable_at_height = reward.claimable_at_height.max(appeal.deadline_height);
+            if resolution == ValidatorAuditAppealResolution::ReverseRewardVoid {
+                reward.voided_by_challenge = false;
+                receipt_reward_reinstated = true;
+            }
+        }
+    }
+    if !matched_reward {
+        return Err(TvmError::InvalidReceipt(
+            "validator audit appeal reward claim missing",
+        ));
+    }
+    if let Some(record) = chain.state.validator_audit_appeals.get_mut(&audit_id) {
+        record.resolved_at_height = Some(chain.state.height);
+        record.resolution = Some(resolution);
+    }
+
+    Ok(ValidatorAuditAppealResolutionOutcome {
+        validator: appeal.validator,
+        receipt_reward_reinstated,
+    })
 }
 
 pub(super) fn apply_validator_audit_slash(

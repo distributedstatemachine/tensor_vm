@@ -510,16 +510,19 @@ TensorBlock {
 > reports from non-assigned auditors; a missed audit or contradictory audit result slashes that validator
 > once, credits treasury, voids that delayed validator reward, and holds the voided pending claim through
 > the audit appeal deadline before it can be pruned without credit. A slashed validator can now submit a
-> signed, bounded appeal that is tied to the audit slash, state-rooted, and persisted for later adjudication.
+> signed, bounded appeal that is tied to the audit slash, state-rooted, and persisted for adjudication.
+> Appeal resolution is also chain-owned for the reward side: an upheld appeal keeps the delayed validator
+> receipt reward voided for normal pruning, while a reversed reward-void outcome reinstates the pending
+> claim but still releases it only through the normal maturity sweep.
 > Chain state also exposes a live validator-audit economic calibration view from the configured audit
 > sampling probability, slash amount, and current non-voided pending validator receipt reward exposure,
 > including the required slashable bond for the strict `bond * P(detection) > reward_from_fraud`
 > invariant and whether the current parameters satisfy it.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
-> gossip bounded audit-report payloads, and expose submitted plus network-applied report counters. Appeal
-> adjudication outcome mechanics, broader bond calibration, and broader invalid-output slashing remain TODO
-> before claiming the full §12 economics invariant.
+> gossip bounded audit-report payloads, and expose submitted plus network-applied report counters. Governed
+> stake-slash reversal, broader bond calibration, and broader invalid-output slashing remain TODO before
+> claiming the full §12 economics invariant.
 
 ### 12.3 Parameters (to be fixed before testnet)
 
