@@ -5,6 +5,11 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
+- Latest in-progress feature: Iteration 16, role-owned live work before validator proposal, changes the
+  scheduled local producer to publish synthetic jobs only. Receipts and attestations are now left to
+  miner/validator role paths before validator block proposal. Focused runtime tests prove a producer tick
+  does not create receipts or attestations and prove the job -> miner receipt -> validator attestation ->
+  validator proposal path with existing role-owned helpers.
 - Latest completed feature: Iteration 15, validator-owned local block proposal tick, is implemented,
   validated, and pushed as `0d7debcdb94ef50493e2f2926d4f3dc5983fcbd4`
   (`Add validator-owned block proposal tick`) on `origin/main`. This iteration splits local
@@ -42,13 +47,69 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator block votes | Implemented/pushed | `fb0feb0`; validator role submits `SubmitBlockVote`, gossips block-vote payloads, and status/checker fields expose submitted/ingested/applied vote counters | Rerun full Docker checker after `/health` blocker clears |
 | Remote tensor availability | Implemented/pushed | `2d6609e`; root-addressed tensor request-response and validator fetch counters | Reuse for block-check evidence; revisit slow-peer bounds later |
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
-| Proposer/block production | Validator proposal tick started | Iteration 15 working tree; scheduled runtime production uses `submit_validator_role_block_proposal` after synthetic work generation, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Remove remaining producer-local synthetic job/receipt/attestation generation and require positive role-owned miner/validator counters |
+| Proposer/block production | Validator proposal tick started | Iteration 15; scheduled runtime production uses `submit_validator_role_block_proposal`, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Keep validator-owned proposal while removing remaining producer-local work synthesis |
+| Role-owned live work before proposal | In progress | Iteration 16 working tree; scheduled production publishes jobs only, role-owned runtime tests cover miner receipt and validator attestation before proposal | Harden Docker checker timing/evidence for positive live miner and validator counters |
 | Canonical useful-verification block validity | Partially implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce; strict vote validation checks state root, beacon, PoW, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, retargeting, and fallback |
 | Checker evidence | Updated | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; checker asserts all booleans before scan exit | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
 ## Recent Iterations
+
+### Iteration 16: Role-Owned Live Work Before Validator Proposal
+
+Feature capability:
+Replace the scheduled producer-local synthetic work path with job-only publication. The local producer may
+create and gossip deterministic local jobs, but it no longer creates miner receipts, validator
+attestations, settlement, or model transitions before proposing. Existing miner and validator role helpers
+own receipt and attestation creation before validator proposal.
+
+Checkpoint before edits:
+- Canonical owner: `ChainEngine` owns job admission, receipt/attestation admission, settlement
+  preparation, block proposal, and finality.
+- Adapter callers: runtime production can submit one synthetic local job and request validator proposal;
+  miner/validator role loops submit receipts and attestations.
+- Old shortcut removed from scheduled runtime: `produce_and_publish_synthetic_work` is no longer called by
+  `LocalProductionSchedule`.
+- Regression tests: scheduled production adds jobs but no receipts/attestations; a role-owned pipeline test
+  creates the receipt and attestation afterward and proposes over the settled receipt.
+- Local synthetic disabled behavior: profiles without synthetic jobs still skip outbound job production;
+  inbound network and role loops remain unchanged.
+- Producer/non-producer behavior: producer policy controls outbound job/block creation only.
+- Structured evidence source: role miner/validator counters, chain job/receipt/attestation counts, and
+  block selected-receipt evidence.
+- Finality source: signed validator `BlockVote`s through `SubmitBlockVote`.
+- Wire-size/codec boundary: existing bounded job/receipt/attestation/block payload codecs are reused.
+
+Implementation summary:
+- Added `produce_and_publish_synthetic_job`, which uses the profile job source to submit only a job and
+  publish job announcements. For LinearTrainingStep jobs it registers only the required synthetic model
+  metadata so later chain-owned settlement can apply the transition.
+- Changed `LocalProductionSchedule` to call the job-only helper before validator block proposal.
+- Added focused runtime tests proving scheduled production does not create producer-local receipts or
+  attestations and proving a producer-published job can be receipted, attested, and proposed by role-owned
+  helpers.
+
+Validation so far:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --all-targets`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p tensor_vm --test tvmd_runtime runtime_roles`: 7 tests passed.
+- `cargo test -p tensor_vm --test tvmd_runtime miner_role`: 4 tests passed.
+- `cargo test -p tensor_vm --test tvmd_runtime validator_role`: 6 tests passed.
+- `cargo test -p tensor_vm --test tvmd_cli validator_run_with_local_producer_advances_cpu_chain`: passed.
+- `cargo test -p tensor_vm --tests`: 308 library tests, 1 local CPU Compose test, 8 `tvmd_cli`
+  integration tests, and 28 `tvmd_runtime` integration tests passed.
+- `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`
+- `git diff --check`
+
+Out of scope:
+- Full Docker checker hardening for positive live role-owned counters.
+- Removing localnet/reference full synthetic round helpers.
+- Difficulty retargeting, zero-receipt fallback, public deployment evidence, CUDA, seven-day run, and the
+  full Docker `/health` blocker.
 
 ### Iteration 15: Validator-Owned Local Block Proposal Tick
 

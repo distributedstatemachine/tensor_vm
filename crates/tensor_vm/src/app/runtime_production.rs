@@ -1,7 +1,7 @@
 use std::time::{Duration, Instant};
 
 use super::{
-    produce_and_publish_synthetic_work, publish_validator_block_proposal,
+    produce_and_publish_synthetic_job, publish_validator_block_proposal,
     submit_validator_role_block_proposal,
 };
 use crate::{
@@ -50,7 +50,7 @@ impl LocalProductionSchedule {
                 self.next_block_at = Some(Instant::now() + interval);
                 return Ok(false);
             };
-            let _ = produce_and_publish_synthetic_work(
+            let _ = produce_and_publish_synthetic_job(
                 context.server,
                 context.p2p_service,
                 context.profile,

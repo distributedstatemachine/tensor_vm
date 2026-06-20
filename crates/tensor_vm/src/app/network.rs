@@ -1,6 +1,6 @@
 use crate::{
-    Chain, ChainCommand, ChainEngine, ChainProfile, NetworkEventIngest, PendingNetworkPayloads,
-    RpcHttpServer, TensorVmLibp2pService,
+    Chain, ChainCommand, ChainEngine, ChainProfile, JobState, NetworkEventIngest,
+    PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
     encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
     encode_job_payload, encode_receipt_payload,
@@ -9,6 +9,7 @@ use crate::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
         attestation_announcement_hash, ingest_network_messages,
     },
+    scheduler::{JobSource, SyntheticLocalJobSource},
     types::{Address, Hash},
 };
 use std::collections::BTreeSet;
@@ -106,6 +107,46 @@ pub fn produce_and_publish_synthetic_work(
         &server.gateway().node.chain,
     )?;
     Ok(Some(()))
+}
+
+pub fn produce_and_publish_synthetic_job(
+    server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
+    profile: &ChainProfile,
+) -> std::result::Result<Option<Hash>, String> {
+    let Some(mut job_source) = profile.synthetic_job_source() else {
+        return Ok(None);
+    };
+    let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
+    let Some(job) = job_source.next_job(&server.gateway().node.chain) else {
+        return Ok(None);
+    };
+    let job_id = job.job_id();
+    if let JobState::LinearTrainingStep(job) = &job {
+        let chain = &mut server.gateway_mut().node.chain;
+        if !chain.state().model_states().contains_key(&job.model_id) {
+            chain
+                .apply_command(ChainCommand::RegisterModel {
+                    model_id: job.model_id,
+                    architecture_hash: SyntheticLocalJobSource::linear_training_architecture_hash(),
+                    weight_root: job.weight_root_before,
+                    config_hash: SyntheticLocalJobSource::linear_training_config_hash(),
+                })
+                .map_err(|error| format!("synthetic linear model registration failed: {error}"))?;
+        }
+    }
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::SubmitJob(job))
+        .map_err(|error| format!("synthetic job submission failed: {error}"))?;
+    publish_new_chain_announcements(
+        p2p_service,
+        &announcement_checkpoint,
+        &server.gateway().node.chain,
+    )?;
+    Ok(Some(job_id))
 }
 
 pub fn publish_validator_block_proposal(

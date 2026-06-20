@@ -1,7 +1,10 @@
 use super::*;
+use std::time::Duration;
 use tensor_vm::app::{
-    RoleServiceConfig, RoleServiceRunner, RuntimeRole, chain_profile_from_label,
-    runtime_role_wallet_registered, runtime_role_wallet_registration,
+    LocalProductionContext, LocalProductionSchedule, RoleServiceConfig, RoleServiceRunner,
+    RuntimeRole, chain_profile_from_label, produce_and_publish_synthetic_job,
+    runtime_role_wallet_registered, runtime_role_wallet_registration, submit_miner_role_receipt,
+    submit_validator_role_attestation, submit_validator_role_block_proposal,
 };
 
 #[test]
@@ -223,4 +226,176 @@ fn chain_profile_labels_drive_runtime_synthetic_jobs() {
     assert!(testnet.synthetic_job_source().is_none());
     assert!(mainnet.synthetic_job_source().is_none());
     assert!(chain_profile_from_label("staging").is_err());
+}
+
+#[test]
+fn scheduled_local_production_publishes_jobs_without_producer_receipts_or_attestations() {
+    let data_dir = unique_temp_data_dir("scheduled-job-only-production");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let store = NodeStore::open(data_dir.clone());
+    let validator = address(b"scheduled-job-only-validator");
+    let mut chain = Chain::new(local_cpu_seed_beacon());
+    register_miner(&mut chain, address(b"scheduled-job-only-miner"));
+    register_validator(&mut chain, validator);
+    store.persist_chain(&chain).unwrap();
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([31; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    let mut runtime_state = NodeRuntimeState::default();
+    let mut schedule = LocalProductionSchedule::new(Some(Duration::from_millis(0)));
+
+    let changed = schedule
+        .produce_if_due(LocalProductionContext {
+            profile: &ChainProfile::local_cpu(),
+            local_producer: true,
+            validator: Some(validator),
+            store: &store,
+            server: &mut server,
+            p2p_service: &p2p_service,
+            runtime_state: &mut runtime_state,
+        })
+        .unwrap();
+
+    assert!(changed);
+    assert_eq!(server.gateway().node.chain.state().jobs().len(), 1);
+    assert_eq!(server.gateway().node.chain.state().receipts().len(), 0);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .attestations()
+            .is_empty()
+    );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .settled_receipts()
+            .is_empty()
+    );
+    assert_eq!(server.gateway().node.chain.blocks().len(), 1);
+    assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(runtime_state.miner_receipts_submitted(), 0);
+    assert_eq!(runtime_state.validator_attestations_submitted(), 0);
+    assert_eq!(p2p_service.observed_receipt_gossip_count(), 0);
+    assert_eq!(p2p_service.observed_attestation_gossip_count(), 0);
+
+    drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let miner = address(b"role-owned-pipeline-miner");
+    let validator = address(b"role-owned-pipeline-validator");
+    let mut chain = Chain::with_params(params, local_cpu_seed_beacon());
+    register_miner(&mut chain, miner);
+    register_validator(&mut chain, validator);
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([32; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+
+    let job_id =
+        produce_and_publish_synthetic_job(&mut server, &p2p_service, &ChainProfile::local_cpu())
+            .unwrap()
+            .expect("local profile should publish a synthetic job");
+    assert_eq!(server.gateway().node.chain.state().jobs().len(), 1);
+    assert_eq!(server.gateway().node.chain.state().receipts().len(), 0);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .attestations()
+            .is_empty()
+    );
+
+    let miner_submission = submit_miner_role_receipt(&mut server.gateway_mut().node, miner, job_id)
+        .unwrap()
+        .expect("assigned miner should submit receipt for producer-published job");
+    assert_eq!(miner_submission.receipts_submitted, 1);
+    assert_eq!(server.gateway().node.chain.state().receipts().len(), 1);
+    let receipt = server
+        .gateway()
+        .node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("role-owned receipt should be stored")
+        .clone();
+    assert_eq!(receipt.job_id(), job_id);
+    assert_eq!(receipt.miner(), miner);
+
+    let validator_submission = submit_validator_role_attestation(
+        &mut server.gateway_mut().node,
+        validator,
+        receipt.receipt_id(),
+    )
+    .unwrap()
+    .expect("assigned validator should attest role-owned receipt");
+    assert_eq!(validator_submission.attestations_submitted, 1);
+    let attestations = server
+        .gateway()
+        .node
+        .chain
+        .state()
+        .attestations()
+        .get(&receipt.receipt_id())
+        .expect("role-owned attestation should be stored");
+    assert_eq!(attestations.len(), 1);
+    assert_eq!(attestations[0].validator, validator);
+
+    let proposal =
+        submit_validator_role_block_proposal(&mut server.gateway_mut().node, validator, 1_000)
+            .unwrap()
+            .expect("validator should propose over role-owned settled receipt");
+    assert_eq!(proposal.blocks_proposed, 1);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id())
+    );
+    let block = server.gateway().node.chain.blocks().last().unwrap();
+    assert_eq!(block.proposer, validator);
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .selected_receipts_for_block(block),
+        vec![receipt.receipt_id()]
+    );
+
+    drop(p2p_service);
 }

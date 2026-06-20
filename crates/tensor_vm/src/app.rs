@@ -38,8 +38,9 @@ pub use miner_role::{
 };
 pub use network::{
     ChainAnnouncementCheckpoint, chain_announcement_checkpoint, ingest_network_events,
-    produce_and_publish_synthetic_round, produce_and_publish_synthetic_work,
-    publish_new_chain_announcements, publish_validator_block_proposal,
+    produce_and_publish_synthetic_job, produce_and_publish_synthetic_round,
+    produce_and_publish_synthetic_work, publish_new_chain_announcements,
+    publish_validator_block_proposal,
 };
 pub use role_services::RoleServiceRunner;
 pub use runtime_config::{
