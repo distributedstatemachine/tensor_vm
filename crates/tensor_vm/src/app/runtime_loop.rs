@@ -3,8 +3,8 @@ use std::{thread, time::Duration};
 use crate::{NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService};
 
 use super::{
-    LocalProductionSchedule, RuntimeP2pMetadata, RuntimeRole, RuntimeServices,
-    RuntimeStatusSnapshot, ServiceRuntimeConfig, format_role_runtime_report,
+    LocalProductionContext, LocalProductionSchedule, RuntimeP2pMetadata, RuntimeRole,
+    RuntimeServices, RuntimeStatusSnapshot, ServiceRuntimeConfig, format_role_runtime_report,
     ingest_network_once as ingest_runtime_network_once, serve_rpc_once as serve_runtime_rpc_once,
     start_runtime_services, tick_miner_role_work_once,
     tick_validator_role_work_once as tick_validator_role_worker_once, write_role_runtime_status,
@@ -125,14 +125,18 @@ impl RoleRuntimeLoop {
     }
 
     fn produce_local_round_if_due(&mut self) -> std::result::Result<(), String> {
-        if self.local_production.produce_if_due(
-            &self.config.node.profile,
-            self.local_producer,
-            &self.store,
-            &mut self.server,
-            &self.p2p_service,
-            &mut self.runtime_state,
-        )? {
+        if self
+            .local_production
+            .produce_if_due(LocalProductionContext {
+                profile: &self.config.node.profile,
+                local_producer: self.local_producer,
+                validator: self.config.role_wallet_address,
+                store: &self.store,
+                server: &mut self.server,
+                p2p_service: &self.p2p_service,
+                runtime_state: &mut self.runtime_state,
+            })?
+        {
             self.write_status()?;
         }
         Ok(())

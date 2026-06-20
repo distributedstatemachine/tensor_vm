@@ -1,8 +1,9 @@
 use super::*;
 use tensor_vm::app::{
     ValidatorRemoteTensorResponse, fetch_validator_role_missing_tensors,
-    submit_validator_role_attestation, submit_validator_role_block_vote,
-    validator_remote_tensor_response, validator_role_work_observation,
+    submit_validator_role_attestation, submit_validator_role_block_proposal,
+    submit_validator_role_block_vote, validator_remote_tensor_response,
+    validator_role_work_observation,
 };
 
 #[test]
@@ -203,6 +204,72 @@ fn validator_role_block_vote_submission_finalizes_only_through_votes() {
             .unwrap()
             .is_none()
     );
+}
+
+#[test]
+fn validator_role_block_proposal_uses_settled_state_without_synthesizing_finality() {
+    let params = ChainParams {
+        replication_factor: 2,
+        agreement_quorum: 2,
+        freivalds: FreivaldsParams {
+            validators_per_job: 2,
+            minimum_validators: 2,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"validator-block-proposal"]));
+    let validators = [
+        address(b"validator-block-proposal-a"),
+        address(b"validator-block-proposal-b"),
+    ];
+    for index in 0..2 {
+        register_miner(
+            &mut chain,
+            address(format!("validator-block-proposal-miner-{index}").as_bytes()),
+        );
+    }
+    for validator in validators {
+        register_validator(&mut chain, validator);
+    }
+    tensor_vm::localnet::produce_synthetic_cpu_work_with_profile(
+        &mut chain,
+        &ChainProfile::local_cpu(),
+    )
+    .unwrap()
+    .expect("synthetic work should settle before validator proposal");
+    assert_eq!(chain.blocks().len(), 0);
+    assert!(!chain.state().settled_receipts().is_empty());
+    let settled_before = chain.state().settled_receipts().clone();
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+
+    assert!(
+        submit_validator_role_block_proposal(&mut node, address(b"unknown-block-proposer"), 1_000,)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(node.chain.blocks().len(), 0);
+
+    let proposal = submit_validator_role_block_proposal(&mut node, validators[0], 1_000)
+        .unwrap()
+        .expect("registered validator should propose a block");
+    assert_eq!(proposal.blocks_proposed, 1);
+    assert_eq!(node.chain.blocks().len(), 1);
+    assert_eq!(node.chain.state().height(), 1);
+    assert_eq!(node.chain.state().settled_receipts(), &settled_before);
+    let block = node.chain.blocks().last().unwrap();
+    let block_hash = block.hash();
+    assert_eq!(block.proposer, validators[0]);
+    assert!(node.chain.validate_block(block).is_ok());
+    assert_eq!(
+        node.chain
+            .selected_receipts_for_block(block)
+            .into_iter()
+            .collect::<BTreeSet<_>>(),
+        settled_before
+    );
+    assert!(!node.chain.state().block_votes().contains_key(&block_hash));
+    assert!(!node.chain.is_block_finalized(&block_hash));
 }
 
 #[test]

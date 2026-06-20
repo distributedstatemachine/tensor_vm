@@ -38,7 +38,8 @@ pub use miner_role::{
 };
 pub use network::{
     ChainAnnouncementCheckpoint, chain_announcement_checkpoint, ingest_network_events,
-    produce_and_publish_synthetic_round, publish_new_chain_announcements,
+    produce_and_publish_synthetic_round, produce_and_publish_synthetic_work,
+    publish_new_chain_announcements, publish_validator_block_proposal,
 };
 pub use role_services::RoleServiceRunner;
 pub use runtime_config::{
@@ -48,7 +49,7 @@ pub use runtime_config::{
 };
 pub use runtime_loop::{RoleRuntimeLoop, run_role_runtime_loop};
 pub use runtime_network::ingest_network_once;
-pub use runtime_production::LocalProductionSchedule;
+pub use runtime_production::{LocalProductionContext, LocalProductionSchedule};
 pub use runtime_rpc::serve_rpc_once;
 pub use runtime_services::{RuntimeP2pMetadata, RuntimeServices, start_runtime_services};
 pub use runtime_status::{format_role_runtime_report, write_role_runtime_status};
@@ -65,7 +66,8 @@ pub use validator_fetch::{
     fetch_validator_role_missing_tensors, validator_remote_tensor_response,
 };
 pub use validator_role::{
-    ValidatorRoleAttestationSubmission, ValidatorRoleBlockVoteSubmission,
-    ValidatorRoleWorkObservation, submit_validator_role_attestation,
+    ValidatorRoleAttestationSubmission, ValidatorRoleBlockProposal,
+    ValidatorRoleBlockVoteSubmission, ValidatorRoleWorkObservation,
+    submit_validator_role_attestation, submit_validator_role_block_proposal,
     submit_validator_role_block_vote, validator_role_work_observation,
 };

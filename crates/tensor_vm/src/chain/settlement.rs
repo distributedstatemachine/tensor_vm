@@ -63,9 +63,10 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
             miner.settled_tensor_work = miner
                 .settled_tensor_work
                 .saturating_add(receipt.tensor_work_units());
-            if total_work > 0 {
-                let reward =
-                    miner_reward_pool.saturating_mul(receipt.tensor_work_units()) / total_work;
+            if let Some(reward) = miner_reward_pool
+                .saturating_mul(receipt.tensor_work_units())
+                .checked_div(total_work)
+            {
                 chain.state.rewards.credit(miner.address, reward);
             }
         }
@@ -81,12 +82,12 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         .cloned()
         .collect();
     let total_valid = valid_attestations.len() as u64;
-    if total_valid > 0 {
+    if let Some(validator_reward) = validator_reward_pool.checked_div(total_valid) {
         for attestation in valid_attestations {
             chain
                 .state
                 .rewards
-                .credit(attestation.validator, validator_reward_pool / total_valid);
+                .credit(attestation.validator, validator_reward);
         }
     }
 }

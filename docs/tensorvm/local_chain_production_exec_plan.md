@@ -5,6 +5,12 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
+- Latest in-progress feature: Iteration 15, validator-owned local block proposal tick, splits local
+  synthetic work generation from scheduled validator block proposal. The runtime scheduled producer now
+  calls a validator-role helper that prepares parent state, applies `ChainCommand::ProduceBlock`, publishes
+  the resulting block payload/header/hash, and leaves finality to explicit validator block votes. The
+  remaining shortcut is synthetic local job/receipt/attestation generation in the producer process; full
+  role-owned miner/validator work remains the next gap.
 - Latest completed feature: Iteration 14, validator-owned local timed producer topology, is implemented,
   validated, and pushed as `1d556efafd1443809406dcaa54bdc3aa63c68b9e`
   (`Move local producer to validator runtime`) on `origin/main`. This iteration moves the single local
@@ -34,13 +40,73 @@ feature-sized iterations are summarized after validation and push, and older det
 | Role-owned validator block votes | Implemented/pushed | `fb0feb0`; validator role submits `SubmitBlockVote`, gossips block-vote payloads, and status/checker fields expose submitted/ingested/applied vote counters | Rerun full Docker checker after `/health` blocker clears |
 | Remote tensor availability | Implemented/pushed | `2d6609e`; root-addressed tensor request-response and validator fetch counters | Reuse for block-check evidence; revisit slow-peer bounds later |
 | Network-visible event ingestion | Implemented/pushed | `fb0feb0`; node runtime ingests decoded jobs, receipts, attestations, block payloads, and block-vote payloads; headers/hashes are announcements only | Rerun full Docker checker after `/health` blocker clears |
-| Proposer/block production | Validator topology narrowed | `1d556ef`; `validator-00/validator_run` is the only local timed producer, miners and service/proposer surfaces cannot locally produce, and `chain::proposer` still selects registered validators | Replace synthetic round helper with a network-visible validator proposer/block assembly tick |
+| Proposer/block production | Validator proposal tick started | Iteration 15 working tree; scheduled runtime production uses `submit_validator_role_block_proposal` after synthetic work generation, publishes block payload/header/hash, and tests prove proposal does not synthesize finality | Remove remaining producer-local synthetic job/receipt/attestation generation and require positive role-owned miner/validator counters |
 | Canonical useful-verification block validity | Partially implemented locally | Blocks carry selected-root/checks-root/beacon/target/nonce; strict vote validation checks state root, beacon, PoW, proposer, selected receipts, checks, attestation, and reward roots | Add exact parent snapshots, child-state apply theorem, challenge openings, retargeting, and fallback |
 | Checker evidence | Updated | `tvmd node block` exposes PoW, canonical blockspace, checks-root, validator-proposer, finality-validation, and block-vote stake/validator evidence; checker asserts all booleans before scan exit | Full Docker checker still awaits `/health` blocker resolution |
 | Restart/recovery matrix | Complete for current storage model | Rolling restart checker covers durable state/common head for current block model | Rerun after block serialization changes |
 | Public deployment evidence | Not started | Public evidence fields still report incomplete independently-checkable status | Keep out of scope until local canonical path is stable |
 
 ## Recent Iterations
+
+### Iteration 15: Validator-Owned Local Block Proposal Tick
+
+Feature capability:
+Split scheduled local production so synthetic work generation and validator block proposal are separate
+steps. The timed validator runtime no longer calls the all-in-one synthetic round helper for block
+assembly; after optional local synthetic work generation it calls a validator-role block proposal helper
+that prepares chain-owned parent state and applies `ChainCommand::ProduceBlock`.
+
+Checkpoint before edits:
+- Canonical owner: `ChainEngine`/`chain::blocks` own settlement preparation, canonical blockspace,
+  `checks_root`, useful-verification PoW, block append, and finality validation.
+- Adapter callers: the validator runtime schedule may trigger local synthetic work generation and may ask
+  the validator role to propose one block. P2P adapters only publish the resulting canonical block payload,
+  header, and hash.
+- Old shortcut narrowed: scheduled runtime production no longer uses
+  `produce_synthetic_cpu_round_with_profile` to create work and block in one call.
+- Regression tests: validator role block proposal works from settled state and leaves blocks unfinalized
+  until explicit `SubmitBlockVote`; localnet reference round behavior remains covered.
+- Local synthetic disabled behavior: profiles without synthetic jobs still skip synthetic work generation;
+  inbound network ingest and role work are unchanged.
+- Producer/non-producer behavior: producer capability controls outbound scheduled proposal only.
+- Structured evidence source: `role_produced_blocks`, `role_local_producer`, block PoW/canonical fields,
+  and block-vote finality fields.
+- Finality source: signed validator `BlockVote`s admitted through `SubmitBlockVote`.
+- Wire-size/codec boundary: existing bounded block payload codec and gossip messages are reused.
+
+Implementation summary:
+- Added `SyntheticCpuWorkResult` and `produce_synthetic_cpu_work_with_profile` so local synthetic work can
+  stop before block assembly while the older full synthetic round helper remains available for reference
+  tests.
+- Added `submit_validator_role_block_proposal`, which requires a registered validator wallet, calls
+  `prepare_block_parent_state`, and applies `ChainCommand::ProduceBlock`.
+- Changed `LocalProductionSchedule` to publish optional synthetic work first, then produce and publish the
+  block through the validator-role proposal helper.
+- Added a validator runtime test proving proposal uses settled state and does not synthesize finality votes.
+
+Validation so far:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed with 5 release
+  local-testnet library tests and the seed CLI integration test.
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --all-targets`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p tensor_vm --test tvmd_runtime validator_role`: 6 tests passed.
+- `cargo test -p tensor_vm --lib localnet::tests`: 9 tests passed.
+- `cargo test -p tensor_vm --test tvmd_cli validator_run_with_local_producer_advances_cpu_chain`: passed.
+- `cargo test -p tensor_vm --tests`: 308 library tests, 1 local CPU Compose test, 8 `tvmd_cli`
+  integration tests, and 26 `tvmd_runtime` integration tests passed.
+- `cargo test --workspace --release`: 14 `experiments`, 308 `tensor_vm`, 8 `tvmd_cli`, 26
+  `tvmd_runtime`, 1 local CPU Compose, 3 `tensor_vm_explorer`, and doc-test targets passed.
+- `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`
+- `git diff --check`
+- `cargo tarpaulin --workspace --offline` was blocked because this environment does not have the
+  `cargo-tarpaulin` subcommand installed (`error: no such command: tarpaulin`).
+
+Out of scope:
+- Requiring positive live Compose miner/validator-owned submissions.
+- Replacing local synthetic job/receipt/attestation generation with fully role-owned interprocess work.
+- Difficulty retargeting, zero-receipt fallback, public deployment evidence, CUDA, seven-day run, and the
+  full Docker `/health` blocker.
 
 ### Iteration 14: Validator-Owned Local Timed Producer
 

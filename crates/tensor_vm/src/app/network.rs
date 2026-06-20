@@ -1,10 +1,10 @@
 use crate::{
-    Chain, ChainProfile, NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer,
-    TensorVmLibp2pService,
+    Chain, ChainCommand, ChainEngine, ChainProfile, NetworkEventIngest, PendingNetworkPayloads,
+    RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
     encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
     encode_job_payload, encode_receipt_payload,
-    localnet::produce_synthetic_cpu_round_with_profile,
+    localnet::produce_synthetic_cpu_work_with_profile,
     node::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
         attestation_announcement_hash, ingest_network_messages,
@@ -53,28 +53,67 @@ pub fn produce_and_publish_synthetic_round(
     p2p_service: &TensorVmLibp2pService,
     profile: &ChainProfile,
 ) -> std::result::Result<Option<Hash>, String> {
-    let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
-    let Some(round) =
-        produce_synthetic_cpu_round_with_profile(&mut server.gateway_mut().node.chain, profile)
-            .map_err(|error| format!("synthetic CPU round failed: {error}"))?
-    else {
+    let Some(_) = produce_and_publish_synthetic_work(server, p2p_service, profile)? else {
         return Ok(None);
     };
-    for tensor in round.tensors {
-        p2p_service.register_tensor(tensor.clone());
-        server.gateway_mut().node.insert_tensor(tensor);
-    }
+    let chain = &server.gateway().node.chain;
+    let beacon = chain.state().finalized_randomness();
+    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap_or_default();
+    let timestamp = chain
+        .blocks()
+        .last()
+        .map(|block| {
+            block
+                .timestamp
+                .saturating_add(chain.params().block_time_seconds)
+        })
+        .unwrap_or(0);
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::ProduceBlock {
+            proposer,
+            timestamp,
+        })
+        .map_err(|error| format!("synthetic CPU round block production failed: {error}"))?;
     let Some(block) = server.gateway().node.chain.blocks().last() else {
         return Ok(None);
     };
-    let block_hash = block.hash();
+    publish_block_announcements(p2p_service, block)?;
+    Ok(Some(block.hash()))
+}
+
+pub fn produce_and_publish_synthetic_work(
+    server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
+    profile: &ChainProfile,
+) -> std::result::Result<Option<()>, String> {
+    let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
+    let Some(work) =
+        produce_synthetic_cpu_work_with_profile(&mut server.gateway_mut().node.chain, profile)
+            .map_err(|error| format!("synthetic CPU work failed: {error}"))?
+    else {
+        return Ok(None);
+    };
+    for tensor in work.tensors {
+        p2p_service.register_tensor(tensor.clone());
+        server.gateway_mut().node.insert_tensor(tensor);
+    }
     publish_new_chain_announcements(
         p2p_service,
         &announcement_checkpoint,
         &server.gateway().node.chain,
     )?;
+    Ok(Some(()))
+}
+
+pub fn publish_validator_block_proposal(
+    p2p_service: &TensorVmLibp2pService,
+    block: &crate::chain::TensorBlock,
+) -> std::result::Result<(), String> {
     publish_block_announcements(p2p_service, block)?;
-    Ok(Some(block_hash))
+    Ok(())
 }
 
 fn publish_block_announcements(

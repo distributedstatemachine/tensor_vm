@@ -65,6 +65,31 @@ pub struct ValidatorRoleBlockVoteSubmission {
     pub block_votes_submitted: usize,
 }
 
+#[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
+pub struct ValidatorRoleBlockProposal {
+    pub blocks_proposed: usize,
+}
+
+pub fn submit_validator_role_block_proposal(
+    node: &mut RpcNode,
+    validator: Address,
+    timestamp: u64,
+) -> std::result::Result<Option<ValidatorRoleBlockProposal>, String> {
+    if !node.chain.state().validators().contains_key(&validator) {
+        return Ok(None);
+    }
+    node.chain
+        .prepare_block_parent_state()
+        .map_err(|error| format!("validator proposer failed to prepare parent state: {error}"))?;
+    node.chain
+        .apply_command(ChainCommand::ProduceBlock {
+            proposer: validator,
+            timestamp,
+        })
+        .map_err(|error| format!("validator proposer failed to produce block: {error}"))?;
+    Ok(Some(ValidatorRoleBlockProposal { blocks_proposed: 1 }))
+}
+
 pub fn submit_validator_role_attestation(
     node: &mut RpcNode,
     validator: Address,

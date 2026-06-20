@@ -148,6 +148,12 @@ The local bundle is useful and should remain the first operational target:
   and report `role_validator_block_votes_submitted`, `role_network_block_votes_ingested`,
   `role_network_block_votes_applied`, and `role_p2p_observed_block_votes`. Local synthetic block production
   appends blocks but no longer fabricates finality votes in the runtime path.
+- Scheduled local block production now splits local synthetic work generation from validator block
+  proposal. The validator runtime publishes optional synthetic job/receipt/attestation announcements, then
+  calls a validator-role block proposal helper that prepares chain-owned parent state, applies
+  `ChainCommand::ProduceBlock`, and publishes the resulting block payload/header/hash. This narrows the
+  producer shortcut for block assembly, but the local producer process still creates synthetic jobs,
+  receipts, and attestations before full role-owned miner/validator work is required by the Docker gate.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,
   builds a typed `NodeConfig` at the CLI boundary, and exposes `chain_profile`/`role_chain_profile` in
   readiness, serve, and status output. Only the local CPU profile enables deterministic synthetic block

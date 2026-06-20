@@ -16,6 +16,11 @@ pub struct SyntheticCpuRoundResult {
     pub tensors: Vec<Tensor>,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct SyntheticCpuWorkResult {
+    pub tensors: Vec<Tensor>,
+}
+
 pub fn produce_synthetic_cpu_round(chain: &mut Chain) -> Result<Option<u64>> {
     Ok(produce_synthetic_cpu_round_with_tensors(chain)?.map(|round| round.height))
 }
@@ -36,28 +41,58 @@ pub fn produce_synthetic_cpu_round_with_profile(
     produce_synthetic_cpu_round_from_source(chain, &mut job_source)
 }
 
+pub fn produce_synthetic_cpu_work_with_profile(
+    chain: &mut Chain,
+    profile: &ChainProfile,
+) -> Result<Option<SyntheticCpuWorkResult>> {
+    let Some(mut job_source) = profile.synthetic_job_source() else {
+        return Ok(None);
+    };
+    produce_synthetic_cpu_work_from_source(chain, &mut job_source)
+}
+
 fn produce_synthetic_cpu_round_from_source(
     chain: &mut Chain,
     job_source: &mut impl JobSource,
 ) -> Result<Option<SyntheticCpuRoundResult>> {
+    let Some(work) = produce_synthetic_cpu_work_from_source(chain, job_source)? else {
+        return Ok(None);
+    };
+    let beacon = chain.state().finalized_randomness();
+    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap_or_default();
+    let timestamp = next_block_timestamp(chain);
+    chain.apply_command(ChainCommand::ProduceBlock {
+        proposer,
+        timestamp,
+    })?;
+    Ok(Some(SyntheticCpuRoundResult {
+        height: chain.state().height(),
+        tensors: work.tensors,
+    }))
+}
+
+fn produce_synthetic_cpu_work_from_source(
+    chain: &mut Chain,
+    job_source: &mut impl JobSource,
+) -> Result<Option<SyntheticCpuWorkResult>> {
     if chain.state().miners().is_empty() || chain.state().validators().is_empty() {
         return Ok(None);
     }
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
     match job_source.next_job(chain) {
-        Some(JobState::TensorOp(job)) => produce_synthetic_matmul_round(chain, &scheduler, job),
+        Some(JobState::TensorOp(job)) => produce_synthetic_matmul_work(chain, &scheduler, job),
         Some(JobState::LinearTrainingStep(job)) => {
-            produce_synthetic_linear_training_round(chain, &scheduler, job)
+            produce_synthetic_linear_training_work(chain, &scheduler, job)
         }
         None => Ok(None),
     }
 }
 
-fn produce_synthetic_matmul_round(
+fn produce_synthetic_matmul_work(
     chain: &mut Chain,
     scheduler: &JobScheduler,
     job: MatmulJob,
-) -> Result<Option<SyntheticCpuRoundResult>> {
+) -> Result<Option<SyntheticCpuWorkResult>> {
     let beacon = chain.state().finalized_randomness();
     let job_state = JobState::TensorOp(job.clone());
     chain.apply_command(ChainCommand::SubmitJob(job_state.clone()))?;
@@ -85,31 +120,16 @@ fn produce_synthetic_matmul_round(
         miner_reward_pool: 1_000,
         validator_reward_pool: 500,
     })?;
-    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap_or_default();
-    let timestamp = chain
-        .blocks()
-        .last()
-        .map(|block| {
-            block
-                .timestamp
-                .saturating_add(chain.params().block_time_seconds)
-        })
-        .unwrap_or(0);
-    chain.apply_command(ChainCommand::ProduceBlock {
-        proposer,
-        timestamp,
-    })?;
-    Ok(Some(SyntheticCpuRoundResult {
-        height: chain.state().height(),
+    Ok(Some(SyntheticCpuWorkResult {
         tensors: canonical_receipt.served_tensors(),
     }))
 }
 
-fn produce_synthetic_linear_training_round(
+fn produce_synthetic_linear_training_work(
     chain: &mut Chain,
     scheduler: &JobScheduler,
     job: LinearTrainingStepJob,
-) -> Result<Option<SyntheticCpuRoundResult>> {
+) -> Result<Option<SyntheticCpuWorkResult>> {
     let beacon = chain.state().finalized_randomness();
     let weights = SyntheticLocalJobSource::linear_training_weights();
     register_synthetic_linear_model(chain, &job, &weights)?;
@@ -149,8 +169,13 @@ fn produce_synthetic_linear_training_round(
         weight_root_before: job.weight_root_before,
         weight_root_after,
     })?;
-    let proposer = chain.proposer_for_next_epoch(&beacon).unwrap_or_default();
-    let timestamp = chain
+    Ok(Some(SyntheticCpuWorkResult {
+        tensors: canonical_receipt.served_tensors(),
+    }))
+}
+
+fn next_block_timestamp(chain: &Chain) -> u64 {
+    chain
         .blocks()
         .last()
         .map(|block| {
@@ -158,15 +183,7 @@ fn produce_synthetic_linear_training_round(
                 .timestamp
                 .saturating_add(chain.params().block_time_seconds)
         })
-        .unwrap_or(0);
-    chain.apply_command(ChainCommand::ProduceBlock {
-        proposer,
-        timestamp,
-    })?;
-    Ok(Some(SyntheticCpuRoundResult {
-        height: chain.state().height(),
-        tensors: canonical_receipt.served_tensors(),
-    }))
+        .unwrap_or(0)
 }
 
 fn attest_receipt_bundles(
