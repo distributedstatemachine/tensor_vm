@@ -74,6 +74,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `8787912` (`Add deterministic bad-block challenge helper`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
