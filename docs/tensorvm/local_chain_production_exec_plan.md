@@ -6,10 +6,10 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Current State
 
 - Active feature: Iteration 28, validator mandatory-audit slashing.
-- Current status: Iteration 28 implementation is in validation on June 20, 2026 after the required Gate 0
-  release local-testnet command passed first. The narrow local-reference validator audit path now has
-  deterministic audit assignments, signed audit results, delayed audited-validator receipt rewards,
-  once-only validator slashing for missed or contradicted audits, and state-rooted observable evidence.
+- Current status: Iteration 28 is implemented and pushed as `99d819c` on June 20, 2026. The narrow
+  local-reference validator audit path now has deterministic audit assignments, signed audit results,
+  delayed audited-validator receipt rewards, once-only validator slashing for missed or contradicted audits,
+  and state-rooted observable evidence.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -17,7 +17,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: finish broad validation, commit, push, and record evidence.
+- Next action: choose the next readiness slice; runtime audit workers, appeal paths, and full bond
+  calibration remain open.
 
 ## Readiness Matrix
 
@@ -40,7 +41,7 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ### Iteration 28: Validator Mandatory-Audit Slashing
 
-Implemented locally, validation still in progress:
+Implemented and pushed as `99d819c` (`Add validator audit reward slashing`):
 - Chain state now stores validator audit assignments, signed reports/results, and slash records; state root
   and chain-state storage commit/persist all three collections.
 - Canonical block application samples submitted attestations from finalized-beacon-bound randomness when
@@ -178,8 +179,8 @@ Latest current-iteration evidence:
     Compose, 8 `tvmd_cli`, 28 `tvmd_runtime`, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests,
     and doc-test targets.
   - `cargo tarpaulin --workspace --offline`: blocked, missing `cargo-tarpaulin`.
-- Iteration 28 feature commit: pending.
-- Iteration 28 push result: pending.
+- Iteration 28 feature commit: `99d819c` (`Add validator audit reward slashing`).
+- Iteration 28 push result: `8236dfa..99d819c  main -> main` on `origin/main`.
 
 Latest unresolved full-gate blocker:
 
