@@ -105,8 +105,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `c8a6f9e` (`Resolve audit appeals through delayed rewards`) is committed locally;
-  push evidence pending.
+- Feature commit: `c8a6f9e` (`Resolve audit appeals through delayed rewards`) is pushed to
+  `origin/main`; evidence commit `32fb557` (`Record audit appeal reward evidence`) is also pushed.
 
 ## Recent Iterations
 
