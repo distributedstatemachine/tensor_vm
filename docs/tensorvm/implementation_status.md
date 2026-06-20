@@ -131,7 +131,9 @@ blocker clears. See
   Service status now exports bounded pending proposer, receipt, challenge, and credit reward claim samples
   with maturity heights, and explorer overview JSON carries typed pending reward claim samples with
   beneficiary, amount, claimable height, and voided status so local checkers can prove reward delay from
-  structured state instead of count-only workarounds.
+  structured state instead of count-only workarounds. The local CPU checker now fails unless live explorer
+  overview evidence includes non-voided pending receipt and proposer reward claims whose
+  `claimable_at_height` is greater than the observed live height.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
@@ -497,14 +499,17 @@ preflight, public evidence, or deployment-gated work can count:
   `live_block_production=true`, `live_synthetic_jobs=true`, `live_linear_training_jobs=true`,
   `live_attestations=true`, `live_receipt_attestations=true`, `live_tensor_op_receipts=true`,
   `live_linear_training_receipts=true`, `live_tensor_op_block_evidence=true`,
-  `live_linear_training_block_evidence=true`, `live_tensor_fetch=true`, and `live_rewards=true`, proving
+  `live_linear_training_block_evidence=true`, `live_tensor_fetch=true`, `live_rewards=true`,
+  positive `live_delayed_receipt_reward_claims`, and positive
+  `live_delayed_proposer_reward_claims`, proving
   `/chain/head` and explorer counters advance past the seeded two-block baseline, at least one live
   LinearTrainingStep advances model state after startup, validators add attestations, `/explorer/receipts`
   exposes per-receipt validator attestation details plus named post-seed TensorOp and LinearTrainingStep
   primitive receipts for live work, and `tvmd node block` exposes finalized live block-height receipt
   IDs and primitive counts for both TensorOp and LinearTrainingStep work,
   `/tensor/latest` returns a live tensor ID whose descriptor, row, chunk, and opening are fetchable, and
-  settled live work credits new rewards; the gate also runs `tvmd node status` and
+  settled live work creates delayed pending reward claims before spendable credit; the gate also runs
+  `tvmd node status` and
   `tvmd node block` inside all 15 operator containers and requires
   `all_operator_live_block_convergence=true` plus `all_operator_common_head_convergence=true`, proving
   every durable node store advanced past the shared seed, reports the same first live finalized block

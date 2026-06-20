@@ -252,6 +252,44 @@ print(count)
 ' "$key" "$value"
 }
 
+json_future_pending_reward_count() {
+  ledger="$1"
+  min_height="$2"
+  document="$3"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    document = json.load(sys.stdin)
+except json.JSONDecodeError:
+    sys.exit(1)
+ledger = sys.argv[1]
+try:
+    min_height = int(sys.argv[2])
+except ValueError:
+    sys.exit(1)
+rewards = document.get("pending_rewards")
+if not isinstance(rewards, list):
+    sys.exit(1)
+count = 0
+for reward in rewards:
+    if not isinstance(reward, dict):
+        continue
+    amount = reward.get("amount")
+    claimable_at_height = reward.get("claimable_at_height")
+    if reward.get("ledger") != ledger:
+        continue
+    if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
+        continue
+    if not isinstance(claimable_at_height, int) or isinstance(claimable_at_height, bool):
+        continue
+    if claimable_at_height > min_height and reward.get("voided") is not True:
+        count += 1
+print(count)
+' "$ledger" "$min_height"
+}
+
 read_service_status() {
   service="$1"
   attempt=0
@@ -431,6 +469,8 @@ LIVE_ATTESTED_RECEIPT_COUNT=0
 LIVE_TENSOR_OP_RECEIPT_COUNT=0
 LIVE_LINEAR_TRAINING_RECEIPT_COUNT=0
 LIVE_PENDING_PROPOSER_REWARD_COUNT=0
+LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=0
+LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_CHAIN_HEAD=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/chain/head")
@@ -445,6 +485,8 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_number pending_proposer_reward_count "$LIVE_OVERVIEW")
   LIVE_TOTAL_REWARD_BALANCE=$(json_number total_reward_balance "$LIVE_OVERVIEW")
+  LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=$(json_future_pending_reward_count receipt "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
+  LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=$(json_future_pending_reward_count proposer "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
   LIVE_TENSOR_OP_RECEIPT_COUNT=$(json_string_field_count primitive_type tensor_op "$LIVE_RECEIPTS")
@@ -460,7 +502,9 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] \
-    && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ]; then
+    && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] \
+    && [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] \
+    && [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ]; then
     break
   fi
   attempt=$((attempt + 1))
@@ -479,6 +523,8 @@ done
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
 [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] || fail "live synthetic jobs did not add pending receipt rewards"
 [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
+[ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live synthetic jobs did not expose future-maturity pending receipt reward claims"
+[ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims"
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -1207,6 +1253,8 @@ live_linear_training_block_receipts=${LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS}
 live_tensor_fetch=true
 live_rewards=true
 live_pending_proposer_rewards=${LIVE_PENDING_PROPOSER_REWARD_COUNT}
+live_delayed_receipt_reward_claims=${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS}
+live_delayed_proposer_reward_claims=${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS}
 all_operator_status_count=${EXPECTED_SERVICE_COUNT}
 all_operator_min_height=${ALL_OPERATOR_MIN_HEIGHT}
 all_operator_first_live_block_hash=${ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH}
