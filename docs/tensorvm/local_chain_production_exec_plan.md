@@ -6,7 +6,8 @@ feature-sized iterations are summarized after validation and push, and older det
 ## Current State
 
 - Active feature: Iteration 47, graph-backed exact job and receipt admission.
-- Current status: implementation and validation complete on June 20, 2026; commit/push pending.
+- Current status: implementation and validation complete on June 20, 2026; feature commit `decdf91`
+  created; push pending.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -99,6 +100,7 @@ Broad validation commands before commit:
 - Final `cargo test -p tensor_vm local_testnet --release` passed 5 local-testnet library tests plus
   `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - `cargo tarpaulin --workspace --offline` remains blocked because `cargo-tarpaulin` is not installed.
+- Feature commit: `decdf91` (`Add graph execution jobs and receipts`).
 
 Observable evidence: a registered non-fixed graph can be submitted as a graph job, produce an
 exact trace-root receipt, survive codec/storage/root paths, receive a valid graph attestation, and settle
