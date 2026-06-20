@@ -255,9 +255,11 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
             reward.receipt_id == receipt.receipt_id
                 && reward.beneficiary == assigned
                 && reward.kind == ReceiptRewardKind::Validator
-        })
-        .expect("slashed validator reward should remain pending until release");
-    assert!(voided_validator_claim.voided_by_challenge);
+        });
+    assert!(
+        voided_validator_claim.is_none(),
+        "slashed mature validator reward should be swept without credit during block apply"
+    );
     let release_events = chain.release_matured_receipt_rewards().unwrap();
     assert!(!release_events.iter().any(|event| matches!(
         event,

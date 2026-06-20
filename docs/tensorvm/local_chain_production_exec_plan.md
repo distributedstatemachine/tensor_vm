@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: none; Iteration 35 is complete.
-- Current status: Iteration 35 implemented, validated, committed, and pushed on June 20, 2026.
+- Active feature: Iteration 36, consensus-driven matured reward release during block transitions.
+- Current status: Iteration 36 implementation is in progress on June 20, 2026.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing from the
     worktree.
@@ -14,8 +14,8 @@ feature-sized iterations are summarized after validation and push, and older det
     installed: `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: choose the next readiness slice. Standing blockers remain the missing workflow document,
-  missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
+- Next action: complete Iteration 36 validation, commit, push, and record final evidence. Standing blockers
+  remain the missing workflow document, missing `cargo-tarpaulin`, and the full Docker `/health` timeout.
 
 ## Readiness Matrix
 
@@ -35,6 +35,69 @@ feature-sized iterations are summarized after validation and push, and older det
 | Public deployment evidence | Not complete | Public evidence validators and templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 36: Block Transitions Release Matured Rewards
+
+Feature capability: make normal block production/admission release matured reward claims through the
+chain-owned child-state transition, instead of requiring adapters or checkers to work around delayed rewards
+with out-of-band release commands.
+
+Readiness requirements covered: `upow.md` §12 and `mvp_spec.md` §20.3/§20.4/§25.5 require reward finality
+to be delayed from block finality, while the local readiness gate requires mature pending claims to release
+into spendable balances. Iteration 36 keeps delayed spendability but moves mature release into block
+progression.
+
+Files/modules touched: `crates/tensor_vm/src/chain/commands.rs`,
+`crates/tensor_vm/src/chain/blocks.rs`, `crates/tensor_vm/src/chain/tests/rewards.rs`,
+`docs/tensorvm/coverage_matrix.md`, `docs/tensorvm/implementation_status.md`,
+`docs/tensorvm/tarpaulin_report.md`, and this exec plan.
+
+Parallel subagents run:
+- Reward path explorer: confirmed no remaining production immediate-credit path, but identified test-only
+  direct spendable-credit helpers and a matured voided proposer-claim sweep bug.
+- Reward lifecycle mapper: confirmed proposer, receipt, challenge, and credit releases were explicit
+  commands only; block child-state construction did not release matured claims.
+
+Architecture shortcut answers:
+- Canonical owner: `chain::commands` owns the shared matured-release semantics; `chain::blocks` invokes it
+  inside canonical child-state construction for both production and block admission.
+- Adapter callers: RPC/runtime/checker surfaces only observe the resulting state; they do not release
+  mature claims as a workaround.
+- Old shortcut being removed: delayed rewards required explicit `ReleaseMatured*Rewards` commands outside
+  block progression for spendable settlement evidence.
+- Regression test: a producer and peer applying the same next block both sweep a matured proposer reward
+  into spendable balance without a manual release command, and a matured voided proposer claim is pruned
+  without credit.
+- Behavior with local synthetic block production disabled: any accepted block still runs the same
+  chain-owned mature-release transition.
+- Behavior for producer and non-producer roles: producers build blocks with post-release child roots;
+  non-producers recompute the same reward release through `SubmitBlock`.
+- Structured evidence source: `ChainState` reward ledgers and Rust chain tests, not checker-only fields.
+- Finality source: unchanged stake-weighted block votes; this changes reward spendability timing once
+  maturity is reached.
+- Wire-size and codec boundary: no new p2p payloads or storage codecs.
+
+Implemented locally:
+- Factored proposer, receipt, challenge, and credit reward release into shared chain helpers used by the
+  explicit release commands.
+- `apply_block_to_parent_state` now applies the current block's receipt-inclusion delay and slashing/audit
+  effects, then sweeps still-matured pending reward claims before height advancement, beacon update, and the
+  new proposer reward claim.
+- Matured voided proposer reward claims are now pruned without credit instead of remaining pending forever.
+- Added focused tests for producer/non-producer automatic mature release and voided proposer-claim sweep.
+
+Validation completed locally so far:
+- Required Gate 0 first: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused tests passed: `cargo test -p tensor_vm --lib chain::tests::rewards -- --nocapture`.
+- `cargo fmt --check --all` passed after implementation.
+
+Remaining validation before commit: `git diff --check`, final
+`cargo test -p tensor_vm local_testnet --release`, `cargo test -p tensor_vm`,
+`cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+`cargo tarpaulin --workspace --offline` if available.
+
+Out of scope: unified formal reward-claim object/status, replacing test-only spendable-balance helpers,
+public reward-settlement evidence, full auditor-selection policy, appeal paths, and bond calibration.
 
 ### Iteration 35: Reward Root Binds Pending Reward Ledgers
 

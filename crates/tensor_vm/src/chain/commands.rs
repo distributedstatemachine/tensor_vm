@@ -160,129 +160,16 @@ impl ChainEngine for Chain {
                 }])
             }
             ChainCommand::ReleaseMaturedProposerRewards => {
-                let mut events = Vec::new();
-                let matured = self
-                    .state
-                    .pending_proposer_rewards
-                    .iter()
-                    .filter(|(_, reward)| {
-                        !reward.voided_by_challenge
-                            && reward.claimable_at_height <= self.state.height
-                    })
-                    .map(|(height, reward)| (*height, reward.proposer, reward.amount))
-                    .collect::<Vec<_>>();
-                for (block_height, proposer, amount) in matured {
-                    self.state.pending_proposer_rewards.remove(&block_height);
-                    self.state.rewards.credit(proposer, amount);
-                    events.push(ChainEvent::ProposerRewardReleased {
-                        block_height,
-                        proposer,
-                        amount,
-                    });
-                    events.push(ChainEvent::RewardCredited {
-                        address: proposer,
-                        amount,
-                    });
-                }
-                Ok(events)
+                Ok(release_matured_proposer_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedReceiptRewards => {
-                let mut events = Vec::new();
-                let matured = self
-                    .state
-                    .pending_receipt_rewards
-                    .iter()
-                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
-                    .map(|(claim_id, reward)| {
-                        (
-                            *claim_id,
-                            reward.receipt_id,
-                            reward.beneficiary,
-                            reward.amount,
-                            reward.voided_by_challenge,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                for (claim_id, receipt_id, beneficiary, amount, voided_by_challenge) in matured {
-                    self.state.pending_receipt_rewards.remove(&claim_id);
-                    if voided_by_challenge
-                        || self.state.data_unavailable_receipts.contains(&receipt_id)
-                    {
-                        continue;
-                    }
-                    self.state.rewards.credit(beneficiary, amount);
-                    events.push(ChainEvent::ReceiptRewardReleased {
-                        claim_id,
-                        receipt_id,
-                        beneficiary,
-                        amount,
-                    });
-                    events.push(ChainEvent::RewardCredited {
-                        address: beneficiary,
-                        amount,
-                    });
-                }
-                Ok(events)
+                Ok(release_matured_receipt_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedChallengeRewards => {
-                let mut events = Vec::new();
-                let matured = self
-                    .state
-                    .pending_challenge_rewards
-                    .iter()
-                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
-                    .map(|(claim_id, reward)| {
-                        (
-                            *claim_id,
-                            reward.challenge_id,
-                            reward.challenger,
-                            reward.amount,
-                            reward.voided_by_challenge,
-                        )
-                    })
-                    .collect::<Vec<_>>();
-                for (claim_id, challenge_id, challenger, amount, voided_by_challenge) in matured {
-                    self.state.pending_challenge_rewards.remove(&claim_id);
-                    if voided_by_challenge {
-                        continue;
-                    }
-                    self.state.rewards.credit(challenger, amount);
-                    events.push(ChainEvent::ChallengeRewardReleased {
-                        claim_id,
-                        challenge_id,
-                        challenger,
-                        amount,
-                    });
-                    events.push(ChainEvent::RewardCredited {
-                        address: challenger,
-                        amount,
-                    });
-                }
-                Ok(events)
+                Ok(release_matured_challenge_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedCreditRewards => {
-                let mut events = Vec::new();
-                let matured = self
-                    .state
-                    .pending_credit_rewards
-                    .iter()
-                    .filter(|(_, reward)| reward.claimable_at_height <= self.state.height)
-                    .map(|(claim_id, reward)| (*claim_id, reward.beneficiary, reward.amount))
-                    .collect::<Vec<_>>();
-                for (claim_id, beneficiary, amount) in matured {
-                    self.state.pending_credit_rewards.remove(&claim_id);
-                    self.state.rewards.credit(beneficiary, amount);
-                    events.push(ChainEvent::CreditRewardReleased {
-                        claim_id,
-                        beneficiary,
-                        amount,
-                    });
-                    events.push(ChainEvent::RewardCredited {
-                        address: beneficiary,
-                        amount,
-                    });
-                }
-                Ok(events)
+                Ok(release_matured_credit_rewards(&mut self.state))
             }
             ChainCommand::RegisterModel {
                 model_id,
@@ -393,6 +280,144 @@ impl ChainEngine for Chain {
     fn blocks(&self) -> &[TensorBlock] {
         &self.blocks
     }
+}
+
+pub(super) fn release_all_matured_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = release_matured_proposer_rewards(state);
+    events.extend(release_matured_receipt_rewards(state));
+    events.extend(release_matured_challenge_rewards(state));
+    events.extend(release_matured_credit_rewards(state));
+    events
+}
+
+fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = Vec::new();
+    let matured = state
+        .pending_proposer_rewards
+        .iter()
+        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .map(|(height, reward)| {
+            (
+                *height,
+                reward.proposer,
+                reward.amount,
+                reward.voided_by_challenge,
+            )
+        })
+        .collect::<Vec<_>>();
+    for (block_height, proposer, amount, voided_by_challenge) in matured {
+        state.pending_proposer_rewards.remove(&block_height);
+        if voided_by_challenge {
+            continue;
+        }
+        state.rewards.credit(proposer, amount);
+        events.push(ChainEvent::ProposerRewardReleased {
+            block_height,
+            proposer,
+            amount,
+        });
+        events.push(ChainEvent::RewardCredited {
+            address: proposer,
+            amount,
+        });
+    }
+    events
+}
+
+fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = Vec::new();
+    let matured = state
+        .pending_receipt_rewards
+        .iter()
+        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .map(|(claim_id, reward)| {
+            (
+                *claim_id,
+                reward.receipt_id,
+                reward.beneficiary,
+                reward.amount,
+                reward.voided_by_challenge,
+            )
+        })
+        .collect::<Vec<_>>();
+    for (claim_id, receipt_id, beneficiary, amount, voided_by_challenge) in matured {
+        state.pending_receipt_rewards.remove(&claim_id);
+        if voided_by_challenge || state.data_unavailable_receipts.contains(&receipt_id) {
+            continue;
+        }
+        state.rewards.credit(beneficiary, amount);
+        events.push(ChainEvent::ReceiptRewardReleased {
+            claim_id,
+            receipt_id,
+            beneficiary,
+            amount,
+        });
+        events.push(ChainEvent::RewardCredited {
+            address: beneficiary,
+            amount,
+        });
+    }
+    events
+}
+
+fn release_matured_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = Vec::new();
+    let matured = state
+        .pending_challenge_rewards
+        .iter()
+        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .map(|(claim_id, reward)| {
+            (
+                *claim_id,
+                reward.challenge_id,
+                reward.challenger,
+                reward.amount,
+                reward.voided_by_challenge,
+            )
+        })
+        .collect::<Vec<_>>();
+    for (claim_id, challenge_id, challenger, amount, voided_by_challenge) in matured {
+        state.pending_challenge_rewards.remove(&claim_id);
+        if voided_by_challenge {
+            continue;
+        }
+        state.rewards.credit(challenger, amount);
+        events.push(ChainEvent::ChallengeRewardReleased {
+            claim_id,
+            challenge_id,
+            challenger,
+            amount,
+        });
+        events.push(ChainEvent::RewardCredited {
+            address: challenger,
+            amount,
+        });
+    }
+    events
+}
+
+fn release_matured_credit_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = Vec::new();
+    let matured = state
+        .pending_credit_rewards
+        .iter()
+        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .map(|(claim_id, reward)| (*claim_id, reward.beneficiary, reward.amount))
+        .collect::<Vec<_>>();
+    for (claim_id, beneficiary, amount) in matured {
+        state.pending_credit_rewards.remove(&claim_id);
+        state.rewards.credit(beneficiary, amount);
+        events.push(ChainEvent::CreditRewardReleased {
+            claim_id,
+            beneficiary,
+            amount,
+        });
+        events.push(ChainEvent::RewardCredited {
+            address: beneficiary,
+            amount,
+        });
+    }
+    events
 }
 
 fn pending_credit_reward_claimable_height(chain: &Chain) -> u64 {

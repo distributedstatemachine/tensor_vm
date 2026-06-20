@@ -237,6 +237,93 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
 }
 
 #[test]
+fn block_transition_releases_matured_rewards_without_manual_command() {
+    let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        challenge_window_epochs: 1,
+        ..ChainParams::default()
+    };
+    let mut producer = Chain::with_params(params.clone(), beacon);
+    let proposer = address(b"reward-transition-proposer");
+    producer
+        .register_validator(proposer, producer.params().validator_min_stake)
+        .unwrap();
+
+    let block0 = producer
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    let block0_claim = producer
+        .state()
+        .pending_proposer_rewards()
+        .get(&block0.height)
+        .unwrap()
+        .clone();
+    assert_eq!(block0_claim.claimable_at_height, producer.state().height());
+    assert_eq!(producer.state().rewards().balance(&proposer), 0);
+
+    let mut peer = Chain::with_params(params, beacon);
+    peer.register_validator(proposer, peer.params().validator_min_stake)
+        .unwrap();
+    peer.apply_command(ChainCommand::SubmitBlock(block0))
+        .unwrap();
+    assert_eq!(peer.state().rewards().balance(&proposer), 0);
+    assert!(peer.state().pending_proposer_rewards().contains_key(&0));
+
+    let block1 = producer
+        .produce_block_with_rewards(proposer, 1_001, 80, 20)
+        .unwrap();
+    assert_eq!(producer.state().rewards().balance(&proposer), 500);
+    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(
+        producer
+            .state()
+            .pending_proposer_rewards()
+            .get(&block1.height)
+            .unwrap()
+            .amount,
+        100
+    );
+    assert_eq!(block1.reward_root, reward_root(producer.state()));
+
+    peer.apply_command(ChainCommand::SubmitBlock(block1))
+        .unwrap();
+    assert_eq!(peer.state().rewards().balance(&proposer), 500);
+    assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(peer.state(), producer.state());
+}
+
+#[test]
+fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
+    let beacon = hash_bytes(b"test", &[b"reward-voided-proposer-sweep"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        challenge_window_epochs: 1,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"voided-proposer-sweep");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+
+    let block = chain
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    chain
+        .state
+        .pending_proposer_rewards
+        .get_mut(&block.height)
+        .unwrap()
+        .voided_by_challenge = true;
+    chain.set_position_for_testing(1, 1);
+
+    assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert!(!chain.state().pending_proposer_rewards().contains_key(&0));
+}
+
+#[test]
 fn reward_block_production_failure_does_not_credit_proposer() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);

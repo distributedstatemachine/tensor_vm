@@ -68,8 +68,11 @@ live invalid-block challenge generation, and live validator proposer/block-assem
   challenge, and credit ledgers, treasury rewards, reward accounting without repeated payout, and no-quorum rejection.
   Validator-owned useful proposals now create delayed proposer reward claims while empty fallback proposals
   stay unrewarded. Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
-  released only after maturity; receipt claims are voided/pruned if a block-check challenge succeeds before
-  release, and blocks with the old spendable-only reward root are rejected.
+  released only after maturity. Normal block transitions first apply the current block's receipt-inclusion
+  delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
+  shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,
+  and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
+  challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
