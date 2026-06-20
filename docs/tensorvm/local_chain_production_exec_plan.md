@@ -126,6 +126,8 @@ Validation evidence:
 Commit evidence:
 - Feature commit: `a14ba9b` (`Add fixed point scale rescale foundation`), pushed to `main` on June 20,
   2026 (`d8295ab..a14ba9b`).
+- Evidence commit: `ca856f6` (`Record fixed point scale validation evidence`), pushed to `main` on
+  June 20, 2026 (`a14ba9b..ca856f6`).
 
 Expected observable evidence: a fixed-point graph with nonzero scale can exact-execute with deterministic
 round-half-even scale changes, graph verification rejects missing conformance, and tensor commitments bind
