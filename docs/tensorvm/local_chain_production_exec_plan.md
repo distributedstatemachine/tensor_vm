@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 69, full maturity delay for challenge rewards, in progress.
+- Active feature: Iteration 69, full maturity delay for challenge rewards, pushed.
 - Current status: delayed proposer, receipt, challenge, and credit rewards are state-rooted pending claims
   and the checker gates on future-maturity claim evidence. Status and explorer consume the chain-owned
   pending reward-claim view, and observed block-check challenge payload application is tied to future
@@ -72,6 +72,7 @@ Validation evidence:
   plus `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `7595b0e` (`Delay challenge rewards by maturity rule`) is pushed to `main`.
 
 ## Recent Iterations
 
