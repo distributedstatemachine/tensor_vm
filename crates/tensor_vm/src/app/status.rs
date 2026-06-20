@@ -638,7 +638,7 @@ mod tests {
         );
         assert_eq!(
             fields.value("validator_audit_economic_reward_from_fraud"),
-            Some("50")
+            Some("0")
         );
         assert_eq!(
             fields.value("validator_audit_economic_at_risk_reward_claim_count"),
@@ -646,7 +646,7 @@ mod tests {
         );
         assert_eq!(
             fields.value("validator_audit_economic_required_slashable_bond"),
-            Some("101")
+            Some("0")
         );
         assert_eq!(
             fields.value("validator_audit_economic_invariant_holds"),
@@ -659,19 +659,19 @@ mod tests {
         );
         assert_eq!(
             fields.value("fraud_path_economic_max_required_slashable_bond"),
-            Some("101")
+            Some("0")
         );
         assert_eq!(
             fields.value("fraud_path_economic_worst_path"),
-            Some("validator_audit")
+            Some("block_check")
         );
         assert_eq!(
             fields.value("fraud_path_economic_validator_audit_required_slashable_bond"),
-            Some("101")
+            Some("0")
         );
         assert_eq!(
             fields.value("fraud_path_economic_data_unavailability_required_slashable_bond"),
-            Some("10")
+            Some("0")
         );
         assert_eq!(
             fields.value("fraud_path_economic_block_check_slashable_bond"),

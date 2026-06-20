@@ -545,31 +545,32 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         Some(2_000)
     );
     assert_eq!(calibration["slashable_bond"].as_u64(), Some(300));
-    assert_eq!(calibration["reward_from_fraud"].as_u64(), Some(60));
+    assert_eq!(calibration["reward_from_fraud"].as_u64(), Some(0));
     assert_eq!(
         calibration["at_risk_validator_reward_claim_count"].as_u64(),
         Some(1)
     );
-    assert_eq!(calibration["required_slashable_bond"].as_u64(), Some(301));
-    assert_eq!(calibration["invariant_holds"].as_bool(), Some(false));
+    assert_eq!(calibration["required_slashable_bond"].as_u64(), Some(0));
+    assert_eq!(calibration["invariant_holds"].as_bool(), Some(true));
 
     let fraud_paths = &overview["fraud_path_economic_calibration"];
     assert_eq!(fraud_paths["path_count"].as_u64(), Some(3));
-    assert_eq!(fraud_paths["all_invariants_hold"].as_bool(), Some(false));
-    assert_eq!(
-        fraud_paths["max_required_slashable_bond"].as_u64(),
-        Some(301)
-    );
-    assert_eq!(fraud_paths["worst_path"].as_str(), Some("validator_audit"));
+    assert_eq!(fraud_paths["all_invariants_hold"].as_bool(), Some(true));
+    assert_eq!(fraud_paths["max_required_slashable_bond"].as_u64(), Some(0));
+    assert_eq!(fraud_paths["worst_path"].as_str(), Some("block_check"));
     let paths = fraud_paths["paths"].as_array().unwrap();
     assert!(paths.iter().any(|path| {
         path["path"].as_str() == Some("validator_audit")
-            && path["required_slashable_bond"].as_u64() == Some(301)
+            && path["reward_from_fraud"].as_u64() == Some(0)
+            && path["required_slashable_bond"].as_u64() == Some(0)
+            && path["invariant_holds"].as_bool() == Some(true)
     }));
     assert!(paths.iter().any(|path| {
         path["path"].as_str() == Some("data_unavailability")
             && path["slashable_bond"].as_u64() == Some(10)
-            && path["required_slashable_bond"].as_u64() == Some(10)
+            && path["reward_from_fraud"].as_u64() == Some(0)
+            && path["required_slashable_bond"].as_u64() == Some(0)
+            && path["invariant_holds"].as_bool() == Some(true)
     }));
     assert!(paths.iter().any(|path| {
         path["path"].as_str() == Some("block_check")

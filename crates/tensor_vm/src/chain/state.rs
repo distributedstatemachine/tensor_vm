@@ -1332,6 +1332,7 @@ impl ChainState {
             .collect::<Vec<_>>();
         let reward_from_fraud = at_risk_validator_rewards
             .iter()
+            .filter(|reward| reward.claimable_at_height <= self.height)
             .map(|reward| reward.amount)
             .max()
             .unwrap_or_default();
@@ -1388,6 +1389,7 @@ impl ChainState {
             params.data_unavailability_miner_slash_amount,
             at_risk_miner_rewards
                 .iter()
+                .filter(|reward| reward.claimable_at_height <= self.height)
                 .map(|reward| reward.amount)
                 .max()
                 .unwrap_or_default(),

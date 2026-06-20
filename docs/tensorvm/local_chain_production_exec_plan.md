@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 88 complete and pushed - competing-head fork-choice and withholding policy.
+- Active feature: Iteration 89 complete - receipt reward fraud exposure follows delayed settlement.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, and delayed challenge rewards are
@@ -39,69 +39,62 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 88: Competing-Head Fork-Choice And Withholding Policy
+### Iteration 89: Delayed Receipt Reward Fraud Exposure
 
-Feature capability: replace first-seen-wins same-height block admission with a chain-owned policy for the
-unfinalized current head: competing useful UVPoW heads on the same parent are compared by PoW hash, while
-accepted fallback heads are not displaced by late useful blocks so withheld useful blocks lose after the
-fallback timeout.
+Feature capability: make validator-audit and data-unavailability economics use the same delayed-settlement
+model as block-check proposer rewards: immature pending receipt rewards are slashable/voidable escrow, and
+only mature claims count as already-extractable fraud proceeds.
 
-Readiness requirements covered: `mvp_spec.md` §20.5/§37.9 and `upow.md` §11 deterministic UVPoW block
-validity, proposer competition, and withholding mitigation.
+Readiness requirements covered: `upow.md` §12 economics/slashing invariant and the local readiness gap for
+measured reward exposure without adapter workarounds.
 
-Canonical owner: `chain::blocks` validates and applies competing-head replacement against stored parent
-state; `chain::engine` exposes typed admission/event evidence.
-Adapter callers: node payload application, p2p ingestion, RPC, runtime, and checkers remain callers of
-`ChainCommand::SubmitBlock`/`Chain::admit_block`.
-Old shortcut being removed: any non-identical same-height block is currently rejected as
-`ConflictingHeight`, so the first received unfinalized useful head wins even when a competing validator has
-strictly better UVPoW evidence.
-Regression test that proves the shortcut is gone: focused block tests apply a less-preferred useful head,
-then replace it with a better useful head on the same parent; they also prove finalized heads and accepted
-fallback heads are not replaced.
-Behavior with local synthetic block production disabled: policy uses only submitted block payloads,
-stored parent snapshots, canonical block validation, and chain state; it is independent of synthetic job
-generation.
-Behavior for producer and non-producer roles: producers and non-producers run the same block admission
-policy for locally produced and network-ingested blocks; no role-local fork branch owns selection.
-Structured evidence source: `BlockAdmission::Replaced`, `ChainEvent::BlockReplaced`, block hashes, parent
-hashes, production kind, and selected-receipt parent snapshots.
-Finality source: finalized block state blocks replacement; unfinalized current-head replacement remains
-admission policy and does not fabricate votes or finality.
-Wire-size and codec boundary: no block, p2p, RPC, or storage payload shape change; only in-process typed
-admission/event enums gain replacement evidence.
+Canonical owner: `ChainState::fraud_path_economic_calibration` and
+`ChainState::validator_audit_economic_calibration` derive exposure from canonical pending reward ledgers.
+Adapter callers: status and explorer/RPC render chain-owned evidence; runtime, p2p, and checkers remain
+read-only consumers of that state.
+Old shortcut being removed: receipt fraud paths counted every non-voided pending miner/validator reward as
+`reward_from_fraud`, even when delayed settlement still allowed the chain to void the claim before spend.
+Regression test that proves the shortcut is gone: focused reward/status/RPC tests show immature receipt
+claims contribute slashable exposure but zero fraud proceeds until their `claimable_at_height` matures.
+Behavior with local synthetic block production disabled: calibration is a read-only state view over pending
+claims and chain params, independent of synthetic job/block production.
+Behavior for producer and non-producer roles: all roles replay the same pending reward ledgers and derive
+identical fraud exposure; no role-local branch owns economics.
+Structured evidence source: pending receipt reward claims, claim maturity heights, void flags,
+fraud-path calibration fields, service status, and explorer overview JSON.
+Finality source: finalized/replayed chain state and canonical pending reward ledgers; no adapter clocks or
+checker-local counters decide spendability.
+Wire-size and codec boundary: no p2p, block, RPC request, or storage codec shape changes; only derived
+status/explorer values and docs change.
 
-Files/modules likely touched: `chain/blocks.rs`, `chain/engine.rs`, focused block tests, docs/status
-coverage, and this plan.
+Files/modules likely touched: `chain/state.rs`, focused reward/status/RPC tests, status docs, and this
+plan.
 Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
 Parallelizable implementation workstreams: read-only discovery and validation only.
-Tests/checkers/docs to add or update: focused chain block tests and coverage/status/upow/readiness text.
-Narrow validation commands: `cargo test -p tensor_vm fork --quiet`, `cargo test -p tensor_vm block --quiet`.
+Tests/checkers/docs to add or update: focused reward/status/explorer tests and coverage/status/upow/readiness
+text.
+Narrow validation commands: `cargo test -p tensor_vm reward --quiet`,
+`cargo test -p tensor_vm status --quiet`, and `cargo test -p tensor_vm explorer_overview_exports --quiet`.
 Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
 workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: same-parent unfinalized useful heads no longer use first-seen-wins; fallback
-withholding mitigation keeps an accepted fallback head stable against late useful payloads.
-Out of scope: full multi-branch fork tree, public Docker rerun, fee-market ordering, or changing block/p2p
-wire payloads.
-Split trigger: if replacement requires persisted side forks, block-log migrations, or network codec
-changes, split those from this current-head-only policy.
+Expected observable evidence: immature miner/validator receipt rewards no longer inflate
+`reward_from_fraud`; mature receipt claims still do.
+Out of scope: new slash amounts, full transcript disputes, fork-choice policy, CUDA evidence, or Docker
+rerun.
+Split trigger: if fixing exposure requires changing reward ledger storage or wire payloads, split that
+from this derived-calibration change.
 
 Implementation summary:
-- Added typed `BlockAdmission::Replaced`, `BlockInvalidReason::{FinalizedConflict, NonPreferredCompetingHead}`,
-  and `ChainEvent::BlockReplaced` evidence.
-- `chain::blocks` now lets a strictly better same-parent useful UVPoW block replace only the unfinalized
-  current useful head, using reconstructed parent state for the replacement child transition.
-- Finalized heads, historical heights, different-parent conflicts, fallback heads, and non-preferred useful
-  competitors remain rejected.
-- Network block payload application now lets current-head competitors reach chain admission and treats
-  chain-approved replacement as applied.
+- Validator-audit and data-unavailability calibration now count `reward_from_fraud` only from non-voided
+  receipt claims whose `claimable_at_height` is at or below canonical chain height.
+- Immature pending miner and validator receipt rewards still count as at-risk claims and remain visible
+  through service status and explorer fraud-path evidence, but no longer inflate immediate fraud proceeds.
+- Docs now describe receipt and proposer delayed rewards as slashable/voidable escrow until claimability.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm fork --quiet` passed with 0 matched tests,
-  `cargo test -p tensor_vm block --quiet` passed, and
-  `cargo test -p tensor_vm block_payload_application_replaces_current_head_with_better_useful_pow --quiet`
-  passed.
+- Focused: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm status --quiet`, and
+  `cargo test -p tensor_vm explorer_overview_exports --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 419 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -109,77 +102,23 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `3a75b33` (`Add current head fork choice policy`) pushed to `origin/main`.
-- Evidence commit: `d2e758d` (`Record current head fork choice evidence`) pushed to `origin/main`.
-- Push result: `git push origin main` succeeded (`d4d11b8..d2e758d  main -> main`).
+
+## Recent Iterations
+
+### Iteration 88: Competing-Head Fork-Choice And Withholding Policy
+
+Current-head useful UVPoW competitors can replace only an unfinalized same-parent useful head when the new
+PoW evidence is strictly preferred; finalized heads, historical heights, different-parent conflicts, and
+fallback heads remain stable. Validation passed focused block/payload tests, full crate, clippy, workspace
+release, and first/final Gate 0. Commits `3a75b33`, `d2e758d`, and `1484592` are pushed to `origin/main`.
 
 ### Iteration 87: Delayed Block-Check Proposer Reward Protection
 
-Feature capability: delay proposer rewards through the block-check fraud window so the block-check path is
-protected by canonical reward escrow instead of a calibration workaround that treats the pending reward as
-both fraud proceeds and slashable bond.
-
-Readiness requirements covered: `upow.md` §12 economics/slashing invariant and the local readiness gap for
-block-check/proposer reward timing.
-
-Canonical owner: `ChainParams` and shared chain reward/block transitions compute and enforce delayed
-proposer reward claim heights; `ChainState` derives block-check economic exposure from live pending claims.
-Adapter callers: status and explorer/RPC render chain-owned evidence; runtime, p2p, and checkers remain
-consumers of the same state.
-Old shortcut being removed: block-check economics reports the pending proposer reward as immediate
-fraud profit, causing `bond * P(detection) > reward_from_fraud` to fail by construction even while the
-reward is still escrowed.
-Regression test that proves the shortcut is gone: focused reward/status/RPC tests show proposer reward
-claims mature after the block-check hold and the block-check path reports zero exposed reward while held.
-Behavior with local synthetic block production disabled: calibration is a read-only chain-state view over
-pending claims and params, independent of local synthetic job/block production.
-Behavior for producer and non-producer roles: producers and non-producers replay the same chain state and
-derive identical claim heights and calibration; no role-local branch owns economics.
-Structured evidence source: `ChainParams::proposer_reward_hold_blocks`, pending proposer reward claims,
-`ChainState::fraud_path_economic_calibration`, service status fields, and explorer overview JSON.
-Finality source: finalized/replayed chain state; reward release remains tied to canonical height and pending
-claim state, not adapter clocks.
-Wire-size and codec boundary: one persisted chain-param field is added to the storage codec; no p2p payload
-or block codec change.
-
-Files/modules likely touched: `chain/state.rs`, `chain/blocks.rs`, `chain.rs`, storage codec tests,
-focused reward/status/RPC tests, status docs, and this plan.
-Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
-Parallelizable implementation workstreams: read-only discovery and validation only.
-Tests/checkers/docs to add or update: focused chain reward/economics test, storage codec test, status test,
-explorer overview test, coverage/status/upow/readiness text.
-Narrow validation commands: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm storage --quiet`,
-`cargo test -p tensor_vm status --quiet`, `cargo test -p tensor_vm explorer_overview_exports --quiet`.
-Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
-workspace release, tarpaulin attempt if feasible.
-Expected observable evidence: proposer pending claims include a block-check hold and block-check economic
-calibration no longer fails solely because held rewards were counted as immediate fraud proceeds.
-Out of scope: changing slash amounts, adding full fraud-proof transcript disputes, fork-choice policy,
-CUDA evidence, or Docker rerun.
-Split trigger: if delayed rewards require changing block, p2p, or receipt wire payloads, split that from
-this parameterized chain-state transition.
-
-Implementation summary:
-- Added `ChainParams::proposer_reward_hold_blocks` and proposer-specific maturity for pending proposer
-  claims created by block production and epoch reward settlement.
-- Persisted the new chain parameter in the chain-state codec.
-- Updated block-check fraud-path economics so delayed proposer claims are slashable escrow and only
-  claimable rewards count as immediate fraud proceeds.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm reward --quiet`, `cargo test -p tensor_vm storage --quiet`,
-  `cargo test -p tensor_vm status --quiet`, `cargo test -p tensor_vm explorer_overview_exports --quiet`,
-  `cargo test -p tensor_vm params --quiet`, and `cargo test -p tensor_vm challenge --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 415 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-
-## Recent Iterations
+`ChainParams::proposer_reward_hold_blocks` delays proposer rewards through the block-check fraud window.
+Block-check economics now treats delayed proposer rewards as slashable escrow and only mature claims as
+fraud proceeds. Validation passed focused reward/storage/status/explorer/params/challenge tests, full
+crate, clippy, workspace release, and first/final Gate 0. Commits `1923692`, `b638369`, and `d4d11b8` are
+pushed to `origin/main`.
 
 ### Iteration 86: Fraud-Path Economic Calibration
 

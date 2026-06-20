@@ -531,9 +531,9 @@ TensorBlock {
 > validator-audit view reports configured audit sampling probability, slash amount, non-voided pending
 > validator receipt reward exposure, required slashable bond, and pass/fail invariant. The broader
 > fraud-path view covers implemented validator-audit, miner data-unavailability, and block-check/proposer
-> clawback paths with aggregate worst-required-bond and all-path pass/fail status; block-check exposure
-> treats delayed, non-voided proposer rewards as slashable escrow and counts fraud proceeds only after the
-> claim is actually spendable.
+> clawback paths with aggregate worst-required-bond and all-path pass/fail status; delayed, non-voided
+> receipt and proposer rewards are treated as slashable/voidable escrow, and fraud proceeds are counted
+> only after the claim is actually spendable.
 > Registered validator roles now observe
 > only their assigned local audit work, submit signed audit reports through the shared chain command path,
 > gossip bounded audit-report payloads, and expose submitted plus network-applied report counters.

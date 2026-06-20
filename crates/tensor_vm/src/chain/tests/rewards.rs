@@ -376,7 +376,7 @@ fn pending_reward_claim_view_covers_all_ledgers() {
 }
 
 #[test]
-fn validator_audit_economic_calibration_uses_live_at_risk_validator_rewards() {
+fn validator_audit_economic_calibration_delays_immature_validator_reward_exposure() {
     let beacon = hash_bytes(b"test", &[b"audit-economic-calibration"]);
     let params = ChainParams {
         validator_audit_sample_numerator: 1,
@@ -394,7 +394,7 @@ fn validator_audit_economic_calibration_uses_live_at_risk_validator_rewards() {
         beneficiary: validator,
         amount: 40,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 9,
+        claimable_at_height: 0,
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -432,10 +432,10 @@ fn validator_audit_economic_calibration_uses_live_at_risk_validator_rewards() {
     assert_eq!(calibration.detection_denominator, 4);
     assert_eq!(calibration.detection_probability_bps, 2_500);
     assert_eq!(calibration.slashable_bond, 200);
-    assert_eq!(calibration.reward_from_fraud, 80);
+    assert_eq!(calibration.reward_from_fraud, 40);
     assert_eq!(calibration.at_risk_validator_reward_claim_count, 2);
-    assert_eq!(calibration.required_slashable_bond, 321);
-    assert!(!calibration.invariant_holds);
+    assert_eq!(calibration.required_slashable_bond, 161);
+    assert!(calibration.invariant_holds);
 
     let empty = Chain::new(beacon);
     let empty_calibration = empty
@@ -468,6 +468,15 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         claim_id: hash_bytes(b"test", &[b"fraud-path-miner-claim"]),
         receipt_id: hash_bytes(b"test", &[b"fraud-path-miner-receipt"]),
         beneficiary: address(b"fraud-path-miner"),
+        amount: 7,
+        kind: ReceiptRewardKind::Miner,
+        claimable_at_height: 0,
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"fraud-path-immature-miner-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"fraud-path-immature-miner-receipt"]),
+        beneficiary: address(b"fraud-path-miner"),
         amount: 149,
         kind: ReceiptRewardKind::Miner,
         claimable_at_height: 9,
@@ -488,8 +497,8 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .fraud_path_economic_calibration(chain.params());
     assert_eq!(calibration.path_count, 3);
     assert!(calibration.all_invariants_hold);
-    assert_eq!(calibration.worst_path, "validator_audit");
-    assert_eq!(calibration.max_required_slashable_bond, 241);
+    assert_eq!(calibration.worst_path, "data_unavailability");
+    assert_eq!(calibration.max_required_slashable_bond, 8);
 
     let validator_audit = calibration
         .paths
@@ -499,8 +508,8 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
     assert_eq!(validator_audit.detection_numerator, 1);
     assert_eq!(validator_audit.detection_denominator, 2);
     assert_eq!(validator_audit.slashable_bond, 300);
-    assert_eq!(validator_audit.reward_from_fraud, 120);
-    assert_eq!(validator_audit.required_slashable_bond, 241);
+    assert_eq!(validator_audit.reward_from_fraud, 0);
+    assert_eq!(validator_audit.required_slashable_bond, 0);
     assert!(validator_audit.invariant_holds);
 
     let data_unavailability = calibration
@@ -510,8 +519,9 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         .unwrap();
     assert_eq!(data_unavailability.detection_probability_bps, 10_000);
     assert_eq!(data_unavailability.slashable_bond, 150);
-    assert_eq!(data_unavailability.reward_from_fraud, 149);
-    assert_eq!(data_unavailability.required_slashable_bond, 150);
+    assert_eq!(data_unavailability.reward_from_fraud, 7);
+    assert_eq!(data_unavailability.at_risk_reward_claim_count, 2);
+    assert_eq!(data_unavailability.required_slashable_bond, 8);
     assert!(data_unavailability.invariant_holds);
 
     let block_check = calibration

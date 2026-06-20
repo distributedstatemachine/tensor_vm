@@ -228,8 +228,8 @@ The local bundle is useful and should remain the first operational target:
   expose live validator-audit economic calibration plus a broader implemented-path fraud calibration for
   validator-audit, miner data-unavailability, and block-check/proposer clawback paths, including required
   slashable bonds, aggregate worst-required-bond, and pass/fail invariant status. Proposer rewards now
-  carry an extra proposer-specific maturity hold, and the block-check calibration treats held proposer
-  claims as slashable escrow while counting fraud proceeds only after claimability. Governed calibration
+  carry an extra proposer-specific maturity hold, and the fraud-path calibration treats held receipt and
+  proposer claims as slashable/voidable escrow while counting fraud proceeds only after claimability. Governed calibration
   for measured detection probabilities, remaining fraud paths, and broader invalid-output slashing remains
   open economics work.
 

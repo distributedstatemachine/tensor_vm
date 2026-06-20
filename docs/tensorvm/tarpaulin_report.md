@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 88 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 89 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 88 coverage could not
-be regenerated. Iterations 78 through 88 rechecked the same command and hit the same missing-binary blocker.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 89 coverage could not
+be regenerated. Iterations 78 through 89 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -95,6 +95,9 @@ status, and RPC tests cover proposer claim timing, codec persistence, and render
 Iteration 88 added current-head competing useful-block admission and withholding policy. Focused chain and
 node payload tests cover better same-parent useful UVPoW replacement, finalized-head rejection, fallback
 head stability, and network payload application of a better competing head.
+Iteration 89 changed receipt-path economic calibration to treat immature pending miner and validator
+receipt rewards as slashable/voidable escrow rather than immediate fraud proceeds. Focused reward, status,
+and RPC tests cover claim-maturity-sensitive fraud exposure.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:
