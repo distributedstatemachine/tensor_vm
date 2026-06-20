@@ -5,8 +5,8 @@ feature-sized iterations are summarized after validation and push, and older det
 
 ## Current State
 
-- Active feature: Iteration 50, quantization dtype and gated registry foundation, implemented and validated;
-  commit/push evidence pending.
+- Active feature: Iteration 50, quantization dtype and gated registry foundation, implemented, validated,
+  and pushed.
 - Current status: Iteration 50 added consensus-visible `int8`, `uint8`, and `bool` tensor dtype tags,
   canonical IR dtype names, bounded random/test tensor generation, shared codec/p2p decode coverage, and
   frozen quantization op vocabulary that remains non-consensus-admitted.
@@ -109,6 +109,7 @@ Validation:
 - Broad gates passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`.
 - `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
+- Feature commit `b89bb18` pushed `42365a2..b89bb18 main -> main`.
 - Status/coverage/exec docs clarifying that dtype/registry foundation is implemented while exact
   quantization execution/conformance remains open.
 
@@ -595,6 +596,7 @@ passed; tarpaulin remained blocked by missing `cargo-tarpaulin`. Feature commit 
 - Latest broad gates: `git diff --check`, `cargo test -p tensor_vm`,
   `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release`
   passed after `cargo fmt --all`.
+- Latest feature commit: `b89bb18` pushed `42365a2..b89bb18 main -> main`.
 - Current tarpaulin blocker:
 
 ```text
