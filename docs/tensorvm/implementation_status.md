@@ -128,8 +128,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   Validator-owned useful proposals and empty fallback proposals now both create proposer claims with the
   explicit full reward-maturity delay, with fallback claims carrying the reduced reward amount. Pending
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
-  Receipt, challenge, and generic credit reward claims are state-rooted, persisted, and
-  released only after maturity. Challenge bounty spendability is separate from proposer penalty duration.
+  Receipt, challenge, and generic credit reward claims are state-rooted and persisted. Receipt rewards
+  release only after the receipt is included in canonical blockspace and the inclusion-based maturity
+  height has elapsed; challenge and generic credit claims release only after their own maturity heights.
+  Challenge bounty spendability is separate from proposer penalty duration.
   Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
   shared chain transition instead of requiring adapter-side release workarounds. Voided proposer, receipt,

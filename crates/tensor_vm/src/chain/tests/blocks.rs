@@ -442,6 +442,15 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .unwrap()
         .claimable_at_height;
     chain.set_pending_receipt_reward_claimable_for_testing(receipt.receipt_id, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
 
     let block = chain.produce_block(validator, 1_000).unwrap();
     assert!(
@@ -469,6 +478,18 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
     );
     assert_eq!(inclusion_delayed_claimable, initial_claimable);
     assert!(inclusion_delayed_claimable > 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    chain.set_position_for_testing(inclusion_delayed_claimable, 0);
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            receipt_id,
+            beneficiary,
+            ..
+        } if *receipt_id == receipt.receipt_id && *beneficiary == miner
+    )));
+    assert_eq!(chain.state().rewards().balance(&miner), 1_000);
 }
 
 #[test]

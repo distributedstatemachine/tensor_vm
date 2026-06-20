@@ -16,7 +16,7 @@ help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
 This environment does not currently have `cargo-tarpaulin` installed, so Iteration 77 coverage could not
-be regenerated. Iterations 78 through 80 rechecked the same command and hit the same missing-binary blocker.
+be regenerated. Iterations 78 through 81 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -72,6 +72,9 @@ Iteration 79 added durable block-parent `ChainState` snapshots for replay-stable
 future receipts/blocks and after chain-state save/load.
 Iteration 80 added chain-level PoW-skip fallback timeout validation. Focused fallback and retarget tests
 cover producer and non-producer rejection of early empty fallback blocks while preserving useful UVPoW.
+Iteration 81 added inclusion-gated receipt reward release. Focused reward and settlement tests cover
+height-mature settled receipt claims staying pending before blockspace inclusion, inclusion extending
+claim maturity from the block height, and spendable release only after the inclusion-based maturity height.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

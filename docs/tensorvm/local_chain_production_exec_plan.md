@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 80 complete and pushed.
+- Active feature: Iteration 81 validation complete; commit/push pending.
 - Current status: live diagnostic observed bad-block challenge emission is implemented in the validator
   proposer runtime and checker contract. Delayed proposer, receipt, challenge, and credit rewards are
   state-rooted pending claims
@@ -31,8 +31,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: select the next non-Docker consensus gap or rerun the full Docker scenario after the
-  `/health` blocker clears.
+- Next action: commit and push Iteration 81, then record the resulting commit/push evidence.
 
 ## Readiness Matrix
 
@@ -49,10 +48,75 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial; Iteration 64 field `div` implemented | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core, exact unary/structural/comparison/reduction/generator/quantization ops, exact field `div`, dynamic-output `split`, and rank-2 matrix-contraction `einsum` | Continue remaining exact Tier-B verifier coverage and role-runtime arbitrary graph production |
 | Per-op `F_p` conformance vectors | Partial; Iteration 64 `div` vector implemented | Registry-derived admitted-op guard, CPU profile evidence, exact vectors for current admitted ops including multi-output quantization, exact field `div`, `split`, and `einsum`; default CUDA non-admission | Add CUDA conformance evidence and continue exact Tier-B op vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Admitted receipts persist receipt-time finalized beacon randomness/assignment seed | Remaining: full VRF/drand construction and external commit-reveal ordering |
-| Economics and slashing invariant | Partial; Iteration 74 appeal reward resolution implemented | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Add broader bond calibration and governed stake-slash reversal |
+| Economics and slashing invariant | Partial; Iteration 81 in progress | Delayed proposer, receipt, challenge, and credit rewards; reward-root binding; block-transition mature release; audit/data-unavailability slashing; assigned auditor policy; appeal reward-void resolution through pending claims; chain-owned pending claim view; executable study helper; live validator-audit calibration status/explorer evidence | Enforce receipt reward release only after blockspace inclusion, then add broader bond calibration and governed stake-slash reversal |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 81: Inclusion-Gated Receipt Reward Release
+
+Feature capability: settled receipt reward claims remain non-spendable until the receipt is included in
+canonical blockspace and the full reward-settlement plus challenge-window maturity delay has elapsed from
+that inclusion point.
+
+Readiness requirements covered: `upow.md` §12.1 and `mvp_spec.md` §20.3/§25 receipt reward-finality delay.
+
+Canonical owner: `chain::commands::release_matured_receipt_rewards` owns spendable reward release, and
+`chain::blocks` owns inclusion-height claim delay updates during canonical block application.
+Adapter callers: manual release commands, rewarded block transitions, local/runtime status, explorer, and
+checkers observe the same state-rooted pending/spendable ledgers.
+Old shortcut being removed: a settled receipt reward claim could mature and be swept to spendable balance
+before its receipt was included in blockspace if blockspace inclusion lagged.
+Regression test that proves the shortcut is gone: focused reward/settlement tests keep an originally mature
+but unincluded receipt claim pending, include the receipt in a block, verify the claimable height is pushed
+to inclusion plus maturity, and release only after that height.
+Behavior with local synthetic block production disabled: settled but unincluded rewards remain pending and
+non-spendable until an inbound or local valid block includes the receipt.
+Behavior for producer and non-producer roles: producers and non-producers both execute the same block child
+state and release sweeper; neither can credit an unincluded receipt reward.
+Structured evidence source: `ChainState::included_receipts`, `PendingReceiptReward::receipt_id`,
+`PendingReceiptReward::claimable_at_height`, reward balances, and `reward_root`.
+Finality source: unchanged; reward finality remains separate from block admission/finality and is gated by
+claim maturity after inclusion.
+Wire-size and codec boundary: no wire change; existing state/block codecs already persist included receipts
+and pending reward ledgers.
+
+Files/modules likely touched: `chain/commands.rs`, focused reward/settlement tests, coverage/status docs,
+and this exec plan.
+Parallel subagents to run: none; user prefers no subagents unless explicitly requested.
+Parallelizable implementation workstreams: read-only discovery and validation only.
+Tests/checkers/docs to add or update: focused receipt reward release tests and docs status for reward
+delay semantics.
+Narrow validation commands: `cargo test -p tensor_vm receipt_rewards --quiet`, `cargo test -p tensor_vm
+reward --quiet`.
+Broad validation commands before commit: final Gate 0, fmt, diff check, full tensor_vm crate, clippy,
+workspace release, tarpaulin attempt.
+Expected observable evidence: reward balances stay zero for settled-but-unincluded receipt claims; block
+inclusion extends the claim maturity window; spendable credit happens only after the extended height.
+Out of scope: Docker rerun, fork choice, fraud-proof transcripts, and broad bond calibration.
+Split trigger: if inclusion-gating requires schema changes to persisted reward records, split storage
+migration from the release-rule fix.
+
+Implementation summary:
+- Updated `release_matured_receipt_rewards` so a pending receipt claim must be height-mature and its
+  receipt must be present in `included_receipts` before spendable credit can be released.
+- Extended settlement/block tests so artificially mature settled-but-unincluded receipt claims remain
+  pending, block inclusion pushes the claimable height to inclusion plus maturity, and release happens only
+  after that height.
+- Updated status, coverage, and Tarpaulin docs to record the stricter reward-finality rule.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm receipt_rewards --quiet`, `cargo test -p tensor_vm reward --quiet`,
+  and `cargo test -p tensor_vm settlement --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+- Feature commit: pending.
 
 ### Iteration 80: PoW-Skip Fallback Timeout Enforcement
 

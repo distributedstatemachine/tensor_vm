@@ -71,6 +71,7 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
         .claimable_at_height;
+    assert!(claimable_at_height > 0);
     assert_eq!(
         chain
             .state()
@@ -88,6 +89,38 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         .unwrap()
         .amount;
     assert!(pending_validator_reward > 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    chain.set_pending_receipt_reward_claimable_for_testing(receipt.receipt_id, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
+
+    let block = chain.produce_block(validators[0], 1_000).unwrap();
+    assert!(
+        chain
+            .state()
+            .included_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        claimable_at_height,
+        block
+            .height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     chain.set_position_for_testing(claimable_at_height, 0);
     let release_events = chain.release_matured_receipt_rewards().unwrap();
@@ -198,7 +231,26 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
         .claimable_at_height;
-    chain.set_position_for_testing(claimable_at_height, 0);
+    assert!(claimable_at_height > 0);
+    chain.set_pending_receipt_reward_claimable_for_testing(receipt.receipt_id, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    let inclusion_claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.beneficiary == miner)
+        .unwrap()
+        .claimable_at_height;
+    assert_eq!(
+        inclusion_claimable_at_height,
+        block
+            .height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    chain.set_position_for_testing(inclusion_claimable_at_height, 0);
     chain.release_matured_receipt_rewards().unwrap();
 
     assert_eq!(chain.state().rewards().balance(&miner), 1_000);
