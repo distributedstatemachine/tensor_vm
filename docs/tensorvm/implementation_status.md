@@ -293,7 +293,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
 - Miner node executor with receipt submission and tensor serving
 - Validator node attestation flow for TensorOp and LinearTrainingStep receipts
 - Server-backed TensorOp data availability verification with unavailable attestations
-- Tensor server for descriptors, rows, chunks, Merkle openings, and retention-window pruning
+- Tensor server for descriptors, rows, chunks, Merkle openings, retention-window pruning, and
+  submission-anchored selected-receipt opening retention deadlines
 - End-to-end local matmul round: schedule, mine, serve tensors, verify via tensor server, attest, settle, and produce block
 - End-to-end local LinearTrainingStep round: register model, mine, verify, attest, settle, update model state, and produce block
 - Library-owned local CPU synthetic round producer that schedules matmul and LinearTrainingStep jobs,

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 101 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 102 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 101 coverage could not
-be regenerated. Iterations 78 through 101 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 102 coverage could not
+be regenerated. Iterations 78 through 102 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -134,6 +134,9 @@ Iteration 101 added typed block-check transcript openings. Focused block apply a
 coverage checks that selected-receipt openings expose the beacon, parent hash, check seed, selected receipt
 leaf, receipt checks root, and receipt metadata that hash into the Merkle-proven check leaf before a
 challenge is admitted.
+Iteration 102 anchored selected-receipt opening retention deadlines to receipt submission height. Focused
+block apply coverage checks that delayed inclusion after fallback production does not extend the reported
+tensor retention deadline.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

@@ -5,15 +5,16 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 101 complete - typed block-check transcript openings.
+- Active feature: Iteration 102 complete - submission-anchored retention openings.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
-  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
-  and selected-receipt block openings now expose typed block-check transcript commitments.
+  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement.
+  Selected-receipt block openings now expose typed block-check transcript commitments and
+  submission-anchored retention deadlines.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -34,7 +35,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
@@ -43,52 +44,55 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 101: Typed Block-Check Transcript Openings
+### Iteration 102: Submission-Anchored Retention Openings
 
-Feature capability: expose the recomputed per-receipt verification transcript committed into block
-`checks_root`, instead of leaving selected receipt `check_leaf` evidence as an opaque hash.
+Feature capability: make selected-receipt opening retention evidence stable by anchoring
+`expires_at_block` to the receipt's submitted height plus the configured tensor-retention window.
 
-Canonical owner: `chain::roots`, `chain::blocks`, and `chain::challenges`.
-Adapter callers: block apply outcome views, diagnostic challenge construction, status/explorer block
-evidence, and p2p challenge payload validation.
-Old shortcut being removed: block-check challenge evidence could prove an opaque leaf mismatch but did not
-surface the typed transcript fields that generated the expected leaf.
+Canonical owner: `chain::blocks` selected-receipt opening construction.
+Adapter callers: block apply outcome views, block status/explorer evidence, and local checker block
+evidence.
+Old shortcut being removed: opening retention deadlines drifted with the parent height when a receipt was
+included after later fallback/useful blocks.
 Regression test that proves the shortcut is gone:
-`chain::tests::block_apply_outcome_exposes_parent_child_and_check_openings`.
-Behavior with local synthetic block production disabled: all blocks derive the same transcript fields from
-parent state, selected receipts, attestations, parent hash, and finalized beacon.
-Behavior for producer and non-producer roles: producers and peers recompute the same typed transcript from
-canonical parent snapshots before accepting a challenge.
-Structured evidence source: `SelectedReceiptOpening::check_transcript`, `check_leaf`, Merkle proof, and
-`BlockApplyOutcome::checks_root`.
-Finality source: unchanged; transcript challenges can void delayed proposer/receipt rewards before
-maturity.
-Wire-size and codec boundary: no p2p challenge payload change; the typed transcript is local block-apply
-evidence and hashes to the existing `check_leaf` wire field.
+`chain::tests::selected_receipt_opening_retention_deadline_is_submission_anchored`.
+Behavior with local synthetic block production disabled: unchanged; the deadline derives only from
+canonical receipt metadata and chain params.
+Behavior for producer and non-producer roles: producers and peers expose the same deadline from stored
+parent snapshots.
+Structured evidence source: `SelectedReceiptOpening::submitted_at_block`, `expires_at_block`, and
+`ChainParams::tensor_retention_window_blocks`.
+Finality source: unchanged; this fixes evidence for the retention/challenge window, not finality.
+Wire-size and codec boundary: no p2p wire or chain-state codec change.
 
 Implementation summary:
-- Added `BlockCheckTranscript` with beacon, parent hash, check seed, selected receipt leaf, receipt checks
-  root, and receipt metadata fields.
-- `block_check_leaves` now hashes typed transcripts, and selected receipt openings expose the transcript
-  whose `leaf()` equals the Merkle-proven check leaf.
-- Block-check challenge admission now asserts that the recomputed transcript hashes back to the expected
-  leaf before accepting the mismatch proof.
+- `selected_receipt_openings` now computes `expires_at_block` as
+  `receipt.submitted_at_block + tensor_retention_window_blocks`.
+- Added focused coverage that submits a receipt, advances the chain with fallback block production before
+  inclusion, and proves the opening deadline does not drift with the parent height.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm selected_receipt_opening_retention_deadline_is_submission_anchored --quiet`
+  passed.
 - Focused: `cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet`
   passed.
-- Focused: `cargo test -p tensor_vm block_check --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 434 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `8aef9bb` (`Expose typed block check transcripts`) is pushed with this evidence update.
 
 ## Recent Iterations
+
+### Iteration 101: Typed Block-Check Transcript Openings
+
+Selected-receipt block openings now expose typed block-check transcript fields whose `leaf()` equals the
+Merkle-proven check leaf, and challenge admission verifies that transcript commitment before accepting a
+mismatch proof. Validation passed focused block apply/block-check tests, full crate, clippy, workspace
+release, and first/final Gate 0. Commits `8aef9bb` and `a7195bb` are pushed to `origin/main`.
 
 ### Iteration 100: Delayed TensorWork Activation
 
@@ -229,12 +233,12 @@ pushed to `origin/main`.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 101 on June 21, 2026:
+Latest full validation is Iteration 102 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
+cargo test -p tensor_vm selected_receipt_opening_retention_deadline_is_submission_anchored --quiet
 cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet
-cargo test -p tensor_vm block_check --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

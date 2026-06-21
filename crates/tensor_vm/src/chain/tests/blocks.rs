@@ -1139,6 +1139,13 @@ fn block_apply_outcome_exposes_parent_child_and_check_openings() {
     assert!(opening.data_available);
     assert_eq!(opening.primitive_type, Some(PrimitiveType::TensorOp));
     assert_eq!(opening.tensor_work_units, receipt.tensor_work_units);
+    assert_eq!(opening.submitted_at_block, receipt.submitted_at_block);
+    assert_eq!(
+        opening.expires_at_block,
+        receipt
+            .submitted_at_block
+            .saturating_add(chain.params().tensor_retention_window_blocks())
+    );
     assert_eq!(opening.check_transcript.receipt_id, receipt.receipt_id);
     assert_eq!(opening.check_transcript.beacon_round, block.beacon_round);
     assert_eq!(opening.check_transcript.beacon, block.beacon);
@@ -1198,6 +1205,74 @@ fn block_apply_outcome_exposes_parent_child_and_check_openings() {
             .check_leaf_proof
             .as_ref()
             .is_some_and(|proof| verify_proof(&outcome.checks_root, opening.check_leaf, proof))
+    );
+}
+
+#[test]
+fn selected_receipt_opening_retention_deadline_is_submission_anchored() {
+    let beacon = hash_bytes(b"test", &[b"opening-retention-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"opening-retention-miner");
+    let validator = address(b"opening-retention-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 3, 3, 3, &beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 0, 5).unwrap();
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"opening-retention-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job.clone()));
+    chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+
+    let submitted_at_block = receipt.submitted_at_block;
+    let fallback = chain.produce_block(validator, 1_000).unwrap();
+    assert_eq!(
+        fallback.production_kind,
+        BlockProductionKind::PowSkipFallback
+    );
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+    let block = chain.produce_block(validator, 1_006).unwrap();
+    let outcome = chain.block_apply_outcome(&block).unwrap();
+    let opening = outcome
+        .selected_openings
+        .iter()
+        .find(|opening| opening.receipt_id == receipt.receipt_id)
+        .expect("included receipt should have an opening");
+
+    assert_eq!(opening.submitted_at_block, submitted_at_block);
+    assert_eq!(
+        opening.expires_at_block,
+        submitted_at_block.saturating_add(chain.params().tensor_retention_window_blocks())
+    );
+    assert_ne!(
+        opening.expires_at_block,
+        outcome
+            .parent_snapshot
+            .height
+            .saturating_add(chain.params().tensor_retention_window_blocks())
     );
 }
 

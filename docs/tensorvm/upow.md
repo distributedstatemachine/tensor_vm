@@ -654,6 +654,9 @@ This section is non-normative guidance on how the spec components partition into
   commit→reveal, and current-block-hash-ban evidence through status/explorer; external drand round ↔ epoch
   mapping and validator VRF construction remain TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
+- [~] Retention evidence: selected-receipt block openings now anchor `expires_at_block` to receipt
+  submission height plus the configured tensor-retention window, so delayed inclusion cannot extend the
+  reported verification/challenge availability deadline. Durable erasure-coded DA remains TODO (§9).
 - [~] Economic calibration: live calibration now reports the configured validator-audit detection
   probability, current pending validator reward exposure, implemented miner data-unavailability and
   block-check/proposer clawback paths, required slashable bonds, aggregate worst-required-bond, and

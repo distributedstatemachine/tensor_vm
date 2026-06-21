@@ -1411,9 +1411,8 @@ fn selected_receipt_openings(
                 data_available: !parent_state.data_unavailable_receipts.contains(receipt_id),
                 expires_at_block: receipt
                     .map(|receipt| {
-                        parent_state
-                            .height
-                            .max(receipt.submitted_at_block())
+                        receipt
+                            .submitted_at_block()
                             .saturating_add(retention_window_blocks)
                     })
                     .unwrap_or(parent_state.height),
