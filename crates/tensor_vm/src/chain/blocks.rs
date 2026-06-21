@@ -162,7 +162,9 @@ fn produce_inner(
         .state
         .block_selected_receipts
         .insert(block_hash, selection.receipt_ids.clone());
-    chain.block_parent_states.insert(block_hash, parent_state);
+    chain
+        .block_parent_states
+        .insert(block_hash, parent_state.clone());
     if block.production_kind.requires_pow() && !block.pow_valid() {
         return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
@@ -186,23 +188,33 @@ pub(super) fn produce_with_rewards(
 }
 
 pub(super) fn prepare_parent_state(chain: &mut Chain) -> Result<()> {
-    let settled_before = chain.state.settled_receipts.clone();
     chain.apply_command(ChainCommand::SettleEpoch {
         miner_reward_pool: 1_000,
         validator_reward_pool: 500,
     })?;
-    let newly_settled = chain
+    let settled_receipts = chain
         .state
         .settled_receipts
-        .difference(&settled_before)
+        .iter()
         .copied()
         .collect::<Vec<_>>();
-    for receipt_id in newly_settled {
+    let mut linear_transitions = BTreeSet::new();
+    for receipt_id in settled_receipts {
         let Some(ReceiptState::LinearTrainingStep(receipt)) =
             chain.state.receipts.get(&receipt_id).cloned()
         else {
             continue;
         };
+        if !linear_transitions.insert((receipt.model_id, receipt.step, receipt.weight_root_before))
+        {
+            continue;
+        }
+        let Some(model) = chain.state.model_states.get(&receipt.model_id) else {
+            continue;
+        };
+        if model.step != receipt.step || model.weight_root != receipt.weight_root_before {
+            continue;
+        }
         chain.apply_command(ChainCommand::ApplyModelTransition {
             model_id: receipt.model_id,
             step: receipt.step,
@@ -252,16 +264,14 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     }
 
     validate(chain, &block, true)?;
-    let parent_state = chain.state.clone();
+    let parent_state = parent_state_for_validation(chain, &block);
     let outcome = apply_outcome(chain, &block)?;
     chain.blocks.push(block.clone());
     chain
-        .state
-        .block_selected_receipts
-        .insert(block_hash, outcome.selected_receipt_ids.clone());
-    chain.block_parent_states.insert(block_hash, parent_state);
-    chain.state = apply_block_to_parent_state(
-        &chain.state,
+        .block_parent_states
+        .insert(block_hash, parent_state.clone());
+    let mut child_state = apply_block_to_parent_state(
+        &parent_state,
         chain.params.epoch_length,
         block.beacon_round,
         &block.beacon,
@@ -282,6 +292,10 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
+    child_state
+        .block_selected_receipts
+        .insert(block_hash, outcome.selected_receipt_ids.clone());
+    chain.state = child_state;
     Ok(BlockAdmission::Applied {
         height,
         hash: block_hash,
@@ -826,24 +840,22 @@ fn validate_fallback_proposer(parent_state: &ChainState, block: &TensorBlock) ->
 pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockApplyOutcome> {
     let parent_state = parent_state_for_validation(chain, block);
     let parent_snapshot = parent_snapshot(block, &parent_state);
-    let selection = canonical_blockspace(
-        &parent_state,
-        &block.parent_hash,
-        block.beacon_round,
-        &block.beacon,
-        blockspace_caps(),
-    );
     let block_hash = block.hash();
     let selected_receipts = match chain.state.block_selected_receipts.get(&block_hash) {
         Some(receipts) => {
-            if *receipts != selection.receipt_ids {
-                return Err(TvmError::InvalidReceipt(
-                    "noncanonical block receipt selection",
-                ));
-            }
+            validate_selected_blockspace(&parent_state, receipts, blockspace_caps())?;
             receipts.clone()
         }
-        None => selection.receipt_ids,
+        None => {
+            canonical_blockspace(
+                &parent_state,
+                &block.parent_hash,
+                block.beacon_round,
+                &block.beacon,
+                blockspace_caps(),
+            )
+            .receipt_ids
+        }
     };
     let selected_receipt_root =
         selected_receipt_commitment_root(&selected_receipts, &parent_state.receipts);
@@ -898,6 +910,44 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         child_beacon_round: child_state.finalized_beacon_round,
         child_beacon: child_state.finalized_randomness,
     })
+}
+
+fn validate_selected_blockspace(
+    parent_state: &ChainState,
+    selected_receipts: &[Hash],
+    caps: BlockspaceCaps,
+) -> Result<()> {
+    if selected_receipts.len() > caps.max_receipts {
+        return Err(TvmError::InvalidReceipt("block receipt cap exceeded"));
+    }
+    let mut seen = BTreeSet::new();
+    let mut total_tensor_work_units = 0_u64;
+    let mut total_bytes = 0_u64;
+    for receipt_id in selected_receipts {
+        if !seen.insert(*receipt_id) {
+            return Err(TvmError::InvalidReceipt(
+                "duplicate block receipt selection",
+            ));
+        }
+        if !parent_state.settled_receipts.contains(receipt_id)
+            || parent_state.included_receipts.contains(receipt_id)
+            || parent_state.data_unavailable_receipts.contains(receipt_id)
+        {
+            return Err(TvmError::InvalidReceipt("invalid block receipt selection"));
+        }
+        let Some(receipt) = parent_state.receipts.get(receipt_id) else {
+            return Err(TvmError::InvalidReceipt("missing block receipt selection"));
+        };
+        total_tensor_work_units =
+            total_tensor_work_units.saturating_add(receipt.tensor_work_units());
+        total_bytes = total_bytes.saturating_add(receipt.estimated_block_bytes());
+        if total_tensor_work_units > caps.max_tensor_work_units || total_bytes > caps.max_bytes {
+            return Err(TvmError::InvalidReceipt(
+                "block receipt resource cap exceeded",
+            ));
+        }
+    }
+    Ok(())
 }
 
 pub(super) fn selected_receipts(chain: &Chain, block: &TensorBlock) -> Vec<Hash> {
@@ -1007,6 +1057,24 @@ fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainSt
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     ))
+}
+
+pub(super) fn parent_state_matches_known_parent(
+    chain: &Chain,
+    block: &TensorBlock,
+    parent_state: &ChainState,
+) -> bool {
+    let Some(known_state) = known_parent_child_state(chain, &block.parent_hash) else {
+        return false;
+    };
+    // Receipt and mempool-derived fields may legitimately differ from the
+    // receiver's local view; bind the supplied snapshot to chain anchors.
+    parent_state.height == known_state.height
+        && parent_state.epoch == known_state.epoch
+        && parent_state.finalized_beacon_round == known_state.finalized_beacon_round
+        && parent_state.finalized_randomness == known_state.finalized_randomness
+        && parent_state.genesis_beacon_round == known_state.genesis_beacon_round
+        && parent_state.genesis_randomness == known_state.genesis_randomness
 }
 
 fn known_block<'a>(chain: &'a Chain, block_hash: &Hash) -> Option<&'a TensorBlock> {

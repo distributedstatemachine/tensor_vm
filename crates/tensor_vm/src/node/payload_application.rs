@@ -3,9 +3,9 @@ use crate::{
     chain::{BlockAdmission, Chain, ChainCommand, ChainEngine, JobState},
     challenge::block_check_challenge_id,
     p2p::{
-        decode_attestation_payload, decode_block_check_challenge_payload, decode_block_payload,
-        decode_block_vote_payload, decode_job_payload, decode_receipt_payload,
-        decode_validator_audit_report_payload,
+        decode_attestation_payload, decode_block_check_challenge_payload,
+        decode_block_payload_with_selected_receipts, decode_block_vote_payload, decode_job_payload,
+        decode_receipt_payload, decode_validator_audit_report_payload,
     },
     types::{Hash, hash_bytes},
     verify::ValidatorAttestation,
@@ -51,7 +51,9 @@ pub fn apply_network_block_payload(
     if height == 0 || block_hash == [0; 32] {
         return NetworkBlockPayloadApply::Invalid;
     }
-    let Ok(block) = decode_block_payload(payload) else {
+    let Ok((block, selected_receipts, parent_state)) =
+        decode_block_payload_with_selected_receipts(payload)
+    else {
         return NetworkBlockPayloadApply::Invalid;
     };
     if block.height != height || block.hash() != block_hash {
@@ -87,6 +89,15 @@ pub fn apply_network_block_payload(
     }
 
     let mut candidate = chain.clone();
+    if let Some(parent_state) = parent_state {
+        if !candidate.block_parent_state_matches_known_parent(&block, &parent_state) {
+            return NetworkBlockPayloadApply::Invalid;
+        }
+        candidate.set_block_parent_state_for_admission(block_hash, parent_state);
+    }
+    if let Some(selected_receipts) = selected_receipts {
+        candidate.set_block_selected_receipts_for_admission(block_hash, selected_receipts);
+    }
     if !current_head_competitor
         && block.parent_hash == expected_parent
         && candidate.prepare_block_parent_state().is_err()
@@ -313,14 +324,21 @@ pub fn apply_network_block_check_challenge_payload(
             NetworkPayloadApply::Invalid
         };
     }
-    if !chain
+    let challenged_block = chain
         .blocks
         .iter()
-        .any(|block| block.hash() == challenge.block_hash)
-        && !chain
-            .observed_invalid_blocks
-            .contains_key(&challenge.block_hash)
-    {
+        .find(|block| block.hash() == challenge.block_hash)
+        .cloned()
+        .or_else(|| {
+            chain
+                .observed_invalid_blocks
+                .get(&challenge.block_hash)
+                .cloned()
+        });
+    let Some(challenged_block) = challenged_block else {
+        return NetworkPayloadApply::Pending;
+    };
+    if !block_check_challenge_reward_ready(chain, &challenged_block) {
         return NetworkPayloadApply::Pending;
     }
     chain
@@ -340,7 +358,9 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if challenge_id == [0; 32] || block_hash == [0; 32] || challenger == [0; 32] {
         return NetworkPayloadApply::Invalid;
     }
-    let Ok(observed_block) = decode_block_payload(observed_block_payload) else {
+    let Ok((observed_block, selected_receipts, parent_state)) =
+        decode_block_payload_with_selected_receipts(observed_block_payload)
+    else {
         return NetworkPayloadApply::Invalid;
     };
     if observed_block.hash() != block_hash {
@@ -379,10 +399,27 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if !parent_known {
         return NetworkPayloadApply::Pending;
     }
+    if let Some(parent_state) = parent_state.as_ref()
+        && !chain.block_parent_state_matches_known_parent(&observed_block, parent_state)
+    {
+        return NetworkPayloadApply::Invalid;
+    }
     if !chain.observed_invalid_blocks.contains_key(&block_hash)
         && let Err(_error) = chain.cache_observed_invalid_block(observed_block)
     {
         return NetworkPayloadApply::Invalid;
+    }
+    if let Some(selected_receipts) = selected_receipts {
+        chain.set_block_selected_receipts_for_admission(block_hash, selected_receipts);
+    }
+    if let Some(parent_state) = parent_state {
+        chain.set_block_parent_state_for_admission(block_hash, parent_state);
+    }
+    let Some(observed_block) = chain.observed_invalid_blocks.get(&block_hash) else {
+        return NetworkPayloadApply::Pending;
+    };
+    if !block_check_challenge_reward_ready(chain, observed_block) {
+        return NetworkPayloadApply::Pending;
     }
     apply_network_block_check_challenge_payload(
         chain,
@@ -391,6 +428,14 @@ pub fn apply_network_observed_block_check_challenge_payload(
         challenger,
         challenge_payload,
     )
+}
+
+fn block_check_challenge_reward_ready(chain: &Chain, block: &crate::chain::TensorBlock) -> bool {
+    chain
+        .state()
+        .pending_proposer_rewards()
+        .get(&block.height)
+        .is_some_and(|reward| reward.proposer == block.proposer && !reward.voided_by_challenge)
 }
 
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
@@ -419,8 +464,8 @@ mod tests {
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
-            encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
-            encode_validator_audit_report_payload,
+            encode_block_payload_with_selected_receipts, encode_block_vote_payload,
+            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -711,6 +756,79 @@ mod tests {
         assert_eq!(
             consumer.blocks().last().map(TensorBlock::hash),
             Some(better.hash())
+        );
+    }
+
+    #[test]
+    fn block_payload_application_uses_producer_parent_snapshot_for_divergent_mempool() {
+        let seed = hash_bytes(b"test", &[b"network-block-parent-snapshot"]);
+        let validator = address(b"network-parent-snapshot-validator");
+        let miner_a = address(b"network-parent-snapshot-miner-a");
+        let miner_b = address(b"network-parent-snapshot-miner-b");
+        let mut parent = Chain::new(seed);
+        parent.register_validator(validator, 10_000).unwrap();
+        parent.register_miner(miner_a, 100).unwrap();
+        parent.register_miner(miner_b, 100).unwrap();
+        parent.produce_block(validator, 1_000).unwrap();
+
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &seed, 10);
+        let (first_receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner_a, 1, 5).unwrap();
+        parent.insert_receipt_for_testing(ReceiptState::TensorOp(first_receipt.clone()));
+        parent.mark_receipt_settled_for_testing(first_receipt.receipt_id);
+
+        let mut producer = parent.clone();
+        let block = producer.produce_block(validator, 1_012).unwrap();
+        let block_hash = block.hash();
+        let selected_receipts = producer.selected_receipts_for_block(&block);
+        assert_eq!(selected_receipts, vec![first_receipt.receipt_id]);
+
+        let mut consumer = parent;
+        let (extra_receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner_b, 2, 5).unwrap();
+        consumer.insert_receipt_for_testing(ReceiptState::TensorOp(extra_receipt.clone()));
+        consumer.mark_receipt_settled_for_testing(extra_receipt.receipt_id);
+        assert!(
+            consumer
+                .state()
+                .receipts()
+                .contains_key(&extra_receipt.receipt_id)
+        );
+
+        let parent_state = producer
+            .block_parent_state_for_payload(&block_hash)
+            .expect("produced block should retain parent snapshot");
+        let forged_parent_state = Chain::new(hash_bytes(b"test", &[b"unrelated-parent-snapshot"]))
+            .state()
+            .clone();
+        let forged_payload = encode_block_payload_with_selected_receipts(
+            &block,
+            &selected_receipts,
+            &forged_parent_state,
+        );
+        let mut forged_consumer = consumer.clone();
+        assert_eq!(
+            apply_network_block_payload(
+                &mut forged_consumer,
+                block.height,
+                block_hash,
+                &forged_payload
+            ),
+            NetworkBlockPayloadApply::Invalid
+        );
+
+        let payload =
+            encode_block_payload_with_selected_receipts(&block, &selected_receipts, parent_state);
+
+        assert_eq!(
+            apply_network_block_payload(&mut consumer, block.height, block_hash, &payload),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(consumer.blocks(), producer.blocks());
+        assert_eq!(consumer.state(), producer.state());
+        assert!(
+            !consumer
+                .state()
+                .receipts()
+                .contains_key(&extra_receipt.receipt_id)
         );
     }
 

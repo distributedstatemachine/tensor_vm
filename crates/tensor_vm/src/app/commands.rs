@@ -15,7 +15,7 @@ pub fn init_service_store(data_dir: &str) -> std::result::Result<String, String>
             .next()
             .is_some()
     {
-        match store.load_chain().and_then(|_| store.status()) {
+        match store.load_chain().and_then(|_| store.compact_status()) {
             Ok(status) => {
                 return Ok(service_init_report(&status, true, false, None));
             }

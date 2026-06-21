@@ -1,8 +1,9 @@
 use super::*;
 use std::collections::BTreeMap;
 use tensor_vm::app::{
-    MinerRoleWorkObservation, fetch_miner_role_missing_graph_artifacts,
-    miner_role_work_observation, submit_miner_role_receipt,
+    MinerRoleWorkObservation, RuntimeRole, ServiceRuntimeConfig,
+    fetch_miner_role_missing_graph_artifacts, miner_role_work_observation, runtime_node_config,
+    start_runtime_services, submit_miner_role_receipt, tick_miner_role_work_once,
 };
 
 #[test]
@@ -233,6 +234,78 @@ fn miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution() {
         node.chain.state().receipts().values().next(),
         Some(ReceiptState::GraphExecution(_))
     ));
+}
+
+#[test]
+fn miner_role_tick_keeps_missing_graph_artifacts_pending_without_exiting() {
+    let data_dir = unique_temp_data_dir("miner-missing-graph-pending");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let data_dir_text = data_dir.to_string_lossy().into_owned();
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        ..ChainParams::default()
+    };
+    let miner = address(b"miner-missing-graph-pending");
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"miner-missing-graph"]));
+    register_miner(&mut chain, miner);
+    let (graph, _input, _blob, job) = graph_job_with_const_blob(&chain);
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: job.graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::GraphExecution(job.clone()),
+        ))
+        .unwrap();
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "miner_run",
+        role: RuntimeRole::Miner,
+        role_wallet_address: Some(miner),
+        node: runtime_node_config(
+            &data_dir_text,
+            RuntimeRole::Miner,
+            "127.0.0.1:0",
+            "/ip4/127.0.0.1/tcp/0",
+            Some(hash_bytes(b"test", &[b"miner-missing-graph-identity"])),
+            "secret",
+            0,
+        )
+        .unwrap(),
+    };
+    let mut services = start_runtime_services(&config).unwrap();
+    let mut runtime_state = NodeRuntimeState::default();
+
+    assert!(
+        tick_miner_role_work_once(
+            &config,
+            &services.store,
+            &mut services.server,
+            &services.p2p_service,
+            &mut runtime_state,
+        )
+        .unwrap()
+    );
+    assert!(
+        services
+            .server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .receipts()
+            .is_empty()
+    );
+    assert!(runtime_state.miner_receipts_submitted() == 0);
+    assert!(runtime_state.miner_tensors_inserted() == 0);
+
+    drop(services);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }
 
 fn graph_job_with_const_blob(

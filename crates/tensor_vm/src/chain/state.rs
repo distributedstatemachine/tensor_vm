@@ -2005,6 +2005,28 @@ impl Chain {
             observed_invalid_blocks: BTreeMap::new(),
         }
     }
+
+    pub(crate) fn set_block_selected_receipts_for_admission(
+        &mut self,
+        block_hash: Hash,
+        selected_receipts: Vec<Hash>,
+    ) {
+        self.state
+            .block_selected_receipts
+            .insert(block_hash, selected_receipts);
+    }
+
+    pub(crate) fn set_block_parent_state_for_admission(
+        &mut self,
+        block_hash: Hash,
+        parent_state: ChainState,
+    ) {
+        self.block_parent_states.insert(block_hash, parent_state);
+    }
+
+    pub(crate) fn block_parent_state_for_payload(&self, block_hash: &Hash) -> Option<&ChainState> {
+        self.block_parent_states.get(block_hash)
+    }
 }
 
 fn reward_share(total_emission: u64, basis_points: u64) -> u64 {

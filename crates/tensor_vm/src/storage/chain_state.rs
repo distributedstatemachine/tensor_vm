@@ -258,6 +258,19 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_rewards(out, state.rewards());
 }
 
+pub(crate) fn encode_chain_state_snapshot(state: &ChainState) -> Vec<u8> {
+    let mut out = Vec::new();
+    encode_chain_state(&mut out, state);
+    out
+}
+
+pub(crate) fn decode_chain_state_snapshot(bytes: &[u8]) -> Result<ChainState> {
+    let mut reader = StateReader::new(bytes);
+    let state = decode_chain_state(&mut reader)?;
+    reader.finish()?;
+    Ok(state)
+}
+
 fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
     Ok(ChainState::from_parts(ChainStateParts {
         height: reader.read_u64()?,

@@ -48,6 +48,185 @@ fn blocks_advance_height_and_commit_state() {
 }
 
 #[test]
+fn parent_state_applies_redundant_linear_transition_once() {
+    let beacon = hash_bytes(b"test", &[b"redundant-linear-parent-state"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"redundant-linear-proposer");
+    let miner_a = address(b"redundant-linear-miner-a");
+    let miner_b = address(b"redundant-linear-miner-b");
+    chain.register_validator(proposer, 10_000).unwrap();
+    chain.register_miner(miner_a, 100).unwrap();
+    chain.register_miner(miner_b, 100).unwrap();
+    let weights = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let model_id = hash_bytes(b"test", &[b"redundant-linear-model"]);
+    chain
+        .register_model(
+            model_id,
+            hash_bytes(b"test", &[b"redundant-linear-architecture"]),
+            weights.commitment_root(),
+            hash_bytes(b"test", &[b"redundant-linear-config"]),
+        )
+        .unwrap();
+    let job = LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+        model_id,
+        step: 0,
+        batch_seed: hash_bytes(b"test", &[b"redundant-linear-batch"]),
+        weight_root_before: weights.commitment_root(),
+        input_shape: vec![2, 2],
+        weight_shape: vec![2, 2],
+        target_shape: vec![2, 2],
+        lr: 1,
+        deadline_block: 20,
+    });
+    chain.submit_job(JobState::LinearTrainingStep(job.clone()));
+    let (receipt_a, _) =
+        LinearTrainingStepReceipt::from_job(&job, miner_a, &weights, 1, 4).unwrap();
+    let (receipt_b, _) =
+        LinearTrainingStepReceipt::from_job(&job, miner_b, &weights, 1, 5).unwrap();
+    chain.submit_linear_receipt(receipt_a.clone()).unwrap();
+    chain.submit_linear_receipt(receipt_b.clone()).unwrap();
+    for receipt in [&receipt_a, &receipt_b] {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                proposer,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::LinearTrainingStep,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[&receipt.receipt_id]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    }
+    assert!(chain.has_attestation_quorum(&receipt_a.receipt_id));
+    assert!(chain.has_attestation_quorum(&receipt_b.receipt_id));
+    assert!(chain.has_redundant_agreement(&receipt_a.receipt_id));
+    assert!(chain.has_redundant_agreement(&receipt_b.receipt_id));
+
+    chain.prepare_block_parent_state().unwrap();
+    let block = chain.produce_block(proposer, 1_000).unwrap();
+
+    assert_eq!(block.height, 0);
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt_a.receipt_id)
+    );
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt_b.receipt_id)
+    );
+    let model = chain.state().model_states().get(&model_id).unwrap();
+    assert_eq!(model.step, 1);
+    assert_eq!(model.weight_root, receipt_a.weight_root_after);
+}
+
+#[test]
+fn parent_state_skips_conflicting_linear_transition_after_first_match() {
+    let model_id = hash_bytes(b"test", &[b"conflicting-linear-model"]);
+    let weights = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let initial_root = weights.commitment_root();
+    let architecture_hash = hash_bytes(b"test", &[b"conflicting-linear-arch"]);
+    let config_hash = hash_bytes(b"test", &[b"conflicting-linear-config"]);
+    let miner_a = address(b"conflicting-linear-miner-a");
+    let miner_b = address(b"conflicting-linear-miner-b");
+    let proposer = address(b"conflicting-linear-validator");
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain =
+        Chain::with_params(params, hash_bytes(b"test", &[b"conflicting-linear-beacon"]));
+    chain
+        .register_miner(miner_a, chain.params().miner_min_stake)
+        .unwrap();
+    chain
+        .register_miner(miner_b, chain.params().miner_min_stake)
+        .unwrap();
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+    chain
+        .register_model(model_id, architecture_hash, initial_root, config_hash)
+        .unwrap();
+    let job = LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+        model_id,
+        step: 0,
+        batch_seed: hash_bytes(b"test", &[b"conflicting-linear-batch"]),
+        weight_root_before: initial_root,
+        input_shape: vec![2, 2],
+        weight_shape: vec![2, 2],
+        target_shape: vec![2, 2],
+        lr: 1,
+        deadline_block: 20,
+    });
+    chain.submit_job(JobState::LinearTrainingStep(job.clone()));
+    let (receipt_a, output) =
+        LinearTrainingStepReceipt::from_job(&job, miner_a, &weights, 1, 4).unwrap();
+    let mut receipt_b = receipt_a.clone();
+    receipt_b.miner = miner_b;
+    receipt_b.weight_root_after = hash_bytes(b"test", &[b"conflicting-linear-after-b"]);
+    receipt_b.receipt_id = receipt_b.recompute_receipt_id(&job.program_hash());
+    receipt_b.signature = sign(&miner_b, &receipt_b.receipt_id);
+    chain.submit_linear_receipt(receipt_a.clone()).unwrap();
+    chain.submit_linear_receipt(receipt_b.clone()).unwrap();
+    for receipt in [&receipt_a, &receipt_b] {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                proposer,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::LinearTrainingStep,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[&receipt.receipt_id]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    }
+    chain.state.settled_receipts.insert(receipt_a.receipt_id);
+    chain.state.settled_receipts.insert(receipt_b.receipt_id);
+
+    chain.prepare_block_parent_state().unwrap();
+
+    let model = chain.state().model_states().get(&model_id).unwrap();
+    assert_eq!(model.step, 1);
+    assert_eq!(model.weight_root, output.weight_after.commitment_root());
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt_b.receipt_id)
+    );
+}
+
+#[test]
 fn competing_useful_head_with_better_pow_replaces_unfinalized_head() {
     let beacon = hash_bytes(b"test", &[b"competing-useful-head"]);
     let mut parent = Chain::new(beacon);

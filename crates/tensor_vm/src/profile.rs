@@ -1,6 +1,7 @@
 use crate::chain::{Chain, ChainParams};
 use crate::scheduler::{JobScheduler, SyntheticLocalJobSource};
 use crate::types::Hash;
+use crate::verify::FreivaldsParams;
 use std::path::{Path, PathBuf};
 use std::time::Duration;
 
@@ -52,9 +53,17 @@ impl ChainProfile {
     }
 
     pub fn local_cpu() -> Self {
+        let chain_params = ChainParams {
+            freivalds: FreivaldsParams {
+                validators_per_job: 5,
+                minimum_validators: 4,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
         Self {
             network: ChainNetwork::Local,
-            chain_params: ChainParams::default(),
+            chain_params,
             miner_count: 10,
             validator_count: 5,
             miner_stake: 100,
@@ -70,6 +79,7 @@ impl ChainProfile {
     pub fn public_testnet() -> Self {
         Self {
             network: ChainNetwork::Testnet,
+            chain_params: ChainParams::default(),
             synthetic_job_scheduler: None,
             public_evidence_required: true,
             service_exposure: ServiceExposure::PublicHttps,
@@ -80,6 +90,7 @@ impl ChainProfile {
     pub fn mainnet() -> Self {
         Self {
             network: ChainNetwork::Mainnet,
+            chain_params: ChainParams::default(),
             synthetic_job_scheduler: None,
             public_evidence_required: true,
             service_exposure: ServiceExposure::PublicHttps,
@@ -260,6 +271,29 @@ mod tests {
             assert_eq!(chain.params(), &profile.chain_params);
             assert_eq!(chain.view().finalized_randomness(), beacon);
         }
+    }
+
+    #[test]
+    fn local_cpu_profile_uses_non_unanimous_validator_committee_quorum() {
+        let local = ChainProfile::local_cpu();
+        let public = ChainProfile::public_testnet();
+
+        assert_eq!(local.validator_count, 5);
+        assert_eq!(local.chain_params.freivalds.validators_per_job, 5);
+        assert_eq!(local.chain_params.freivalds.minimum_validators, 4);
+        assert_eq!(
+            local.chain_params.freivalds.minimum_stake_numerator,
+            FreivaldsParams::default().minimum_stake_numerator
+        );
+        assert_eq!(
+            local.chain_params.freivalds.minimum_stake_denominator,
+            FreivaldsParams::default().minimum_stake_denominator
+        );
+        assert_eq!(
+            public.chain_params.freivalds,
+            FreivaldsParams::default(),
+            "public profiles should keep the default wider committee policy"
+        );
     }
 
     #[test]

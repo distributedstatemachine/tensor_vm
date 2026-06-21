@@ -435,6 +435,14 @@ impl Chain {
         blocks::validate(self, block, true)
     }
 
+    pub(crate) fn block_parent_state_matches_known_parent(
+        &self,
+        block: &TensorBlock,
+        parent_state: &ChainState,
+    ) -> bool {
+        blocks::parent_state_matches_known_parent(self, block, parent_state)
+    }
+
     pub fn expected_difficulty_target(&self, height: u64) -> Hash {
         blocks::expected_difficulty_target(self, height)
     }

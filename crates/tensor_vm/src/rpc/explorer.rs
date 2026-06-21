@@ -1,4 +1,4 @@
-use crate::chain::{Chain, HardwareClass, JobState, RewardClaimKey};
+use crate::chain::{Chain, HardwareClass, JobState, RewardClaimKey, RewardClaimLedger};
 use crate::hash::hex;
 use crate::jobs::PrimitiveType;
 use crate::types::Address;
@@ -164,11 +164,9 @@ pub(super) fn explorer_receipts(chain: &Chain, limit: usize) -> Vec<ExplorerRece
 }
 
 pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<ExplorerPendingReward> {
-    chain
-        .state()
-        .pending_reward_claims()
+    let claims = chain.state().pending_reward_claims();
+    sample_pending_reward_claims(&claims, limit)
         .into_iter()
-        .take(limit)
         .map(|claim| ExplorerPendingReward {
             ledger: claim.ledger.label().to_owned(),
             claim_id: reward_claim_key_label(claim.claim_id),
@@ -180,6 +178,63 @@ pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<Explo
             voided_by_challenge: claim.voided_by_challenge,
         })
         .collect()
+}
+
+fn sample_pending_reward_claims(
+    claims: &[crate::chain::RewardClaimView],
+    limit: usize,
+) -> Vec<crate::chain::RewardClaimView> {
+    if limit == 0 {
+        return Vec::new();
+    }
+    let mut selected: Vec<_> = claims.iter().take(limit).cloned().collect();
+    for ledger in [
+        RewardClaimLedger::Proposer,
+        RewardClaimLedger::ReceiptMiner,
+        RewardClaimLedger::ReceiptValidator,
+        RewardClaimLedger::Challenge,
+        RewardClaimLedger::Credit,
+    ] {
+        if selected.iter().any(|claim| claim.ledger == ledger) {
+            continue;
+        }
+        let Some(claim) = claims.iter().find(|claim| claim.ledger == ledger) else {
+            continue;
+        };
+        if selected.len() < limit {
+            selected.push(claim.clone());
+            continue;
+        }
+        if let Some(index) = replacement_pending_reward_sample_index(&selected) {
+            selected[index] = claim.clone();
+        }
+    }
+    selected.sort_by(|left, right| {
+        left.claimable_at_height
+            .unwrap_or(u64::MAX)
+            .cmp(&right.claimable_at_height.unwrap_or(u64::MAX))
+            .then_with(|| left.ledger.cmp(&right.ledger))
+            .then_with(|| left.claim_id.cmp(&right.claim_id))
+    });
+    selected
+}
+
+fn replacement_pending_reward_sample_index(
+    claims: &[crate::chain::RewardClaimView],
+) -> Option<usize> {
+    claims
+        .iter()
+        .enumerate()
+        .rev()
+        .find(|(_, claim)| {
+            claims
+                .iter()
+                .filter(|other| other.ledger == claim.ledger)
+                .count()
+                > 1
+        })
+        .map(|(index, _)| index)
+        .or_else(|| claims.len().checked_sub(1))
 }
 
 pub(super) fn explorer_validator_audit_economic_calibration(
@@ -357,5 +412,53 @@ pub(super) fn hardware_class_label(hardware_class: HardwareClass) -> &'static st
         HardwareClass::ConsumerGpu => "consumer_gpu",
         HardwareClass::DatacenterGpu => "datacenter_gpu",
         HardwareClass::Other => "other",
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use crate::chain::{RewardClaimKey, RewardClaimView};
+
+    fn reward_claim(
+        ledger: RewardClaimLedger,
+        claim_height: u64,
+        claim_id: u64,
+    ) -> RewardClaimView {
+        RewardClaimView {
+            ledger,
+            claim_id: RewardClaimKey::BlockHeight(claim_id),
+            subject_id: RewardClaimKey::BlockHeight(claim_id),
+            related_id: None,
+            beneficiary: [claim_id as u8; 32],
+            amount: 1,
+            claimable_at_height: Some(claim_height),
+            awaiting_inclusion: false,
+            voided_by_challenge: false,
+        }
+    }
+
+    #[test]
+    fn pending_reward_sample_keeps_non_receipt_ledgers_visible() {
+        let mut claims = Vec::new();
+        for id in 0..10 {
+            claims.push(reward_claim(RewardClaimLedger::ReceiptMiner, 10 + id, id));
+        }
+        claims.push(reward_claim(RewardClaimLedger::Proposer, 300, 100));
+        claims.push(reward_claim(RewardClaimLedger::Challenge, 301, 101));
+
+        let sample = sample_pending_reward_claims(&claims, 10);
+
+        assert_eq!(sample.len(), 10);
+        assert!(
+            sample
+                .iter()
+                .any(|claim| claim.ledger == RewardClaimLedger::Proposer)
+        );
+        assert!(
+            sample
+                .iter()
+                .any(|claim| claim.ledger == RewardClaimLedger::Challenge)
+        );
     }
 }

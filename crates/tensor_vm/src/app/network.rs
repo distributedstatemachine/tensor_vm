@@ -2,7 +2,7 @@ use crate::{
     Chain, ChainCommand, ChainEngine, ChainProfile, DeterministicBlockCheckChallenge, JobState,
     NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
-    decode_job_payload, encode_attestation_payload, encode_block_payload,
+    decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
     encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
     encode_validator_audit_report_payload,
     localnet::produce_synthetic_cpu_work_with_profile,
@@ -126,7 +126,19 @@ pub fn produce_and_publish_synthetic_round(
     let Some(block) = server.gateway().node.chain.blocks().last() else {
         return Ok(None);
     };
-    publish_block_announcements(p2p_service, block)?;
+    let block_hash = block.hash();
+    let selected_receipts = server
+        .gateway()
+        .node
+        .chain
+        .selected_receipts_for_block(block);
+    let parent_state = server
+        .gateway()
+        .node
+        .chain
+        .block_parent_state_for_payload(&block_hash)
+        .ok_or_else(|| "synthetic block missing parent-state payload".to_owned())?;
+    publish_block_announcements(p2p_service, block, &selected_receipts, parent_state)?;
     Ok(Some(block.hash()))
 }
 
@@ -217,8 +229,10 @@ pub fn produce_and_publish_synthetic_job(
 pub fn publish_validator_block_proposal(
     p2p_service: &TensorVmLibp2pService,
     block: &crate::chain::TensorBlock,
+    selected_receipts: &[Hash],
+    parent_state: &crate::chain::ChainState,
 ) -> std::result::Result<(), String> {
-    publish_block_announcements(p2p_service, block)?;
+    publish_block_announcements(p2p_service, block, selected_receipts, parent_state)?;
     Ok(())
 }
 
@@ -242,7 +256,11 @@ pub fn observed_block_check_challenge_messages(
             challenge_id: diagnostic.challenge_id,
             block_hash: diagnostic.challenge.block_hash,
             challenger: diagnostic.challenge.challenger,
-            observed_block_payload: encode_block_payload(&diagnostic.observed_block),
+            observed_block_payload: encode_block_payload_with_selected_receipts(
+                &diagnostic.observed_block,
+                &diagnostic.selected_receipts,
+                &diagnostic.parent_state,
+            ),
             challenge_payload: encode_block_check_challenge_payload(&diagnostic.challenge),
         },
         P2pMessage::NewBlockCheckChallenge(diagnostic.challenge_id),
@@ -252,13 +270,19 @@ pub fn observed_block_check_challenge_messages(
 fn publish_block_announcements(
     p2p_service: &TensorVmLibp2pService,
     block: &crate::chain::TensorBlock,
+    selected_receipts: &[Hash],
+    parent_state: &crate::chain::ChainState,
 ) -> std::result::Result<(), String> {
     let block_hash = block.hash();
     p2p_service
         .publish_gossip(P2pMessage::NewBlockPayload {
             height: block.height,
             block_hash,
-            payload: encode_block_payload(block),
+            payload: encode_block_payload_with_selected_receipts(
+                block,
+                selected_receipts,
+                parent_state,
+            ),
         })
         .map_err(|error| format!("failed to publish block payload gossip: {error}"))?;
     p2p_service
@@ -319,6 +343,13 @@ pub fn publish_new_chain_announcements(
     }
     for (receipt_id, receipt) in chain.state().receipts() {
         if !before.receipts.contains(receipt_id) {
+            if let Some(messages) = receipt_dependency_job_messages(chain, receipt) {
+                for message in messages {
+                    p2p_service.publish_gossip(message).map_err(|error| {
+                        format!("failed to publish receipt dependency job gossip: {error}")
+                    })?;
+                }
+            }
             p2p_service
                 .publish_gossip(P2pMessage::NewReceiptPayload {
                     receipt_id: *receipt_id,
@@ -399,6 +430,21 @@ pub fn publish_new_chain_announcements(
     Ok(())
 }
 
+fn receipt_dependency_job_messages(
+    chain: &Chain,
+    receipt: &crate::chain::ReceiptState,
+) -> Option<[P2pMessage; 2]> {
+    let job_id = receipt.job_id();
+    let job = chain.state().jobs().get(&job_id)?;
+    Some([
+        P2pMessage::NewJobPayload {
+            job_id,
+            payload: encode_job_payload(job),
+        },
+        P2pMessage::NewJob(job_id),
+    ])
+}
+
 fn attestation_announcement_hashes(chain: &Chain) -> impl Iterator<Item = Hash> + '_ {
     chain
         .state()
@@ -419,11 +465,44 @@ fn block_vote_announcement_keys(chain: &Chain) -> impl Iterator<Item = (Hash, Ad
 mod tests {
     use super::*;
     use crate::{
-        decode_block_payload,
+        decode_block_payload_with_selected_receipts,
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
         types::hash_bytes,
     };
+
+    #[test]
+    fn receipt_dependency_job_messages_replay_referenced_job_payload() {
+        let mut testnet = LocalTestnet::new(
+            TestnetConfig::default(),
+            hash_bytes(b"test", &[b"app-network-receipt-job-dependency"]),
+        );
+        testnet.run_matmul_round(&JobScheduler::with_small_shape((8, 8, 8)));
+        let receipt = testnet
+            .chain
+            .state()
+            .receipts()
+            .values()
+            .next()
+            .expect("local round should produce a receipt");
+        let job_id = receipt.job_id();
+
+        let messages = receipt_dependency_job_messages(&testnet.chain, receipt)
+            .expect("known receipt should replay its job dependency");
+
+        assert!(matches!(
+            &messages[0],
+            P2pMessage::NewJobPayload {
+                job_id: replayed,
+                payload
+            } if *replayed == job_id
+                && decode_job_payload(payload)
+                    .expect("replayed job payload should decode")
+                    .job_id()
+                    == job_id
+        ));
+        assert_eq!(messages[1], P2pMessage::NewJob(job_id));
+    }
 
     #[test]
     fn observed_block_check_challenge_messages_carry_delayed_reward_evidence_payload() {
@@ -466,8 +545,9 @@ mod tests {
         assert_eq!(*block_hash, diagnostic.challenge.block_hash);
         assert_eq!(*message_challenger, challenger);
         assert_eq!(
-            decode_block_payload(observed_block_payload)
+            decode_block_payload_with_selected_receipts(observed_block_payload)
                 .expect("observed block payload should decode")
+                .0
                 .hash(),
             diagnostic.challenge.block_hash
         );

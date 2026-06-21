@@ -3,6 +3,8 @@ use crate::error::{Result, TvmError};
 use crate::p2p::PeerBookStore;
 use crate::types::Hash;
 use std::path::{Path, PathBuf};
+use std::thread;
+use std::time::Duration;
 
 use super::{BlockLogStore, ChainSnapshot, ChainStateStore, SnapshotStore};
 
@@ -84,13 +86,21 @@ impl NodeStore {
     pub fn load(&self) -> Result<PersistedNodeState> {
         let snapshot = self.snapshot_store.load()?;
         let blocks = self.block_log_store.load_blocks_or_empty()?;
-        self.validate_parts(snapshot.clone(), blocks.clone())?;
-        Ok(PersistedNodeState { snapshot, blocks })
+        match self.validate_parts(snapshot.clone(), blocks.clone()) {
+            Ok(_) => Ok(PersistedNodeState { snapshot, blocks }),
+            Err(error) => self.load_from_chain_state().or(Err(error)),
+        }
     }
 
     pub fn status(&self) -> Result<NodeStoreStatus> {
         let state = self.load()?;
         self.status_from_parts(state.snapshot, &state.blocks)
+    }
+
+    pub fn compact_status(&self) -> Result<NodeStoreStatus> {
+        let snapshot = self.snapshot_store.load()?;
+        let blocks = self.block_log_store.load_blocks_or_empty()?;
+        self.validate_parts(snapshot, blocks)
     }
 
     pub fn recover_from_chain_state(&self) -> Result<NodeStoreStatus> {
@@ -101,17 +111,51 @@ impl NodeStore {
     }
 
     pub fn load_chain(&self) -> Result<Chain> {
+        let mut last_error = None;
+        for attempt in 0..5 {
+            match self.load_chain_once() {
+                Ok(chain) => return Ok(chain),
+                Err(error)
+                    if attempt < 4
+                        && matches!(
+                            error,
+                            TvmError::Storage("chain state snapshot mismatch")
+                                | TvmError::Storage("chain state block log mismatch")
+                        ) =>
+                {
+                    last_error = Some(error);
+                    thread::sleep(Duration::from_millis(50));
+                }
+                Err(error) => return Err(error),
+            }
+        }
+        Err(last_error.unwrap_or(TvmError::Storage("chain state snapshot mismatch")))
+    }
+
+    fn load_chain_once(&self) -> Result<Chain> {
         let snapshot = self.snapshot_store.load()?;
         let blocks = self.block_log_store.load_blocks_or_empty()?;
         let chain = self.chain_state_store.load_chain()?;
-        self.validate_parts(snapshot.clone(), blocks.clone())?;
-        if ChainSnapshot::from_chain(&chain) != snapshot {
-            return Err(TvmError::Storage("chain state snapshot mismatch"));
-        }
-        if chain.blocks() != blocks.as_slice() {
-            return Err(TvmError::Storage("chain state block log mismatch"));
+        if self
+            .validate_parts(snapshot.clone(), blocks.clone())
+            .is_ok()
+        {
+            if ChainSnapshot::from_chain(&chain) != snapshot {
+                return Err(TvmError::Storage("chain state snapshot mismatch"));
+            }
+            if chain.blocks() != blocks.as_slice() {
+                return Err(TvmError::Storage("chain state block log mismatch"));
+            }
         }
         Ok(chain)
+    }
+
+    fn load_from_chain_state(&self) -> Result<PersistedNodeState> {
+        let chain = self.chain_state_store.load_chain()?;
+        Ok(PersistedNodeState {
+            snapshot: ChainSnapshot::from_chain(&chain),
+            blocks: chain.blocks().to_vec(),
+        })
     }
 
     fn validate_parts(
@@ -367,8 +411,8 @@ mod tests {
         stale_snapshot.block_count = stale_snapshot.block_count.saturating_sub(1);
         store.snapshot_store().save(&stale_snapshot).unwrap();
         assert_eq!(
-            store.status(),
-            Err(TvmError::Storage("snapshot block count mismatch"))
+            store.status().unwrap().snapshot,
+            ChainSnapshot::from_chain(&chain)
         );
 
         let recovered = store.recover_from_chain_state().unwrap();
@@ -382,10 +426,7 @@ mod tests {
             .block_log_store()
             .append_block(ahead.blocks().last().unwrap())
             .unwrap();
-        assert_eq!(
-            store.status(),
-            Err(TvmError::Storage("snapshot block count mismatch"))
-        );
+        assert_eq!(store.status().unwrap().block_count, chain.blocks().len());
 
         let recovered_again = store.recover_from_chain_state().unwrap();
         assert_eq!(recovered_again.block_count, chain.blocks().len());

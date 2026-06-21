@@ -185,13 +185,16 @@ pub fn submit_validator_role_block_proposal(
     node.chain
         .prepare_block_parent_state()
         .map_err(|error| format!("validator proposer failed to prepare parent state: {error}"))?;
-    let settled_receipts = node.chain.state().settled_receipts().len();
+    let has_unincluded_settled_receipts = node.chain.state().settled_receipts().iter().any(|id| {
+        !node.chain.state().included_receipts().contains(id)
+            && !node.chain.state().data_unavailable_receipts().contains(id)
+    });
     let proposer_reward = node
         .chain
         .params()
         .reward_allocation(10_000)
         .proposer_reward;
-    let block_reward = if settled_receipts > 0 {
+    let block_reward = if has_unincluded_settled_receipts {
         proposer_reward
     } else {
         reduced_fallback_proposer_reward(proposer_reward)

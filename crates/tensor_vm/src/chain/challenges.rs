@@ -1,4 +1,4 @@
-use super::state::{BlockCheckChallengeRecord, PendingChallengeReward, TensorBlock};
+use super::state::{BlockCheckChallengeRecord, ChainState, PendingChallengeReward, TensorBlock};
 use super::{Chain, settlement};
 use crate::challenge::{BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome};
 use crate::error::{Result, TvmError};
@@ -14,6 +14,7 @@ pub struct DeterministicBlockCheckChallenge {
     pub challenge: BlockCheckChallenge,
     pub challenge_id: Hash,
     pub selected_receipts: Vec<Hash>,
+    pub parent_state: ChainState,
 }
 
 pub fn apply_outcome(chain: &mut Chain, outcome: ChallengeOutcome) -> Result<()> {
@@ -79,6 +80,10 @@ pub fn deterministic_bad_block_check_challenge(
     if !chain.state.validators.contains_key(&challenger) {
         return Err(TvmError::UnknownValidator);
     }
+    let parent_state = chain
+        .block_parent_state_for_payload(&block.hash())
+        .cloned()
+        .ok_or(TvmError::InvalidReceipt("block parent state unavailable"))?;
     let outcome = chain.block_apply_outcome(block)?;
     let opening = outcome
         .selected_openings
@@ -119,6 +124,7 @@ pub fn deterministic_bad_block_check_challenge(
         challenge,
         challenge_id,
         selected_receipts: outcome.selected_receipt_ids,
+        parent_state,
     })
 }
 
@@ -283,42 +289,83 @@ fn apply_block_check_resolution(
     {
         return Err(TvmError::InvalidReceipt("duplicate block check challenge"));
     }
-    if let Some(reward) = chain
-        .state
-        .pending_proposer_rewards
-        .get_mut(&record.block_height)
-        && reward.proposer == record.proposer
-    {
-        reward.voided_by_challenge = true;
-        let treasury_reward = record
-            .proposer_reward_clawback
-            .saturating_sub(record.challenger_reward);
-        if record.challenger_reward > 0 {
-            let claimable_at_height = record
-                .challenged_at_height
-                .saturating_add(chain.params.reward_maturity_delay_blocks());
-            enqueue_pending_challenge_reward(chain, challenge_id, &record, claimable_at_height);
-        }
-        if treasury_reward > 0 {
-            chain.state.rewards.credit_treasury(treasury_reward);
-        }
-    }
-    chain.state.challenged_receipts.insert(record.receipt_id);
-    chain.state.settled_receipts.remove(&record.receipt_id);
-    settlement::void_pending_miner_tensor_work(&mut chain.state, &record.receipt_id);
-    let receipt_reward_hold_until_height = record
-        .challenged_at_height
-        .saturating_add(chain.params.reward_maturity_delay_blocks());
-    for reward in chain.state.pending_receipt_rewards.values_mut() {
-        if reward.receipt_id == record.receipt_id {
-            reward.delay_until(receipt_reward_hold_until_height);
+    let canonical_block = chain
+        .blocks
+        .iter()
+        .any(|block| block.hash() == record.block_hash);
+    if canonical_block {
+        if let Some(reward) = chain
+            .state
+            .pending_proposer_rewards
+            .get_mut(&record.block_height)
+            && reward.proposer == record.proposer
+        {
             reward.voided_by_challenge = true;
+            let treasury_reward = record
+                .proposer_reward_clawback
+                .saturating_sub(record.challenger_reward);
+            if record.challenger_reward > 0 {
+                let claimable_at_height = record
+                    .challenged_at_height
+                    .saturating_add(chain.params.reward_maturity_delay_blocks());
+                enqueue_pending_challenge_reward(chain, challenge_id, &record, claimable_at_height);
+            }
+            if treasury_reward > 0 {
+                chain.state.rewards.credit_treasury(treasury_reward);
+            }
         }
+        chain.state.challenged_receipts.insert(record.receipt_id);
+        chain.state.settled_receipts.remove(&record.receipt_id);
+        settlement::void_pending_miner_tensor_work(&mut chain.state, &record.receipt_id);
+        let receipt_reward_hold_until_height = record
+            .challenged_at_height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
+        for reward in chain.state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == record.receipt_id {
+                reward.delay_until(receipt_reward_hold_until_height);
+                reward.voided_by_challenge = true;
+            }
+        }
+        chain
+            .state
+            .proposer_penalty_until
+            .insert(record.proposer, record.penalty_until_height);
+    } else {
+        if let Some(reward) = chain
+            .state
+            .pending_proposer_rewards
+            .get_mut(&record.block_height)
+            && reward.proposer == record.proposer
+        {
+            reward.voided_by_challenge = true;
+            let treasury_reward = record
+                .proposer_reward_clawback
+                .saturating_sub(record.challenger_reward);
+            if record.challenger_reward > 0 {
+                let claimable_at_height = record
+                    .challenged_at_height
+                    .saturating_add(chain.params.reward_maturity_delay_blocks());
+                enqueue_pending_challenge_reward(chain, challenge_id, &record, claimable_at_height);
+            }
+            if treasury_reward > 0 {
+                chain.state.rewards.credit_treasury(treasury_reward);
+            }
+        }
+        let receipt_reward_hold_until_height = record
+            .challenged_at_height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
+        for reward in chain.state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == record.receipt_id {
+                reward.delay_until(receipt_reward_hold_until_height);
+                reward.voided_by_challenge = true;
+            }
+        }
+        chain.state.challenged_receipts.insert(record.receipt_id);
+        chain
+            .state
+            .proposer_penalty_until
+            .insert(record.proposer, record.penalty_until_height);
     }
-    chain
-        .state
-        .proposer_penalty_until
-        .insert(record.proposer, record.penalty_until_height);
     chain
         .state
         .block_check_challenges

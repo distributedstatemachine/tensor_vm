@@ -660,3 +660,139 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
     drop(p2p_service);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }
+
+#[test]
+fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let miner_a = address(b"delayed-proposer-miner-a");
+    let miner_b = address(b"delayed-proposer-miner-b");
+    let validator = address(b"delayed-proposer-validator");
+    let mut chain = Chain::with_params(params, local_cpu_seed_beacon());
+    register_miner(&mut chain, miner_a);
+    register_miner(&mut chain, miner_b);
+    register_validator(&mut chain, validator);
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([35; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+
+    let beacon = server.gateway().node.chain.state().finalized_randomness();
+    let job = tensor_vm::MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (first_receipt, a, b, c) =
+        tensor_vm::TensorOpReceipt::from_job(&job, miner_a, 1, 5).unwrap();
+    let (second_receipt, _a2, _b2, _c2) =
+        tensor_vm::TensorOpReceipt::from_job(&job, miner_b, 2, 5).unwrap();
+    let report = tensor_vm::verify_tensor_op(
+        &job,
+        &first_receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"delayed-proposer-backlog"]),
+        &server.gateway().node.chain.params().freivalds,
+    )
+    .unwrap();
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::SubmitJob(tensor_vm::JobState::TensorOp(
+            job.clone(),
+        )))
+        .unwrap();
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::TensorOp(
+            first_receipt.clone(),
+        )))
+        .unwrap();
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::TensorOp(
+            second_receipt.clone(),
+        )))
+        .unwrap();
+    let validator_stake = server.gateway().node.chain.params().validator_min_stake;
+    server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::SubmitAttestation(
+            tensor_vm::ValidatorAttestation::new(
+                validator,
+                validator_stake,
+                tensor_vm::AttestationStatement {
+                    receipt_id: first_receipt.receipt_id,
+                    job_id: first_receipt.job_id,
+                    primitive_type: tensor_vm::PrimitiveType::TensorOp,
+                    result: report.result,
+                    checks_root: report.checks_root,
+                    data_availability_passed: report.data_availability_passed,
+                },
+            ),
+        ))
+        .unwrap();
+
+    let data_dir = unique_temp_data_dir("delayed-proposer-backlog");
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&server.gateway().node.chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(validator),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_local_producer(true),
+    };
+    let mut runtime_state = NodeRuntimeState::default();
+
+    let changed = tick_validator_role_work_once(
+        &config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+
+    assert!(changed);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(server.gateway().node.chain.blocks().len(), 1);
+    let block = server.gateway().node.chain.blocks().last().unwrap();
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+    assert_eq!(runtime_state.validator_proposer_settled_receipts_seen(), 1);
+    assert_eq!(runtime_state.validator_assigned_receipts_seen(), 2);
+    assert_eq!(runtime_state.validator_unattested_receipts(), 1);
+
+    drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}

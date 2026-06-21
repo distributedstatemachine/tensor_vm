@@ -165,6 +165,38 @@ fn graph_from_program_body(
         .map_err(|error| format!("miner role failed to parse graph program body: {error}"))
 }
 
+fn graph_artifacts_available_for_job(
+    node: &RpcNode,
+    job_id: Hash,
+) -> std::result::Result<bool, String> {
+    let Some(JobState::GraphExecution(graph_job)) = node.chain.state().jobs().get(&job_id) else {
+        return Ok(true);
+    };
+    let graph = match graph_from_program_body(node, &graph_job.graph_id) {
+        Ok(graph) => graph,
+        Err(error) if error.starts_with("miner role missing graph program body") => {
+            return Ok(false);
+        }
+        Err(error) => return Err(error),
+    };
+    for root in graph_job.input_roots.values() {
+        if !node.contains_tensor_commitment_root(root) {
+            return Ok(false);
+        }
+    }
+    for (uri, _) in graph
+        .const_blob_specs()
+        .map_err(|error| format!("miner role invalid graph const_blob spec: {error}"))?
+    {
+        let root = parse_hash_hex(&uri)
+            .map_err(|_| format!("miner role invalid graph const_blob uri {uri}"))?;
+        if !node.contains_tensor_commitment_root(&root) {
+            return Ok(false);
+        }
+    }
+    Ok(true)
+}
+
 pub fn tick_miner_role_work_once(
     config: &ServiceRuntimeConfig,
     store: &NodeStore,
@@ -204,6 +236,9 @@ pub fn tick_miner_role_work_once(
                     .map_err(|error| format!("failed to persist fetched graph program: {error}"))?;
             }
             status_changed = true;
+        }
+        if !graph_artifacts_available_for_job(&server.gateway().node, job_id)? {
+            return Ok(status_changed);
         }
         let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
         if let Some(submission) =

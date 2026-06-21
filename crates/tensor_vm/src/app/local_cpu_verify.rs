@@ -19,10 +19,10 @@ pub fn verify_local_cpu_store(data_dir: &str, json: bool) -> std::result::Result
         .iter()
         .filter(|block| chain.is_block_finalized(&block.hash()))
         .count();
-    let ready = status.block_count == chain.blocks().len()
-        && status.block_count > 0
+    let block_count = chain.blocks().len();
+    let ready = block_count > 0
         && chain.state().height() == latest_block_height.saturating_add(1)
-        && finalized_block_count <= status.block_count;
+        && finalized_block_count <= block_count;
     let report = LocalCpuVerifyReport {
         command: "local_cpu_verify",
         data_dir,
@@ -30,7 +30,8 @@ pub fn verify_local_cpu_store(data_dir: &str, json: bool) -> std::result::Result
         ready,
         height: chain.state().height(),
         latest_block_height,
-        block_count: status.block_count,
+        block_count,
+        compact_block_count: status.block_count,
         finalized_block_count,
         node_store_ready: true,
     };
@@ -51,6 +52,7 @@ struct LocalCpuVerifyReport<'a> {
     height: u64,
     latest_block_height: u64,
     block_count: usize,
+    compact_block_count: usize,
     finalized_block_count: usize,
     node_store_ready: bool,
 }
@@ -65,6 +67,7 @@ impl LocalCpuVerifyReport<'_> {
         report.field("height", self.height);
         report.field("latest_block_height", self.latest_block_height);
         report.field("block_count", self.block_count);
+        report.field("compact_block_count", self.compact_block_count);
         report.field("finalized_block_count", self.finalized_block_count);
         report.field("node_store_ready", self.node_store_ready);
         report.finish()
@@ -86,6 +89,7 @@ mod tests {
             height: 2,
             latest_block_height: 1,
             block_count: 2,
+            compact_block_count: 2,
             finalized_block_count: 2,
             node_store_ready: true,
         }

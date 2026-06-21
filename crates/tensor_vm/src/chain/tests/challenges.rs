@@ -219,7 +219,7 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .contains(&receipt.receipt_id)
     );
     assert!(
-        !chain
+        chain
             .state()
             .settled_receipts()
             .contains(&receipt.receipt_id)

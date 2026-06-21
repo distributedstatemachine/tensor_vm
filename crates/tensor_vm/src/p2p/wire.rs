@@ -1,10 +1,13 @@
 use crate::api::P2pMessage;
-use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
+use crate::chain::{
+    BlockVote, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+};
 use crate::challenge::{BlockCheckChallenge, block_check_challenge_id};
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
 use crate::ir::{IrOpTrace, IrTraceOpening};
 use crate::merkle::MerkleProof;
+use crate::storage::{decode_chain_state_snapshot, encode_chain_state_snapshot};
 use crate::tensor::{DType, Tensor};
 use crate::types::Hash;
 use crate::verify::ValidatorAttestation;
@@ -22,6 +25,15 @@ const TRACE_OPENING_PAYLOAD_LEN: usize =
     8 + 8 + 8 + 8 + MAX_TRACE_OUTPUT_ROOTS * 32 + 8 + 8 + MAX_TRACE_PROOF_SIBLINGS * 32;
 const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
 const BLOCK_PAYLOAD_LEN: usize = codec::TENSOR_BLOCK_PAYLOAD_LEN;
+const BLOCK_PAYLOAD_SELECTION_MAGIC: &[u8; 8] = b"TVMBSL1\0";
+const MAX_BLOCK_PAYLOAD_SELECTED_RECEIPTS: usize = 64;
+const MAX_BLOCK_PARENT_STATE_PAYLOAD_BYTES: usize = 8 * 1024 * 1024;
+const BLOCK_PAYLOAD_MAX_LEN: usize = BLOCK_PAYLOAD_LEN
+    + 8
+    + 8
+    + MAX_BLOCK_PAYLOAD_SELECTED_RECEIPTS * 32
+    + 8
+    + MAX_BLOCK_PARENT_STATE_PAYLOAD_BYTES;
 const BLOCK_VOTE_PAYLOAD_LEN: usize = codec::BLOCK_VOTE_PAYLOAD_LEN;
 const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = codec::VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN;
 const BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN: usize = codec::BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN;
@@ -338,7 +350,7 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
         18 => {
             let height = reader.read_u64()?;
             let block_hash = reader.read_hash()?;
-            let payload = reader.read_bytes_with_max(BLOCK_PAYLOAD_LEN)?;
+            let payload = reader.read_bytes_with_max(BLOCK_PAYLOAD_MAX_LEN)?;
             let block = decode_block_payload(&payload)?;
             if block.height != height || block.hash() != block_hash {
                 return Err(TvmError::InvalidReceipt(
@@ -394,7 +406,7 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             let challenge_id = reader.read_hash()?;
             let block_hash = reader.read_hash()?;
             let challenger = reader.read_hash()?;
-            let observed_block_payload = reader.read_bytes_with_max(BLOCK_PAYLOAD_LEN)?;
+            let observed_block_payload = reader.read_bytes_with_max(BLOCK_PAYLOAD_MAX_LEN)?;
             let challenge_payload =
                 reader.read_bytes_with_max(BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN)?;
             let observed_block = decode_block_payload(&observed_block_payload)?;
@@ -529,9 +541,57 @@ pub fn encode_block_payload(block: &TensorBlock) -> Vec<u8> {
     codec::encode_tensor_block_payload(block)
 }
 
+pub fn encode_block_payload_with_selected_receipts(
+    block: &TensorBlock,
+    selected_receipts: &[Hash],
+    parent_state: &ChainState,
+) -> Vec<u8> {
+    let mut out = encode_block_payload(block);
+    out.extend_from_slice(BLOCK_PAYLOAD_SELECTION_MAGIC);
+    write_u64(&mut out, selected_receipts.len() as u64);
+    for receipt_id in selected_receipts {
+        write_hash(&mut out, receipt_id);
+    }
+    write_bytes(&mut out, &encode_chain_state_snapshot(parent_state));
+    out
+}
+
 pub fn decode_block_payload(input: &[u8]) -> TvmResult<TensorBlock> {
-    codec::decode_tensor_block_payload(input)
-        .ok_or(TvmError::InvalidReceipt("invalid block payload length"))
+    decode_block_payload_with_selected_receipts(input).map(|decoded| decoded.0)
+}
+
+pub fn decode_block_payload_with_selected_receipts(
+    input: &[u8],
+) -> TvmResult<(TensorBlock, Option<Vec<Hash>>, Option<ChainState>)> {
+    if input.len() == BLOCK_PAYLOAD_LEN {
+        let block = codec::decode_tensor_block_payload(input)
+            .ok_or(TvmError::InvalidReceipt("invalid block payload length"))?;
+        return Ok((block, None, None));
+    }
+    if input.len() < BLOCK_PAYLOAD_LEN + BLOCK_PAYLOAD_SELECTION_MAGIC.len() + 8 {
+        return Err(TvmError::InvalidReceipt("invalid block payload length"));
+    }
+    let block = codec::decode_tensor_block_payload(&input[..BLOCK_PAYLOAD_LEN])
+        .ok_or(TvmError::InvalidReceipt("invalid block payload length"))?;
+    let mut reader = Reader::new(&input[BLOCK_PAYLOAD_LEN..]);
+    if reader.read_exact(BLOCK_PAYLOAD_SELECTION_MAGIC.len())? != BLOCK_PAYLOAD_SELECTION_MAGIC {
+        return Err(TvmError::InvalidReceipt("unknown block payload envelope"));
+    }
+    let count = usize::try_from(reader.read_u64()?)
+        .map_err(|_| TvmError::InvalidReceipt("block selection length overflow"))?;
+    if count > MAX_BLOCK_PAYLOAD_SELECTED_RECEIPTS {
+        return Err(TvmError::InvalidReceipt("block selection too large"));
+    }
+    let mut selected_receipts = Vec::with_capacity(count);
+    for _ in 0..count {
+        selected_receipts.push(reader.read_hash()?);
+    }
+    let parent_state_payload = reader.read_bytes_with_max(MAX_BLOCK_PARENT_STATE_PAYLOAD_BYTES)?;
+    let parent_state = decode_chain_state_snapshot(&parent_state_payload)?;
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt("trailing block payload bytes"));
+    }
+    Ok((block, Some(selected_receipts), Some(parent_state)))
 }
 
 pub fn encode_block_vote_payload(vote: &BlockVote) -> Vec<u8> {
@@ -833,7 +893,9 @@ fn dtype_from_tag(tag: u8) -> TvmResult<DType> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAuditReport};
+    use crate::chain::{
+        BlockVote, Chain, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+    };
     use crate::challenge::{
         BlockCheckChallenge, BlockCheckChallengeInput, block_check_challenge_id,
     };
@@ -1122,6 +1184,28 @@ mod tests {
         let mut trailing = payload.clone();
         trailing.push(0);
         assert!(decode_block_payload(&trailing).is_err());
+
+        let selected_receipts = [
+            hash_bytes(b"test", &[b"selected-receipt-a"]),
+            hash_bytes(b"test", &[b"selected-receipt-b"]),
+        ];
+        let parent_state = Chain::new(hash_bytes(b"test", &[b"block-parent-state"]))
+            .state()
+            .clone();
+        let selected_payload =
+            encode_block_payload_with_selected_receipts(&block, &selected_receipts, &parent_state);
+        assert_eq!(decode_block_payload(&selected_payload).unwrap(), block);
+        assert_eq!(
+            decode_block_payload_with_selected_receipts(&selected_payload).unwrap(),
+            (
+                block.clone(),
+                Some(selected_receipts.to_vec()),
+                Some(parent_state)
+            )
+        );
+        let mut malformed_selected_payload = selected_payload;
+        malformed_selected_payload.push(0);
+        assert!(decode_block_payload(&malformed_selected_payload).is_err());
 
         let mut wrong_hash = encode_message(&P2pMessage::NewBlockPayload {
             height: block.height,

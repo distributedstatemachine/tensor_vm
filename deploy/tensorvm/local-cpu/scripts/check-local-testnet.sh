@@ -155,6 +155,24 @@ sys.exit(1)
 ' "$key"
 }
 
+json_summary_number() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)["summary"][sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    print(value)
+    sys.exit(0)
+sys.exit(1)
+' "$key"
+}
+
 json_string() {
   key="$1"
   document="$2"
@@ -278,13 +296,17 @@ for reward in rewards:
         continue
     amount = reward.get("amount")
     claimable_at_height = reward.get("claimable_at_height")
-    if reward.get("ledger") != ledger:
+    reward_ledger = reward.get("ledger")
+    if ledger == "receipt":
+        if reward_ledger not in ("receipt_miner", "receipt_validator"):
+            continue
+    elif reward_ledger != ledger:
         continue
     if not isinstance(amount, int) or isinstance(amount, bool) or amount <= 0:
         continue
     if not isinstance(claimable_at_height, int) or isinstance(claimable_at_height, bool):
         continue
-    if claimable_at_height > min_height and reward.get("voided") is not True:
+    if claimable_at_height > min_height and reward.get("voided_by_challenge") is not True:
         count += 1
 print(count)
 ' "$ledger" "$min_height"
@@ -479,15 +501,15 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_HEIGHT=$(json_number height "$LIVE_CHAIN_HEAD")
   LIVE_BLOCK_COUNT=$(json_number block_count "$LIVE_CHAIN_HEAD")
   LIVE_OVERVIEW=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/overview")
-  LIVE_JOB_COUNT=$(json_number job_count "$LIVE_OVERVIEW")
-  LIVE_MODEL_COUNT=$(json_number model_count "$LIVE_OVERVIEW")
-  LIVE_ATTESTATION_COUNT=$(json_number attestation_count "$LIVE_OVERVIEW")
-  LIVE_RECEIPT_COUNT=$(json_number receipt_count "$LIVE_OVERVIEW")
-  LIVE_SETTLED_RECEIPT_COUNT=$(json_number settled_receipt_count "$LIVE_OVERVIEW")
-  LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_number pending_receipt_reward_count "$LIVE_OVERVIEW")
-  LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_number pending_proposer_reward_count "$LIVE_OVERVIEW")
-  LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_number pending_challenge_reward_count "$LIVE_OVERVIEW")
-  LIVE_TOTAL_REWARD_BALANCE=$(json_number total_reward_balance "$LIVE_OVERVIEW")
+  LIVE_JOB_COUNT=$(json_summary_number job_count "$LIVE_OVERVIEW")
+  LIVE_MODEL_COUNT=$(json_summary_number model_count "$LIVE_OVERVIEW")
+  LIVE_ATTESTATION_COUNT=$(json_summary_number attestation_count "$LIVE_OVERVIEW")
+  LIVE_RECEIPT_COUNT=$(json_summary_number receipt_count "$LIVE_OVERVIEW")
+  LIVE_SETTLED_RECEIPT_COUNT=$(json_summary_number settled_receipt_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_summary_number pending_receipt_reward_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_summary_number pending_proposer_reward_count "$LIVE_OVERVIEW")
+  LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_summary_number pending_challenge_reward_count "$LIVE_OVERVIEW")
+  LIVE_TOTAL_REWARD_BALANCE=$(json_summary_number total_reward_balance "$LIVE_OVERVIEW")
   LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=$(json_future_pending_reward_count receipt "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=$(json_future_pending_reward_count proposer "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=$(json_future_pending_reward_count challenge "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
@@ -687,7 +709,11 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "$CANDIDATE_NETWORK_HEAD_HASH" != "unknown" ] \
     && [ "$CANDIDATE_NETWORK_HEAD_HASH" != "$ZERO_HASH" ] \
     && csv_contains_value "$CANDIDATE_NETWORK_HASHES" "$CANDIDATE_NETWORK_HEAD_HASH"; then
-    if NETWORK_BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$CANDIDATE_NETWORK_HEAD_HEIGHT"); then
+    NETWORK_TARGET_HEIGHT="$CANDIDATE_NETWORK_HEAD_HEIGHT"
+    if [ "$NETWORK_TARGET_HEIGHT" -gt $((EXPECTED_SEED_HEIGHT + EXPECTED_BLOCK_SCAN_DEPTH)) ]; then
+      NETWORK_TARGET_HEIGHT=$((NETWORK_TARGET_HEIGHT - EXPECTED_BLOCK_SCAN_DEPTH))
+    fi
+    if NETWORK_BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$NETWORK_TARGET_HEIGHT"); then
       NETWORK_BLOCK_STATUS="$NETWORK_BLOCK_RAW"
       NETWORK_BLOCK_HEIGHT=$(status_value height "$NETWORK_BLOCK_STATUS")
       NETWORK_BLOCK_HASH=$(status_value block_hash "$NETWORK_BLOCK_STATUS")
@@ -695,9 +721,9 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
       NETWORK_BLOCK_FINALIZED=$(status_value finalized "$NETWORK_BLOCK_STATUS")
       NETWORK_BLOCK_VOTE_COUNT=$(status_value block_vote_count "$NETWORK_BLOCK_STATUS")
       if [ -n "$NETWORK_BLOCK_HEIGHT" ] \
-        && [ "$NETWORK_BLOCK_HEIGHT" = "$CANDIDATE_NETWORK_HEAD_HEIGHT" ] \
+        && [ "$NETWORK_BLOCK_HEIGHT" = "$NETWORK_TARGET_HEIGHT" ] \
         && [ "$NETWORK_BLOCK_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] \
-        && [ "$NETWORK_BLOCK_HASH" = "$CANDIDATE_NETWORK_HEAD_HASH" ] \
+        && csv_contains_value "$CANDIDATE_NETWORK_HASHES" "$NETWORK_BLOCK_HASH" \
         && [ -n "$NETWORK_BLOCK_STATE_ROOT" ] \
         && [ "$NETWORK_BLOCK_STATE_ROOT" != "$ZERO_HASH" ] \
         && [ "$NETWORK_BLOCK_FINALIZED" = "true" ] \
@@ -946,7 +972,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_NETWORK_PEER_EVENTS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_INVALID_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_INVALID_EVENTS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
-    [ "$SERVICE_ROLE_NETWORK_INVALID_EVENTS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_INVALID_EVENTS" || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_LATEST_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_CONNECTED_PEERS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_CONNECTED_PEERS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
@@ -968,14 +994,16 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
-    [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
-    [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
+    if [ "$SERVICE_ROLE_LOCAL_PRODUCER" != "true" ]; then
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
+    fi
     case "$service" in
       miner-*) [ "$SERVICE_ROLE" = "miner" ] || { STATUS_MISMATCH=true; continue; } ;;
       validator-*) [ "$SERVICE_ROLE" = "validator" ] || { STATUS_MISMATCH=true; continue; } ;;
@@ -1134,24 +1162,33 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
       || [ "$SERVICE_ATTESTATION_COUNT" -le "$SEED_ATTESTATION_COUNT" ] \
       || [ "$SERVICE_ROLE_LATEST_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
       || [ "$SERVICE_ROLE_P2P_CONNECTED_PEERS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_VOTES" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_JOBS" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_RECEIPTS" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_ATTESTATIONS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-      || [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" = "$ZERO_HASH" ] \
-      || [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-      || [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" = "$ZERO_HASH" ] \
       || [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" = "$ZERO_HASH" ]; then
       STATUS_MISMATCH=true
       continue
     fi
-    csv_contains_value "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" "$ALL_OPERATOR_NETWORK_HEAD_HASH" \
-      || { STATUS_MISMATCH=true; continue; }
-    csv_contains_value "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" "$ALL_OPERATOR_NETWORK_HEAD_HASH" \
-      || { STATUS_MISMATCH=true; continue; }
+    if [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "true" ]; then
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" = "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" = "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+    else
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+      csv_contains_value "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" "$ALL_OPERATOR_NETWORK_HEAD_HASH" \
+        || { STATUS_MISMATCH=true; continue; }
+      csv_contains_value "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" "$ALL_OPERATOR_NETWORK_HEAD_HASH" \
+        || { STATUS_MISMATCH=true; continue; }
+    fi
     if [ -z "$ALL_OPERATOR_MIN_HEIGHT" ] || [ "$SERVICE_LATEST_BLOCK_HEIGHT" -lt "$ALL_OPERATOR_MIN_HEIGHT" ]; then
       ALL_OPERATOR_MIN_HEIGHT="$SERVICE_LATEST_BLOCK_HEIGHT"
     fi

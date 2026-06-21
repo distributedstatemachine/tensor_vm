@@ -161,6 +161,7 @@ pub fn tick_validator_role_work_once(
         status_changed = true;
     }
     if config.node.local_block_proposer() {
+        let parent_state_root_before = server.gateway().node.chain.state_root();
         server
             .gateway_mut()
             .node
@@ -169,9 +170,19 @@ pub fn tick_validator_role_work_once(
             .map_err(|error| {
                 format!("validator proposer failed to prepare parent state: {error}")
             })?;
+        let parent_state_changed =
+            server.gateway().node.chain.state_root() != parent_state_root_before;
         let observation =
             validator_role_block_proposal_observation(&server.gateway().node, validator);
-        let proposer_work_ready = !observation.settled_receipts.is_empty();
+        let state_carry_fallback = parent_state_changed
+            && observation.settled_receipts.is_empty()
+            && fallback_proposer_selected(&server.gateway().node.chain, validator);
+        let timestamp = if state_carry_fallback {
+            fallback_block_timestamp(&server.gateway().node.chain)
+        } else {
+            next_block_timestamp(server)
+        };
+        let proposer_work_ready = !observation.settled_receipts.is_empty() || state_carry_fallback;
         if runtime_state.record_validator_block_proposal_observation(
             observation.settled_receipts,
             observation.artifact_ready_receipts,
@@ -179,52 +190,59 @@ pub fn tick_validator_role_work_once(
         ) {
             status_changed = true;
         }
-        if proposer_work_ready {
-            let timestamp = next_block_timestamp(server);
-            if let Some(proposal) = submit_validator_role_block_proposal(
+        if proposer_work_ready
+            && let Some(proposal) = submit_validator_role_block_proposal(
                 &mut server.gateway_mut().node,
                 validator,
                 timestamp,
-            )? {
-                let Some(block) = server.gateway().node.chain.blocks().last() else {
-                    return Ok(status_changed);
-                };
-                let diagnostic = if block.production_kind.requires_pow() {
-                    diagnostic_block_check_challenger(&server.gateway().node.chain, block.proposer)
-                        .map(|challenger| {
-                            server
-                                .gateway()
-                                .node
-                                .chain
-                                .deterministic_bad_block_check_challenge(block, challenger)
-                        })
-                        .transpose()
-                        .map_err(|error| {
-                            format!(
-                                "failed to build live diagnostic block-check challenge: {error}"
-                            )
-                        })?
-                } else {
-                    None
-                };
-                publish_validator_block_proposal(p2p_service, block)?;
-                if let Some(diagnostic) = diagnostic {
-                    publish_observed_block_check_challenge(p2p_service, &diagnostic)?;
-                }
-                store
-                    .persist_chain(&server.gateway().node.chain)
+            )?
+        {
+            let Some(block) = server.gateway().node.chain.blocks().last() else {
+                return Ok(status_changed);
+            };
+            let diagnostic = if block.production_kind.requires_pow() {
+                diagnostic_block_check_challenger(&server.gateway().node.chain, block.proposer)
+                    .map(|challenger| {
+                        server
+                            .gateway()
+                            .node
+                            .chain
+                            .deterministic_bad_block_check_challenge(block, challenger)
+                    })
+                    .transpose()
                     .map_err(|error| {
-                        format!("failed to persist validator block proposal: {error}")
-                    })?;
-                runtime_state.record_produced_block();
-                runtime_state.record_validator_block_proposal_submission(
-                    proposal.blocks_proposed,
-                    proposal.useful_blocks_proposed,
-                    proposal.fallback_blocks_proposed,
-                    proposal.selected_receipts.len(),
-                );
-                status_changed = true;
+                        format!("failed to build live diagnostic block-check challenge: {error}")
+                    })?
+            } else {
+                None
+            };
+            let block_hash = block.hash();
+            let parent_state = server
+                .gateway()
+                .node
+                .chain
+                .block_parent_state_for_payload(&block_hash)
+                .ok_or_else(|| "validator block missing parent-state payload".to_owned())?;
+            publish_validator_block_proposal(
+                p2p_service,
+                block,
+                &proposal.selected_receipts,
+                parent_state,
+            )?;
+            if let Some(diagnostic) = diagnostic {
+                publish_observed_block_check_challenge(p2p_service, &diagnostic)?;
             }
+            store
+                .persist_chain(&server.gateway().node.chain)
+                .map_err(|error| format!("failed to persist validator block proposal: {error}"))?;
+            runtime_state.record_produced_block();
+            runtime_state.record_validator_block_proposal_submission(
+                proposal.blocks_proposed,
+                proposal.useful_blocks_proposed,
+                proposal.fallback_blocks_proposed,
+                proposal.selected_receipts.len(),
+            );
+            status_changed = true;
         }
     }
     Ok(status_changed)
@@ -238,4 +256,20 @@ fn diagnostic_block_check_challenger(chain: &Chain, proposer: Address) -> Option
         .copied()
         .find(|validator| *validator != proposer)
         .or_else(|| chain.state().validators().keys().copied().next())
+}
+
+fn fallback_block_timestamp(chain: &Chain) -> u64 {
+    let Some(parent) = chain.blocks().last() else {
+        return 0;
+    };
+    let timeout_seconds = chain
+        .params()
+        .pow_timeout_blocks
+        .max(1)
+        .saturating_mul(chain.params().block_time_seconds.max(1));
+    parent.timestamp.saturating_add(timeout_seconds)
+}
+
+fn fallback_proposer_selected(chain: &Chain, validator: Address) -> bool {
+    chain.proposer_for_next_epoch(&chain.state().finalized_randomness()) == Some(validator)
 }
