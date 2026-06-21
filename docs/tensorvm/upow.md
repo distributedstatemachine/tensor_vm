@@ -297,7 +297,7 @@ The chain never stores full tensors. On-chain: job defs, receipts, attestations,
 A tensor commits as a **Merkle root over fixed-size chunks** of its canonical `F_p` byte encoding: `tensor_commit = MerkleRoot(chunks)`. This supports chunk-level availability sampling and selective disclosure.
 
 ### 5.2 Trace commitment
-An execution produces a **trace root**: `trace_root = MerkleRoot([ op_output_commit(i) for i in topo_order ])`, where `op_output_commit(i)` commits the output tensor(s) of op `i`. The trace root is the anchor for interactive fraud proofs (§8). The local reference now derives this root from exact IR execution and can serve per-op Merkle openings for TensorOp, LinearTrainingStep, and GraphExecution receipts.
+An execution produces a **trace root**: `trace_root = MerkleRoot([ op_output_commit(i) for i in topo_order ])`, where `op_output_commit(i)` commits the output tensor(s) of op `i`. The trace root is the anchor for interactive fraud proofs (§8). The local reference now derives this root from exact IR execution, verifies per-op Merkle openings for TensorOp, LinearTrainingStep, and GraphExecution receipts, and carries those openings over bounded libp2p request-response for sampling.
 
 ### 5.3 Records (all asymmetrically signed; sr25519/ed25519)
 
@@ -431,7 +431,7 @@ Per-op or per-segment SNARK/STARK proofs replace interaction for the most expens
 
 Verification-availability ≠ durable DA. v0 is explicit about this.
 
-- **v0:** miners serve tensor chunks and exact-IR trace openings on request over p2p; validators perform **availability sampling** (request random chunks/openings against the committed Merkle root). A receipt whose required evidence cannot be served within a deadline is **not finalizable** and the miner's bond is at risk. This guarantees availability *for verification at settlement time*, not long-term retention.
+- **v0:** miners serve tensor chunks and exact-IR trace openings on request over p2p; validators perform **availability sampling** (request random chunks/openings against the committed Merkle root). Trace opening requests are keyed by `(trace_root, op_index)` and return either a verified encoded opening or an explicit missing response. A receipt whose required evidence cannot be served within a deadline is **not finalizable** and the miner's bond is at risk. This guarantees availability *for verification at settlement time*, not long-term retention.
 - **Roadmap:** erasure-code chunks + distributed custody, or anchor to an external DA layer, for durable availability and light-client guarantees.
 
 > TODO: erasure-coding parameters vs. activation tensor sizes (multi-GB); decide rate and custody set size.

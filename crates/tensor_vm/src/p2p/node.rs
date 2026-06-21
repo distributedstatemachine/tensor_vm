@@ -110,7 +110,7 @@ mod tests {
             node.subscribed_topics
                 .contains(&"/tensorchain/1/blocks".to_owned())
         );
-        assert_eq!(node.request_response_protocols.len(), 4);
+        assert_eq!(node.request_response_protocols.len(), 5);
         assert!(
             node.request_response_protocols
                 .contains(&"/tensorchain/1/tensor/chunk".to_owned())
@@ -118,6 +118,10 @@ mod tests {
         assert!(
             node.request_response_protocols
                 .contains(&"/tensorchain/1/tensor/by-root".to_owned())
+        );
+        assert!(
+            node.request_response_protocols
+                .contains(&"/tensorchain/1/trace/opening".to_owned())
         );
         assert_eq!(node.identify_protocol, "/tensorchain/1/identify");
     }
@@ -252,6 +256,7 @@ mod tests {
             let tensor = Tensor::from_vec(vec![1, 3], DType::FieldElement, vec![3, 5, 8]).unwrap();
             let commitment_root = tensor.commitment_root();
             let program_hash = hash_bytes(b"test", &[b"gate-0-libp2p-program"]);
+            let trace_root = hash_bytes(b"test", &[b"gate-0-libp2p-trace-root"]);
             let request_response_messages = [
                 (
                     P2pMessage::RequestTensorChunk {
@@ -287,6 +292,17 @@ mod tests {
                     P2pMessage::ProgramResponse {
                         program_hash,
                         bytes: b"tensor-vm-gate-0-program".to_vec(),
+                    },
+                ),
+                (
+                    P2pMessage::RequestTraceOpening {
+                        trace_root,
+                        op_index: 0,
+                    },
+                    P2pMessage::TraceOpeningResponse {
+                        trace_root,
+                        op_index: 0,
+                        payload: None,
                     },
                 ),
             ];
@@ -526,6 +542,12 @@ mod tests {
             | (
                 RequestResponseProtocol::Program,
                 SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::ProgramRequestResponse(event)),
+            )
+            | (
+                RequestResponseProtocol::TraceOpening,
+                SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::TraceOpeningRequestResponse(
+                    event,
+                )),
             ) => Some(event),
             _ => None,
         }

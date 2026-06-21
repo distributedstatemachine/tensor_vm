@@ -14,11 +14,12 @@ pub use service::{TensorVmLibp2pService, TensorVmLibp2pServiceInfo, spawn_libp2p
 pub use wire::{
     decode_attestation_payload, decode_block_check_challenge_payload, decode_block_payload,
     decode_block_vote_payload, decode_job_payload, decode_message, decode_receipt_payload,
-    decode_tensor_payload, decode_validator_audit_report_payload, encode_attestation_payload,
-    encode_block_check_challenge_payload, encode_block_payload, encode_block_vote_payload,
-    encode_gossipsub_message, encode_job_payload, encode_message, encode_receipt_payload,
-    encode_tensor_payload, encode_validator_audit_report_payload, gossip_topic_for_message,
-    gossipsub_ident_topic, request_response_protocol_for_message, request_response_stream_protocol,
+    decode_tensor_payload, decode_trace_opening_payload, decode_validator_audit_report_payload,
+    encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
+    encode_block_vote_payload, encode_gossipsub_message, encode_job_payload, encode_message,
+    encode_receipt_payload, encode_tensor_payload, encode_trace_opening_payload,
+    encode_validator_audit_report_payload, gossip_topic_for_message, gossipsub_ident_topic,
+    request_response_protocol_for_message, request_response_stream_protocol,
 };
 
 pub const LIBP2P_PROTOCOL_PREFIX: &str = "/tensorchain/1";
@@ -40,8 +41,8 @@ pub fn recommended_network_stack() -> NetworkStackRecommendation {
             "rust-libp2p is the mandatory TensorVM P2P runtime dependency",
             "gossipsub carries block, job, receipt, attestation, and peer announcements",
             "identify advertises TensorVM protocol support to connected peers",
-            "request-response streams carry tensor roots, rows, chunks, and program fetches",
-            "the TensorVM MVP uses libp2p for both consensus propagation and bounded tensor/program fetches",
+            "request-response streams carry tensor roots, rows, chunks, trace openings, and program fetches",
+            "the TensorVM MVP uses libp2p for both consensus propagation and bounded tensor/program/trace fetches",
         ],
     }
 }
@@ -73,6 +74,7 @@ pub enum RequestResponseProtocol {
     TensorRow,
     TensorByRoot,
     Program,
+    TraceOpening,
 }
 
 impl RequestResponseProtocol {
@@ -82,6 +84,7 @@ impl RequestResponseProtocol {
             Self::TensorRow => "/tensorchain/1/tensor/row",
             Self::TensorByRoot => "/tensorchain/1/tensor/by-root",
             Self::Program => "/tensorchain/1/program",
+            Self::TraceOpening => "/tensorchain/1/trace/opening",
         }
     }
 }
@@ -114,6 +117,7 @@ impl Default for Libp2pControlPlaneConfig {
                 RequestResponseProtocol::TensorRow,
                 RequestResponseProtocol::TensorByRoot,
                 RequestResponseProtocol::Program,
+                RequestResponseProtocol::TraceOpening,
             ],
             listen_addresses: Vec::new(),
             bootstrap_addresses: Vec::new(),

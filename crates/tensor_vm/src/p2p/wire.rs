@@ -3,6 +3,8 @@ use crate::chain::{BlockVote, JobState, ReceiptState, TensorBlock, ValidatorAudi
 use crate::challenge::{BlockCheckChallenge, block_check_challenge_id};
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
+use crate::ir::{IrOpTrace, IrTraceOpening};
+use crate::merkle::MerkleProof;
 use crate::tensor::{DType, Tensor};
 use crate::types::Hash;
 use crate::verify::ValidatorAttestation;
@@ -14,6 +16,10 @@ pub(super) const MAX_JOB_SHAPE_DIMS: usize = 16;
 pub(super) const MAX_RECEIPT_HASHES: usize = 16;
 pub(super) const MAX_TENSOR_SHAPE_DIMS: usize = 16;
 pub(super) const MAX_TENSOR_VALUES: usize = 1_000_000;
+const MAX_TRACE_OUTPUT_ROOTS: usize = 16;
+const MAX_TRACE_PROOF_SIBLINGS: usize = 64;
+const TRACE_OPENING_PAYLOAD_LEN: usize =
+    8 + 8 + 8 + 8 + MAX_TRACE_OUTPUT_ROOTS * 32 + 8 + 8 + MAX_TRACE_PROOF_SIBLINGS * 32;
 const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
 const BLOCK_PAYLOAD_LEN: usize = codec::TENSOR_BLOCK_PAYLOAD_LEN;
 const BLOCK_VOTE_PAYLOAD_LEN: usize = codec::BLOCK_VOTE_PAYLOAD_LEN;
@@ -46,7 +52,9 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::RequestTensorByCommitmentRoot { .. }
         | P2pMessage::TensorByCommitmentRootResponse { .. }
         | P2pMessage::RequestProgram(_)
-        | P2pMessage::ProgramResponse { .. } => None,
+        | P2pMessage::ProgramResponse { .. }
+        | P2pMessage::RequestTraceOpening { .. }
+        | P2pMessage::TraceOpeningResponse { .. } => None,
     }
 }
 
@@ -66,6 +74,9 @@ pub fn request_response_protocol_for_message(
         }
         P2pMessage::RequestProgram(_) | P2pMessage::ProgramResponse { .. } => {
             Some(RequestResponseProtocol::Program)
+        }
+        P2pMessage::RequestTraceOpening { .. } | P2pMessage::TraceOpeningResponse { .. } => {
+            Some(RequestResponseProtocol::TraceOpening)
         }
         P2pMessage::NewBlock(_)
         | P2pMessage::NewBlockHeader { .. }
@@ -93,6 +104,7 @@ pub(super) fn is_request_response_request(message: &P2pMessage) -> bool {
             | P2pMessage::RequestTensorRow { .. }
             | P2pMessage::RequestTensorByCommitmentRoot { .. }
             | P2pMessage::RequestProgram(_)
+            | P2pMessage::RequestTraceOpening { .. }
     )
 }
 
@@ -288,6 +300,24 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             write_hash(&mut out, program_hash);
             write_bytes(&mut out, bytes);
         }
+        P2pMessage::RequestTraceOpening {
+            trace_root,
+            op_index,
+        } => {
+            out.push(25);
+            write_hash(&mut out, trace_root);
+            write_u64(&mut out, *op_index);
+        }
+        P2pMessage::TraceOpeningResponse {
+            trace_root,
+            op_index,
+            payload,
+        } => {
+            out.push(26);
+            write_hash(&mut out, trace_root);
+            write_u64(&mut out, *op_index);
+            write_optional_bytes(&mut out, payload.as_deref());
+        }
         P2pMessage::PeerInfo { address } => {
             out.push(11);
             write_hash(&mut out, address);
@@ -462,6 +492,28 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             program_hash: reader.read_hash()?,
             bytes: reader.read_bytes()?,
         },
+        25 => P2pMessage::RequestTraceOpening {
+            trace_root: reader.read_hash()?,
+            op_index: reader.read_u64()?,
+        },
+        26 => {
+            let trace_root = reader.read_hash()?;
+            let op_index = reader.read_u64()?;
+            let payload = read_optional_bytes_with_max(&mut reader, TRACE_OPENING_PAYLOAD_LEN)?;
+            if let Some(payload) = &payload {
+                let opening = decode_trace_opening_payload(payload)?;
+                if opening.trace_root != trace_root || opening.op_index != op_index {
+                    return Err(TvmError::InvalidReceipt(
+                        "trace opening response payload mismatch",
+                    ));
+                }
+            }
+            P2pMessage::TraceOpeningResponse {
+                trace_root,
+                op_index,
+                payload,
+            }
+        }
         11 => P2pMessage::PeerInfo {
             address: reader.read_hash()?,
         },
@@ -528,6 +580,70 @@ pub fn decode_tensor_payload(input: &[u8]) -> TvmResult<Tensor> {
         return Err(TvmError::InvalidReceipt("trailing tensor payload bytes"));
     }
     Tensor::from_vec(shape, dtype, values)
+}
+
+pub fn encode_trace_opening_payload(opening: &IrTraceOpening) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_hash(&mut out, &opening.trace_root);
+    write_u64(&mut out, opening.op_index);
+    write_u64(&mut out, opening.op_trace.op_id as u64);
+    write_u64(&mut out, opening.op_trace.output_roots.len() as u64);
+    for root in &opening.op_trace.output_roots {
+        write_hash(&mut out, root);
+    }
+    write_u64(&mut out, opening.proof.leaf_index);
+    write_u64(&mut out, opening.proof.siblings.len() as u64);
+    for sibling in &opening.proof.siblings {
+        write_hash(&mut out, sibling);
+    }
+    out
+}
+
+pub fn decode_trace_opening_payload(input: &[u8]) -> TvmResult<IrTraceOpening> {
+    let mut reader = Reader::new(input);
+    let trace_root = reader.read_hash()?;
+    let op_index = reader.read_u64()?;
+    let op_id = read_usize(&mut reader)?;
+    let output_root_len = read_usize(&mut reader)?;
+    if output_root_len > MAX_TRACE_OUTPUT_ROOTS {
+        return Err(TvmError::InvalidReceipt(
+            "trace opening output roots too large",
+        ));
+    }
+    let mut output_roots = Vec::with_capacity(output_root_len);
+    for _ in 0..output_root_len {
+        output_roots.push(reader.read_hash()?);
+    }
+    let proof_leaf_index = reader.read_u64()?;
+    let sibling_len = read_usize(&mut reader)?;
+    if sibling_len > MAX_TRACE_PROOF_SIBLINGS {
+        return Err(TvmError::InvalidReceipt("trace opening proof too large"));
+    }
+    let mut siblings = Vec::with_capacity(sibling_len);
+    for _ in 0..sibling_len {
+        siblings.push(reader.read_hash()?);
+    }
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing trace opening payload bytes",
+        ));
+    }
+    let opening = IrTraceOpening {
+        trace_root,
+        op_index,
+        op_trace: IrOpTrace {
+            op_id,
+            output_roots,
+        },
+        proof: MerkleProof {
+            leaf_index: proof_leaf_index,
+            siblings,
+        },
+    };
+    if !opening.verify() {
+        return Err(TvmError::InvalidReceipt("invalid trace opening payload"));
+    }
+    Ok(opening)
 }
 
 pub fn encode_job_payload(job: &JobState) -> Vec<u8> {
@@ -680,9 +796,16 @@ impl<'a> Reader<'a> {
 }
 
 fn read_optional_bytes(reader: &mut Reader<'_>) -> TvmResult<Option<Vec<u8>>> {
+    read_optional_bytes_with_max(reader, MAX_WIRE_BYTES)
+}
+
+fn read_optional_bytes_with_max(
+    reader: &mut Reader<'_>,
+    max_len: usize,
+) -> TvmResult<Option<Vec<u8>>> {
     match reader.read_u8()? {
         0 => Ok(None),
-        1 => Ok(Some(reader.read_bytes()?)),
+        1 => Ok(Some(reader.read_bytes_with_max(max_len)?)),
         _ => Err(TvmError::InvalidReceipt("invalid optional bytes tag")),
     }
 }
@@ -756,6 +879,8 @@ mod tests {
         let tensor = Tensor::from_vec(vec![1, 3], DType::FieldElement, vec![9, 8, 7]).unwrap();
         let tensor_root = tensor.commitment_root();
         let tensor_payload = encode_tensor_payload(&tensor);
+        let trace_opening = trace_opening_fixture();
+        let trace_opening_payload = encode_trace_opening_payload(&trace_opening);
         let job = JobState::TensorOp(MatmulJob::synthetic(0, 1, 2, 3, 4, &h, 10));
         let miner = address(b"payload-miner");
         let receipt = ReceiptState::TensorOp(
@@ -891,6 +1016,20 @@ mod tests {
                 program_hash: h,
                 bytes: vec![7, 8],
             },
+            P2pMessage::RequestTraceOpening {
+                trace_root: trace_opening.trace_root,
+                op_index: trace_opening.op_index,
+            },
+            P2pMessage::TraceOpeningResponse {
+                trace_root: trace_opening.trace_root,
+                op_index: trace_opening.op_index,
+                payload: Some(trace_opening_payload),
+            },
+            P2pMessage::TraceOpeningResponse {
+                trace_root: h,
+                op_index: 9,
+                payload: None,
+            },
             P2pMessage::PeerInfo { address: peer },
         ];
 
@@ -936,6 +1075,40 @@ mod tests {
         write_u64(&mut bad_bool, 1);
         write_u64(&mut bad_bool, 2);
         assert!(decode_tensor_payload(&bad_bool).is_err());
+    }
+
+    #[test]
+    fn trace_opening_payloads_roundtrip_and_reject_malformed_edges() {
+        let opening = trace_opening_fixture();
+        let payload = encode_trace_opening_payload(&opening);
+        assert_eq!(decode_trace_opening_payload(&payload).unwrap(), opening);
+
+        let mut tampered = payload.clone();
+        tampered[56] = tampered[56].wrapping_add(1);
+        assert_eq!(
+            decode_trace_opening_payload(&tampered),
+            Err(TvmError::InvalidReceipt("invalid trace opening payload"))
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(1);
+        assert_eq!(
+            decode_trace_opening_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing trace opening payload bytes"
+            ))
+        );
+
+        assert_eq!(
+            decode_message(&encode_message(&P2pMessage::TraceOpeningResponse {
+                trace_root: opening.trace_root,
+                op_index: opening.op_index.saturating_add(1),
+                payload: Some(payload),
+            })),
+            Err(TvmError::InvalidReceipt(
+                "trace opening response payload mismatch"
+            ))
+        );
     }
 
     #[test]
@@ -1525,6 +1698,13 @@ mod tests {
             None
         );
         assert_eq!(
+            gossip_topic_for_message(&P2pMessage::RequestTraceOpening {
+                trace_root: h,
+                op_index: 0,
+            }),
+            None
+        );
+        assert_eq!(
             gossip_topic_for_message(&P2pMessage::RequestTensorByCommitmentRoot {
                 commitment_root: h,
             }),
@@ -1553,6 +1733,21 @@ mod tests {
         assert_eq!(
             request_response_protocol_for_message(&P2pMessage::RequestProgram(h)),
             Some(RequestResponseProtocol::Program)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(&P2pMessage::RequestTraceOpening {
+                trace_root: h,
+                op_index: 0,
+            }),
+            Some(RequestResponseProtocol::TraceOpening)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(&P2pMessage::TraceOpeningResponse {
+                trace_root: h,
+                op_index: 0,
+                payload: None,
+            }),
+            Some(RequestResponseProtocol::TraceOpening)
         );
         assert_eq!(
             request_response_protocol_for_message(&P2pMessage::NewBlock(h)),
@@ -1603,6 +1798,12 @@ mod tests {
                 .unwrap()
                 .to_string(),
             "/tensorchain/1/tensor/by-root"
+        );
+        assert_eq!(
+            request_response_stream_protocol(RequestResponseProtocol::TraceOpening)
+                .unwrap()
+                .to_string(),
+            "/tensorchain/1/trace/opening"
         );
     }
 
@@ -1687,6 +1888,22 @@ mod tests {
 
     fn wire_test_challenge(label: &[u8]) -> BlockCheckChallenge {
         wire_test_challenge_for_block(label, hash_bytes(b"test", &[label, b"block"]))
+    }
+
+    fn trace_opening_fixture() -> IrTraceOpening {
+        let op_trace = IrOpTrace {
+            op_id: 0,
+            output_roots: vec![hash_bytes(b"test", &[b"trace-opening-output"])],
+        };
+        IrTraceOpening {
+            trace_root: op_trace.leaf_hash(),
+            op_index: 0,
+            op_trace,
+            proof: MerkleProof {
+                leaf_index: 0,
+                siblings: Vec::new(),
+            },
+        }
     }
 
     fn wire_test_challenge_for_block(label: &[u8], block_hash: Hash) -> BlockCheckChallenge {

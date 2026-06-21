@@ -1280,8 +1280,9 @@ Current local-reference status: fixed canonical TensorOp and LinearTrainingStep 
 first-class graph-backed `GraphExecution` receipts derive this root from `TensorGraph::execute_exact`, and
 verifiers require the same canonical trace root for otherwise-valid receipts. Exact IR execution now exposes
 per-op `IrTraceOpening` Merkle proofs, and TensorOp, LinearTrainingStep, and GraphExecution receipts reject
-trace openings from executions whose root differs from the receipt. The full interactive fraud-proof game
-over those openings remains future work.
+trace openings from executions whose root differs from the receipt. The libp2p request-response surface
+now samples those openings by `(trace_root, op_index)` using a bounded encoded payload and explicit missing
+responses. The full interactive fraud-proof game over those openings remains future work.
 
 ---
 

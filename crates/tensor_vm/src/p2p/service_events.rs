@@ -1,4 +1,5 @@
 use crate::api::P2pMessage;
+use crate::ir::IrTraceOpening;
 use crate::tensor::Tensor;
 use crate::types::Hash;
 use libp2p::swarm::SwarmEvent;
@@ -31,6 +32,7 @@ pub(super) struct ServiceEventMetrics<'a> {
     pub(super) connected_peer_ids: &'a Mutex<Vec<PeerId>>,
     pub(super) tensor_store: &'a Mutex<BTreeMap<Hash, Tensor>>,
     pub(super) program_store: &'a Mutex<BTreeMap<Hash, Vec<u8>>>,
+    pub(super) trace_opening_store: &'a Mutex<BTreeMap<(Hash, u64), IrTraceOpening>>,
     pub(super) observed_message_tx: &'a mpsc::Sender<P2pMessage>,
 }
 
@@ -183,6 +185,17 @@ pub(super) fn handle_swarm_event(
         SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::ProgramRequestResponse(event)) => {
             handle_request_response_event(
                 RequestResponseProtocol::Program,
+                event,
+                metrics,
+                pending_requests,
+                swarm,
+            );
+        }
+        SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::TraceOpeningRequestResponse(
+            event,
+        )) => {
+            handle_request_response_event(
+                RequestResponseProtocol::TraceOpening,
                 event,
                 metrics,
                 pending_requests,

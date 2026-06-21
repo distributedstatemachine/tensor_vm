@@ -292,7 +292,9 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
             | P2pMessage::RequestTensorByCommitmentRoot { .. }
             | P2pMessage::TensorByCommitmentRootResponse { .. }
             | P2pMessage::RequestProgram(_)
-            | P2pMessage::ProgramResponse { .. } => {
+            | P2pMessage::ProgramResponse { .. }
+            | P2pMessage::RequestTraceOpening { .. }
+            | P2pMessage::TraceOpeningResponse { .. } => {
                 ingested.invalid_events = ingested.invalid_events.saturating_add(1);
             }
         }

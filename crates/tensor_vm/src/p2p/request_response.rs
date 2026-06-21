@@ -1,5 +1,6 @@
 use crate::api::P2pMessage;
 use crate::error::Result as TvmResult;
+use crate::ir::IrTraceOpening;
 use crate::tensor::Tensor;
 use crate::types::Hash;
 use libp2p::{PeerId, Swarm};
@@ -10,8 +11,8 @@ use std::time::Duration;
 use super::behaviour::TensorVmNetworkBehaviour;
 use super::service_events::ServiceEventMetrics;
 use super::wire::{
-    encode_tensor_payload, is_request_response_request, request_response_protocol_for_message,
-    request_response_stream_protocol,
+    encode_tensor_payload, encode_trace_opening_payload, is_request_response_request,
+    request_response_protocol_for_message, request_response_stream_protocol,
 };
 use super::{Libp2pControlPlaneConfig, RequestResponseProtocol};
 
@@ -53,8 +54,12 @@ pub(super) fn handle_request_response_event(
                 {
                     return;
                 }
-                let response =
-                    response_for_request(&request, metrics.tensor_store, metrics.program_store);
+                let response = response_for_request(
+                    &request,
+                    metrics.tensor_store,
+                    metrics.program_store,
+                    metrics.trace_opening_store,
+                );
                 let _ = send_response_for_protocol(swarm, protocol, channel, response);
             }
             libp2p::request_response::Message::Response {
@@ -102,6 +107,9 @@ fn request_response_behaviour_mut(
             &mut swarm.behaviour_mut().tensor_by_root_request_response
         }
         RequestResponseProtocol::Program => &mut swarm.behaviour_mut().program_request_response,
+        RequestResponseProtocol::TraceOpening => {
+            &mut swarm.behaviour_mut().trace_opening_request_response
+        }
     }
 }
 
@@ -129,6 +137,7 @@ fn response_for_request(
     request: &P2pMessage,
     tensor_store: &Mutex<BTreeMap<Hash, Tensor>>,
     program_store: &Mutex<BTreeMap<Hash, Vec<u8>>>,
+    trace_opening_store: &Mutex<BTreeMap<(Hash, u64), IrTraceOpening>>,
 ) -> P2pMessage {
     match request {
         P2pMessage::RequestTensorByCommitmentRoot { commitment_root } => {
@@ -187,6 +196,22 @@ fn response_for_request(
                 .and_then(|programs| programs.get(program_hash).cloned())
                 .unwrap_or_default(),
         },
+        P2pMessage::RequestTraceOpening {
+            trace_root,
+            op_index,
+        } => {
+            let payload = trace_opening_store
+                .lock()
+                .ok()
+                .and_then(|openings| openings.get(&(*trace_root, *op_index)).cloned())
+                .filter(IrTraceOpening::verify)
+                .map(|opening| encode_trace_opening_payload(&opening));
+            P2pMessage::TraceOpeningResponse {
+                trace_root: *trace_root,
+                op_index: *op_index,
+                payload,
+            }
+        }
         _ => P2pMessage::ProgramResponse {
             program_hash: [0; 32],
             bytes: Vec::new(),

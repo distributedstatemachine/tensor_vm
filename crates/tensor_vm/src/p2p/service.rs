@@ -1,5 +1,6 @@
 use crate::api::P2pMessage;
 use crate::error::{Result as TvmResult, TvmError};
+use crate::ir::IrTraceOpening;
 use crate::tensor::Tensor;
 use crate::types::Hash;
 use futures::StreamExt;
@@ -47,6 +48,7 @@ pub struct TensorVmLibp2pService {
     connected_peer_ids: Arc<Mutex<Vec<PeerId>>>,
     tensor_store: Arc<Mutex<BTreeMap<Hash, Tensor>>>,
     program_store: Arc<Mutex<BTreeMap<Hash, Vec<u8>>>>,
+    trace_opening_store: Arc<Mutex<BTreeMap<(Hash, u64), IrTraceOpening>>>,
     observed_message_rx: Mutex<mpsc::Receiver<P2pMessage>>,
     publish_tx: mpsc::Sender<P2pMessage>,
     request_tx: mpsc::Sender<RequestResponseCommand>,
@@ -169,6 +171,16 @@ impl TensorVmLibp2pService {
         }
     }
 
+    pub fn register_trace_opening(&self, opening: IrTraceOpening) -> TvmResult<()> {
+        if !opening.verify() {
+            return Err(TvmError::InvalidReceipt("invalid trace opening"));
+        }
+        if let Ok(mut openings) = self.trace_opening_store.lock() {
+            openings.insert((opening.trace_root, opening.op_index), opening);
+        }
+        Ok(())
+    }
+
     pub fn request_response(
         &self,
         peer_id: PeerId,
@@ -246,6 +258,8 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
     let worker_tensor_store = Arc::clone(&tensor_store);
     let program_store = Arc::new(Mutex::new(BTreeMap::new()));
     let worker_program_store = Arc::clone(&program_store);
+    let trace_opening_store = Arc::new(Mutex::new(BTreeMap::new()));
+    let worker_trace_opening_store = Arc::clone(&trace_opening_store);
     let (publish_tx, publish_rx) = mpsc::channel();
     let (request_tx, request_rx) = mpsc::channel::<RequestResponseCommand>();
     let (observed_message_tx, observed_message_rx) = mpsc::channel();
@@ -298,6 +312,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                 connected_peer_ids: worker_connected_peer_ids.as_ref(),
                 tensor_store: worker_tensor_store.as_ref(),
                 program_store: worker_program_store.as_ref(),
+                trace_opening_store: worker_trace_opening_store.as_ref(),
                 observed_message_tx: &observed_message_tx,
             };
             let mut pending_requests = HashMap::new();
@@ -382,6 +397,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
             connected_peer_ids,
             tensor_store,
             program_store,
+            trace_opening_store,
             observed_message_rx: Mutex::new(observed_message_rx),
             publish_tx,
             request_tx,
@@ -399,16 +415,19 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
 mod tests {
     use super::super::Libp2pControlPlaneConfig;
     use super::super::wire::{
-        decode_tensor_payload, encode_block_payload, encode_block_vote_payload, encode_job_payload,
+        decode_tensor_payload, decode_trace_opening_payload, encode_block_payload,
+        encode_block_vote_payload, encode_job_payload,
     };
     use super::{TensorVmLibp2pService, spawn_libp2p_service};
     use crate::api::P2pMessage;
     use crate::chain::{BlockVote, Chain, ChainCommand, ChainEngine, JobState, TensorBlock};
     use crate::error::TvmError;
+    use crate::ir::{IrExecutionInputs, canonical_matmul_graph};
     use crate::node::{NetworkPayloadApply, apply_network_job_payload};
     use crate::scheduler::SyntheticLocalJobSource;
     use crate::tensor::{DType, Tensor};
     use crate::types::{Hash, address, hash_bytes};
+    use std::collections::BTreeMap;
     use std::time::{Duration, Instant};
 
     #[test]
@@ -422,7 +441,7 @@ mod tests {
         assert!(!service.peer_id().to_string().is_empty());
         assert_eq!(service.info().identify_protocol, "/tensorchain/1/identify");
         assert_eq!(service.info().subscribed_topics.len(), 5);
-        assert_eq!(service.info().request_response_protocols.len(), 4);
+        assert_eq!(service.info().request_response_protocols.len(), 5);
         std::thread::sleep(Duration::from_millis(150));
     }
 
@@ -561,6 +580,82 @@ mod tests {
             P2pMessage::ProgramResponse {
                 program_hash: missing,
                 bytes: Vec::new(),
+            }
+        );
+    }
+
+    #[test]
+    fn libp2p_service_fetches_trace_opening() {
+        let port = free_tcp_port();
+        let graph = canonical_matmul_graph(2, 2, 2, DType::FieldElement);
+        let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("a".to_owned(), a), ("b".to_owned(), b)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+        let opening = execution.trace_opening(0).unwrap();
+        let trace_root = opening.trace_root;
+
+        let service_a = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-service-trace-a"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+        service_a.register_trace_opening(opening).unwrap();
+        let bootstrap_address = format!("/ip4/127.0.0.1/tcp/{port}/p2p/{}", service_a.peer_id());
+        let service_b = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+            bootstrap_addresses: vec![bootstrap_address],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-service-trace-b"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+
+        wait_for_connected_services(&service_a, &service_b);
+        let response = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestTraceOpening {
+                    trace_root,
+                    op_index: 0,
+                },
+                Duration::from_secs(3),
+            )
+            .unwrap();
+        let P2pMessage::TraceOpeningResponse {
+            trace_root: response_root,
+            op_index,
+            payload: Some(payload),
+        } = response
+        else {
+            panic!("expected trace opening response");
+        };
+        assert_eq!(response_root, trace_root);
+        assert_eq!(op_index, 0);
+        let fetched = decode_trace_opening_payload(&payload).unwrap();
+        assert!(fetched.verify());
+        assert_eq!(fetched.trace_root, trace_root);
+
+        let missing = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestTraceOpening {
+                    trace_root,
+                    op_index: 9,
+                },
+                Duration::from_secs(3),
+            )
+            .unwrap();
+        assert_eq!(
+            missing,
+            P2pMessage::TraceOpeningResponse {
+                trace_root,
+                op_index: 9,
+                payload: None,
             }
         );
     }

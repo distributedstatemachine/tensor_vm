@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 120 complete - trace opening availability for receipt disputes.
+- Active feature: Iteration 121 complete - p2p trace-opening sampling.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -29,15 +29,15 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   missing graph bodies now stay pending through the shared node payload path, runtime ingest fetches
   missing graph bodies by request-response before retry, and miner/validator role loops fetch missing graph
   tensor artifacts, including `const_blob` tensors, before execution or attestation. Exact IR execution
-  now exposes verified per-op trace openings for receipt dispute evidence anchored by `trace_root`.
+  now exposes verified per-op trace openings, and libp2p can sample them by `trace_root` and op index.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue p2p trace-opening sampling, Tier-C committee policy, deployed-run economics
-  evidence, CUDA graph evidence, or rerun Docker after the `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, CUDA graph evidence, or
+  rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -51,7 +51,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, content-addressed `const_blob` artifact replay, pending external graph job payloads, automatic runtime program fetch, miner/validator graph tensor fetch evidence, and verified per-op trace openings | Continue exact Tier-B verifier coverage, p2p trace-opening/blob dispute sampling, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -59,6 +59,26 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 121: P2P Trace-Opening Sampling
+
+Feature capability: carry verified exact-IR trace openings over bounded libp2p request-response so
+validators/challengers can sample receipt trace evidence by `trace_root` and op index.
+Readiness requirements covered: `upow.md` §5 trace commitments, §9 verification data availability, and
+the coverage gap for p2p trace-opening sampling.
+Canonical owner: IR trace-opening verification remains in `ir`; p2p only transports precomputed openings.
+Adapter callers: libp2p service registers and serves trace openings like tensor/program artifacts.
+Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
+Out of scope: full interactive fraud game, durable DA, CUDA graph execution, and Docker `/health` rerun.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused p2p trace-opening tests passed: wire payload/mapping, service fetch, and Gate-0 libp2p node
+  request-response exchange.
+- Full checks passed: `cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`,
+  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --release`, and final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage attempt remains blocked: `cargo tarpaulin --workspace --offline` reports no `tarpaulin` command.
 
 ### Iteration 120: Trace Opening Availability
 
@@ -78,110 +98,12 @@ Validation evidence: first/final `cargo test -p tensor_vm local_testnet --releas
 `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
 Coverage attempt remains blocked: `cargo tarpaulin --workspace --offline` reports no `tarpaulin` command.
 
-### Iteration 119: Explicit Receipt Reward Maturity State
-
-Feature capability: model receipt reward delay directly as `ReceiptRewardMaturity` rather than a magic
-height value. Pending receipt rewards start as `AwaitingInclusion`, canonical block inclusion converts
-them to `ClaimableAt(height)`, and reward roots/storage commit the maturity tag.
-Readiness requirements covered: `mvp_spec.md` reward settlement delay, `upow.md` economics/TensorWork
-activation delay, and production evidence for delayed rewards from chain state.
-Canonical owner: chain state, reward roots, settlement, block application, and reward release.
-Adapter callers: status/RPC continue using the chain-owned pending reward claim view.
-Old shortcut being removed: the receipt reward ledger no longer uses `u64::MAX` as an
-awaiting-inclusion sentinel.
-Regression tests: reward, settlement, block, attestation, and storage tests cover awaiting inclusion,
-inclusion-derived claimable heights, mature release, audit delay/voiding, and persistence.
-Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
-Out of scope: Docker `/health` rerun, deployed-run measurements, and trace-chunk disputes.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused reward maturity tests passed: `chain::tests::rewards`, `chain::tests::settlement`,
-  `chain::tests::attestations`, and `storage::chain_state`.
-- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 453 library tests plus integrations.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
-
-### Iteration 118: Automatic External Graph Artifact Fetch
-
-Feature capability: resolve missing external graph artifacts automatically at runtime boundaries. Pending
-graph job payloads fetch canonical program bodies over bounded `RequestProgram` before retry; miner roles
-fetch missing graph input and `const_blob` tensors before execution; validator roles fetch graph input,
-output, and `const_blob` tensors before attestation.
-Readiness requirements covered: `upow.md` §2 process boundaries, §4 content-addressed programs, §5 tensor
-commitments, and §9 verification data availability.
-Canonical owner: chain admission still validates graph bodies and receipts; app/node role boundaries only
-fetch missing network dependencies and retry canonical commands.
-Adapter callers: runtime network ingest, miner role tick, and validator role tick.
-Old shortcut being removed: graph program/tensor dependencies had to be preloaded manually outside the
-role-loop/network retry path.
-Regression tests: pending graph job program fetch/retry, miner graph input/blob fetch before execution,
-and validator graph input/output/blob fetch before attestation.
-Behavior with local synthetic block production disabled: externally supplied graph jobs can still resolve
-their program and tensor artifacts through libp2p request-response.
-Behavior for producer and non-producer roles: both use the same bounded artifact fetch and canonical chain
-command retry paths.
-Structured evidence source: pending payload retry counters plus role remote-fetch reports.
-Finality source: unchanged block-vote finality after graph receipts settle normally.
-Wire-size and codec boundary: reuses bounded job, program, and tensor codecs; no new wire format.
-Out of scope: Docker `/health` rerun, CUDA graph execution, trace-chunk dispute availability, and
-interactive fraud proofs.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused graph-artifact tests passed: network pending program fetch, miner input/blob fetch, validator
-  input/output/blob fetch, existing graph payload pending/retry, and libp2p propagation.
-- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 453 library tests plus integrations.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
-
-### Iteration 116: Packed Int8 Tensor Artifact API
-
-Feature capability: expose byte-packed `TVQ8` int8 quantization payloads as first-class `Uint8` tensor
-artifacts with tensor-owned constructor/decode methods and descriptor/chunk/opening evidence.
-Readiness requirements covered: `upow.md` §3.1/§4.8 canonical dtype/layout, §5 tensor commitments and
-openings, §9 verification data availability for tensor chunks, and the documented packed tensor
-public-artifact API gap.
-Files/modules likely touched: `tensor`, `ir`, `conformance`, Tensor IR/conformance docs/status.
-Parallel subagents to run: not used; available subagent tool forbids spawning unless the user explicitly
-requests delegation.
-Parallelizable implementation workstreams: none in this single-owner tensor/IR/conformance change.
-Canonical owner: `tensor` owns packed artifact construction, decode validation, descriptor, chunk, and
-opening behavior.
-Adapter callers: IR exact replay and conformance vector execution construct/decode packed payload tensors
-through `Tensor` methods.
-Old shortcut being removed: callers manually wrapped encoded bytes as a flat `Uint8` tensor and manually
-checked dtype/scale/rank before free-function decode.
-Regression test that proves the shortcut is gone: a packed tensor artifact test verifies descriptor chunks
-and openings, round-trips decode, and rejects non-artifact tensors.
-Behavior with local synthetic block production disabled: unchanged; this is pure tensor artifact/exact
-replay behavior.
-Behavior for producer and non-producer roles: unchanged; every role sees the same tensor root/openings.
-Structured evidence source: tensor descriptor/opening tests plus existing IR and conformance packed tests.
-Finality source: unchanged block finality; affected receipts still pass through canonical verification.
-Wire-size and codec boundary: preserves the existing `TVQ8` bytes and normal tensor chunking semantics.
-Narrow validation commands: packed tensor artifact test, packed IR replay test, conformance vector/profile
-tests.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Expected observable evidence: packed payloads are constructed as `Uint8` tensors, descriptor/opening proofs
-verify over chunked tensor bytes, and malformed/non-artifact tensors reject before decode.
-Out of scope: CUDA graph execution, Docker/public run, Tier-C committee/fraud games.
-Split trigger: any wire-format or storage codec migration requirement.
-
-Validation evidence:
-- First Gate 0 passed before edits; focused packed tensor artifact, packed IR replay, verifier, and
-  conformance/profile tests passed; format, diff, full `tensor_vm`, clippy, release workspace, and final
-  Gate 0 passed. Tarpaulin remains blocked by missing `cargo-tarpaulin`.
-  Feature commit: `6f615f6` (`Add packed int8 tensor artifact APIs`) pushed to `origin/main`.
-
 ## Recent Iterations
+
+### Iterations 116, 118, and 119
+
+Packed int8 tensor artifact APIs, automatic external graph artifact fetch, and explicit receipt reward
+maturity state landed and were validated in prior pushed commits. See git history and docs for detail.
 
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
@@ -249,25 +171,22 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 118 on June 21, 2026:
+Latest full validation is Iteration 121 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm network_ingest_fetches_pending_graph_job_program_before_retry --quiet
-cargo test -p tensor_vm miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution --quiet
-cargo test -p tensor_vm validator_role_fetches_remote_graph_const_blobs_before_attesting --quiet
-cargo test -p tensor_vm network_event_driver_queues_graph_job_until_program_body_arrives --quiet
-cargo test -p tensor_vm libp2p_service_propagates_external_graph_job_artifacts --quiet
-cargo test -p tensor_vm pending_payloads_retry_keeps_pending_payloads --quiet
-cargo test -p tensor_vm validator_remote_tensor_response_rejects_corrupt_or_mismatched_payloads --quiet
+cargo test -p tensor_vm p2p::wire::tests --quiet
+cargo test -p tensor_vm p2p::service::tests --quiet
+cargo test -p tensor_vm p2p::node::tests --quiet
+cargo test -p tensor_vm node::message_ingest::tests::network_event_driver_counts_invalid_runtime_messages --quiet
 cargo fmt --all
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
 cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --release
-cargo test -p tensor_vm local_testnet --release
 cargo tarpaulin --workspace --offline
+cargo test -p tensor_vm local_testnet --release
 ```
 
 Current coverage blocker:

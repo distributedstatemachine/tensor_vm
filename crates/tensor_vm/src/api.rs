@@ -83,6 +83,15 @@ pub enum P2pMessage {
         program_hash: Hash,
         bytes: Vec<u8>,
     },
+    RequestTraceOpening {
+        trace_root: Hash,
+        op_index: u64,
+    },
+    TraceOpeningResponse {
+        trace_root: Hash,
+        op_index: u64,
+        payload: Option<Vec<u8>>,
+    },
     PeerInfo {
         address: Address,
     },

@@ -14,6 +14,7 @@ pub struct TensorVmNetworkBehaviour {
     pub tensor_row_request_response: P2pRequestResponseBehaviour,
     pub tensor_by_root_request_response: P2pRequestResponseBehaviour,
     pub program_request_response: P2pRequestResponseBehaviour,
+    pub trace_opening_request_response: P2pRequestResponseBehaviour,
 }
 
 pub(super) fn build_libp2p_behaviour(
@@ -64,6 +65,10 @@ pub(super) fn build_libp2p_behaviour(
         program_request_response: build_request_response_behaviour(
             config,
             RequestResponseProtocol::Program,
+        )?,
+        trace_opening_request_response: build_request_response_behaviour(
+            config,
+            RequestResponseProtocol::TraceOpening,
         )?,
     })
 }

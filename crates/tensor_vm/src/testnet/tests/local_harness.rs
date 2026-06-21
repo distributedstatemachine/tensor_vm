@@ -63,7 +63,7 @@ fn local_testnet_bootstraps_required_public_shape() {
     })
     .expect("Gate 0 must construct the mandatory libp2p control-plane runtime");
     assert_eq!(libp2p_service.info().subscribed_topics.len(), 5);
-    assert_eq!(libp2p_service.info().request_response_protocols.len(), 4);
+    assert_eq!(libp2p_service.info().request_response_protocols.len(), 5);
     assert!(
         libp2p_service
             .info()
