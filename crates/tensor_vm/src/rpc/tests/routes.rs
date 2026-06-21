@@ -531,6 +531,16 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         maturity: ReceiptRewardMaturity::ClaimableAt(10),
         voided_by_challenge: false,
     });
+    let awaiting_miner = address(b"rpc-awaiting-miner");
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"rpc-awaiting-receipt-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"rpc-awaiting-receipt"]),
+        beneficiary: awaiting_miner,
+        amount: 1,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::AwaitingInclusion,
+        voided_by_challenge: false,
+    });
     chain
         .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
             source_id: "drand-mainnet-round-v1".to_owned(),
@@ -596,6 +606,15 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
             && path["reward_from_fraud"].as_u64() == Some(0)
             && path["required_slashable_bond"].as_u64() == Some(0)
             && path["invariant_holds"].as_bool() == Some(true)
+    }));
+
+    let pending_rewards = overview["pending_rewards"].as_array().unwrap();
+    assert!(pending_rewards.iter().any(|reward| {
+        reward["ledger"].as_str() == Some("receipt_miner")
+            && reward["beneficiary"].as_str() == Some(hex(&awaiting_miner).as_str())
+            && reward["claimable_at_height"].is_null()
+            && reward["awaiting_inclusion"].as_bool() == Some(true)
+            && reward["voided_by_challenge"].as_bool() == Some(false)
     }));
 
     let detection = &overview["detection_probability_evidence"];

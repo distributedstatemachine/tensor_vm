@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 124 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 125 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 124 coverage could not
-be regenerated. Iterations 78 through 124 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 125 coverage could not
+be regenerated. Iterations 78 through 125 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -193,6 +193,10 @@ records preserving both agreeing miner and operator counts, and chain-state roun
 Iteration 124 makes collusion-risk study evidence operator-aware. Focused study coverage checks that
 colluding miner-address count reaching quorum is insufficient when those miners are controlled by too few
 operators, while colluding operators at quorum can satisfy redundant agreement.
+Iteration 125 exposes awaiting-inclusion receipt reward claims explicitly in chain pending-claim views,
+service status, and explorer JSON instead of presenting them as a synthetic far-future claim height.
+Focused chain, status, RPC, and explorer tests cover null/no concrete claim height before inclusion and
+normal concrete delayed heights for already scheduled claims.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

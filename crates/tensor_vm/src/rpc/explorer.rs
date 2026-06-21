@@ -176,6 +176,7 @@ pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<Explo
             beneficiary: hex(&claim.beneficiary),
             amount: claim.amount,
             claimable_at_height: claim.claimable_at_height,
+            awaiting_inclusion: claim.awaiting_inclusion,
             voided_by_challenge: claim.voided_by_challenge,
         })
         .collect()

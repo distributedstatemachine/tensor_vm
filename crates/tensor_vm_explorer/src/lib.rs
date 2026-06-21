@@ -73,20 +73,26 @@ pub struct ExplorerPendingReward {
     pub subject_id: String,
     pub beneficiary: String,
     pub amount: u64,
-    pub claimable_at_height: u64,
+    pub claimable_at_height: Option<u64>,
+    pub awaiting_inclusion: bool,
     pub voided_by_challenge: bool,
 }
 
 impl ExplorerPendingReward {
     pub fn to_json(&self) -> String {
+        let claimable_at_height = self
+            .claimable_at_height
+            .map(|height| height.to_string())
+            .unwrap_or_else(|| "null".to_owned());
         format!(
-            "{{\"ledger\":\"{}\",\"claim_id\":\"{}\",\"subject_id\":\"{}\",\"beneficiary\":\"{}\",\"amount\":{},\"claimable_at_height\":{},\"voided_by_challenge\":{}}}",
+            "{{\"ledger\":\"{}\",\"claim_id\":\"{}\",\"subject_id\":\"{}\",\"beneficiary\":\"{}\",\"amount\":{},\"claimable_at_height\":{},\"awaiting_inclusion\":{},\"voided_by_challenge\":{}}}",
             escape_json(&self.ledger),
             escape_json(&self.claim_id),
             escape_json(&self.subject_id),
             escape_json(&self.beneficiary),
             self.amount,
-            self.claimable_at_height,
+            claimable_at_height,
+            self.awaiting_inclusion,
             self.voided_by_challenge
         )
     }
@@ -857,11 +863,20 @@ mod tests {
             subject_id: "receipt".to_owned(),
             beneficiary: "miner".to_owned(),
             amount: 7,
-            claimable_at_height: 11,
+            claimable_at_height: Some(11),
+            awaiting_inclusion: false,
             voided_by_challenge: false,
         };
         assert!(pending.to_json().contains("\"claimable_at_height\":11"));
+        assert!(pending.to_json().contains("\"awaiting_inclusion\":false"));
         assert!(pending.to_json().contains("\"voided_by_challenge\":false"));
+        let awaiting = ExplorerPendingReward {
+            claimable_at_height: None,
+            awaiting_inclusion: true,
+            ..pending
+        };
+        assert!(awaiting.to_json().contains("\"claimable_at_height\":null"));
+        assert!(awaiting.to_json().contains("\"awaiting_inclusion\":true"));
         let detection = ExplorerDetectionProbabilityEvidenceSummary {
             mechanism_count: 1,
             minimum_detection_probability_bps: 5_000,

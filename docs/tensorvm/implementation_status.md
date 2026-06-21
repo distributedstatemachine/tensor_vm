@@ -203,10 +203,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   remaining fraud paths remain open.
   `ChainState::pending_reward_claims` now exposes a unified read-only claim view for proposer, receipt
   miner, receipt validator, challenge, and credit ledgers, with chain-owned ledger labels, claim IDs,
-  subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, claimable
-  heights, and voided status. Service status and explorer
+  subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, optional
+  concrete claimable heights, explicit awaiting-inclusion status, and voided status. Service status and explorer
   overview consume that chain view for bounded pending reward claim samples, so local checkers can prove
-  reward delay from structured state instead of adapter-rebuilt count-only workarounds. The local CPU
+  reward delay from structured state instead of adapter-rebuilt count-only or sentinel-height workarounds. The local CPU
   checker now fails unless live explorer overview evidence includes non-voided pending receipt and
   proposer reward claims whose
   `claimable_at_height` is greater than the observed live height, plus positive pending challenge reward

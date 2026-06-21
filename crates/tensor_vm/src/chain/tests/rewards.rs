@@ -332,7 +332,8 @@ fn pending_reward_claim_view_covers_all_ledgers() {
     assert!(claims.windows(2).all(|window| {
         window[0]
             .claimable_at_height
-            .cmp(&window[1].claimable_at_height)
+            .unwrap_or(u64::MAX)
+            .cmp(&window[1].claimable_at_height.unwrap_or(u64::MAX))
             .then_with(|| window[0].ledger.cmp(&window[1].ledger))
             .then_with(|| window[0].claim_id.cmp(&window[1].claim_id))
             != std::cmp::Ordering::Greater
@@ -342,18 +343,24 @@ fn pending_reward_claim_view_covers_all_ledgers() {
             && claim.claim_id == RewardClaimKey::BlockHeight(0)
             && claim.subject_id == RewardClaimKey::BlockHeight(0)
             && claim.beneficiary == proposer
+            && claim.claimable_at_height.is_some()
+            && !claim.awaiting_inclusion
             && !claim.voided_by_challenge
     }));
     assert!(claims.iter().any(|claim| {
         claim.ledger == RewardClaimLedger::ReceiptMiner
             && claim.subject_id == RewardClaimKey::Hash(receipt_id)
             && claim.amount > 0
+            && claim.claimable_at_height.is_none()
+            && claim.awaiting_inclusion
             && !claim.voided_by_challenge
     }));
     assert!(claims.iter().any(|claim| {
         claim.ledger == RewardClaimLedger::ReceiptValidator
             && claim.subject_id == RewardClaimKey::Hash(receipt_id)
             && claim.amount > 0
+            && claim.claimable_at_height.is_none()
+            && claim.awaiting_inclusion
             && !claim.voided_by_challenge
     }));
     assert!(claims.iter().any(|claim| {
@@ -362,12 +369,16 @@ fn pending_reward_claim_view_covers_all_ledgers() {
                 == RewardClaimKey::Hash(hash_bytes(b"test", &[b"claim-view-challenge"]))
             && claim.related_id == Some(RewardClaimKey::Hash(receipt_id))
             && claim.beneficiary == challenger
+            && claim.claimable_at_height.is_some()
+            && !claim.awaiting_inclusion
             && claim.voided_by_challenge
     }));
     assert!(claims.iter().any(|claim| {
         claim.ledger == RewardClaimLedger::Credit
             && claim.beneficiary == credit_beneficiary
             && claim.amount == 25
+            && claim.claimable_at_height.is_some()
+            && !claim.awaiting_inclusion
             && !claim.voided_by_challenge
     }));
 }

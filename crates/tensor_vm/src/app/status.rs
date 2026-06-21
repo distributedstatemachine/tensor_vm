@@ -489,7 +489,7 @@ fn pending_proposer_reward_claims(chain: &Chain, limit: usize) -> String {
                 claim_key_label(claim.claim_id),
                 hex(&claim.beneficiary),
                 claim.amount,
-                claim.claimable_at_height,
+                claimable_height_label(claim.claimable_at_height),
                 claim.voided_by_challenge
             )
         })
@@ -511,13 +511,14 @@ fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
         .take(limit)
         .map(|claim| {
             format!(
-                "{}:{}:{}:{}:{}:{}:{}",
+                "{}:{}:{}:{}:{}:{}:{}:{}",
                 claim_key_label(claim.claim_id),
                 claim_key_label(claim.subject_id),
                 claim.ledger.receipt_kind_label().unwrap_or("unknown"),
                 hex(&claim.beneficiary),
                 claim.amount,
-                claim.claimable_at_height,
+                claimable_height_label(claim.claimable_at_height),
+                claim.awaiting_inclusion,
                 claim.voided_by_challenge
             )
         })
@@ -543,7 +544,7 @@ fn pending_challenge_reward_claims(chain: &Chain, limit: usize) -> String {
                     .unwrap_or_else(|| "none".to_owned()),
                 hex(&claim.beneficiary),
                 claim.amount,
-                claim.claimable_at_height,
+                claimable_height_label(claim.claimable_at_height),
                 claim.voided_by_challenge
             )
         })
@@ -564,7 +565,7 @@ fn pending_credit_reward_claims(chain: &Chain, limit: usize) -> String {
                 claim_key_label(claim.claim_id),
                 hex(&claim.beneficiary),
                 claim.amount,
-                claim.claimable_at_height
+                claimable_height_label(claim.claimable_at_height)
             )
         })
         .collect::<Vec<_>>();
@@ -577,6 +578,12 @@ fn compact_claims(claims: Vec<String>) -> String {
     } else {
         claims.join(";")
     }
+}
+
+fn claimable_height_label(claimable_at_height: Option<u64>) -> String {
+    claimable_at_height
+        .map(|height| height.to_string())
+        .unwrap_or_else(|| "awaiting_inclusion".to_owned())
 }
 
 fn claim_key_label(key: RewardClaimKey) -> String {
@@ -628,7 +635,7 @@ mod tests {
             beneficiary: miner,
             amount: 25,
             kind: ReceiptRewardKind::Miner,
-            maturity: ReceiptRewardMaturity::ClaimableAt(8),
+            maturity: ReceiptRewardMaturity::AwaitingInclusion,
             voided_by_challenge: false,
         });
         let challenge_claim = hash_bytes(b"test", &[b"status-challenge-claim"]);
@@ -668,6 +675,12 @@ mod tests {
                 .value("pending_receipt_reward_claims")
                 .unwrap()
                 .contains(":miner:")
+        );
+        assert!(
+            fields
+                .value("pending_receipt_reward_claims")
+                .unwrap()
+                .contains(":awaiting_inclusion:true:false")
         );
         assert!(
             fields

@@ -250,6 +250,12 @@ and non-producer peers, rather than by an adapter-side/manual release workaround
 `chain::tests::chain_settles_valid_tensorwork_and_rewards_participants`, and
 `chain::tests::chain_settles_valid_graph_execution_and_delays_rewards` now also prove receipt reward claims
 explicitly await canonical blockspace inclusion before their reward-maturity clock starts.
+`chain::tests::pending_reward_claim_view_covers_all_ledgers`,
+`app::status::tests::service_status_exports_pending_reward_claim_maturity_details`,
+`rpc::tests::routes::explorer_overview_exports_validator_audit_economic_calibration`, and
+`tensor_vm_explorer::tests::explorer_json_and_shell_include_live_websocket_contract` now prove pending
+reward views expose awaiting-inclusion receipt rewards explicitly, with no synthetic far-future claim
+height workaround.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul plus
   linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.

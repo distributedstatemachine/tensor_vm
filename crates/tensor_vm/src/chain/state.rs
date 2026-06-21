@@ -458,7 +458,8 @@ pub struct RewardClaimView {
     pub related_id: Option<RewardClaimKey>,
     pub beneficiary: Address,
     pub amount: u64,
-    pub claimable_at_height: u64,
+    pub claimable_at_height: Option<u64>,
+    pub awaiting_inclusion: bool,
     pub voided_by_challenge: bool,
 }
 
@@ -1519,11 +1520,16 @@ impl ChainState {
                 related_id: None,
                 beneficiary: reward.proposer,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height,
+                claimable_at_height: Some(reward.claimable_at_height),
+                awaiting_inclusion: false,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
         for (claim_id, reward) in &self.pending_receipt_rewards {
+            let (claimable_at_height, awaiting_inclusion) = match reward.maturity {
+                ReceiptRewardMaturity::AwaitingInclusion => (None, true),
+                ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false),
+            };
             claims.push(RewardClaimView {
                 ledger: match reward.kind {
                     ReceiptRewardKind::Miner => RewardClaimLedger::ReceiptMiner,
@@ -1534,7 +1540,8 @@ impl ChainState {
                 related_id: None,
                 beneficiary: reward.beneficiary,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height(),
+                claimable_at_height,
+                awaiting_inclusion,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
@@ -1546,7 +1553,8 @@ impl ChainState {
                 related_id: Some(RewardClaimKey::Hash(reward.receipt_id)),
                 beneficiary: reward.challenger,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height,
+                claimable_at_height: Some(reward.claimable_at_height),
+                awaiting_inclusion: false,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
@@ -1558,13 +1566,19 @@ impl ChainState {
                 related_id: None,
                 beneficiary: reward.beneficiary,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height,
+                claimable_at_height: Some(reward.claimable_at_height),
+                awaiting_inclusion: false,
                 voided_by_challenge: false,
             });
         }
         claims.sort_by(|left, right| {
             left.claimable_at_height
-                .cmp(&right.claimable_at_height)
+                .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_SORT_HEIGHT)
+                .cmp(
+                    &right
+                        .claimable_at_height
+                        .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_SORT_HEIGHT),
+                )
                 .then_with(|| left.ledger.cmp(&right.ledger))
                 .then_with(|| left.claim_id.cmp(&right.claim_id))
         });

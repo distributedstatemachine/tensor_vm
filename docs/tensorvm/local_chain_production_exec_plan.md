@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 124 complete - operator-aware collusion risk evidence.
+- Active feature: Iteration 125 complete - explicit pending reward maturity views.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -62,6 +62,48 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 125: Explicit Pending Reward Maturity Views
+
+Feature capability: expose awaiting-inclusion receipt rewards as first-class delayed claims instead of
+reporting a synthetic far-future claim height.
+Readiness requirements covered: `mvp_spec.md` §20.3/§25 delayed receipt reward finality, structured local
+checker evidence for pending rewards, and reward-rooted state visibility.
+Canonical owner: chain state owns pending reward maturity; RPC/status/explorer views only render that state.
+Adapter callers: service status and explorer overview pending-reward samples.
+Old shortcut being removed: presentation code no longer treats `AwaitingInclusion` as a claimable
+`u64::MAX` height.
+Regression test that proves the shortcut is gone: pending receipt claims before inclusion report
+`awaiting_inclusion=true` and no concrete claim height, then included claims report a real delayed height.
+Behavior with local synthetic block production disabled: unchanged; only reward evidence views change.
+Behavior for producer and non-producer roles: unchanged; canonical block inclusion still assigns maturity.
+Structured evidence source: chain pending-claim view, service status, and explorer overview.
+Finality source: unchanged delayed reward release path.
+Wire-size and codec boundary: explorer JSON gains explicit maturity-state evidence; chain storage is
+unchanged.
+Files/modules likely touched: chain state view, status/explorer rendering, focused tests, docs.
+Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
+Parallelizable implementation workstreams: reward view/API rendering and docs evidence.
+Tests/checkers/docs to add or update: focused reward/status/explorer tests and docs evidence.
+Narrow validation commands: `cargo test -p tensor_vm pending_reward_claim --quiet`.
+Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
+release tests, tarpaulin attempt, and final Gate 0.
+Expected observable evidence: awaiting-inclusion rewards are visibly delayed without sentinel-height
+workarounds, and actual spendable credit remains blocked until inclusion-derived maturity.
+Out of scope: reward-root storage format, public Docker rerun, CUDA evidence, and full fraud proofs.
+Split trigger: explorer JSON compatibility fallout outside pending reward samples.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused tests passed: `cargo test -p tensor_vm pending_reward_claim --quiet`,
+  `cargo test -p tensor_vm service_status_exports_pending_reward_claim_maturity_details --quiet`,
+  `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`, and
+  `cargo test -p tensor_vm_explorer --quiet`.
+- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+  final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
 
 ### Iteration 124: Operator-Aware Collusion Risk Evidence
 
