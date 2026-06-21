@@ -116,6 +116,7 @@ Validation evidence captured June 21, 2026:
 - Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
 - Docker gate passed after rebuilding `tensorvm-local-cpu:latest`, `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up -d --wait`, and `deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`. Key output: `live_role_network_external_randomness_beacons=23539`, `live_role_network_external_randomness_beacons_applied=23539`, `live_external_randomness_beacon_records=1`, `live_latest_external_randomness_beacon_round=1000`, `live_role_randomness_beacons_applied=15`, and `live_external_randomness_beacon_evidence=true`.
 - Earlier Docker attempts failed with `no role applied external randomness beacon payloads from the network`; publishing current beacon records with normal chain announcements fixed the startup-gossip timing gap.
+- Commit evidence: implementation committed as `e5010dd`.
 
 ### Iteration 134: Multi-Validator Proposer Competition Evidence
 
