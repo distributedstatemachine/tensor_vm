@@ -286,12 +286,12 @@ Required repair:
 | V2-CHK-002 block checks root | Aggregate root exists. | Still blocked: aggregates signed claims, not recomputed/challengeable evidence. |
 | V2-DIFF-001 parent-state difficulty | Static target helper exists. | Still blocked: no parent difficulty state, retarget bounds, target vectors, or work-floor theorem. |
 | V2-POW-001 useful-PoW validity | Nonce/target/hash predicate exists and local beacon equality is checked. | Still blocked: static target, no full randomness model, no work floor, no economics. |
-| V2-PROP-001 proposer eligibility | Significant progress: non-validator rejection and validator selector. | Not fully discharged until live proposer networking and complete validation are in place. |
+| V2-PROP-001 proposer eligibility | Significant progress: non-validator rejection, validator selector, and local CPU Docker proof for the single configured validator proposer. | Not fully discharged until multi-validator/public proposer networking and complete validation are in place. |
 | V2-STATE-001 valid transition | Roots exist and vote admission checks parent-root validity. | Still blocked: no child-state apply theorem or exact parent snapshot. |
-| V2-REWARD-001 delayed reward finality | Reward fields exist only as candidate/root ingredients. | Still blocked: no pending/challenged/invalidated/settled reward state or challenge resolution. |
+| V2-REWARD-001 delayed reward finality | Local pending receipt/proposer/challenge/credit ledgers, voiding, and maturity release exist for implemented paths. | Still blocked: full challenge-window theorem, interactive transcript disputes, and public deployed evidence are incomplete. |
 | V2-FIN-001 vote admission validates block | Partial: vote path calls strict `validate`. | Still blocked: validation predicate lacks full child-state transition and replay model. |
 | V2-FIN-002 finality implies v2 validity | Partial path. | Still blocked until V2-FIN-001 and V2-STATE-001 are complete. |
-| V2-FALLBACK-001 PoW-skip fallback | No candidate evidence; the proof model is documented separately in `mvp_core_fallback_liveness_model.md`. | Still blocked. |
+| V2-FALLBACK-001 PoW-skip fallback | Local `PowSkipFallback` timeout, deterministic selected proposer, reduced delayed reward, and rejection tests exist. | Still blocked for full synchrony/liveness theorem, multi-validator runtime evidence, and public/CUDA proof. |
 
 ## Minimum Next Gates
 

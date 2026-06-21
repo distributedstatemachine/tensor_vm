@@ -38,6 +38,15 @@ fn assert_no_retired_tvmd_commands(document: &str, label: &str) {
     }
 }
 
+fn assert_not_contains_any(document: &str, forbidden: &[&str], label: &str) {
+    for phrase in forbidden {
+        assert!(
+            !document.contains(phrase),
+            "{label} should not contain stale phrase {phrase:?}"
+        );
+    }
+}
+
 #[test]
 fn public_deployment_templates_require_libp2p_and_https_surfaces() {
     let env = include_str!("../../../../../deploy/tensorvm/env/public-testnet.env.example");
@@ -252,10 +261,112 @@ fn codex_local_chain_workflow_records_required_iteration_flow() {
             "git commit -m \"<slice name>\"",
             "git push origin main",
             "error: no such command: tarpaulin",
-            "gateway /health timeout during the recorded full Docker run",
+            "public 7-day external deployment evidence",
+            "CUDA miner evidence",
         ],
         "Codex workflow validation and blockers",
     );
+}
+
+#[test]
+fn local_status_docs_do_not_preserve_stale_health_blocker() {
+    for (label, document) in [
+        (
+            "Codex local-chain workflow",
+            include_str!("../../../../../docs/tensorvm/codex_5_5_local_chain_workflow.md"),
+        ),
+        (
+            "local chain readiness",
+            include_str!("../../../../../docs/tensorvm/local_chain_production_readiness.md"),
+        ),
+        (
+            "implementation status",
+            include_str!("../../../../../docs/tensorvm/implementation_status.md"),
+        ),
+        (
+            "coverage matrix",
+            include_str!("../../../../../docs/tensorvm/coverage_matrix.md"),
+        ),
+        (
+            "completion audit",
+            include_str!("../../../../../docs/tensorvm/completion_audit.md"),
+        ),
+    ] {
+        assert_not_contains_any(
+            document,
+            &[
+                "gateway /health timeout",
+                "standing gateway `/health` timeout blocker",
+                "current `/health` blocker",
+                "fresh full Docker proof after",
+                "full checker blocked",
+            ],
+            label,
+        );
+    }
+}
+
+#[test]
+fn formal_status_docs_record_local_fallback_and_delayed_reward_evidence() {
+    let formal_docs = [
+        (
+            "formal proof manifest",
+            include_str!("../../../../../docs/formal/formal_proof_manifest_v0.md"),
+        ),
+        (
+            "fallback liveness model",
+            include_str!("../../../../../docs/formal/mvp_core_fallback_liveness_model.md"),
+        ),
+        (
+            "reward finality model",
+            include_str!("../../../../../docs/formal/mvp_core_reward_finality_challenge_model.md"),
+        ),
+        (
+            "proof traceability matrix",
+            include_str!("../../../../../docs/formal/mvp_core_proof_traceability_matrix.md"),
+        ),
+        (
+            "state invariants",
+            include_str!("../../../../../docs/formal/mvp_core_v2_state_invariants.md"),
+        ),
+        (
+            "candidate block audit",
+            include_str!("../../../../../docs/formal/mvp_core_candidate_v2_block_audit.md"),
+        ),
+        (
+            "proof completion audit",
+            include_str!("../../../../../docs/formal/mvp_core_proof_completion_audit.md"),
+        ),
+        (
+            "bad assumptions ledger",
+            include_str!("../../../../../docs/formal/bad_assumptions_ledger.md"),
+        ),
+    ];
+
+    for (label, document) in formal_docs {
+        assert_not_contains_any(
+            document,
+            &[
+                "local v2-block path has no fallback path",
+                "v2 PoW-skip fallback is not implemented or tested",
+                "Current block type cannot support",
+                "Current selector still uses settled TensorWork",
+                "reward state, challenge openings, clawback, and settlement tests are missing",
+                "no pending/challenged/invalidated/settled reward state or challenge resolution",
+            ],
+            label,
+        );
+    }
+
+    let fallback_model =
+        include_str!("../../../../../docs/formal/mvp_core_fallback_liveness_model.md");
+    assert!(fallback_model.contains("local reference now has a partial implementation"));
+    assert!(fallback_model.contains("formal liveness proof remains implementation-blocked"));
+
+    let reward_model =
+        include_str!("../../../../../docs/formal/mvp_core_reward_finality_challenge_model.md");
+    assert!(reward_model.contains("local reference now has partial delayed-reward"));
+    assert!(reward_model.contains("full formal theorem remains implementation-blocked"));
 }
 
 #[test]

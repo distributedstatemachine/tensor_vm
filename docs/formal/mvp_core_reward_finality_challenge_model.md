@@ -25,13 +25,15 @@ Related documents:
 
 ## Current Verdict
 
-Reward finality is paper-specified here, but still implementation-blocked.
+Reward finality is paper-specified here, and the local reference now has partial delayed-reward
+implementation, but the full formal theorem remains implementation-blocked.
 
 The safe claim today is:
 
 ```text
 The docs define a target delayed reward-finality and challenge model.
-Current consensus proof status does not show that finalized blocks imply settled, irreversible rewards.
+Current consensus proof status shows local pending-ledger behavior, but not that finalized blocks imply
+settled, irreversible rewards under the full verifier-transcript challenge model.
 ```
 
 The unsafe claim is:
@@ -58,11 +60,11 @@ Rewards tied to selected receipts or block-level `checks_root` evidence must mov
 `PendingChallenge` balances must not be usable as spendable balances. They can be represented in a reward
 root, but the root must encode their pending status and maturity deadline.
 
-Current local implementation status: block proposer rewards use pending `PendingProposerReward` claims
-with a challenge-window maturity height, explicit release into spendable rewards, and block-check challenge
-invalidation for the challenged block height. This partially discharges proposer reward delay locally. It
-does not yet prove full verifier-transcript challenges, networked dispute propagation, or delayed
-miner/validator reward finality.
+Current local implementation status: receipt, proposer, challenger, validator-audit, and credit rewards use
+state-rooted pending claims with explicit maturity or awaiting-inclusion state, mature release, voiding, and
+prune-without-credit paths for implemented challenges. This partially discharges delayed reward finality
+locally. It does not yet prove full verifier-transcript challenges, deployed public dispute propagation, or
+complete full-v0 economic security.
 
 ## Required Objects
 
@@ -181,7 +183,7 @@ Dependencies:
 - reward claim status encoding
 - spendable vs pending balance separation
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### RW-002: Pending Rewards Are Root-Bound But Not Spendable
 
@@ -198,7 +200,7 @@ Dependencies:
 - reward root binding
 - balance accounting invariant
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### RW-003: Valid Challenge Invalidates Only Targeted Claims
 
@@ -215,7 +217,7 @@ Dependencies:
 - dependency map from check leaves to reward claims
 - frame theorem for unrelated rewards
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### RW-004: Challenge Absence Is Conditional Evidence
 
@@ -251,7 +253,7 @@ Dependencies:
 - no double-settlement invariant
 - reward root canonical encoding
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### RW-006: Clawback Precedes Spendability
 
@@ -268,7 +270,7 @@ Dependencies:
 - atomic challenge resolution
 - no partial settlement mutation
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ## Required Tests Before Upgrade
 

@@ -18,10 +18,11 @@ UVPoW block on the same parent has a strictly better PoW hash, while finalized h
 heads remain stable. Valid known-parent side branches are retained in chain-owned fork-tree storage with
 parent and child state snapshots, survive chain-state persistence, and do not mutate canonical head state
 unless the current-head replacement rule applies; strictly longer unfinalized branches now automatically
-reorganize canonical head state while finalized canonical blocks remain protected. Remaining consensus gaps
-are full interactive verifier-transcript challenge semantics and a fresh full Docker proof of live validator
-proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
-clears. Deterministic
+reorganize canonical head state while finalized canonical blocks remain protected. The latest local CPU
+Docker proof covers live validator proposer/block-assembly networking, delayed proposer rewards, and
+diagnostic challenge reward evidence for the single configured local proposer. Remaining consensus/evidence
+gaps are full interactive verifier-transcript challenge semantics, multi-validator proposer competition,
+public deployment evidence, and CUDA miner evidence. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
 propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).

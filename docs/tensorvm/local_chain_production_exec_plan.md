@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 129 complete - delayed proposer and challenge reward Docker proof.
+- Active feature: Iteration 130 complete - local proof/status drift cleanup.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -43,7 +43,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: broaden delayed reward evidence into public/CUDA deployment runs after local CPU stabilization.
+- Next action: broaden local delayed reward/fallback evidence into public/CUDA deployment runs, live
+  drand/VRF wiring, multi-validator proposer competition, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -65,6 +66,41 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 130: Local Proof Status Drift Cleanup
+
+Feature capability: align readiness, implementation, coverage, completion, workflow, and formal status docs
+with the local CPU Docker proof for delayed proposer/challenge rewards and fallback while preserving public,
+CUDA, drand/VRF, and full fraud-proof blockers.
+Readiness requirements covered: `goal.md` stale-readiness update rule, local production evidence hygiene,
+delayed reward/fallback evidence traceability, and no-overclaim status boundaries.
+Files/modules likely touched: local readiness/status/coverage/completion docs, selected formal docs,
+Codex workflow doc, doc guard tests, and this plan.
+Parallel subagents run: readiness mapper, stale-doc explorer, and doc-test coverage explorer.
+Tests/checkers/docs to add or update: doc guard tests rejecting stale `/health` blocker and obsolete
+formal fallback/reward-finality wording.
+Narrow validation commands: `cargo test -p tensor_vm deployment_docs --lib`.
+Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
+final Gate 0, and tarpaulin attempt if status docs require coverage regeneration.
+Expected observable evidence: stale Docker `/health` blocker text is gone from status docs; local Docker
+proof and delayed reward evidence are named; public/CUDA/full-v0 blockers remain explicit.
+Out of scope: public 7-day run, CUDA miner evidence, live drand/VRF, multi-validator Docker proposer
+competition, and full interactive fraud-proof implementation.
+Split trigger: formal docs require broad theorem rewrites rather than local-evidence status correction.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused doc guard passed: `cargo test -p tensor_vm deployment_docs --lib`.
+- Stale-text scan found no old `/health` blocker or obsolete formal fallback/reward-state phrases in
+  `docs/tensorvm` or `docs/formal`.
+- Validation passed: `cargo fmt --check --all`, `git diff --check`,
+  `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`,
+  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo test --workspace --release`, and final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 129: Delayed Proposer And Challenge Rewards
 
@@ -102,133 +138,12 @@ Validation evidence:
 
 ## Recent Iterations
 
-### Iteration 128: Receipt Reward Delay API Cleanup
-
-Feature capability: make awaiting-inclusion receipt rewards genuinely heightless in the internal API.
-Readiness requirements covered: `mvp_spec.md` delayed receipt reward finality and reward-rooted pending
-claim state without synthetic claim-height workarounds.
-Files/modules touched: `chain::state`, focused receipt reward tests, and storage durability assertions.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
-Tests/checkers/docs to add or update: focused pending/reward tests and this execution plan.
-Narrow validation commands: `cargo test -p tensor_vm pending_reward_claim --quiet`,
-`cargo test -p tensor_vm receipt_rewards --quiet`.
-Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
-tarpaulin attempt, final Gate 0.
-Expected observable evidence: awaiting-inclusion receipt rewards expose `None` for claim height until block
-inclusion assigns a real maturity height.
-Out of scope: reward storage format, Docker rerun, public deployment evidence, and CUDA evidence.
-Split trigger: production callers require a wider reward-claim serialization migration.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused tests passed: `cargo test -p tensor_vm pending_reward_claim --quiet`,
-  `cargo test -p tensor_vm receipt_rewards --quiet`.
-- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
-  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
-  `cargo test --workspace --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
-- Commit/push evidence: implementation committed as `9aa0841`; evidence committed as `8110a0f`; pushed to
-  `origin/main`.
-
-### Iteration 127: Codex 5.5 Local Chain Workflow Doc
-
-Feature capability: provide the referenced Codex local-chain workflow artifact for future goal-loop runs.
-Readiness requirements covered: `goal.md` commit/push workflow, `mvp_spec.md` §32.1 autonomous agent
-completion contract, and the local readiness acceptance gate.
-Files/modules likely touched: `docs/tensorvm/codex_5_5_local_chain_workflow.md`,
-`testnet/tests/deployment_docs.rs`, exec/status/coverage/tarpaulin docs.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
-Tests/checkers/docs to add or update: focused deployment-doc test requiring Gate 0, context refresh,
-Docker gate, validation, evidence, and commit/push workflow lines.
-Narrow validation commands: `cargo test -p tensor_vm codex_local_chain_workflow --quiet`.
-Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
-tarpaulin attempt, final Gate 0.
-Expected observable evidence: the referenced workflow file exists and names required commands/evidence flow.
-Out of scope: consensus mutation, Docker rerun, public evidence generation, CUDA evidence.
-Split trigger: if the doc guard reveals stale command names outside this workflow artifact.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused test passed: `cargo test -p tensor_vm codex_local_chain_workflow --quiet`.
-- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
-  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
-  `cargo test --workspace --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
-- Commit/push evidence: committed as `94d4180` and pushed to `origin/main`.
-
-### Iteration 126: Receipt Reward Pending Event Delay State
-
-Feature capability: make `ReceiptRewardPending` events carry explicit delayed maturity state.
-Readiness requirements covered: reward settlement events must reflect chain-owned reward delay and must not
-make downstream callers infer awaiting-inclusion from `u64::MAX`.
-Canonical owner: `ReceiptRewardMaturity` remains the chain state source of truth; settlement event emission
-only renders that state.
-Old shortcut being removed: pending settlement events no longer report awaiting-inclusion receipt rewards as
-a synthetic far-future claim height.
-Regression test that proves the shortcut is gone: command settlement events assert `claimable_at_height:
-None` and `awaiting_inclusion: true` for newly pending miner and validator receipt rewards.
-Structured evidence source: `ChainEvent::ReceiptRewardPending` plus focused command tests.
-Files/modules touched: `chain::engine`, `chain::settlement`, command tests, and status docs.
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused test passed: `cargo test -p tensor_vm chain::tests::commands --quiet`.
-- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
-  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
-  `cargo test --workspace --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
-- Commit/push evidence: implementation committed as `2c5cb68`; evidence follow-up committed as `c6613cb`;
-  both pushed to `origin/main`.
-
-### Iteration 125: Explicit Pending Reward Maturity Views
-
-Feature capability: expose awaiting-inclusion receipt rewards as first-class delayed claims instead of
-reporting a synthetic far-future claim height.
-Readiness requirements covered: `mvp_spec.md` §20.3/§25 delayed receipt reward finality, structured local
-checker evidence for pending rewards, and reward-rooted state visibility.
-Canonical owner: chain state owns pending reward maturity; RPC/status/explorer views only render that state.
-Adapter callers: service status and explorer overview pending-reward samples.
-Old shortcut being removed: presentation code no longer treats `AwaitingInclusion` as a claimable
-`u64::MAX` height.
-Regression test that proves the shortcut is gone: pending receipt claims before inclusion report
-`awaiting_inclusion=true` and no concrete claim height, then included claims report a real delayed height.
-Behavior with local synthetic block production disabled: unchanged; only reward evidence views change.
-Behavior for producer and non-producer roles: unchanged; canonical block inclusion still assigns maturity.
-Structured evidence source: chain pending-claim view, service status, and explorer overview.
-Finality source: unchanged delayed reward release path.
-Wire-size and codec boundary: explorer JSON gains explicit maturity-state evidence; chain storage is
-unchanged.
-Files/modules likely touched: chain state view, status/explorer rendering, focused tests, docs.
-Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
-Parallelizable implementation workstreams: reward view/API rendering and docs evidence.
-Tests/checkers/docs to add or update: focused reward/status/explorer tests and docs evidence.
-Narrow validation commands: `cargo test -p tensor_vm pending_reward_claim --quiet`.
-Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
-release tests, tarpaulin attempt, and final Gate 0.
-Expected observable evidence: awaiting-inclusion rewards are visibly delayed without sentinel-height
-workarounds, and actual spendable credit remains blocked until inclusion-derived maturity.
-Out of scope: reward-root storage format, public Docker rerun, CUDA evidence, and full fraud proofs.
-Split trigger: explorer JSON compatibility fallout outside pending reward samples.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused tests passed: `cargo test -p tensor_vm pending_reward_claim --quiet`,
-  `cargo test -p tensor_vm service_status_exports_pending_reward_claim_maturity_details --quiet`,
-  `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet`, and
-  `cargo test -p tensor_vm_explorer --quiet`.
-- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-  final `cargo test -p tensor_vm local_testnet --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-
-## Recent Iterations
-
+- Iteration 128 made awaiting-inclusion receipt rewards genuinely heightless in commits `9aa0841` and
+  `8110a0f`.
+- Iteration 127 added the Codex local-chain workflow doc in commit `94d4180`.
+- Iteration 126 made `ReceiptRewardPending` events carry explicit maturity state in commits `2c5cb68` and
+  `c6613cb`.
+- Iteration 125 exposed explicit pending reward maturity views.
 - Iteration 124 made collusion-risk study evidence operator-aware in commit `bdac46b`.
 - Iteration 123 made redundant settlement quorum operator-distinct in commit `1c86e13`.
 - Iteration 122 delayed voided receipt rewards through challenge holds in commit `bde7e51`.

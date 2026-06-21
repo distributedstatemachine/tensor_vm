@@ -1785,8 +1785,10 @@ Recommendation:
 ```text
 Hard slashing should remain narrowly scoped until verification code is battle-tested. The local reference
 currently hard-slashes miner bond for data-unavailable receipts and can hard-slash validators for missed or
-contradicted mandatory audits when audit sampling is configured. Broader invalid-output slashing, runtime
-audit workers, bond calibration, and appeal paths still require battle-tested evidence.
+contradicted mandatory audits when audit sampling is configured. It also records invalid-output slashing,
+runtime audit-report submission, appeal records/resolution, and live fraud-path bond calibration for the
+implemented local paths. Public deployed-run measurements, remaining fraud paths, and adversarial evidence
+still require battle-tested proof before public rewards are uncapped.
 ```
 
 Consequence:
@@ -1794,8 +1796,10 @@ Consequence:
 ```text
 v0 still has incomplete economic security.
 Most invalid work is deterred mainly by non-payment, reputation loss, redundancy, and audits; data
-withholding now also carries a state-rooted miner bond slash in the local reference.
-Public rewards should be capped until slashing and appeal/challenge flows are implemented.
+withholding and invalid-output evidence now also carry state-rooted miner bond slashes in the local
+reference, and validator audits can slash/appeal through delayed reward state.
+Public rewards should be capped until those flows have public deployed-run evidence and the remaining fraud
+paths are implemented.
 ```
 
 ---

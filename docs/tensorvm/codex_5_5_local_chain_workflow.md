@@ -119,8 +119,8 @@ Current environment blockers must stay visible until resolved:
 cargo tarpaulin --workspace --offline
 error: no such command: tarpaulin
 
-docker compose local CPU gate
-gateway /health timeout during the recorded full Docker run
+public 7-day external deployment evidence
+CUDA miner evidence
 ```
 
 These blockers do not justify marking the full goal complete. They are evidence that the full objective

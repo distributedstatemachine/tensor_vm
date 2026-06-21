@@ -20,18 +20,19 @@ Related documents:
 
 ## Current Verdict
 
-Fallback is now specified as a paper model, but it is still implementation-blocked.
+Fallback is specified as a paper model, and the local reference now has a partial implementation, but the
+formal liveness proof remains implementation-blocked.
 
 The reviewed MVP needs a v2 fallback object with timeout evidence, deterministic validator rotation,
-reduced rewards, no miner TensorWork rewards, and parent-state validation. The current worktree still has
-only superseded v1/local proposer fallback evidence plus a local v2-block reference path with no fallback
-path.
+reduced rewards, no miner TensorWork rewards, and parent-state validation. The current worktree has local
+`PowSkipFallback` timeout/rotation/reduced-reward tests and local CPU evidence for the single configured
+producer, but not the full multi-validator/public liveness evidence or mechanized proof.
 
 The safe claim today is:
 
 ```text
 Zero-receipt and no-PoW liveness have a documented v2 proof obligation.
-They are not implemented or proved for the current consensus core.
+They are partially implemented in the local reference but not fully proved for the current consensus core.
 ```
 
 The unsafe claim is:
@@ -115,7 +116,7 @@ Proof dependencies:
 - timeout/synchrony assumption
 - timeout evidence root binding
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### FB-002: Deterministic Fallback Proposer Rotation
 
@@ -134,7 +135,7 @@ Proof dependencies:
 - rotation seed domain separation
 - tie-breaking and zero-stake exclusion
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### FB-003: Fallback Imports Parent-State Validation
 
@@ -152,7 +153,7 @@ Proof dependencies:
 - finality certificate model
 - vote admission gate for fallback certificates
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### FB-004: Fallback Rewards Are Reduced And Miner-Free
 
@@ -170,7 +171,7 @@ Proof dependencies:
 - selected-receipt status
 - no miner reward mutation outside selected receipt settlement
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### FB-005: Fallback Does Not Claim Useful Work
 
@@ -188,7 +189,8 @@ Proof dependencies:
 - no-useful-PoW flag/root binding
 - claim wording rules in the bad-assumptions ledger
 
-Current status: `paper-specified`, implementation-blocked for enforcement.
+Current status: local implementation partial; formal proof still `implementation-blocked` for public
+enforcement.
 
 ### FB-006: Fallback Preserves Safety
 
@@ -207,7 +209,7 @@ Proof dependencies:
 - equivocation handling
 - same-parent conflict rule
 
-Current status: `implementation-blocked`.
+Current status: local implementation partial; formal proof still `implementation-blocked`.
 
 ### FB-007: Timeout Liveness Under Partial Synchrony
 
@@ -226,7 +228,8 @@ Proof dependencies:
 - message delivery and finality liveness assumptions
 - reduced reward rule that does not incentivize permanent fallback over useful-PoW
 
-Current status: `assumption-bound` and implementation-blocked.
+Current status: local implementation partial; formal proof remains `assumption-bound` and
+`implementation-blocked`.
 
 ## Anti-Abuse Rules
 

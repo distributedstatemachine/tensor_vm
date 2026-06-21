@@ -80,10 +80,10 @@ Related boundary documents:
 | Receipt binding | `assumption-bound` | Canonical encodings can be specified; cryptographic hash binding is assumed. |
 | Attestation admission | `local-proof-ready` for syntactic admission, `assumption-bound` for semantic verification | Assigned-validator admission is now in the chain engine; it does not prove the verifier actually ran, and receipt-lifecycle seed stability remains weak. |
 | Settlement | `local-proof-ready` for v1 syntactic-quorum settlement | Settlement/quorum behavior is testable, but semantic verifier execution and v2 blockspace pool semantics are missing. |
-| Useful-verification PoW | `implementation-blocked` | Current block type cannot support the reviewed v2 consensus theorem. |
+| Useful-verification PoW | `implementation-blocked` | Local block fields, parent snapshots, delayed rewards, and Docker evidence exist, but the full reviewed v2 consensus theorem still lacks interactive transcript disputes, public/CUDA evidence, and complete theorem discharge. |
 | Difficulty retargeting | `implementation-blocked` | Parent-state target derivation, bounded retargeting, target bounds, and hash-to-target vectors are not implemented. |
-| Fallback liveness | `implementation-blocked` | The fallback proof model is now specified, but the v2 fallback object, timeout evidence, rotation, rewards, and tests are missing. |
-| Reward finality | `implementation-blocked` | The delayed reward/challenge model is now specified, but reward state, challenge openings, clawback, and settlement tests are missing. |
+| Fallback liveness | `implementation-blocked` | The local reference has `PowSkipFallback` timeout, stake-weighted rotation, reduced delayed rewards, and tests; full liveness proof, multi-validator runtime evidence, and public/CUDA evidence remain blocked. |
+| Reward finality | `implementation-blocked` | Local pending receipt/proposer/challenge/credit ledgers, clawback/voiding, maturity sweep, and tests exist; full challenge-window theorem discharge and public deployed evidence remain blocked. |
 | Finality | `reference-only` | Stake-threshold finality exists for current blocks, not for v2 useful-PoW validity. |
 | Verification-time artifact retrieval | `local-proof-ready` for root-matched local fetch, `assumption-bound` for availability | Current worktree can check fetched tensor roots before verifier use; public DA is not proven. |
 | Public availability/operator independence | `assumption-bound` | Local and request-response fetches do not prove public DA or independent operators. |
@@ -689,7 +689,10 @@ Status: `implementation-blocked`
 
 Why blocked:
 
-Current fallback is the v1 proposer-selection fallback, not a v2 PoW-skip block rule.
+The local reference now implements a `PowSkipFallback` path with timeout checks, deterministic
+stake-weighted validator selection, reduced delayed proposer rewards, and focused tests. Formal proof is
+still blocked on complete liveness/synchrony assumptions, multi-validator runtime evidence, public/CUDA
+evidence, and theorem discharge.
 
 Paper model:
 
@@ -718,8 +721,10 @@ Status: `implementation-blocked`
 
 Why blocked:
 
-Current reward evidence does not expose a complete pending/challenged/invalidated/settled state machine,
-consensus challenge openings, or deterministic clawback/nonpayment transition.
+The local reference now exposes pending receipt, proposer, challenge, and credit reward ledgers plus
+voiding, clawback/nonpayment, and maturity transitions for implemented challenge paths. Formal proof remains
+blocked on full challenge-window theorem discharge, complete interactive transcript dispute semantics, and
+public deployed evidence.
 
 Paper model:
 

@@ -167,8 +167,9 @@ The local bundle is useful and should remain the first operational target:
   UVPoW, carry only the reduced proposer claim amount, and validate only for the deterministic
   stake-weighted fallback proposer selected from parent state and beacon after the configured
   `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks. Pending proposer
-  reward state, roots, and storage no longer carry a later useful-block unlock latch. A fresh full Docker
-  runtime pass still awaits the standing gateway `/health` timeout blocker.
+  reward state, roots, and storage no longer carry a later useful-block unlock latch. A fresh local CPU
+  Docker pass now proves delayed proposer and challenge reward claims, all-operator finalized-head
+  convergence, and the role-owned useful proposal path; public/CUDA evidence remains outside that proof.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,
   builds a typed `NodeConfig` at the CLI boundary, and exposes `chain_profile`/`role_chain_profile` in
   readiness, serve, and status output. Only the local CPU profile enables deterministic synthetic block
@@ -283,8 +284,9 @@ The first chain-core cleanup slices are already in the tree:
 - `tvmd miner run`, `tvmd validator run`, and `tvmd proposer run` now construct explicit role-run loop
   wrappers before entering the shared runtime. The runtime loop has named steps for status writes, RPC
   serving, network ingestion, role-owned miner receipt submission, role-owned validator attestation
-  submission, and optional validator proposer work, preserving current consensus behavior while narrowing
-  the remaining full-Docker proposer/block-assembly evidence gap.
+  submission, and optional validator proposer work, preserving current consensus behavior. The local CPU
+  Docker checker now covers the single configured validator proposer path; public/CUDA and multi-proposer
+  deployment evidence remain open.
 
 These are foundation pieces, not completion. Miner receipts, validator attestations, validator block votes,
 and configured validator proposer ticks now have role-owned submission paths for locally available work, and
@@ -293,25 +295,28 @@ that replaces an unfinalized useful head only with a same-parent useful head car
 PoW hash while keeping finalized and fallback heads stable. Valid known-parent non-canonical blocks are
 now retained in chain-owned side-branch fork storage with parent and child state snapshots, strictly longer
 unfinalized branches automatically reorganize canonical head state, and branch maps persist through
-chain-state snapshots. The local runtime still needs a fresh full Docker proof of that proposer path after
-the standing `/health` blocker clears before it satisfies the local CPU spec as a production-grade local
-chain.
+chain-state snapshots. The local runtime now has a fresh local CPU Docker proof of the single configured
+validator proposer path, delayed proposer/challenge rewards, and all-operator convergence. Remaining proof
+work is public/CUDA deployment evidence, multi-validator proposer competition, and full interactive
+transcript disputes.
 
 ## Highest-Priority Gaps
 
-### 1. Local Production Is Still Single-Process
+### 1. Local Production Still Needs Public/Multi-Proposer Evidence
 
 Current live production now runs inside `validator-00`'s validator runtime. Deterministic local job
 publication remains a local producer duty, but receipt execution, attestation, settlement preparation,
 block proposal, and finality voting run through role-owned ticks and shared chain commands. Finality votes
-come from explicit validator role block-vote submissions. The full gate still needs fresh Docker evidence
-after the gateway `/health` blocker clears and still needs Docker evidence for multi-validator proposer
-competition beyond the single configured local proposer.
+come from explicit validator role block-vote submissions. The latest full local CPU Docker gate proves the
+single configured local proposer path with delayed proposer and challenge rewards. Multi-validator
+proposer competition beyond the single configured local producer, public deployment evidence, and CUDA
+evidence remain open.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
 
-This conflicts with the local CPU spec and MVP Gate 0 language that rejects simulations, direct in-memory
-propagation, local-only networking shims, and single-participant shortcuts.
+The local CPU proof no longer depends on a single service mutating counted roles in memory, but it still
+does not prove public multi-operator deployment behavior or multi-validator proposer competition beyond the
+single configured local producer.
 
 Required fix:
 
@@ -319,7 +324,8 @@ Required fix:
 - Broadcast jobs over the same network path used by every profile.
 - Have miner containers receive jobs, execute them, serve tensor data, and submit receipts.
 - Have validator containers receive assignments, fetch tensor data, validate, and submit attestations.
-- Have proposers collect network-visible state before producing blocks.
+- Extend proposer evidence beyond the single configured local producer into public/CUDA deployment runs and
+  multi-validator competition tests.
 
 ### 2. Miner And Validator Containers Still Delegate Internals To The Service Runtime
 
@@ -842,10 +848,10 @@ local evidence remains explicitly non-public
 
 Keep this incremental:
 
-1. Wire proposer/block production through network-visible state.
-2. Expose per-block evidence for both live primitive types after startup from the role-owned event path.
-3. Replace the remaining service-owned timed proposer loop with hard checker assertions for positive
-   role-owned miner, validator, and validator-proposer work.
+1. Broaden delayed proposer/challenge reward evidence from the local CPU proof into public/CUDA deployment
+   runs.
+2. Add multi-validator proposer competition evidence beyond the single configured local producer.
+3. Continue full interactive transcript dispute work over the trace-opening path.
 
 This sequence keeps the local chain usable at every step while moving it toward the same base runtime that
 testnet and mainnet profiles should use.
