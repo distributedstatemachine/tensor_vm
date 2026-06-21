@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 116 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 117 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 116 coverage could not
-be regenerated. Iterations 78 through 116 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 117 coverage could not
+be regenerated. Iterations 78 through 117 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -175,6 +175,10 @@ maturity, mature release through the chain command, and only then spendable rewa
 Iteration 116 adds first-class packed int8 tensor artifact APIs. Focused tensor, IR, and conformance tests
 cover construction of packed `TVQ8` payloads as `Uint8` tensors, descriptor/chunk/opening verification,
 decode validation, exact replay, and unchanged conformance vectors.
+Iteration 117 adds external graph artifact propagation evidence. Focused node and libp2p tests cover
+valid graph job payloads staying pending while their graph body is missing, runtime retry after program
+registration, and loopback request-response fetching of graph program plus input tensor artifacts before
+the same external graph job payload applies.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

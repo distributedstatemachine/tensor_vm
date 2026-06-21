@@ -87,13 +87,16 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   settle through the same delayed pending receipt reward path after valid attestations. Local synthetic
   production now emits a deterministic exact Tier-B graph job, registers its graph body and input tensors,
   and miner/validator role helpers can submit and attest the graph receipt from node-local program/tensor
-  artifacts. Graph role bundles now serve and verify any required `const_blob` tensors through the same
-  commitment-root artifact path, and validator remote-fetch planning includes blob roots from the
-  registered graph body. Tensor-owned packed int8 payload APIs now provide bounded `TVQ8` byte layout
-  length calculation, shared encode/decode validation for IR replay and conformance, and first-class
-  `Uint8` tensor artifact construction/decode methods whose descriptors, chunks, and Merkle openings use
-  the normal public tensor artifact path. Public/p2p artifact propagation evidence for externally supplied
-  arbitrary graph jobs and CUDA generic graph execution remain open.
+  artifacts. External graph job payloads whose program bodies arrive later are now queued as pending by
+  the shared node payload path instead of being counted invalid, and the libp2p service has focused
+  evidence for fetching externally supplied graph bodies plus input tensor artifacts by request-response
+  before applying the same graph job payload. Graph role bundles now serve and verify any required
+  `const_blob` tensors through the same commitment-root artifact path, and validator remote-fetch planning
+  includes blob roots from the registered graph body. Tensor-owned packed int8 payload APIs now provide
+  bounded `TVQ8` byte layout length calculation, shared encode/decode validation for IR replay and
+  conformance, and first-class `Uint8` tensor artifact construction/decode methods whose descriptors,
+  chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
+  every external graph artifact and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,

@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 116 complete - packed int8 tensor artifact API.
+- Active feature: Iteration 117 complete - external graph artifact propagation evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -25,16 +25,19 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   returns to the lhs/output scale with the same half-even policy and rejects zero divisors. `Fixed32`
   matmul now accumulates signed raw products in fixed order and rescales once into the lhs/output scale.
   Packed int8 quantization now has a tensor-owned `TVQ8` payload API for bounded length calculation and
-  shared encode/decode validation used by IR replay and conformance.
+  shared encode/decode validation used by IR replay and conformance. External graph job payloads with
+  missing graph bodies now stay pending through the shared node payload path, and focused libp2p evidence
+  fetches externally supplied graph bodies plus input tensors by request-response before applying the same
+  graph job payload.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue Tier-C committee policy, deployed-run economics evidence, public/p2p artifact
-  propagation for externally supplied arbitrary graph jobs, CUDA graph evidence, or rerun Docker after the
-  `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, automatic role-loop
+  fetching for all external graph artifacts, CUDA graph evidence, or rerun Docker after the `/health`
+  blocker clears.
 
 ## Readiness Matrix
 
@@ -48,7 +51,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, broader packed tensor chunking/public-artifact APIs, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, content-addressed `const_blob` artifact replay, pending external graph job payloads, and libp2p program/tensor artifact fetch evidence | Continue exact Tier-B verifier coverage, dispute-time blob availability, automatic role-loop artifact fetch, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -56,6 +59,58 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 117: External Graph Artifact Propagation Evidence
+
+Feature capability: prove externally supplied canonical `GraphExecution` jobs can arrive before their
+program body, stay pending instead of invalid, resolve graph bodies and tensors through public libp2p
+request-response artifact surfaces, and then apply through the shared node payload path.
+Readiness requirements covered: `upow.md` §2 hard process boundaries, §4.5 content-addressed `graph_id`,
+§5 tensor/program commitments and records, §9 verification data availability, and the documented
+public/p2p artifact propagation gap for arbitrary graph jobs.
+Files/modules likely touched: `node::payload_application`, `node::payload_processor`,
+`node::message_ingest`, `p2p::service` tests, and Tensor IR/status docs.
+Parallel subagents to run: not used; available subagent tool forbids spawning unless the user explicitly
+requests delegation.
+Parallelizable implementation workstreams: none in this single-owner node/p2p test change.
+Canonical owner: chain admission still validates registered graph bodies through `ChainCommand`; node
+payload application only classifies missing graph-program dependencies as pending.
+Adapter callers: libp2p/node runtime retry pending job payloads after graph artifacts are fetched and
+registered.
+Old shortcut being removed: inbound graph job payloads with valid content but missing local program bodies
+were treated as invalid instead of as ordinary out-of-order network dependencies.
+Regression test that proves the shortcut is gone: focused node payload coverage for missing graph-program
+pending behavior plus a libp2p test that fetches program and tensor artifacts before applying the pending
+external graph job.
+Behavior with local synthetic block production disabled: graph jobs can still be supplied externally and
+resolved through public artifact request-response surfaces.
+Behavior for producer and non-producer roles: both see the same pending/apply semantics; only local
+artifact availability changes whether role execution can proceed.
+Structured evidence source: node payload applied/pending counters and p2p request-response program/tensor
+fetch responses.
+Finality source: unchanged block finality; graph receipts still settle and finalize through canonical
+receipt/attestation/block paths.
+Wire-size and codec boundary: reuses bounded shared job, program, and tensor codecs; no new wire codec.
+Narrow validation commands: graph job payload pending/apply tests and libp2p graph artifact propagation
+test.
+Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
+final Gate 0, tarpaulin attempt.
+Expected observable evidence: a receiving node keeps an external graph job pending until the program body
+is fetched/registered, resolves required tensors by commitment root, and then applies the same payload.
+Out of scope: automatic drand/VRF wiring, Docker `/health` rerun, CUDA graph execution, and interactive
+fraud-proof disputes.
+Split trigger: if automatic cross-peer graph-program fetch requires broad role-loop ownership changes.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused: graph job pending/apply, network-ingest retry, pending-payload retry, network payload, and
+  libp2p external graph artifact propagation tests passed.
+- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 453 library tests plus integrations.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
 
 ### Iteration 116: Packed Int8 Tensor Artifact API
 
@@ -97,60 +152,12 @@ Validation evidence:
   Gate 0 passed. Tarpaulin remains blocked by missing `cargo-tarpaulin`.
   Feature commit: `6f615f6` (`Add packed int8 tensor artifact APIs`) pushed to `origin/main`.
 
+## Recent Iterations
+
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
-Feature capability: move the canonical `TVQ8` packed int8 payload layout into the tensor layer, expose
-bounded encode/decode/length APIs, and make IR plus conformance call that single owner instead of
-duplicating ad hoc codecs.
-Readiness requirements covered: `upow.md` §3.1/§4.8 canonical dtype/layout and exact quantization packing,
-`upow.md` §3.3 conformance evidence, and the documented low-level packed tensor storage API gap.
-Files/modules likely touched: `tensor`, `ir`, `conformance`, Tensor IR/conformance docs/status.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is a
-single-owner codec refactor.
-Parallelizable implementation workstreams: none in this single-writer tensor/IR/conformance change.
-Canonical owner: `tensor` owns packed int8 payload validation, length calculation, byte encoding, and byte
-decoding.
-Adapter callers: `ir` exact replay and conformance vector execution call tensor-owned APIs.
-Old shortcut being removed: the `TVQ8` byte layout was duplicated privately in IR and conformance helpers
-instead of being a low-level tensor storage API.
-Regression test that proves the shortcut is gone: tensor payload roundtrip/rejection tests plus existing
-IR packed quantize/dequantize and conformance vector gates.
-Behavior with local synthetic block production disabled: unchanged; this is pure tensor storage/exact
-replay behavior.
-Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical packed
-payload roots on every role.
-Structured evidence source: tensor API tests, byte-exact IR output, conformance vector hash/profile.
-Finality source: unchanged block finality; affected receipts still pass through canonical verification.
-Wire-size and codec boundary: preserves the existing `TVQ8` byte layout and `Uint8` tensor payload shape,
-but centralizes bounds checks before allocation.
-Narrow validation commands: tensor packed API test, packed IR replay test, conformance vector/profile tests.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Expected observable evidence: `quantize_pack_int8` emits the same bytes, malformed packed payloads reject
-through the tensor API, and conformance uses the shared owner.
-Out of scope: CUDA graph execution, public/Docker run, Tier-C committee/fraud games.
-Split trigger: any wire-format change or storage codec migration requirement.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused: `cargo test -p tensor_vm packed_int8_payload_roundtrips_and_rejects_bad_layout --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_packed_int8_quantize_dequantize --quiet` passed.
-- Focused: `cargo test -p tensor_vm graph_verifier_accepts_packed_quantize_dequantize_receipt --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet` passed.
-- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
-- Verifier tool: no standalone `tensorvm-verifier` binary found; verifier code remains in workspace modules.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 449 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `4fceaeb` (`Add packed int8 tensor payload API`) pushed to `origin/main`.
-
-## Recent Iterations
+Centralized the canonical `TVQ8` packed int8 byte layout in tensor-owned bounded encode/decode APIs and
+updated IR/conformance callers. Validation passed; tarpaulin remained blocked. Feature commit: `4fceaeb`.
 
 ### Iteration 115: Delayed Reward Path Cleanup
 
@@ -207,17 +214,15 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 114 on June 21, 2026:
+Latest full validation is Iteration 117 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm packed_int8_payload_roundtrips_and_rejects_bad_layout --quiet
-cargo test -p tensor_vm exact_interpreter_executes_packed_int8_quantize_dequantize --quiet
-cargo test -p tensor_vm graph_verifier_accepts_packed_quantize_dequantize_receipt --quiet
-cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet
-cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
-cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet
-cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet
+cargo test -p tensor_vm graph_job_payload_waits_for_registered_program_body --quiet
+cargo test -p tensor_vm network_event_driver_queues_graph_job_until_program_body_arrives --quiet
+cargo test -p tensor_vm libp2p_service_propagates_external_graph_job_artifacts --quiet
+cargo test -p tensor_vm pending_payloads_retry_keeps_pending_payloads --quiet
+cargo test -p tensor_vm network_payload --quiet
 cargo fmt --all
 cargo fmt --check --all
 git diff --check

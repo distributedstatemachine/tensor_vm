@@ -110,7 +110,13 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `app::validator_role::tests::role_runtime_submits_and_attests_graph_execution_from_local_artifacts`,
 `app::runtime_services::tests::startup_program_hydration_registers_state_rooted_program_bodies`,
 `storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`, and
-`p2p::service::tests::libp2p_service_fetches_registered_program_body`.
+`p2p::service::tests::libp2p_service_fetches_registered_program_body`. Inbound external graph jobs whose
+program bodies have not arrived locally now stay pending in the shared node payload path instead of being
+counted invalid, and focused libp2p evidence fetches the graph body plus input tensor artifacts by
+request-response before applying the same external graph job payload. Evidence:
+`node::payload_application::tests::graph_job_payload_waits_for_registered_program_body`,
+`node::message_ingest::tests::network_event_driver_queues_graph_job_until_program_body_arrives`, and
+`p2p::service::tests::libp2p_service_propagates_external_graph_job_artifacts`.
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `div`, `scalar_mul`,
@@ -146,9 +152,8 @@ Focused evidence:
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding`,
-additional mixed-dtype conformance vectors,
-public/p2p artifact propagation evidence for externally supplied arbitrary graph jobs, and CUDA
-conformance evidence when `cuda-kernels` is not compiled in this environment.
+additional mixed-dtype conformance vectors, automatic role-loop fetching for every external graph artifact,
+and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment.
 Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared
 commitment URI, with shape/dtype/root checks during exact graph replay. Evidence:
 `ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,

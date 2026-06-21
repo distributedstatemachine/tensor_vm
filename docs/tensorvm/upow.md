@@ -337,8 +337,11 @@ Every record's signed body is canonical JSON / SSZ; `*_id = SHA256(canonical(bod
 > Status: the local reference computes current canonical TensorOp and LinearTrainingStep receipt
 > `trace_root` values from the exact TensorGraph execution trace for the corresponding graph ID. Registered
 > canonical graph bodies can also be used by `GraphExecution` jobs/receipts, and local role-owned synthetic
-> production now executes and attests an exact Tier-B graph from node-local artifacts. This does not yet
-> imply external arbitrary graph workload propagation or a generic cheap verifier for every admitted op.
+> production now executes and attests an exact Tier-B graph from node-local artifacts. The shared node
+> payload path now keeps external graph jobs pending until their program bodies are registered, and focused
+> libp2p evidence fetches externally supplied graph bodies plus input tensor artifacts before applying the
+> graph job payload. Automatic role-loop fetching for every external graph artifact and a generic cheap
+> verifier for every admitted op remain open.
 
 > **Crypto is asymmetric, full stop.** No HMAC/shared-secret signing anywhere in the consensus path. Identities are on-chain accounts.
 
