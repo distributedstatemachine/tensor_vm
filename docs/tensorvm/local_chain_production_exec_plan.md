@@ -89,9 +89,9 @@ Out of scope: public/Docker run, additional fraud paths, packed tensor APIs.
 Split trigger: any production reward semantic change outside generic credit command/release behavior.
 
 Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused/broad: command, transaction, generic credit, and telemetry delayed reward tests passed; format,
+- First Gate 0 passed before edits; command, transaction, generic credit, and telemetry tests passed; format,
   diff, full `tensor_vm`, clippy, release workspace, and final Gate 0 passed; tarpaulin is still blocked.
+  Feature commit: `1c65b80` (`Use delayed credit rewards in tests`) pushed to `origin/main`.
 
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
