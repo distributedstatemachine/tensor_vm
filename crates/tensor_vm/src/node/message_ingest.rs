@@ -3,9 +3,9 @@ use super::{
     PendingNetworkPayloads,
     payload_application::{
         apply_network_attestation_payload, apply_network_block_check_challenge_payload,
-        apply_network_block_vote_payload, apply_network_job_payload,
-        apply_network_observed_block_check_challenge_payload, apply_network_receipt_payload,
-        apply_network_validator_audit_report_payload,
+        apply_network_block_vote_payload, apply_network_external_randomness_beacon_payload,
+        apply_network_job_payload, apply_network_observed_block_check_challenge_payload,
+        apply_network_receipt_payload, apply_network_validator_audit_report_payload,
     },
     payload_processor,
 };
@@ -279,6 +279,34 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id,
+                beacon_round,
+                payload,
+            } => {
+                ingested.external_randomness_beacons =
+                    ingested.external_randomness_beacons.saturating_add(1);
+                if source_id.is_empty() || beacon_round == 0 {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_external_randomness_beacon_payload(
+                    context.chain(),
+                    &source_id,
+                    beacon_round,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.external_randomness_beacons_applied = ingested
+                            .external_randomness_beacons_applied
+                            .saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::PeerInfo { address } => {
                 ingested.peers = ingested.peers.saturating_add(1);
                 if address == [0; 32] {
@@ -350,7 +378,8 @@ mod tests {
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
-            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
+            encode_external_randomness_beacon_payload, encode_job_payload, encode_receipt_payload,
+            encode_validator_audit_report_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -653,6 +682,11 @@ mod tests {
                 P2pMessage::NewJob([0; 32]),
                 P2pMessage::NewReceipt([0; 32]),
                 P2pMessage::NewAttestation([0; 32]),
+                P2pMessage::NewExternalRandomnessBeaconPayload {
+                    source_id: String::new(),
+                    beacon_round: 0,
+                    payload: Vec::new(),
+                },
                 P2pMessage::PeerInfo { address: [0; 32] },
                 P2pMessage::RequestProgram(hash_bytes(b"test", &[b"program"])),
             ],
@@ -661,14 +695,65 @@ mod tests {
         )
         .unwrap();
 
-        assert_eq!(ingested.events, 7);
+        assert_eq!(ingested.events, 8);
         assert_eq!(ingested.block_announcements, 2);
         assert_eq!(ingested.block_headers, 1);
         assert_eq!(ingested.jobs, 1);
         assert_eq!(ingested.receipts, 1);
         assert_eq!(ingested.attestations, 1);
+        assert_eq!(ingested.external_randomness_beacons, 1);
         assert_eq!(ingested.peers, 1);
-        assert_eq!(ingested.invalid_events, 7);
+        assert_eq!(ingested.invalid_events, 8);
+    }
+
+    #[test]
+    fn network_event_driver_applies_external_randomness_beacon_payloads() {
+        let mut context = TestNetworkEventContext::new(b"external-beacon-payload");
+        let source_id = "local_drand_fixture_v1";
+        let beacon_round = 17;
+        let randomness = hash_bytes(b"test", &[b"network-beacon-randomness"]);
+        let proof_hash = hash_bytes(b"test", &[b"network-beacon-proof"]);
+        let payload = encode_external_randomness_beacon_payload(
+            source_id,
+            beacon_round,
+            &randomness,
+            &proof_hash,
+        );
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id: source_id.to_owned(),
+                beacon_round,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.events, 1);
+        assert_eq!(ingested.external_randomness_beacons, 1);
+        assert_eq!(ingested.external_randomness_beacons_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert_eq!(context.chain.state().finalized_beacon_round(), beacon_round);
+        assert_eq!(context.chain.state().finalized_randomness(), randomness);
+
+        let duplicate = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id: source_id.to_owned(),
+                beacon_round,
+                payload,
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(duplicate.external_randomness_beacons_applied, 1);
+        assert_eq!(duplicate.invalid_events, 0);
     }
 
     #[test]

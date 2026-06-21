@@ -285,6 +285,9 @@ every other counted operator reported network-applied block progress from decode
 every non-producer reported decoded network-event ingestion for block headers, jobs, receipts, and
 attestations, with zero invalid network events
 every non-producer reported decoded block, job, receipt, and attestation payload application through the chain engine
+at least one role reported decoded external randomness beacon ingestion and application through the same
+network event path, and the aggregate checker output reported
+`live_role_network_external_randomness_beacons_applied` greater than zero
 all 15 operator node stores returned the finalized local-head checkpoint hash and state root after that
 checkpoint was observed through p2p block gossip
 all 15 operators observed that checkpoint block hash through libp2p block gossip

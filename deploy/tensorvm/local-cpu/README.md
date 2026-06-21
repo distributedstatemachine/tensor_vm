@@ -45,7 +45,8 @@ fails unless all 15 node stores advance past the seed, report role-specific stat
 role-runtime command, expose live role-loop counters, the single local synthetic job producer flag,
 delayed multi-validator proposer counters, non-producer
 network-applied block counters, decoded network-event ingestion counters, decoded job, receipt, and
-attestation payload application through the chain engine, real libp2p connected-peer counts, observed job,
+attestation payload application through the chain engine, positive network-applied external randomness
+beacon counters, real libp2p connected-peer counts, observed job,
 receipt, attestation, and block gossip counters, latest observed block heights and hashes, the bounded
 observed block-hash set, and chain counters, report the same first live finalized block hash, and return
 the same finalized common-head block hash through `tvmd node block`.
@@ -76,6 +77,8 @@ The local Compose run is engineering evidence for the CPU local-testnet mileston
 independently checkable public-testnet evidence and must continue to report:
 
 ```text
+live_role_network_external_randomness_beacons_applied>0
+live_external_randomness_beacon_evidence=true
 public_evidence_full_spec=false
 independently_checkable=false
 ```

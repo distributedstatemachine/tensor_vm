@@ -132,6 +132,8 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_network_attestation_payloads_applied",
     "role_network_validator_audit_reports_ingested",
     "role_network_validator_audit_reports_applied",
+    "role_network_external_randomness_beacons_ingested",
+    "role_network_external_randomness_beacons_applied",
     "role_network_peer_events_ingested",
     "role_network_invalid_events",
     "role_latest_height",

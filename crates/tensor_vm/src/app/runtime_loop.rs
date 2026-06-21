@@ -105,6 +105,7 @@ impl RoleRuntimeLoop {
             &self.config.randomness_beacon,
             &self.store,
             &mut self.server,
+            &self.p2p_service,
             &mut self.runtime_state,
         )? {
             self.write_status()?;

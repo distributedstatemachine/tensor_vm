@@ -4,8 +4,9 @@ use crate::{
     challenge::block_check_challenge_id,
     p2p::{
         decode_attestation_payload, decode_block_check_challenge_payload,
-        decode_block_payload_with_selected_receipts, decode_block_vote_payload, decode_job_payload,
-        decode_receipt_payload, decode_validator_audit_report_payload,
+        decode_block_payload_with_selected_receipts, decode_block_vote_payload,
+        decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
+        decode_validator_audit_report_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -305,6 +306,40 @@ pub fn apply_network_validator_audit_report_payload(
     }
     chain
         .apply_command(ChainCommand::SubmitValidatorAuditReport(report))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
+pub fn apply_network_external_randomness_beacon_payload(
+    chain: &mut Chain,
+    source_id: &str,
+    beacon_round: u64,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if source_id.is_empty() || beacon_round == 0 {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(beacon) = decode_external_randomness_beacon_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if beacon.source_id != source_id || beacon.beacon_round != beacon_round {
+        return NetworkPayloadApply::Invalid;
+    }
+    if beacon.beacon_round <= chain.state().finalized_beacon_round()
+        || chain
+            .state()
+            .external_randomness_beacons()
+            .contains_key(&beacon.beacon_round)
+    {
+        return NetworkPayloadApply::Applied;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: beacon.source_id,
+            beacon_round: beacon.beacon_round,
+            randomness: beacon.randomness,
+            proof_hash: beacon.proof_hash,
+        })
         .map(|_| NetworkPayloadApply::Applied)
         .unwrap_or(NetworkPayloadApply::Invalid)
 }

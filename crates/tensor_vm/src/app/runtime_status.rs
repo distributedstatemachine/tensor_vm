@@ -332,6 +332,14 @@ pub fn format_role_runtime_report(
         "network_validator_audit_reports_applied",
         network_events.validator_audit_reports_applied,
     );
+    report.field(
+        "network_external_randomness_beacons_ingested",
+        network_events.external_randomness_beacons,
+    );
+    report.field(
+        "network_external_randomness_beacons_applied",
+        network_events.external_randomness_beacons_applied,
+    );
     report.field("network_peer_events_ingested", network_events.peers);
     report.field("network_invalid_events", network_events.invalid_events);
     report.finish()
@@ -620,6 +628,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_network_validator_audit_reports_applied",
         network_events.validator_audit_reports_applied,
+    );
+    report.field(
+        "role_network_external_randomness_beacons_ingested",
+        network_events.external_randomness_beacons,
+    );
+    report.field(
+        "role_network_external_randomness_beacons_applied",
+        network_events.external_randomness_beacons_applied,
     );
     report.field("role_network_peer_events_ingested", network_events.peers);
     report.field("role_network_invalid_events", network_events.invalid_events);

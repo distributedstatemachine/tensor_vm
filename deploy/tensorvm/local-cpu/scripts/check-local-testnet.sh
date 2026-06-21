@@ -854,6 +854,8 @@ LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
 LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT=0
 LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
 LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
+LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS=0
+LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED=0
 LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS=0
 LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED=0
 attempt=0
@@ -877,6 +879,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT=0
   LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
   LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
+  LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS=0
+  LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED=0
   LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS=0
   LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED=0
   STATUS_MISMATCH=false
@@ -971,6 +975,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_NETWORK_ATTESTATION_EVENTS=$(status_value role_network_attestation_events_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS=$(status_value role_network_attestation_payloads_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED=$(status_value role_network_attestation_payloads_applied "$STATUS")
+    SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS=$(status_value role_network_external_randomness_beacons_ingested "$STATUS")
+    SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED=$(status_value role_network_external_randomness_beacons_applied "$STATUS")
     SERVICE_ROLE_NETWORK_PEER_EVENTS=$(status_value role_network_peer_events_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_INVALID_EVENTS=$(status_value role_network_invalid_events "$STATUS")
     SERVICE_ROLE_LATEST_HEIGHT=$(status_value role_latest_height "$STATUS")
@@ -1087,6 +1093,10 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" || { STATUS_MISMATCH=true; continue; }
+    LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS=$((LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS + SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS))
+    LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED=$((LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED + SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED))
     [ -n "$SERVICE_ROLE_NETWORK_PEER_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_PEER_EVENTS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_INVALID_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
@@ -1459,6 +1469,7 @@ done
 [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
 [ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators applied the configured local randomness beacon"
 [ "$LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED" -ge "$EXPECTED_SERVICE_COUNT" ] || fail "operator randomness beacon apply total did not cover all operators"
+[ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] || fail "no role applied external randomness beacon payloads from the network"
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1544,6 +1555,8 @@ live_role_validator_fallback_blocks_proposed=${LIVE_ROLE_VALIDATOR_FALLBACK_BLOC
 live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}
 live_role_network_block_check_challenges=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES}
 live_role_network_block_check_challenges_applied=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED}
+live_role_network_external_randomness_beacons=${LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS}
+live_role_network_external_randomness_beacons_applied=${LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED}
 live_role_randomness_beacon_operators=${LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS}
 live_role_randomness_beacons_applied=${LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED}
 live_role_owned_miner_receipts=true
@@ -1561,7 +1574,7 @@ finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}
 block_vote_finality_evidence=${BLOCK_FINALITY_VOTE_EVIDENCE}
 live_validator_proposer_networking=true
 live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
-live_external_randomness_beacon_evidence=$([ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
+live_external_randomness_beacon_evidence=$([ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] && [ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_block_vote_networking=true
 all_non_producer_network_applied_blocks=true
 all_non_producer_network_block_payload_ingestion=true

@@ -247,9 +247,11 @@ The local bundle is useful and should remain the first operational target:
   Chain state, service status, and explorer overview now also expose structured detection-probability
   evidence for the implemented verifier and fraud mechanisms. Local CPU role runtimes now ingest the
   configured deterministic drand-style external beacon fixture through the shared chain command before
-  network/role work, persist the accepted beacon record, and expose checker-gated role counters plus
-  external-beacon count/latest-round evidence; public drand verification and validator VRF construction
-  remain open. Deployed-run measured detection records and remaining fraud paths remain open economics work.
+  network/role work, persist the accepted beacon record, relay it as a bounded p2p payload, apply
+  network-originated beacon payloads through the same chain command, and expose checker-gated role counters
+  plus external-beacon count/latest-round evidence; public drand verification and validator VRF
+  construction remain open. Deployed-run measured detection records and remaining fraud paths remain open
+  economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 
@@ -319,18 +321,17 @@ chain-visible proposer cadence replacing the runtime-local delay remain open.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
 
-The local CPU proof no longer depends on a single service mutating counted roles in memory, but it still
-does not prove public multi-operator deployment behavior or multi-validator proposer competition beyond the
-single configured local producer.
+The local CPU proof no longer depends on a single service mutating counted roles in memory, proves local
+multi-validator proposal competition, and proves network-applied external randomness beacon payloads, but
+it still does not prove public multi-operator deployment behavior or CUDA-backed miners.
 
 Required fix:
 
-- Move synthetic job generation into a `JobSource`.
-- Broadcast jobs over the same network path used by every profile.
-- Have miner containers receive jobs, execute them, serve tensor data, and submit receipts.
-- Have validator containers receive assignments, fetch tensor data, validate, and submit attestations.
-- Extend proposer evidence beyond the single configured local producer into public/CUDA deployment runs and
-  multi-validator competition tests.
+- Extend proposer, beacon, receipt, attestation, and reward evidence into public/CUDA deployment runs.
+- Replace deterministic local beacon fixtures with public drand verification, validator VRF construction,
+  or the deployed commit-reveal lifecycle selected for the public profile.
+- Replace the runtime-local delayed proposer participation gate with chain-visible proposer cadence or
+  eligibility if protocol-level delayed proposer scheduling becomes required.
 
 ### 2. Miner And Validator Containers Still Delegate Internals To The Service Runtime
 

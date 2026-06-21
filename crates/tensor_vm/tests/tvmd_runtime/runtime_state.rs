@@ -23,6 +23,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         attestation_payloads_applied: 0,
         validator_audit_reports: 0,
         validator_audit_reports_applied: 0,
+        external_randomness_beacons: 1,
+        external_randomness_beacons_applied: 1,
         peers: 0,
         invalid_events: 0,
         applied_blocks: 1,
@@ -48,6 +50,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         attestation_payloads_applied: 1,
         validator_audit_reports: 1,
         validator_audit_reports_applied: 1,
+        external_randomness_beacons: 2,
+        external_randomness_beacons_applied: 2,
         peers: 1,
         invalid_events: 1,
         applied_blocks: 2,
@@ -74,6 +78,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
     assert_eq!(cumulative.attestation_payloads_applied, 1);
     assert_eq!(cumulative.validator_audit_reports, 1);
     assert_eq!(cumulative.validator_audit_reports_applied, 1);
+    assert_eq!(cumulative.external_randomness_beacons, 3);
+    assert_eq!(cumulative.external_randomness_beacons_applied, 3);
     assert_eq!(cumulative.peers, 1);
     assert_eq!(cumulative.invalid_events, 1);
     assert_eq!(cumulative.applied_blocks, 3);

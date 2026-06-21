@@ -3,8 +3,8 @@ use crate::{
     NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
     decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
-    encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
-    encode_validator_audit_report_payload,
+    encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
+    encode_receipt_payload, encode_validator_audit_report_payload,
     localnet::produce_synthetic_cpu_work_with_profile,
     node::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
@@ -426,6 +426,22 @@ pub fn publish_new_chain_announcements(
                     })?;
             }
         }
+    }
+    for (beacon_round, record) in chain.state().external_randomness_beacons() {
+        p2p_service
+            .publish_gossip(P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id: record.source_id.clone(),
+                beacon_round: *beacon_round,
+                payload: encode_external_randomness_beacon_payload(
+                    &record.source_id,
+                    record.beacon_round,
+                    &record.randomness,
+                    &record.proof_hash,
+                ),
+            })
+            .map_err(|error| {
+                format!("failed to publish external randomness beacon gossip: {error}")
+            })?;
     }
     Ok(())
 }

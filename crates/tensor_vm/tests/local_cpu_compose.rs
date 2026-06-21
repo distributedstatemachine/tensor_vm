@@ -839,6 +839,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges""#,
             r#"[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims""#,
             r#"[ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators applied the configured local randomness beacon""#,
+            r#"[ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] || fail "no role applied external randomness beacon payloads from the network""#,
             r#"LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")"#,
             r#"LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")"#,
             r#"[ -n "$LIVE_TENSOR_ID" ] || fail "live tensor route did not report a tensor id""#,
@@ -1101,6 +1102,14 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_network_attestation_payloads_applied",
             ),
             (
+                "SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS",
+                "role_network_external_randomness_beacons_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED",
+                "role_network_external_randomness_beacons_applied",
+            ),
+            (
                 "SERVICE_ROLE_NETWORK_INVALID_EVENTS",
                 "role_network_invalid_events",
             ),
@@ -1175,6 +1184,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"all_operator_miner_receipt_status=true"#,
             r#"all_operator_validator_attestation_status=true"#,
             r#"all_operator_validator_remote_tensor_fetch_status=true"#,
+            r#"live_role_network_external_randomness_beacons_applied=${LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED}"#,
             r#"all_operator_chain_profiles=true"#,
             r#"all_operator_role_production_policy=true"#,
             r#"all_operator_role_runtime_counters=true"#,

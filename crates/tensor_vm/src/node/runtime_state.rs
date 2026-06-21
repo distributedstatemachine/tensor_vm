@@ -24,6 +24,8 @@ pub struct NetworkEventIngest {
     pub attestation_payloads_applied: usize,
     pub validator_audit_reports: usize,
     pub validator_audit_reports_applied: usize,
+    pub external_randomness_beacons: usize,
+    pub external_randomness_beacons_applied: usize,
     pub peers: usize,
     pub invalid_events: usize,
     pub applied_blocks: usize,
@@ -36,6 +38,7 @@ impl NetworkEventIngest {
             || self.receipt_payloads_applied > 0
             || self.attestation_payloads_applied > 0
             || self.validator_audit_reports_applied > 0
+            || self.external_randomness_beacons_applied > 0
             || self.block_payloads_applied > 0
             || self.block_votes_applied > 0
             || self.block_check_challenges_applied > 0
@@ -86,6 +89,12 @@ impl NetworkEventIngest {
         self.validator_audit_reports_applied = self
             .validator_audit_reports_applied
             .saturating_add(other.validator_audit_reports_applied);
+        self.external_randomness_beacons = self
+            .external_randomness_beacons
+            .saturating_add(other.external_randomness_beacons);
+        self.external_randomness_beacons_applied = self
+            .external_randomness_beacons_applied
+            .saturating_add(other.external_randomness_beacons_applied);
         self.peers = self.peers.saturating_add(other.peers);
         self.invalid_events = self.invalid_events.saturating_add(other.invalid_events);
         self.applied_blocks = self.applied_blocks.saturating_add(other.applied_blocks);
@@ -133,6 +142,8 @@ pub struct NodeRuntimeState {
     randomness_latest_source_id: String,
     randomness_latest_round: u64,
     randomness_last_error: String,
+    randomness_published_source_id: String,
+    randomness_published_round: u64,
 }
 
 impl NodeRuntimeState {
@@ -312,6 +323,11 @@ impl NodeRuntimeState {
         &self.randomness_last_error
     }
 
+    pub fn randomness_beacon_published(&self, source_id: &str, beacon_round: u64) -> bool {
+        self.randomness_published_source_id == source_id
+            && self.randomness_published_round == beacon_round
+    }
+
     pub fn record_served_request(&mut self) {
         self.served_requests = self.served_requests.saturating_add(1);
     }
@@ -477,6 +493,11 @@ impl NodeRuntimeState {
         self.randomness_latest_source_id = source_id.to_owned();
         self.randomness_latest_round = beacon_round;
         self.randomness_last_error.clear();
+    }
+
+    pub fn record_randomness_beacon_published(&mut self, source_id: &str, beacon_round: u64) {
+        self.randomness_published_source_id = source_id.to_owned();
+        self.randomness_published_round = beacon_round;
     }
 
     pub fn record_randomness_beacon_skipped(&mut self, source_id: &str, beacon_round: u64) {

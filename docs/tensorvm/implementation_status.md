@@ -272,9 +272,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   chain-state snapshots, and exposes external beacon count/latest-round evidence through status and explorer
   JSON. Local CPU role runtimes now ingest the configured deterministic drand-style fixture through that
   command before network/role work, persist accepted records, expose observed/applied/skipped/failure
-  counters through role and node status, and the local checker gates the external-beacon record plus
-  current-block-hash-ban evidence. Public drand signature verification, public VRF attestations, p2p beacon
-  relay, and deployed commit-reveal lifecycle evidence remain open.
+  counters through role and node status, relay accepted beacon records as bounded p2p payloads, apply
+  network-originated beacon payloads idempotently through the same chain command, and the local checker
+  gates the external-beacon record, network-applied beacon, and current-block-hash-ban evidence. Public
+  drand signature verification, public VRF attestations, and deployed commit-reveal lifecycle evidence
+  remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

@@ -53,6 +53,11 @@ pub enum P2pMessage {
         auditor: Address,
         payload: Vec<u8>,
     },
+    NewExternalRandomnessBeaconPayload {
+        source_id: String,
+        beacon_round: u64,
+        payload: Vec<u8>,
+    },
     RequestTensorChunk {
         tensor_id: Hash,
         chunk_index: u64,

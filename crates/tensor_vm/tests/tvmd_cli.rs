@@ -904,6 +904,14 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert_eq!(stdout_u64(&stdout, "network_block_payloads_applied"), 0);
         assert_eq!(stdout_u64(&stdout, "network_block_votes_ingested"), 0);
         assert_eq!(stdout_u64(&stdout, "network_block_votes_applied"), 0);
+        assert_eq!(
+            stdout_u64(&stdout, "network_external_randomness_beacons_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&stdout, "network_external_randomness_beacons_applied"),
+            0
+        );
         assert_eq!(stdout_u64(&stdout, "network_invalid_events"), 0);
 
         let status = run_tvmd(&["node", "status", "--data-dir", &data_dir_text]);
@@ -1021,6 +1029,14 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         );
         assert_eq!(
             stdout_u64(&status, "role_network_attestation_events_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_external_randomness_beacons_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_external_randomness_beacons_applied"),
             0
         );
         assert_eq!(stdout_u64(&status, "role_network_peer_events_ingested"), 0);

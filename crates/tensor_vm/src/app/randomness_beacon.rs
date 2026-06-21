@@ -1,6 +1,8 @@
 use crate::{
-    ChainCommand, ChainEngine, NodeRuntimeState, NodeStore, RpcHttpServer,
+    ChainCommand, ChainEngine, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService,
+    api::P2pMessage,
     hash::hex,
+    p2p::encode_external_randomness_beacon_payload,
     types::{Hash, hash_bytes, parse_hash_hex},
 };
 
@@ -118,6 +120,7 @@ pub fn tick_randomness_beacon_once(
     config: &RandomnessBeaconRuntimeConfig,
     store: &NodeStore,
     server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
     runtime_state: &mut NodeRuntimeState,
 ) -> std::result::Result<bool, String> {
     if !config.enabled() {
@@ -127,6 +130,28 @@ pub fn tick_randomness_beacon_once(
         && runtime_state.randomness_latest_round() == config.beacon_round
         && runtime_state.randomness_beacons_observed() > 0
     {
+        if !runtime_state.randomness_beacon_published(&config.source_id, config.beacon_round)
+            && p2p_service.connected_peer_count() > 0
+            && server
+                .gateway()
+                .node
+                .chain
+                .state()
+                .external_randomness_beacons()
+                .contains_key(&config.beacon_round)
+        {
+            publish_external_randomness_beacon(p2p_service, config).map_err(|error| {
+                runtime_state.record_randomness_beacon_failure(
+                    &config.source_id,
+                    config.beacon_round,
+                    &error,
+                );
+                error
+            })?;
+            runtime_state
+                .record_randomness_beacon_published(&config.source_id, config.beacon_round);
+            return Ok(true);
+        }
         return Ok(false);
     }
     runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
@@ -151,6 +176,14 @@ pub fn tick_randomness_beacon_once(
             store.persist_chain(chain).map_err(|error| {
                 format!("failed to persist external randomness beacon: {error}")
             })?;
+            publish_external_randomness_beacon(p2p_service, config).map_err(|error| {
+                runtime_state.record_randomness_beacon_failure(
+                    &config.source_id,
+                    config.beacon_round,
+                    &error,
+                );
+                error
+            })?;
             runtime_state.record_randomness_beacon_applied(&config.source_id, config.beacon_round);
             Ok(true)
         }
@@ -163,6 +196,28 @@ pub fn tick_randomness_beacon_once(
             Ok(true)
         }
     }
+}
+
+pub fn external_randomness_beacon_message(config: &RandomnessBeaconRuntimeConfig) -> P2pMessage {
+    P2pMessage::NewExternalRandomnessBeaconPayload {
+        source_id: config.source_id.clone(),
+        beacon_round: config.beacon_round,
+        payload: encode_external_randomness_beacon_payload(
+            &config.source_id,
+            config.beacon_round,
+            &config.randomness,
+            &config.proof_hash,
+        ),
+    }
+}
+
+fn publish_external_randomness_beacon(
+    p2p_service: &TensorVmLibp2pService,
+    config: &RandomnessBeaconRuntimeConfig,
+) -> std::result::Result<(), String> {
+    p2p_service
+        .publish_gossip(external_randomness_beacon_message(config))
+        .map_err(|error| format!("failed to publish external randomness beacon gossip: {error}"))
 }
 
 pub fn randomness_beacon_source_label(config: &RandomnessBeaconRuntimeConfig) -> String {
@@ -179,6 +234,7 @@ pub fn randomness_beacon_hash_label(hash: &Hash) -> String {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use crate::p2p::decode_external_randomness_beacon_payload;
 
     #[test]
     fn local_deterministic_beacon_config_is_stable() {
@@ -190,5 +246,26 @@ mod tests {
         assert_ne!(left.proof_hash, [0; 32]);
         assert_ne!(left.randomness, changed.randomness);
         assert_eq!(left.mode.label(), "local_deterministic");
+    }
+
+    #[test]
+    fn external_randomness_beacon_message_carries_configured_record() {
+        let config = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 7);
+        let P2pMessage::NewExternalRandomnessBeaconPayload {
+            source_id,
+            beacon_round,
+            payload,
+        } = external_randomness_beacon_message(&config)
+        else {
+            panic!("configured beacon must produce external beacon payload");
+        };
+
+        assert_eq!(source_id, config.source_id.as_str());
+        assert_eq!(beacon_round, config.beacon_round);
+        let decoded = decode_external_randomness_beacon_payload(&payload).unwrap();
+        assert_eq!(decoded.source_id, source_id);
+        assert_eq!(decoded.beacon_round, beacon_round);
+        assert_eq!(decoded.randomness, config.randomness);
+        assert_eq!(decoded.proof_hash, config.proof_hash);
     }
 }

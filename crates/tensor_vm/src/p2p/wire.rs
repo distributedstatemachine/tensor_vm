@@ -37,6 +37,17 @@ const BLOCK_PAYLOAD_MAX_LEN: usize = BLOCK_PAYLOAD_LEN
 const BLOCK_VOTE_PAYLOAD_LEN: usize = codec::BLOCK_VOTE_PAYLOAD_LEN;
 const VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN: usize = codec::VALIDATOR_AUDIT_REPORT_PAYLOAD_LEN;
 const BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN: usize = codec::BLOCK_CHECK_CHALLENGE_PAYLOAD_MAX_LEN;
+const EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES: usize = 96;
+const EXTERNAL_RANDOMNESS_BEACON_PAYLOAD_MAX_LEN: usize =
+    8 + EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES + 8 + 32 + 32;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalRandomnessBeaconPayload {
+    pub source_id: String,
+    pub beacon_round: u64,
+    pub randomness: Hash,
+    pub proof_hash: Hash,
+}
 
 pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
     match message {
@@ -56,6 +67,7 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         }
         P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. } => Some(GossipTopic::Attestations),
+        P2pMessage::NewExternalRandomnessBeaconPayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::PeerInfo { .. } => Some(GossipTopic::Peers),
         P2pMessage::RequestTensorChunk { .. }
         | P2pMessage::TensorChunkResponse { .. }
@@ -105,6 +117,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewAttestationPayload { .. }
         | P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. }
+        | P2pMessage::NewExternalRandomnessBeaconPayload { .. }
         | P2pMessage::PeerInfo { .. } => None,
     }
 }
@@ -247,6 +260,16 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             out.push(21);
             write_hash(&mut out, audit_id);
             write_hash(&mut out, auditor);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewExternalRandomnessBeaconPayload {
+            source_id,
+            beacon_round,
+            payload,
+        } => {
+            out.push(27);
+            write_string(&mut out, source_id);
+            write_u64(&mut out, *beacon_round);
             write_bytes(&mut out, payload);
         }
         P2pMessage::RequestTensorChunk {
@@ -458,6 +481,23 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             P2pMessage::NewValidatorAuditReportPayload {
                 audit_id,
                 auditor,
+                payload,
+            }
+        }
+        27 => {
+            let source_id =
+                reader.read_string_with_max(EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES)?;
+            let beacon_round = reader.read_u64()?;
+            let payload = reader.read_bytes_with_max(EXTERNAL_RANDOMNESS_BEACON_PAYLOAD_MAX_LEN)?;
+            let decoded = decode_external_randomness_beacon_payload(&payload)?;
+            if decoded.source_id != source_id || decoded.beacon_round != beacon_round {
+                return Err(TvmError::InvalidReceipt(
+                    "external randomness beacon payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id,
+                beacon_round,
                 payload,
             }
         }
@@ -742,6 +782,41 @@ pub fn decode_validator_audit_report_payload(input: &[u8]) -> TvmResult<Validato
         .map_err(|error| p2p_codec_error(error, "trailing validator audit report payload bytes"))
 }
 
+pub fn encode_external_randomness_beacon_payload(
+    source_id: &str,
+    beacon_round: u64,
+    randomness: &Hash,
+    proof_hash: &Hash,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_string(&mut out, source_id);
+    write_u64(&mut out, beacon_round);
+    write_hash(&mut out, randomness);
+    write_hash(&mut out, proof_hash);
+    out
+}
+
+pub fn decode_external_randomness_beacon_payload(
+    input: &[u8],
+) -> TvmResult<ExternalRandomnessBeaconPayload> {
+    let mut reader = Reader::new(input);
+    let source_id = reader.read_string_with_max(EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES)?;
+    let beacon_round = reader.read_u64()?;
+    let randomness = reader.read_hash()?;
+    let proof_hash = reader.read_hash()?;
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing external randomness beacon payload bytes",
+        ));
+    }
+    Ok(ExternalRandomnessBeaconPayload {
+        source_id,
+        beacon_round,
+        randomness,
+        proof_hash,
+    })
+}
+
 fn p2p_codec_error(error: CodecError, trailing_error: &'static str) -> TvmError {
     match error {
         CodecError::Truncated => TvmError::InvalidReceipt("short p2p message"),
@@ -781,6 +856,10 @@ fn write_usize_vec(out: &mut Vec<u8>, values: &[usize]) {
 fn write_bytes(out: &mut Vec<u8>, bytes: &[u8]) {
     write_u64(out, bytes.len() as u64);
     out.extend_from_slice(bytes);
+}
+
+fn write_string(out: &mut Vec<u8>, value: &str) {
+    write_bytes(out, value.as_bytes());
 }
 
 fn write_optional_bytes(out: &mut Vec<u8>, bytes: Option<&[u8]>) {
@@ -836,6 +915,11 @@ impl<'a> Reader<'a> {
             return Err(TvmError::InvalidReceipt("p2p byte payload too large"));
         }
         Ok(self.read_exact(len)?.to_vec())
+    }
+
+    fn read_string_with_max(&mut self, max_len: usize) -> TvmResult<String> {
+        let bytes = self.read_bytes_with_max(max_len)?;
+        String::from_utf8(bytes).map_err(|_| TvmError::InvalidReceipt("invalid string"))
     }
 
     fn read_exact(&mut self, len: usize) -> TvmResult<&'a [u8]> {
@@ -993,6 +1077,16 @@ mod tests {
             &observed_challenge.block_hash,
             &observed_challenge.receipt_id,
         );
+        let beacon_source = "local_drand_fixture_v1".to_owned();
+        let beacon_round = 42;
+        let beacon_randomness = hash_bytes(b"test", &[b"external-beacon-randomness"]);
+        let beacon_proof_hash = hash_bytes(b"test", &[b"external-beacon-proof"]);
+        let beacon_payload = encode_external_randomness_beacon_payload(
+            &beacon_source,
+            beacon_round,
+            &beacon_randomness,
+            &beacon_proof_hash,
+        );
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -1043,6 +1137,11 @@ mod tests {
                 audit_id: audit_report.audit_id,
                 auditor: audit_report.auditor,
                 payload: encode_validator_audit_report_payload(&audit_report),
+            },
+            P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id: beacon_source,
+                beacon_round,
+                payload: beacon_payload,
             },
             P2pMessage::RequestTensorChunk {
                 tensor_id: h,
@@ -1098,6 +1197,54 @@ mod tests {
         for message in messages {
             assert_eq!(decode_message(&encode_message(&message)).unwrap(), message);
         }
+    }
+
+    #[test]
+    fn external_randomness_beacon_payloads_roundtrip_and_reject_malformed_edges() {
+        let source_id = "local_drand_fixture_v1";
+        let beacon_round = 77;
+        let randomness = hash_bytes(b"test", &[b"beacon-randomness"]);
+        let proof_hash = hash_bytes(b"test", &[b"beacon-proof"]);
+        let payload = encode_external_randomness_beacon_payload(
+            source_id,
+            beacon_round,
+            &randomness,
+            &proof_hash,
+        );
+        assert_eq!(
+            decode_external_randomness_beacon_payload(&payload).unwrap(),
+            ExternalRandomnessBeaconPayload {
+                source_id: source_id.to_owned(),
+                beacon_round,
+                randomness,
+                proof_hash,
+            }
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(0);
+        assert_eq!(
+            decode_external_randomness_beacon_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing external randomness beacon payload bytes"
+            ))
+        );
+
+        let oversized_source = "x".repeat(EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES + 1);
+        let oversized_payload = encode_external_randomness_beacon_payload(
+            &oversized_source,
+            beacon_round,
+            &randomness,
+            &proof_hash,
+        );
+        assert!(decode_external_randomness_beacon_payload(&oversized_payload).is_err());
+
+        let mismatched = P2pMessage::NewExternalRandomnessBeaconPayload {
+            source_id: source_id.to_owned(),
+            beacon_round: beacon_round + 1,
+            payload,
+        };
+        assert!(decode_message(&encode_message(&mismatched)).is_err());
     }
 
     #[test]
@@ -1740,6 +1887,21 @@ mod tests {
             ),
             None
         );
+        let beacon_message = P2pMessage::NewExternalRandomnessBeaconPayload {
+            source_id: "local_drand_fixture_v1".to_owned(),
+            beacon_round: 3,
+            payload: encode_external_randomness_beacon_payload(
+                "local_drand_fixture_v1",
+                3,
+                &hash_bytes(b"test", &[b"mapping-randomness"]),
+                &hash_bytes(b"test", &[b"mapping-proof"]),
+            ),
+        };
+        assert_eq!(
+            gossip_topic_for_message(&beacon_message),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(request_response_protocol_for_message(&beacon_message), None);
         assert_eq!(
             gossip_topic_for_message(&P2pMessage::NewJob(h)),
             Some(GossipTopic::Jobs)

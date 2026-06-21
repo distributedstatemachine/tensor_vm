@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 134 complete locally - delayed multi-validator proposer competition evidence.
+- Active feature: Iteration 135 complete locally - network-visible external randomness beacon relay.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -27,7 +27,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   records when quorum-backed work cannot settle because distinct-operator agreement is missing or
   conflicting, and later pending receipt reward claims inherit those redundant reward holds. Redundant
   delay records persist both agreeing miner-address and agreeing operator counts. External randomness
-  beacon records can now advance future receipt randomness through a rooted chain command. `Fixed32`
+  beacon records can now advance future receipt randomness through a rooted chain command and relay over
+  the same bounded p2p/node ingest path used by local CPU role processes. `Fixed32`
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
@@ -45,8 +46,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: preserve the local delayed multi-proposer proof while broadening the same evidence into
-  public/CUDA deployment runs and full interactive transcript disputes.
+- Next action: preserve the local delayed multi-proposer and network-applied beacon proofs while
+  broadening the same evidence into public/CUDA deployment runs, public drand/VRF verification, and full
+  interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -63,67 +65,71 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; status/explorer/checker expose seed-domain, external beacon count/latest round, role applied counters, and block-hash-ban evidence | Add public drand verification, validator VRF construction, p2p beacon relay, and deployed commit-reveal lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; bounded p2p messages relay beacon records through node ingest; status/explorer/checker expose seed-domain, external beacon count/latest round, role applied counters, network-applied beacon counters, and block-hash-ban evidence | Add public drand verification, validator VRF construction, and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, claim-owned spendability, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 134: Multi-Validator Proposer Competition Evidence
+### Iteration 135: Network-Visible External Randomness Beacon Relay
 
-Feature capability: prove multiple validator role processes can independently run the useful UVPoW proposer
-tick from network-visible settled state while a single local synthetic job source remains responsible for
-job publication.
-Readiness requirements covered: `upow.md` §2 process boundaries, §11 validator-owned UVPoW proposal,
-local readiness multi-proposer gap, and the shortcut ban against hidden `tvmd` proposer orchestration.
-Files/modules likely touched: `profile.rs`, runtime config/status, validator role/runtime tests, local CPU
-Compose/checker/static tests, readiness/status docs, and this plan.
-Parallel subagents run: readiness mapper, proposer code explorer, and proposer test-coverage explorer.
-Parallelizable implementation workstreams: parent owns code/tests/checker because the config split crosses
-shared runtime status and deployment evidence; subagents stayed read-only.
-Tests/checkers/docs to add or update: config split tests, validator runtime proposer-without-synthetic
-regressions, Compose/checker assertions for at least two useful proposer validators, and readiness docs.
-Narrow validation commands: Gate 0 already passed first; focused profile/runtime/local-compose tests.
-Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
-compose config, Docker build/up/check/down if static gates pass, and tarpaulin attempt if available.
-Implementation result: local synthetic job publication is now controlled separately from validator block
-proposal permission. `validator-00` publishes synthetic jobs and proposes immediately; `validator-01`
-proposes after `TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS=20`; other validators attest and
-vote without proposing. The delay is a runtime-local participation gate, while proposer, receipt, and
-challenge rewards remain protocol-delayed pending claims.
-Expected observable evidence: local checker reports multiple validator operators with positive useful block
-proposal counters, at least one delayed block proposer, delayed proposer reward claims, finalized passive
-observer convergence, one synthetic job publisher, and no `proposer_run` runtime counted.
-Out of scope: public 7-day run, CUDA miner evidence, public drand/VRF security proof, and full interactive
-fraud-proof disputes.
-Split trigger: Docker consensus instability, fork-choice regression, or broad runtime status schema churn.
-
-Canonical owner: `Chain`/`ChainEngine` useful block admission, UVPoW validation, fork choice, and finality.
-Adapter callers: validator role runtime may submit/publish candidate blocks through existing chain and p2p
-payload paths; deployment/checker only configures and observes.
-Old shortcut being removed: `TENSORVM_LOCAL_CPU_ROLE_PRODUCER` as the single flag for both synthetic job
-publication and validator block-proposer permission, plus checker assumptions that non-`validator-00`
-validators must propose zero blocks.
-Regression test that proves the shortcut is gone: a validator with block-proposer enabled and no synthetic
-job interval can propose useful blocks from existing settled state, and local checker requires at least two
-validator useful proposers.
-Behavior with local synthetic block production disabled: inbound/applied jobs, receipts, attestations, and
-settled state can still feed validator proposals; no synthetic job publication is needed by proposer peers.
-Behavior for producer and non-producer roles: one local job publisher may create jobs; multiple validator
-roles can propose useful blocks and still ingest competing block payloads; miners never propose blocks.
-Structured evidence source: typed runtime status fields, checker aggregate proposer operator counts,
-block-payload ingestion/application counters, and chain block status.
-Finality source: unchanged signed validator block votes and chain finality threshold; proposal competition
-does not synthesize votes.
-Wire-size and codec boundary: no new wire payloads; existing bounded block-payload and block-vote codecs
-carry the competing proposals.
+Feature capability: publish configured external randomness beacon records as bounded p2p payloads, decode
+them through node message ingest, apply them only through `ChainCommand::SubmitExternalRandomnessBeacon`,
+and persist the accepted chain state from network-originated events.
+Readiness requirements covered: `upow.md` §10 randomness binding, §11 live role networking, and the
+shortcut ban against local-only fixture mutation.
+Canonical owner: `ChainCommand::SubmitExternalRandomnessBeacon` and chain validation own freshness,
+recording, finalized-beacon advancement, and idempotent already-known handling.
+Adapter callers: deterministic local runtime beacon tick, p2p wire codecs, node network ingest, runtime
+chain persistence, and the chain-announcement publisher.
+Old shortcut being removed: every role could apply the same configured fixture locally, but the local CPU
+proof did not require any role to receive and apply that beacon from the network.
+Regression tests that prove the shortcut is gone: `network_event_driver_applies_external_randomness_beacon_payloads`,
+`external_randomness_beacon_payloads_roundtrip_and_reject_malformed_edges`,
+`libp2p_mapping_separates_gossip_and_request_response`, runtime status tests, CLI status tests, and the
+local CPU checker now requiring positive `role_network_external_randomness_beacons_applied`.
+Behavior with local synthetic block production disabled: inbound beacon payloads apply through the node
+event path without needing local job production or local block proposal.
+Behavior for producer and non-producer roles: any role may observe/apply the beacon idempotently through
+the chain command; producers republish current external beacon records with normal chain announcements
+after peers are connected.
+Structured evidence source: `role_network_external_randomness_beacons_ingested`,
+`role_network_external_randomness_beacons_applied`, explorer randomness evidence, and checker output.
+Finality source: unchanged signed validator block votes and block finality thresholds; the beacon only
+feeds future receipt randomness anchors.
+Wire-size and codec boundary: p2p tag 27 carries bounded source id, round, and payload bytes on the blocks
+gossip topic with shared encode/decode helpers and mismatch/malformed rejection.
+Out of scope: public drand signature verification, validator VRF construction, deployed commit-reveal
+lifecycle, CUDA miner proof, and public 7-day evidence.
 
 Validation evidence captured June 21, 2026:
-- First executable Gate 0 command after resume: `cargo test -p tensor_vm local_testnet --release` passed.
-- Focused checks passed: `cargo fmt --check --all`, `cargo test -p tensor_vm linear_job_payload_registers_synthetic_model_before_submit -- --nocapture`, `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime validator_proposer_delays_reward_without_waiting_for_validation_backlog -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime validator_proposer_tick_runs_without_synthetic_producer_gate -- --nocapture`, `cargo test -p tensor_vm --test tvmd_cli validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallback_blocks -- --nocapture`, `sh -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh deploy/tensorvm/local-cpu/scripts/entrypoint.sh`, and `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`.
-- Docker gate passed after rebuilding `tensorvm-local-cpu:latest`, `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up -d --wait`, and `deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`. Key output: `live_local_synthetic_job_producers=1`, `live_role_validator_block_proposer_operators=2`, `live_role_delayed_validator_block_proposer_operators=1`, `live_role_validator_useful_block_proposer_operators=2`, `live_competing_validator_block_proposers=validator-00 validator-01`, `live_role_validator_useful_blocks_proposed=404`, `live_role_validator_fallback_blocks_proposed=33`, `live_role_validator_proposed_receipts=818`, `live_pending_proposer_rewards=99`, `live_delayed_proposer_reward_claims=1`, `all_operator_common_head_height=22`, and `all_operator_target_head_convergence=true`.
-- `which tensorvm-verifier` and `which verifier` returned no verifier binary on PATH.
-- Commit/push evidence: implementation committed as `3655076` and pushed to `origin/main`.
+- Focused checks passed: `cargo fmt --check --all`,
+  `cargo test -p tensor_vm external_randomness_beacon_payloads_roundtrip_and_reject_malformed_edges -- --nocapture`,
+  `cargo test -p tensor_vm network_event_driver_applies_external_randomness_beacon_payloads -- --nocapture`,
+  `cargo test -p tensor_vm randomness_beacon -- --nocapture`,
+  `cargo test -p tensor_vm p2p_messages_roundtrip -- --nocapture`,
+  `cargo test -p tensor_vm libp2p_mapping_separates_gossip_and_request_response -- --nocapture`,
+  `cargo test -p tensor_vm network_event_ingest_accumulates_runtime_counters -- --nocapture`,
+  `cargo test -p tensor_vm --test tvmd_cli role_run_commands_serve_through_role_specific_surfaces -- --nocapture`,
+  `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`,
+  and `sh -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh deploy/tensorvm/local-cpu/scripts/entrypoint.sh`.
+- Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+- Docker gate passed after rebuilding `tensorvm-local-cpu:latest`, `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up -d --wait`, and `deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`. Key output: `live_role_network_external_randomness_beacons=23539`, `live_role_network_external_randomness_beacons_applied=23539`, `live_external_randomness_beacon_records=1`, `live_latest_external_randomness_beacon_round=1000`, `live_role_randomness_beacons_applied=15`, and `live_external_randomness_beacon_evidence=true`.
+- Earlier Docker attempts failed with `no role applied external randomness beacon payloads from the network`; publishing current beacon records with normal chain announcements fixed the startup-gossip timing gap.
+
+### Iteration 134: Multi-Validator Proposer Competition Evidence
+
+Feature capability: split synthetic job publication from validator block-proposer permission so multiple
+validator role processes can propose useful UVPoW blocks from network-visible settled state. Result:
+`validator-00` publishes jobs and proposes immediately, delayed `validator-01` proposes after
+`TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS=20`, and other validators attest/vote only.
+Validation evidence captured June 21, 2026: Gate 0, focused runtime/CLI/compose checks, Docker build/up/
+check/down, and compose config passed. Docker output included `live_local_synthetic_job_producers=1`,
+`live_role_validator_block_proposer_operators=2`, `live_role_delayed_validator_block_proposer_operators=1`,
+`live_competing_validator_block_proposers=validator-00 validator-01`, and
+`live_delayed_proposer_reward_claims=1`. `which tensorvm-verifier` and `which verifier` returned no
+verifier binary on PATH. Commit/push evidence: implementation committed as `3655076` and pushed to
+`origin/main`.
 
 ### Iteration 133: Claim-Owned Delayed Reward Release
 
