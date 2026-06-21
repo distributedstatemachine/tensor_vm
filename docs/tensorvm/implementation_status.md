@@ -70,8 +70,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `uint8` payload layout: `TVQ8` magic/version, rank, quantization axis, fixed-point output scale, original
   shape, per-channel signed 64-bit raw scales, and row-major signed int8 payload bytes. The interpreter
   validates bound tensors
-  and field-scalar params, resolves input/op/param/const refs, returns named output tensors, records per-op
-  output commitment roots, and derives a Merkle `trace_root`; Tier-C/deferred ops and admitted registry ops
+  and field-scalar params, resolves input/op/param/const refs, resolves `const_blob` refs from
+  content-addressed tensor artifacts keyed by the declared commitment URI, asserts blob shape/dtype/root on
+  load, returns named output tensors, records per-op output commitment roots, and derives a Merkle
+  `trace_root`; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
   be referenced by first-class `GraphExecution` jobs and receipts: command admission checks the registered
   graph body, input roots, params, job id, receipt digest, miner signature, and deadline; shared codec,
@@ -80,7 +82,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   settle through the same delayed pending receipt reward path after valid attestations. Local synthetic
   production now emits a deterministic exact Tier-B graph job, registers its graph body and input tensors,
   and miner/validator role helpers can submit and attest the graph receipt from node-local program/tensor
-  artifacts. Const-blob fetching, fixed-point arithmetic scale policy beyond `cast`/`round`, low-level
+  artifacts. Graph role bundles now serve and verify any required `const_blob` tensors through the same
+  commitment-root artifact path, and validator remote-fetch planning includes blob roots from the
+  registered graph body. Fixed-point arithmetic scale policy beyond `cast`/`round`, low-level
   packed tensor storage/chunking APIs, public/p2p artifact propagation evidence for externally supplied
   arbitrary graph jobs, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp

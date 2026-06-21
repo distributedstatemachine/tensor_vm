@@ -204,6 +204,7 @@ fn produce_synthetic_graph_work(
             &job,
             &graph,
             &inputs,
+            &std::collections::BTreeMap::new(),
             chain.state().height(),
             1 + index as u64,
         )?;

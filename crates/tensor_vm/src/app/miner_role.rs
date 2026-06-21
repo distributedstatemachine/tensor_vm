@@ -1,11 +1,11 @@
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     Chain, ChainCommand, ChainEngine, JobScheduler, JobState, NodeRuntimeState, NodeStore,
     RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
     hash::hex,
     roles::CpuReferenceMinerRole,
-    types::{Address, Hash},
+    types::{Address, Hash, parse_hash_hex},
 };
 
 use super::{
@@ -115,13 +115,40 @@ fn execute_miner_role_job(
                 };
                 inputs.insert(name.clone(), tensor);
             }
-            role.execute_graph_job(graph_job, &graph, &inputs, node.chain.state().height(), 1)
+            let const_blobs = graph_const_blobs_from_node(node, &graph)?;
+            role.execute_graph_job(
+                graph_job,
+                &graph,
+                &inputs,
+                &const_blobs,
+                node.chain.state().height(),
+                1,
+            )
         }
         JobState::TensorOp(_) | JobState::LinearTrainingStep(_) => {
             role.execute_job(job, node.chain.state().height(), 1)
         }
     }
     .map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))
+}
+
+fn graph_const_blobs_from_node(
+    node: &RpcNode,
+    graph: &TensorGraph,
+) -> std::result::Result<BTreeMap<String, Tensor>, String> {
+    let mut const_blobs = BTreeMap::new();
+    for (uri, _) in graph
+        .const_blob_specs()
+        .map_err(|error| format!("miner role invalid graph const_blob spec: {error}"))?
+    {
+        let root = parse_hash_hex(&uri)
+            .map_err(|_| format!("miner role invalid graph const_blob uri {uri}"))?;
+        let Some(tensor) = node.tensor_by_commitment_root(&root).cloned() else {
+            return Err(format!("miner role missing graph const_blob tensor {uri}"));
+        };
+        const_blobs.insert(uri, tensor);
+    }
+    Ok(const_blobs)
 }
 
 fn graph_from_program_body(

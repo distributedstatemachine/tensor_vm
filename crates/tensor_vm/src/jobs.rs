@@ -86,6 +86,15 @@ impl GraphJob {
         graph: &TensorGraph,
         tensors: &BTreeMap<String, Tensor>,
     ) -> Result<IrExecution> {
+        self.exact_ir_execution_with_const_blobs(graph, tensors, &BTreeMap::new())
+    }
+
+    pub fn exact_ir_execution_with_const_blobs(
+        &self,
+        graph: &TensorGraph,
+        tensors: &BTreeMap<String, Tensor>,
+        const_blobs: &BTreeMap<String, Tensor>,
+    ) -> Result<IrExecution> {
         for (name, expected_root) in &self.input_roots {
             let Some(tensor) = tensors.get(name) else {
                 return Err(TvmError::InvalidReceipt("missing graph input tensor"));
@@ -97,8 +106,17 @@ impl GraphJob {
         if tensors.len() != self.input_roots.len() {
             return Err(TvmError::InvalidReceipt("unexpected graph input tensor"));
         }
+        let mut execution_tensors = tensors.clone();
+        for (uri, tensor) in const_blobs {
+            if execution_tensors
+                .insert(uri.clone(), tensor.clone())
+                .is_some()
+            {
+                return Err(TvmError::InvalidReceipt("graph const_blob input collision"));
+            }
+        }
         graph.execute_exact(&IrExecutionInputs {
-            tensors: tensors.clone(),
+            tensors: execution_tensors,
             field_params: self.field_params.clone(),
         })
     }
@@ -128,7 +146,27 @@ impl GraphReceipt {
         submitted_at_block: u64,
         execution_time_ms: u64,
     ) -> Result<(Self, BTreeMap<String, Tensor>)> {
-        let execution = job.exact_ir_execution(graph, tensors)?;
+        Self::from_execution_with_const_blobs(
+            job,
+            graph,
+            miner,
+            tensors,
+            &BTreeMap::new(),
+            submitted_at_block,
+            execution_time_ms,
+        )
+    }
+
+    pub fn from_execution_with_const_blobs(
+        job: &GraphJob,
+        graph: &TensorGraph,
+        miner: Address,
+        tensors: &BTreeMap<String, Tensor>,
+        const_blobs: &BTreeMap<String, Tensor>,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Result<(Self, BTreeMap<String, Tensor>)> {
+        let execution = job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?;
         let output_roots = execution
             .outputs
             .iter()
@@ -748,7 +786,7 @@ fn encode_usizes(values: &[usize]) -> Vec<u8> {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::canonical_matmul_graph;
+    use crate::ir::{GraphOutput, IrRef, OpNode, canonical_matmul_graph};
     use crate::types::address;
 
     #[test]
@@ -847,6 +885,69 @@ mod tests {
         assert_eq!(
             job.exact_ir_execution(&graph, &BTreeMap::new()),
             Err(TvmError::InvalidReceipt("missing graph input tensor"))
+        );
+    }
+
+    #[test]
+    fn graph_receipt_replay_supports_const_blob_artifacts() {
+        let input = Tensor::from_vec(vec![2], DType::FieldElement, vec![3, 4]).unwrap();
+        let blob = Tensor::from_vec(vec![2], DType::FieldElement, vec![7, 8]).unwrap();
+        let blob_uri = crate::hash::hex(&blob.commitment_root());
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![crate::ir::TensorSpec::field("x", vec![2])],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "add".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                    IrRef::ConstBlob {
+                        uri: blob_uri.clone(),
+                        shape: vec![2],
+                        dtype: DType::FieldElement,
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![crate::ir::TensorSpec::field("y", vec![2])],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let const_blobs = BTreeMap::from([(blob_uri, blob)]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(4, graph_id, input_roots, BTreeMap::new(), 30, 1, 2);
+
+        let (receipt, outputs) = GraphReceipt::from_execution_with_const_blobs(
+            &job,
+            &graph,
+            address(b"graph-blob-miner"),
+            &inputs,
+            &const_blobs,
+            5,
+            6,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["y"],
+            Tensor::from_vec(vec![2], DType::FieldElement, vec![10, 12]).unwrap()
+        );
+        assert_eq!(
+            job.exact_ir_execution_with_const_blobs(&graph, &inputs, &const_blobs)
+                .unwrap()
+                .trace_root,
+            receipt.trace_root
+        );
+        assert_eq!(
+            job.exact_ir_execution(&graph, &inputs),
+            Err(TvmError::InvalidReceipt("missing tensor ir const_blob"))
         );
     }
 }

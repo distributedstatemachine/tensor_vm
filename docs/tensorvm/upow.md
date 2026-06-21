@@ -656,6 +656,9 @@ This section is non-normative guidance on how the spec components partition into
   mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
 - [ ] Reward concentration / anti-monopoly curve for TensorWork.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
-- [ ] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with `const_blob` inputs (availability of the blob during a dispute).
+- [~] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with
+  `const_blob` inputs. Exact graph execution now loads `const_blob` tensors by content URI from local
+  tensor artifacts and checks shape/dtype/root before replay; availability of those blobs during a future
+  interactive dispute remains open.
 - [ ] Edge case: floating-point miners producing off-by-one-ULP fixed-point results — define the canonical rounding so this is a *fault*, not noise.
 ```

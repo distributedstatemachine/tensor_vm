@@ -24,6 +24,7 @@ pub enum RoleReceiptArtifacts {
     GraphExecution {
         graph: TensorGraph,
         inputs: std::collections::BTreeMap<String, Tensor>,
+        const_blobs: std::collections::BTreeMap<String, Tensor>,
         outputs: std::collections::BTreeMap<String, Tensor>,
     },
 }
@@ -51,9 +52,13 @@ impl RoleReceiptBundle {
                 output.weight_after.clone(),
             ],
             RoleReceiptArtifacts::GraphExecution {
-                inputs, outputs, ..
+                inputs,
+                const_blobs,
+                outputs,
+                ..
             } => inputs
                 .values()
+                .chain(const_blobs.values())
                 .chain(outputs.values())
                 .cloned()
                 .collect::<Vec<_>>(),
@@ -114,14 +119,16 @@ impl CpuReferenceMinerRole {
         job: &GraphJob,
         graph: &TensorGraph,
         inputs: &std::collections::BTreeMap<String, Tensor>,
+        const_blobs: &std::collections::BTreeMap<String, Tensor>,
         submitted_at_block: u64,
         execution_time_ms: u64,
     ) -> Result<RoleReceiptBundle> {
-        let (receipt, outputs) = crate::jobs::GraphReceipt::from_execution(
+        let (receipt, outputs) = crate::jobs::GraphReceipt::from_execution_with_const_blobs(
             job,
             graph,
             self.address,
             inputs,
+            const_blobs,
             submitted_at_block,
             execution_time_ms,
         )?;
@@ -130,6 +137,7 @@ impl CpuReferenceMinerRole {
             artifacts: RoleReceiptArtifacts::GraphExecution {
                 graph: graph.clone(),
                 inputs: inputs.clone(),
+                const_blobs: const_blobs.clone(),
                 outputs,
             },
         })
@@ -187,13 +195,19 @@ impl ReferenceValidatorRole {
             (
                 JobState::GraphExecution(job),
                 ReceiptState::GraphExecution(receipt),
-                RoleReceiptArtifacts::GraphExecution { graph, inputs, .. },
+                RoleReceiptArtifacts::GraphExecution {
+                    graph,
+                    inputs,
+                    const_blobs,
+                    ..
+                },
             ) => {
-                let report = crate::verify::verify_graph_execution(
+                let report = crate::verify::verify_graph_execution_with_const_blobs(
                     job,
                     receipt,
                     graph,
                     inputs,
+                    const_blobs,
                     validation_seed,
                 )?;
                 Ok(ValidatorAttestation::new(
@@ -237,7 +251,7 @@ pub fn primitive_type(job: &JobState) -> PrimitiveType {
 mod tests {
     use super::*;
     use crate::chain::ChainParams;
-    use crate::ir::canonical_matmul_graph;
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorSpec, canonical_matmul_graph};
     use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
     use crate::tensor::DType;
     use crate::types::{address, hash_bytes};
@@ -324,7 +338,7 @@ mod tests {
         let miner = CpuReferenceMinerRole::new(address(b"role-graph-miner"));
 
         let bundle = miner
-            .execute_graph_job(&job, &graph, &inputs, 0, 2)
+            .execute_graph_job(&job, &graph, &inputs, &BTreeMap::new(), 0, 2)
             .unwrap();
         let validator = ReferenceValidatorRole::new(address(b"role-graph-validator"), 10_000);
         let attestation = validator
@@ -340,6 +354,62 @@ mod tests {
             primitive_type(&JobState::GraphExecution(job)),
             PrimitiveType::GraphExecution
         );
+        assert_eq!(bundle.served_tensors().len(), 3);
+        assert_eq!(attestation.result, VerificationResult::Valid);
+        assert!(attestation.verify_signature());
+    }
+
+    #[test]
+    fn cpu_roles_execute_and_verify_graph_jobs_with_const_blob() {
+        let params = ChainParams::default();
+        let input = Tensor::from_vec(vec![2], DType::FieldElement, vec![5, 6]).unwrap();
+        let blob = Tensor::from_vec(vec![2], DType::FieldElement, vec![1, 2]).unwrap();
+        let blob_uri = crate::hash::hex(&blob.commitment_root());
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec::field("x", vec![2])],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "add".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                    IrRef::ConstBlob {
+                        uri: blob_uri.clone(),
+                        shape: vec![2],
+                        dtype: DType::FieldElement,
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("y", vec![2])],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let const_blobs = BTreeMap::from([(blob_uri, blob)]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 2);
+        let miner = CpuReferenceMinerRole::new(address(b"role-graph-blob-miner"));
+
+        let bundle = miner
+            .execute_graph_job(&job, &graph, &inputs, &const_blobs, 0, 2)
+            .unwrap();
+        let validator = ReferenceValidatorRole::new(address(b"role-graph-blob-validator"), 10_000);
+        let attestation = validator
+            .verify_receipt(
+                &JobState::GraphExecution(job),
+                &bundle,
+                &hash_bytes(b"test", &[b"role-graph-blob-seed"]),
+                &params.freivalds,
+            )
+            .unwrap();
+
         assert_eq!(bundle.served_tensors().len(), 3);
         assert_eq!(attestation.result, VerificationResult::Valid);
         assert!(attestation.verify_signature());

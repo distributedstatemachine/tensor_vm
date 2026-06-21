@@ -485,19 +485,47 @@ pub fn verify_graph_execution(
     tensors: &std::collections::BTreeMap<String, Tensor>,
     validation_seed: &Hash,
 ) -> Result<GraphVerificationReport> {
-    let profile = cpu_reference_conformance_profile()?;
-    verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+    verify_graph_execution_with_const_blobs(
         job,
         receipt,
         graph,
         tensors,
+        &std::collections::BTreeMap::new(),
         validation_seed,
-        conformance_profile: &profile,
-    })
+    )
+}
+
+pub fn verify_graph_execution_with_const_blobs(
+    job: &GraphJob,
+    receipt: &GraphReceipt,
+    graph: &TensorGraph,
+    tensors: &std::collections::BTreeMap<String, Tensor>,
+    const_blobs: &std::collections::BTreeMap<String, Tensor>,
+    validation_seed: &Hash,
+) -> Result<GraphVerificationReport> {
+    let profile = cpu_reference_conformance_profile()?;
+    verify_graph_execution_inner(
+        GraphConformanceVerification {
+            job,
+            receipt,
+            graph,
+            tensors,
+            validation_seed,
+            conformance_profile: &profile,
+        },
+        const_blobs,
+    )
 }
 
 pub fn verify_graph_execution_with_conformance_profile(
     input: GraphConformanceVerification<'_>,
+) -> Result<GraphVerificationReport> {
+    verify_graph_execution_inner(input, &std::collections::BTreeMap::new())
+}
+
+fn verify_graph_execution_inner(
+    input: GraphConformanceVerification<'_>,
+    const_blobs: &std::collections::BTreeMap<String, Tensor>,
 ) -> Result<GraphVerificationReport> {
     let GraphConformanceVerification {
         job,
@@ -538,7 +566,7 @@ pub fn verify_graph_execution_with_conformance_profile(
     if !verify_signature(&receipt.miner, &receipt.receipt_id, &receipt.signature) {
         return Err(TvmError::InvalidReceipt("bad receipt signature"));
     }
-    let execution = job.exact_ir_execution(graph, tensors)?;
+    let execution = job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?;
     let output_roots = execution
         .outputs
         .iter()

@@ -1,6 +1,8 @@
 use crate::{
-    ReceiptState, RpcNode, Tensor, TensorVmLibp2pService, api::P2pMessage, decode_tensor_payload,
-    types::Hash,
+    ReceiptState, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
+    api::P2pMessage,
+    decode_tensor_payload,
+    types::{Hash, parse_hash_hex},
 };
 use std::time::Duration;
 
@@ -131,6 +133,15 @@ fn validator_receipt_required_remote_roots(node: &RpcNode, receipt: &ReceiptStat
         ReceiptState::GraphExecution(receipt) => {
             roots.extend(receipt.input_roots.values().copied());
             roots.extend(receipt.output_roots.values().copied());
+            if let Some(graph) = graph_from_program_body(node, &receipt.graph_id)
+                && let Ok(const_blobs) = graph.const_blob_specs()
+            {
+                roots.extend(
+                    const_blobs
+                        .keys()
+                        .filter_map(|uri| parse_hash_hex(uri).ok()),
+                );
+            }
         }
     }
     roots.sort();
@@ -139,4 +150,13 @@ fn validator_receipt_required_remote_roots(node: &RpcNode, receipt: &ReceiptStat
         .into_iter()
         .filter(|root| !node.contains_tensor_commitment_root(root))
         .collect()
+}
+
+fn graph_from_program_body(node: &RpcNode, graph_id: &Hash) -> Option<TensorGraph> {
+    let bytes = node.chain.state().program_body(graph_id)?;
+    let graph = TensorGraph::from_canonical_json_bytes(bytes).ok()?;
+    if graph.validate_for_consensus().ok()? != *graph_id {
+        return None;
+    }
+    Some(graph)
 }

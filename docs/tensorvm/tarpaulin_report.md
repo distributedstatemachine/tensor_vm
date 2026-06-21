@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 97 with:
+Latest attempted run: June 20, 2026 from the workspace root during Iteration 98 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 97 coverage could not
-be regenerated. Iterations 78 through 97 rechecked the same command and hit the same missing-binary blocker.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 98 coverage could not
+be regenerated. Iterations 78 through 98 rechecked the same command and hit the same missing-binary blocker.
 The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -123,6 +123,9 @@ delayed reward voiding, fraud-path calibration, and chain-state persistence.
 Iteration 97 added role-owned local graph execution production. Focused scheduler, localnet, graph-job,
 role, and app validator-role tests cover synthetic graph job emission, graph work settlement, and miner plus
 validator role submission from registered graph bodies and node-local tensors.
+Iteration 98 added content-addressed Tensor IR `const_blob` execution. Focused IR, graph-job, and role
+tests cover blob URI/root/shape/dtype checks, graph receipt replay with blob artifacts, role bundle
+serving, validator replay, and missing-blob rejection.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

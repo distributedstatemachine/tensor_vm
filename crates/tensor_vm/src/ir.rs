@@ -6,7 +6,7 @@ use crate::merkle::merkle_root;
 use crate::tensor::{
     DType, Tensor, rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
 };
-use crate::types::{Hash, hash_bytes};
+use crate::types::{Hash, hash_bytes, parse_hash_hex};
 use serde_json::Value as JsonValue;
 
 pub type GraphId = Hash;
@@ -151,6 +151,13 @@ pub struct TensorGraph {
 pub struct IrExecutionInputs {
     pub tensors: BTreeMap<String, Tensor>,
     pub field_params: BTreeMap<String, Elem>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ConstBlobSpec {
+    pub uri: String,
+    pub shape: Vec<i64>,
+    pub dtype: DType,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -350,6 +357,22 @@ impl TensorGraph {
         }
         Ok(())
     }
+
+    pub fn const_blob_specs(&self) -> Result<BTreeMap<String, ConstBlobSpec>> {
+        let mut specs = BTreeMap::new();
+        for op in &self.ops {
+            for arg in &op.args {
+                collect_const_blob_ref(arg, &mut specs)?;
+            }
+            for value in op.kwargs.values() {
+                collect_const_blob_value(value, &mut specs)?;
+            }
+        }
+        for output in &self.outputs {
+            collect_const_blob_ref(&output.value, &mut specs)?;
+        }
+        Ok(specs)
+    }
 }
 
 fn validate_execution_inputs(graph: &TensorGraph, inputs: &IrExecutionInputs) -> Result<()> {
@@ -369,12 +392,23 @@ fn validate_execution_inputs(graph: &TensorGraph, inputs: &IrExecutionInputs) ->
             ));
         }
     }
+    let const_blob_specs = graph.const_blob_specs()?;
     for name in inputs.tensors.keys() {
-        if !graph.inputs.iter().any(|spec| spec.name == *name) {
+        if !graph.inputs.iter().any(|spec| spec.name == *name)
+            && !const_blob_specs.contains_key(name)
+        {
             return Err(TvmError::InvalidReceipt(
                 "unknown tensor ir execution input",
             ));
         }
+    }
+
+    for (uri, spec) in &const_blob_specs {
+        let tensor = inputs
+            .tensors
+            .get(uri)
+            .ok_or(TvmError::InvalidReceipt("missing tensor ir const_blob"))?;
+        validate_const_blob_tensor(spec, tensor)?;
     }
 
     for spec in &graph.params {
@@ -395,6 +429,52 @@ fn validate_execution_inputs(graph: &TensorGraph, inputs: &IrExecutionInputs) ->
                 "unknown tensor ir execution param",
             ));
         }
+    }
+    Ok(())
+}
+
+fn collect_const_blob_value(
+    value: &IrValue,
+    specs: &mut BTreeMap<String, ConstBlobSpec>,
+) -> Result<()> {
+    if let IrValue::Ref(reference) = value {
+        collect_const_blob_ref(reference, specs)?;
+    }
+    Ok(())
+}
+
+fn collect_const_blob_ref(
+    reference: &IrRef,
+    specs: &mut BTreeMap<String, ConstBlobSpec>,
+) -> Result<()> {
+    if let IrRef::ConstBlob { uri, shape, dtype } = reference {
+        let spec = ConstBlobSpec {
+            uri: uri.clone(),
+            shape: shape.clone(),
+            dtype: *dtype,
+        };
+        if let Some(existing) = specs.get(uri) {
+            if existing != &spec {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir const_blob spec mismatch",
+                ));
+            }
+        } else {
+            specs.insert(uri.clone(), spec);
+        }
+    }
+    Ok(())
+}
+
+fn validate_const_blob_tensor(spec: &ConstBlobSpec, tensor: &Tensor) -> Result<()> {
+    let expected_root = parse_hash_hex(&spec.uri)
+        .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir const_blob uri"))?;
+    if tensor.commitment_root() != expected_root
+        || tensor.dtype() != spec.dtype
+        || tensor.scale() != 0
+        || tensor_shape_matches_spec(tensor.shape(), &spec.shape).is_err()
+    {
+        return Err(TvmError::InvalidReceipt("tensor ir const_blob mismatch"));
     }
     Ok(())
 }
@@ -446,9 +526,11 @@ fn resolve_runtime_ref(
                 "unknown tensor ir execution param",
             )),
         IrRef::Const { value } => literal_runtime_value(value),
-        IrRef::ConstBlob { .. } => Err(TvmError::InvalidReceipt(
-            "tensor ir const_blob execution requires external fetch",
-        )),
+        IrRef::ConstBlob { uri, .. } => inputs
+            .get(uri)
+            .cloned()
+            .map(RuntimeValue::Tensor)
+            .ok_or(TvmError::InvalidReceipt("missing tensor ir const_blob")),
     }
 }
 
@@ -3892,6 +3974,73 @@ mod tests {
                 })
                 .unwrap()
                 .trace_root
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_const_blob_by_content_uri() {
+        let input = Tensor::from_vec(vec![2], DType::FieldElement, vec![1, 2]).unwrap();
+        let blob = Tensor::from_vec(vec![2], DType::FieldElement, vec![10, 20]).unwrap();
+        let uri = crate::hash::hex(&blob.commitment_root());
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2], DType::FieldElement, 0)],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "add".to_owned(),
+                args: vec![
+                    input_ref("x"),
+                    IrRef::ConstBlob {
+                        uri: uri.clone(),
+                        shape: vec![2],
+                        dtype: DType::FieldElement,
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("y", vec![2], DType::FieldElement, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("x".to_owned(), input), (uri.clone(), blob)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+        assert_eq!(
+            execution.outputs["y"],
+            Tensor::from_vec(vec![2], DType::FieldElement, vec![11, 22]).unwrap()
+        );
+
+        assert_eq!(
+            graph.execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([(
+                    "x".to_owned(),
+                    Tensor::from_vec(vec![2], DType::FieldElement, vec![1, 2]).unwrap()
+                )]),
+                field_params: BTreeMap::new(),
+            }),
+            Err(TvmError::InvalidReceipt("missing tensor ir const_blob"))
+        );
+
+        let wrong_blob = Tensor::from_vec(vec![2], DType::FieldElement, vec![10, 21]).unwrap();
+        assert_eq!(
+            graph.execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "x".to_owned(),
+                        Tensor::from_vec(vec![2], DType::FieldElement, vec![1, 2]).unwrap(),
+                    ),
+                    (uri, wrong_blob),
+                ]),
+                field_params: BTreeMap::new(),
+            }),
+            Err(TvmError::InvalidReceipt("tensor ir const_blob mismatch"))
         );
     }
 

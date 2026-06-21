@@ -5,21 +5,21 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 97 complete - role-owned graph execution production.
+- Active feature: Iteration 98 complete - Tensor IR const-blob execution.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
   implemented locally. Miner and validator role helpers can now execute and attest `GraphExecution` jobs
-  from registered graph bodies and local tensor artifacts.
+  from registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue verifier-transcript disputes, remaining fraud-path/slashing work, external
-  randomness, or rerun the full Docker scenario after the `/health` blocker clears.
+- Next action: commit and push Iteration 98, then continue verifier-transcript disputes, external
+  randomness, remaining economics work, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -33,7 +33,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, and role-owned local graph execution | Continue exact Tier-B verifier coverage, const blobs, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
@@ -41,46 +41,45 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 97: Role-Owned Graph Execution Production
+### Iteration 98: Tensor IR Const-Blob Execution
 
-Feature capability: produce, execute, verify, and settle a local synthetic `GraphExecution` job through the
-same role-owned job/receipt/attestation path as fixed TensorOp and LinearTrainingStep jobs.
+Feature capability: execute and verify Tensor IR `const_blob` refs as content-addressed tensor artifacts
+instead of rejecting them as an external-fetch placeholder.
 
-Canonical owner: `scheduler::SyntheticLocalJobSource`, `localnet`, role helpers, and chain
-`RegisterProgramBody`/`SubmitJob`/`SubmitReceipt`/`SubmitAttestation`.
-Adapter callers: local producer, miner role, validator role, p2p program/tensor serving, and tests.
-Old shortcut being removed: graph jobs existed in chain/codec/verifier code but local synthetic work and
-role loops skipped or rejected them unless explicit test-only graph artifacts were supplied.
+Canonical owner: `ir::TensorGraph` exact replay and `jobs::GraphJob` graph execution binding.
+Adapter callers: miner/validator graph role helpers, verifier replay, validator remote-fetch planning,
+localnet tests, and existing tensor artifact serving.
+Old shortcut being removed: structurally valid `const_blob` refs always failed exact execution with
+`tensor ir const_blob execution requires external fetch`.
 Regression test that proves the shortcut is gone:
-`app::validator_role::tests::role_runtime_submits_and_attests_graph_execution_from_local_artifacts`.
-Behavior with local synthetic block production disabled: inbound graph jobs still require registered graph
-bodies and tensors before role execution; no block-production gate is involved.
-Behavior for producer and non-producer roles: producer registers the graph body and input tensors; miner and
-validator roles execute/attest only from node-local artifacts and shared chain commands.
-Structured evidence source: `program_bodies`, graph job/receipt/attestation state, local tensor store,
-role work observations, and settled receipt state.
-Finality source: unchanged; graph receipts enter normal settled blockspace and finality remains block-vote
-driven.
-Wire-size and codec boundary: no new wire codec; graph job/receipt variants and `RequestProgram` serving
-are reused, with tensor payloads remaining commitment-addressed artifacts.
+`ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,
+`jobs::tests::graph_receipt_replay_supports_const_blob_artifacts`, and
+`roles::tests::cpu_roles_execute_and_verify_graph_jobs_with_const_blob`.
+Behavior with local synthetic block production disabled: inbound graph work can execute only when the
+registered graph body plus required input/blob tensors are present locally or fetched by commitment root.
+Behavior for producer and non-producer roles: producer/miner/validator roles use the same node-local tensor
+store; missing blobs keep graph work artifact-missing/pending rather than fabricating constants.
+Structured evidence source: canonical graph body, `const_blob` URI, tensor commitment root, receipt output
+roots, trace root, and graph verifier checks root.
+Finality source: unchanged; graph receipts still settle into normal receipt blockspace and block-vote
+finality.
+Wire-size and codec boundary: no new wire codec; blob tensors use existing commitment-root tensor request
+and payload paths, and the URI remains canonical IR JSON.
 
 Implementation summary:
-- Added a deterministic synthetic exact Tier-B graph (`add` then `relu`) and graph input tensors to the
-  local job source, cycling TensorOp, LinearTrainingStep, and GraphExecution jobs.
-- Local CPU helper rounds now register the graph body, execute graph receipts, attest them, and settle them.
-- Long-running miner/validator role helpers reconstruct graph jobs from registered program bodies plus
-  node-local tensor artifacts instead of rejecting graph jobs.
+- `TensorGraph::execute_exact` resolves `const_blob` refs from artifacts keyed by URI, parses the URI as a
+  tensor commitment, and checks root, shape, dtype, and zero scale before replay.
+- `GraphJob` and `GraphReceipt` expose blob-aware execution/receipt constructors while preserving existing
+  empty-blob APIs.
+- Miner and validator graph role helpers collect blob tensors from node-local storage by commitment root;
+  validator remote-fetch planning includes blob roots from the registered graph body.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm synthetic_job_source --quiet`,
-  `cargo test -p tensor_vm synthetic_cpu_round --quiet`,
-  `cargo test -p tensor_vm graph_jobs --quiet`,
-  `cargo test -p tensor_vm role --quiet`, and
-  `cargo test -p tensor_vm role_runtime_submits_and_attests_graph_execution_from_local_artifacts --quiet`
-  passed.
+- Focused: `cargo test -p tensor_vm const_blob --quiet`, `cargo test -p tensor_vm graph_jobs --quiet`,
+  and `cargo test -p tensor_vm role --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 430 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 433 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -88,6 +87,15 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 97: Role-Owned Graph Execution Production
+
+Local synthetic production now cycles TensorOp, LinearTrainingStep, and deterministic exact Tier-B
+GraphExecution jobs. Local CPU helper rounds register graph bodies, execute graph receipts, attest them,
+and settle them, while long-running miner/validator role helpers reconstruct graph jobs from registered
+program bodies plus node-local tensor artifacts. Validation passed focused scheduler/localnet/graph/role
+tests, full crate, clippy, workspace release, and first/final Gate 0. Commit `5af3fcf` is pushed to
+`origin/main`.
 
 ### Iteration 96: Automatic Side-Branch Deep Reorg
 
@@ -211,14 +219,13 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 96 on June 20, 2026:
+Latest full validation is Iteration 98 on June 20, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm side_branch --quiet
-cargo test -p tensor_vm reorg --quiet
-cargo test -p tensor_vm blocks --quiet
-cargo test -p tensor_vm block_payload_application --quiet
+cargo test -p tensor_vm const_blob --quiet
+cargo test -p tensor_vm graph_jobs --quiet
+cargo test -p tensor_vm role --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
@@ -226,12 +233,6 @@ cargo clippy --workspace --all-targets -- -D warnings
 cargo test --workspace --release
 cargo test -p tensor_vm local_testnet --release
 cargo tarpaulin --workspace --offline
-```
-
-Current iteration Gate 0 passed:
-
-```text
-cargo test -p tensor_vm local_testnet --release
 ```
 
 Current coverage blocker:

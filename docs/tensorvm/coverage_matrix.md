@@ -130,11 +130,16 @@ Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: const-blob fetching, fixed-point arithmetic scale policy beyond
+Remaining Tensor IR/conformance gaps: fixed-point arithmetic scale policy beyond
 `cast`/`round`, low-level packed tensor storage/chunking APIs, index-consistency proofs for
 `gather`/`scatter`/`embedding`, additional mixed-dtype conformance vectors, public/p2p artifact propagation
 evidence for externally supplied arbitrary graph jobs, and CUDA conformance evidence when `cuda-kernels` is
 not compiled in this environment.
+Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared
+commitment URI, with shape/dtype/root checks during exact graph replay. Evidence:
+`ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,
+`jobs::tests::graph_receipt_replay_supports_const_blob_artifacts`, and
+`roles::tests::cpu_roles_execute_and_verify_graph_jobs_with_const_blob`.
 Tier-C, index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are
 still gated out of consensus when their verifier class is deferred.
 

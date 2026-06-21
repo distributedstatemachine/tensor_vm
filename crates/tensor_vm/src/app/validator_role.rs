@@ -2,12 +2,12 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     BlockVote, Chain, ChainCommand, ChainEngine, JobScheduler, JobState, ReceiptState, RpcNode,
-    SyntheticLocalJobSource, TensorGraph,
+    SyntheticLocalJobSource, Tensor, TensorGraph,
     chain::ValidatorAuditReport,
     hash::hex,
     jobs::LinearTrainingStepOutput,
     roles::{ReferenceValidatorRole, RoleReceiptArtifacts, RoleReceiptBundle},
-    types::{Address, Hash},
+    types::{Address, Hash, parse_hash_hex},
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -479,17 +479,31 @@ fn role_receipt_bundle_from_local_tensors(
             for (name, root) in &receipt.output_roots {
                 outputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
             }
+            let const_blobs = graph_const_blobs_from_node(node, &graph)?;
             Some(RoleReceiptBundle {
                 receipt: ReceiptState::GraphExecution(receipt.clone()),
                 artifacts: RoleReceiptArtifacts::GraphExecution {
                     graph,
                     inputs,
+                    const_blobs,
                     outputs,
                 },
             })
         }
         _ => None,
     }
+}
+
+fn graph_const_blobs_from_node(
+    node: &RpcNode,
+    graph: &TensorGraph,
+) -> Option<BTreeMap<String, Tensor>> {
+    let mut const_blobs = BTreeMap::new();
+    for (uri, _) in graph.const_blob_specs().ok()? {
+        let root = parse_hash_hex(&uri).ok()?;
+        const_blobs.insert(uri, node.tensor_by_commitment_root(&root)?.clone());
+    }
+    Some(const_blobs)
 }
 
 fn graph_from_program_body(node: &RpcNode, graph_id: &Hash) -> Option<TensorGraph> {
