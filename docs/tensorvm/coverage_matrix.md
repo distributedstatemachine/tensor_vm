@@ -116,7 +116,14 @@ counted invalid, and focused libp2p evidence fetches the graph body plus input t
 request-response before applying the same external graph job payload. Evidence:
 `node::payload_application::tests::graph_job_payload_waits_for_registered_program_body`,
 `node::message_ingest::tests::network_event_driver_queues_graph_job_until_program_body_arrives`, and
-`p2p::service::tests::libp2p_service_propagates_external_graph_job_artifacts`.
+`p2p::service::tests::libp2p_service_propagates_external_graph_job_artifacts`. Role/runtime graph
+artifact resolution is now automatic at the remaining runtime boundaries: pending graph job payloads fetch
+their missing program body through bounded `RequestProgram` before retry, miner roles fetch missing graph
+input and `const_blob` tensor artifacts before execution, and validator roles fetch missing graph input,
+output, and `const_blob` tensor artifacts before attestation. Evidence:
+`network_payloads::network_ingest_fetches_pending_graph_job_program_before_retry`,
+`miner_role::miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution`, and
+`validator_role::validator_role_fetches_remote_graph_const_blobs_before_attesting`.
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `div`, `scalar_mul`,
@@ -152,8 +159,8 @@ Focused evidence:
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding`,
-additional mixed-dtype conformance vectors, automatic role-loop fetching for every external graph artifact,
-and CUDA conformance evidence when `cuda-kernels` is not compiled in this environment.
+additional mixed-dtype conformance vectors, trace-chunk dispute availability, and CUDA conformance evidence
+when `cuda-kernels` is not compiled in this environment.
 Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared
 commitment URI, with shape/dtype/root checks during exact graph replay. Evidence:
 `ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,

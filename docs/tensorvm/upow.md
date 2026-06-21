@@ -340,8 +340,10 @@ Every record's signed body is canonical JSON / SSZ; `*_id = SHA256(canonical(bod
 > production now executes and attests an exact Tier-B graph from node-local artifacts. The shared node
 > payload path now keeps external graph jobs pending until their program bodies are registered, and focused
 > libp2p evidence fetches externally supplied graph bodies plus input tensor artifacts before applying the
-> graph job payload. Automatic role-loop fetching for every external graph artifact and a generic cheap
-> verifier for every admitted op remain open.
+> graph job payload. Runtime ingest now fetches missing pending graph-program bodies over the bounded
+> `RequestProgram` path before retrying queued graph jobs; miner role loops fetch missing graph input and
+> `const_blob` tensors before execution; and validator role loops fetch graph input, output, and
+> `const_blob` tensors before attestation. A generic cheap verifier for every admitted op remains open.
 
 > **Crypto is asymmetric, full stop.** No HMAC/shared-secret signing anywhere in the consensus path. Identities are on-chain accounts.
 

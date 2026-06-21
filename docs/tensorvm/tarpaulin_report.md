@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 117 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 118 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 117 coverage could not
-be regenerated. Iterations 78 through 117 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 118 coverage could not
+be regenerated. Iterations 78 through 118 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -179,6 +179,10 @@ Iteration 117 adds external graph artifact propagation evidence. Focused node an
 valid graph job payloads staying pending while their graph body is missing, runtime retry after program
 registration, and loopback request-response fetching of graph program plus input tensor artifacts before
 the same external graph job payload applies.
+Iteration 118 adds automatic external graph artifact fetching at the runtime role boundaries. Focused
+runtime tests cover pending graph job payloads fetching missing program bodies before retry, miner roles
+fetching graph input plus `const_blob` tensors before execution, and validator roles fetching graph input,
+output, and `const_blob` tensors before attestation.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

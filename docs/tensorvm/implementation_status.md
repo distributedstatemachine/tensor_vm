@@ -91,12 +91,17 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   the shared node payload path instead of being counted invalid, and the libp2p service has focused
   evidence for fetching externally supplied graph bodies plus input tensor artifacts by request-response
   before applying the same graph job payload. Graph role bundles now serve and verify any required
-  `const_blob` tensors through the same commitment-root artifact path, and validator remote-fetch planning
-  includes blob roots from the registered graph body. Tensor-owned packed int8 payload APIs now provide
+  `const_blob` tensors through the same commitment-root artifact path. Runtime ingest now inspects pending
+  graph job payloads, fetches missing program bodies over the bounded program request-response path,
+  registers valid canonical bodies through `ChainCommand::RegisterProgramBody`, and retries the pending
+  payload in the same runtime boundary. Miner roles fetch missing graph input and `const_blob` tensors
+  before execution, and validator remote-fetch planning includes graph input, output, and blob roots from
+  the registered graph body before attestation. Tensor-owned packed int8 payload APIs now provide
   bounded `TVQ8` byte layout length calculation, shared encode/decode validation for IR replay and
   conformance, and first-class `Uint8` tensor artifact construction/decode methods whose descriptors,
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
-  every external graph artifact and CUDA generic graph execution remain open.
+  graph program and tensor artifacts is implemented locally; trace-chunk dispute availability and CUDA
+  generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
