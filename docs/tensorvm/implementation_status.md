@@ -126,9 +126,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
 - Full-output Freivalds verification and row-sampled audit checks
 - Row-sampling sparse-corruption probability calculator
 - Milestone -1 study utilities for the current UVPoW threat model, Freivalds false-accept bounds,
-  randomness grindability, data withholding, collusion thresholds, TensorWork concentration, verification
-  cost, the strict expected-slash-cost versus reward-from-fraud economic invariant, and zero-work liveness
-  fallback
+  randomness grindability, data withholding, operator-aware collusion thresholds, TensorWork concentration,
+  verification cost, the strict expected-slash-cost versus reward-from-fraud economic invariant, and
+  zero-work liveness fallback
 - LinearTrainingStep execution and verification
 - Random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`, backed by registry-level
   verifier classification that distinguishes random-linear relations from exact replay and deferred
@@ -326,7 +326,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   miner count, agreeing operator count, and `reward_delay_until_height` derived from the same reward
   maturity policy as receipt claims. When a previously delayed receipt later settles, its pending miner and
   validator receipt reward claims inherit that height as a lower-bound hold, then canonical block inclusion
-  extends the claim with the ordinary receipt-maturity delay.
+  extends the claim with the ordinary receipt-maturity delay. The collusion-risk study now mirrors that
+  rule by separately reporting colluding miner-address count and colluding operator count, and only treats
+  redundant agreement as satisfiable when the colluding operator count reaches quorum.
 - Miner node executor with receipt submission and tensor serving
 - Validator node attestation flow for TensorOp and LinearTrainingStep receipts
 - Server-backed TensorOp data availability verification with unavailable attestations

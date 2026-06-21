@@ -238,7 +238,9 @@ The local bundle is useful and should remain the first operational target:
   voided-but-delayed receipt-claim behavior, so affected claims remain state-rooted until the hold clears.
   Redundant settlement now counts distinct registered miner operator IDs for agreement quorum instead of
   miner addresses alone, and delay records persist both agreeing miner and agreeing operator counts before
-  any delayed claim can later settle.
+  any delayed claim can later settle. The collusion-risk study now reports miner-address quorum and
+  operator quorum separately, so redundant-agreement collusion evidence follows the same operator-distinct
+  rule as settlement.
   Chain state, service status, and explorer overview now also expose structured detection-probability
   evidence for the implemented verifier and fraud mechanisms. Deployed-run measured detection records and
   remaining fraud paths remain open economics work.

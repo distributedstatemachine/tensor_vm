@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 123 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 124 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 123 coverage could not
-be regenerated. Iterations 78 through 123 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 124 coverage could not
+be regenerated. Iterations 78 through 124 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -190,6 +190,9 @@ heights, mature release, audit delay/voiding, and roundtrip persistence.
 Iteration 123 makes redundant settlement quorum operator-distinct. Focused settlement and storage tests
 cover same-operator miner-address agreement staying delayed, distinct-operator agreement settling, delay
 records preserving both agreeing miner and operator counts, and chain-state roundtrip persistence.
+Iteration 124 makes collusion-risk study evidence operator-aware. Focused study coverage checks that
+colluding miner-address count reaching quorum is insufficient when those miners are controlled by too few
+operators, while colluding operators at quorum can satisfy redundant agreement.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

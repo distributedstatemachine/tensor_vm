@@ -307,6 +307,8 @@ pub struct CollusionRiskInput {
     pub colluding_validator_indices: Vec<usize>,
     pub miner_count: usize,
     pub colluding_miners: usize,
+    pub operator_count: usize,
+    pub colluding_operators: usize,
     pub finality_stake_numerator: u64,
     pub finality_stake_denominator: u64,
     pub attestation_stake_numerator: u64,
@@ -322,8 +324,10 @@ pub struct CollusionRiskAssessment {
     pub validator_stake_share: f64,
     pub colluding_validator_count: usize,
     pub colluding_miners: usize,
+    pub colluding_operators: usize,
     pub reaches_finality_threshold: bool,
     pub reaches_attestation_threshold: bool,
+    pub reaches_miner_address_quorum: bool,
     pub reaches_agreement_quorum: bool,
     pub can_finalize_invalid_block: bool,
     pub can_attest_invalid_receipt: bool,
@@ -356,8 +360,10 @@ pub fn collusion_risk_assessment(input: CollusionRiskInput) -> CollusionRiskAsse
     );
     let reaches_attestation_threshold = reaches_attestation_stake_threshold
         && colluding_validator_count >= input.minimum_validators;
-    let reaches_agreement_quorum =
+    let reaches_miner_address_quorum =
         input.colluding_miners.min(input.miner_count) >= input.agreement_quorum.max(1);
+    let reaches_agreement_quorum =
+        input.colluding_operators.min(input.operator_count) >= input.agreement_quorum.max(1);
 
     CollusionRiskAssessment {
         total_validator_stake,
@@ -365,8 +371,10 @@ pub fn collusion_risk_assessment(input: CollusionRiskInput) -> CollusionRiskAsse
         validator_stake_share: ratio_u64(colluding_validator_stake, total_validator_stake),
         colluding_validator_count,
         colluding_miners: input.colluding_miners.min(input.miner_count),
+        colluding_operators: input.colluding_operators.min(input.operator_count),
         reaches_finality_threshold,
         reaches_attestation_threshold,
+        reaches_miner_address_quorum,
         reaches_agreement_quorum,
         can_finalize_invalid_block: reaches_finality_threshold,
         can_attest_invalid_receipt: reaches_attestation_threshold,
@@ -580,6 +588,8 @@ mod tests {
             colluding_validator_indices: vec![0],
             miner_count: 0,
             colluding_miners: 3,
+            operator_count: 0,
+            colluding_operators: 3,
             finality_stake_numerator: 2,
             finality_stake_denominator: 3,
             attestation_stake_numerator: 2,
@@ -589,6 +599,7 @@ mod tests {
         });
         assert_eq!(empty.validator_stake_share, 0.0);
         assert_eq!(empty.colluding_miners, 0);
+        assert_eq!(empty.colluding_operators, 0);
         assert!(!empty.can_finalize_invalid_block);
 
         let below = collusion_risk_assessment(CollusionRiskInput {
@@ -596,6 +607,8 @@ mod tests {
             colluding_validator_indices: vec![0, 1],
             miner_count: 5,
             colluding_miners: 2,
+            operator_count: 5,
+            colluding_operators: 2,
             finality_stake_numerator: 2,
             finality_stake_denominator: 3,
             attestation_stake_numerator: 2,
@@ -606,13 +619,34 @@ mod tests {
         assert_eq!(below.colluding_validator_stake, 20);
         assert!(!below.can_finalize_invalid_block);
         assert!(!below.can_attest_invalid_receipt);
+        assert!(!below.reaches_miner_address_quorum);
         assert!(!below.can_satisfy_redundant_agreement_with_collusion);
+
+        let same_operator_miners = collusion_risk_assessment(CollusionRiskInput {
+            validator_stakes: vec![10, 10, 10, 10, 10],
+            colluding_validator_indices: vec![0, 1, 2, 3],
+            miner_count: 5,
+            colluding_miners: 3,
+            operator_count: 5,
+            colluding_operators: 1,
+            finality_stake_numerator: 2,
+            finality_stake_denominator: 3,
+            attestation_stake_numerator: 2,
+            attestation_stake_denominator: 3,
+            minimum_validators: 3,
+            agreement_quorum: 3,
+        });
+        assert!(same_operator_miners.reaches_miner_address_quorum);
+        assert!(!same_operator_miners.reaches_agreement_quorum);
+        assert!(!same_operator_miners.can_satisfy_redundant_agreement_with_collusion);
 
         let above = collusion_risk_assessment(CollusionRiskInput {
             validator_stakes: vec![10, 10, 10, 10, 10],
             colluding_validator_indices: vec![0, 1, 2, 3],
             miner_count: 5,
             colluding_miners: 3,
+            operator_count: 5,
+            colluding_operators: 3,
             finality_stake_numerator: 2,
             finality_stake_denominator: 3,
             attestation_stake_numerator: 2,
@@ -623,6 +657,8 @@ mod tests {
         assert_eq!(above.validator_stake_share, 0.8);
         assert!(above.can_finalize_invalid_block);
         assert!(above.can_attest_invalid_receipt);
+        assert!(above.reaches_miner_address_quorum);
+        assert!(above.reaches_agreement_quorum);
         assert!(above.can_satisfy_redundant_agreement_with_collusion);
     }
 

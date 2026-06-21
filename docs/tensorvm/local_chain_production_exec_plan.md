@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 123 complete - operator-distinct redundant settlement quorum.
+- Active feature: Iteration 124 complete - operator-aware collusion risk evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -63,6 +63,47 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
+### Iteration 124: Operator-Aware Collusion Risk Evidence
+
+Feature capability: make the collusion-risk study evaluate redundant agreement by distinct colluding
+operator identities rather than colluding miner-address count.
+Readiness requirements covered: `upow.md` §8.1 honest-majority committee framing, §12 economic invariant
+evidence, and `mvp_spec.md` §15 independent miner agreement.
+Canonical owner: `study::collusion_risk_assessment`; settlement remains owned by `chain::settlement`.
+Adapter callers: exported study API and docs/coverage evidence only.
+Old shortcut being removed: miner-count-only redundant-agreement collusion evidence after settlement moved
+to operator-distinct quorum.
+Regression test that proves the shortcut is gone: a single colluding operator controlling enough miner
+addresses no longer satisfies redundant agreement in the study, while enough colluding operators do.
+Behavior with local synthetic block production disabled: unchanged; this is offline study evidence.
+Behavior for producer and non-producer roles: unchanged; no runtime role mutation.
+Structured evidence source: focused `study::tests::collusion_risk_assessment_reports_threshold_crossings`.
+Finality source: unchanged stake-threshold fields in the same study.
+Wire-size and codec boundary: none; no wire format changes.
+Files/modules likely touched: `study`, coverage/status/readiness/exec docs, tarpaulin note.
+Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
+Parallelizable implementation workstreams: study API/test update and docs evidence.
+Tests/checkers/docs to add or update: focused collusion study test and docs that name operator-aware
+redundant-agreement risk.
+Narrow validation commands: `cargo test -p tensor_vm collusion_risk --quiet`.
+Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
+release tests, tarpaulin attempt, and final Gate 0.
+Expected observable evidence: colluding miners below operator quorum fail redundant agreement even when
+their address count reaches quorum; colluding operators at quorum satisfy it.
+Out of scope: public operator identity evidence, settlement quorum mechanics, Docker `/health` rerun, and
+CUDA evidence.
+Split trigger: exported API fallout beyond study callers or docs-only changes failing to capture the
+behavior.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused test passed: `cargo test -p tensor_vm collusion_risk --quiet`.
+- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+  final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+
 ### Iteration 123: Operator-Distinct Redundant Settlement Quorum
 
 Feature capability: make redundant receipt settlement require distinct agreeing miner operators, not just
@@ -118,102 +159,13 @@ Validation evidence:
   `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
   final `cargo test -p tensor_vm local_testnet --release`.
 
-### Iteration 121: P2P Trace-Opening Sampling
-
-Feature capability: carry verified exact-IR trace openings over bounded libp2p request-response so
-validators/challengers can sample receipt trace evidence by `trace_root` and op index.
-Readiness requirements covered: `upow.md` §5 trace commitments, §9 verification data availability, and
-the coverage gap for p2p trace-opening sampling.
-Canonical owner: IR trace-opening verification remains in `ir`; p2p only transports precomputed openings.
-Adapter callers: libp2p service registers and serves trace openings like tensor/program artifacts.
-Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
-Out of scope: full interactive fraud game, durable DA, CUDA graph execution, and Docker `/health` rerun.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused p2p trace-opening tests passed: wire payload/mapping, service fetch, and Gate-0 libp2p node
-  request-response exchange.
-- Full checks passed: `cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`,
-  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`,
-  `cargo test --workspace --release`, and final `cargo test -p tensor_vm local_testnet --release`.
-- Coverage attempt remains blocked: `cargo tarpaulin --workspace --offline` reports no `tarpaulin` command.
-
-### Iteration 120: Trace Opening Availability
-
-Feature capability: expose Merkle openings for exact IR per-op trace commitments so graph and tensor
-receipts can serve dispute-ready trace evidence anchored by `trace_root`.
-Readiness requirements covered: `mvp_spec.md` trace-root availability, `upow.md` future interactive
-fraud-proof availability, and the coverage matrix gap for trace-chunk/blob dispute availability.
-Canonical owner: exact IR execution trace commitments and receipt replay helpers.
-Adapter callers: graph and tensor receipt paths use the same IR execution commitment layout.
-Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
-Out of scope: full interactive fraud game, durable erasure-coded DA, CUDA graph execution, and Docker
-`/health` rerun.
-
-Validation evidence: first/final `cargo test -p tensor_vm local_testnet --release`, focused
-`ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace` and `jobs::tests`,
-`cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-`cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
-Coverage attempt remains blocked: `cargo tarpaulin --workspace --offline` reports no `tarpaulin` command.
-
 ## Recent Iterations
 
-### Iterations 116, 118, and 119
-
-Packed int8 tensor artifact APIs, automatic external graph artifact fetch, and explicit receipt reward
-maturity state landed and were validated in prior pushed commits. See git history and docs for detail.
-
-### Iteration 114: Tensor-Owned Packed Int8 Payload API
-
-Centralized the canonical `TVQ8` packed int8 byte layout in tensor-owned bounded encode/decode APIs and
-updated IR/conformance callers. Validation passed; tarpaulin remained blocked. Feature commit: `4fceaeb`.
-
-### Iteration 115: Delayed Reward Path Cleanup
-
-Removed the remaining direct spendable reward-credit test helper. Command, transaction, generic credit,
-and telemetry tests now create pending credit rewards, prove pre-maturity claims are blocked, release
-through `ReleaseMaturedCreditRewards`, and only then claim/use spendable rewards. Focused/broad validation
-passed; tarpaulin remained blocked. Feature commit: `1c65b80` (`Use delayed credit rewards in tests`)
-pushed to `origin/main`; evidence commit `59b1cf2` pushed.
-
-### Iteration 117: External Graph Artifact Propagation Evidence
-
-External graph job payloads now stay pending when the program body is missing, and focused libp2p evidence
-fetches externally supplied graph bodies plus input tensors before applying the same graph job payload.
-Validation passed; tarpaulin remained blocked. Feature commit: `529cb16`; evidence commit: `3120ea5`.
-
-### Iteration 113: Fixed-Point Matmul Accumulation/Range Policy
-
-Feature capability: make `Fixed32` `matmul` accumulate signed raw products in fixed ascending order with a
-widened integer accumulator, then rescale once from product scale into the lhs/output scale with canonical
-round-half-to-even semantics. Validation passed; tarpaulin remained blocked. Feature commit: `506b020`.
-
-### Iteration 111: Mixed-Scale Fixed32 Multiplication Semantics
-
-Feature capability: allow `Fixed32` `mul` with different input scales by treating the signed product as
-scale `lhs_scale + rhs_scale`, then rescaling it into the lhs/output scale with canonical round-half-to-even
-semantics.
-
-Validation evidence:
-- First/final Gate 0 passed.
-- Focused tensor, IR, and conformance tests passed.
-- `cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
-- `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
-- Feature commit: `4de9463` (`Implement mixed-scale fixed32 multiply`) pushed to `origin/main`.
-
-### Iteration 110: Mixed-Scale Fixed32 Add/Sub Semantics
-
-Feature capability: allow `Fixed32` `add` and `sub` with different input scales by rescaling the RHS into
-the lhs/declaration scale with canonical round-half-to-even semantics before field add/sub.
-
-Validation evidence:
-- First/final Gate 0 passed.
-- Focused tensor, IR, and conformance tests passed.
-- `cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
-- `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
-- Feature commit: `ce665a5` (`Implement mixed-scale fixed32 add sub`) pushed to `origin/main`.
+- Iterations 120-121: trace openings and p2p trace-opening sampling landed in `b3fe556` and `f631084`.
+- Iterations 116-119: packed int8 artifacts, external graph artifact fetch, and explicit receipt reward
+  maturity landed in prior pushed commits.
+- Iterations 110-115: fixed-point rescale semantics, packed int8 payloads, and delayed reward cleanup
+  landed in pushed commits including `ce665a5`, `4de9463`, `506b020`, `4fceaeb`, and `1c65b80`.
 
 Earlier detailed iterations are summarized in the archive to keep this plan compact.
 
@@ -229,13 +181,11 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 123 on June 21, 2026:
+Latest full validation is Iteration 124 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm redundant_agreement --quiet
-cargo test -p tensor_vm delayed_receipt_rewards_before_release --quiet
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
+cargo test -p tensor_vm collusion_risk --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
