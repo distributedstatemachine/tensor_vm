@@ -20,8 +20,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 99, then continue verifier-transcript disputes, external
-  randomness, deployed-run economics evidence, or rerun Docker after the `/health` blocker clears.
+- Next action: continue verifier-transcript disputes, external randomness, deployed-run economics evidence,
+  or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -83,6 +83,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `0020c61` (`Dampen TensorWork reward concentration`) is ready to push to `origin/main`.
 
 ## Recent Iterations
 
