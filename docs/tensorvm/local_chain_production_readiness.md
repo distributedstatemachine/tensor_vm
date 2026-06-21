@@ -236,6 +236,9 @@ The local bundle is useful and should remain the first operational target:
   rewards are voided and held through an explicit challenge maturity height instead of requiring
   spendable-balance clawback. Data-unavailability and block-check challenges now use the same
   voided-but-delayed receipt-claim behavior, so affected claims remain state-rooted until the hold clears.
+  Redundant settlement now counts distinct registered miner operator IDs for agreement quorum instead of
+  miner addresses alone, and delay records persist both agreeing miner and agreeing operator counts before
+  any delayed claim can later settle.
   Chain state, service status, and explorer overview now also expose structured detection-probability
   evidence for the implemented verifier and fraud mechanisms. Deployed-run measured detection records and
   remaining fraud paths remain open economics work.

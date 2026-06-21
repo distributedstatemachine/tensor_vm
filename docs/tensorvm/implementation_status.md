@@ -319,10 +319,12 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine
 - Redundant miner-output agreement quorum before settlement, with disagreement/fewer-than-quorum receipts
-  delayed rather than rewarded. `ChainState::redundant_settlement_delays` now persists state-rooted
-  `RedundantSettlementDelayRecord` entries for missing agreement quorum and conflicting quorum-backed
-  linear-transition receipts, including `reward_delay_until_height` derived from the same reward maturity
-  policy as receipt claims. When a previously delayed receipt later settles, its pending miner and
+  delayed rather than rewarded. The quorum now counts distinct registered miner `operator_id` values, so
+  multiple miner addresses controlled by one operator cannot satisfy the independent-agreement threshold.
+  `ChainState::redundant_settlement_delays` persists state-rooted `RedundantSettlementDelayRecord` entries
+  for missing agreement quorum and conflicting quorum-backed linear-transition receipts, including agreeing
+  miner count, agreeing operator count, and `reward_delay_until_height` derived from the same reward
+  maturity policy as receipt claims. When a previously delayed receipt later settles, its pending miner and
   validator receipt reward claims inherit that height as a lower-bound hold, then canonical block inclusion
   extends the claim with the ordinary receipt-maturity delay.
 - Miner node executor with receipt submission and tensor serving

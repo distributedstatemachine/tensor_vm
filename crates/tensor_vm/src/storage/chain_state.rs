@@ -735,6 +735,7 @@ fn encode_redundant_settlement_delays(
         write_hash(out, &delay.job_id);
         out.push(primitive_type_tag(delay.primitive_type));
         write_len(out, delay.observed_agreeing_miners);
+        write_len(out, delay.observed_agreeing_operators);
         write_len(out, delay.required_agreement_quorum);
         write_len(out, delay.conflicting_quorum_receipts);
         write_u64(out, delay.recorded_at_height);
@@ -756,6 +757,7 @@ fn decode_redundant_settlement_delays(
             TvmError::Storage("unknown delayed-settlement primitive type"),
         )?;
         let observed_agreeing_miners = reader.read_len()?;
+        let observed_agreeing_operators = reader.read_len()?;
         let required_agreement_quorum = reader.read_len()?;
         let conflicting_quorum_receipts = reader.read_len()?;
         let recorded_at_height = reader.read_u64()?;
@@ -771,6 +773,7 @@ fn decode_redundant_settlement_delays(
                 job_id,
                 primitive_type,
                 observed_agreeing_miners,
+                observed_agreeing_operators,
                 required_agreement_quorum,
                 conflicting_quorum_receipts,
                 recorded_at_height,
@@ -1736,6 +1739,7 @@ mod tests {
             job_id: invalid_receipt.job_id,
             primitive_type: PrimitiveType::TensorOp,
             observed_agreeing_miners: 1,
+            observed_agreeing_operators: 1,
             required_agreement_quorum: 2,
             conflicting_quorum_receipts: 1,
             recorded_at_height: chain.state().height(),
@@ -1901,6 +1905,7 @@ mod tests {
             .get(&invalid_receipt.receipt_id)
             .expect("durable fixture should preserve redundant-settlement delay evidence");
         assert_eq!(delay.observed_agreeing_miners, 1);
+        assert_eq!(delay.observed_agreeing_operators, 1);
         assert_eq!(delay.required_agreement_quorum, 2);
         assert_eq!(delay.conflicting_quorum_receipts, 1);
         assert_eq!(

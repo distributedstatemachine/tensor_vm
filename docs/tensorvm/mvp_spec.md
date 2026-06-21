@@ -1175,6 +1175,9 @@ agreement_quorum: 3
 ```
 
 A result root becomes a candidate if at least three independent miners produce the same root.
+In the local reference, this quorum is enforced by distinct registered miner `operator_id` values rather
+than by miner addresses alone, and redundant settlement delay records persist both the agreeing miner count
+and the agreeing operator count for state-rooted audit evidence.
 
 This is a robustness tool, not a proof of correctness. It only helps if the miners are actually independent.
 With weak identity controls, a single operator can register multiple miners and satisfy the quorum.

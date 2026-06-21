@@ -203,6 +203,10 @@ impl Chain {
         settlement::redundant_agreement_count(self, receipt_id)
     }
 
+    pub fn redundant_agreement_operator_count(&self, receipt_id: &Hash) -> usize {
+        settlement::redundant_agreement_operator_count(self, receipt_id)
+    }
+
     pub fn has_redundant_agreement(&self, receipt_id: &Hash) -> bool {
         settlement::has_redundant_agreement(self, receipt_id)
     }

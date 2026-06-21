@@ -960,6 +960,7 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert_eq!(delay.job_id, receipts[0].job_id);
     assert_eq!(delay.primitive_type, PrimitiveType::TensorOp);
     assert_eq!(delay.observed_agreeing_miners, 2);
+    assert_eq!(delay.observed_agreeing_operators, 2);
     assert_eq!(delay.required_agreement_quorum, 3);
     assert_eq!(delay.conflicting_quorum_receipts, 0);
     assert_eq!(
@@ -970,7 +971,10 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     );
     let redundant_reward_delay_until_height = delay.reward_delay_until_height;
     assert!(chain.state().pending_receipt_rewards().is_empty());
-    assert_eq!(delay.reason, "awaiting redundant miner agreement quorum");
+    assert_eq!(
+        delay.reason,
+        "awaiting redundant independent operator agreement quorum"
+    );
 
     let receipt = &receipts[2];
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
@@ -990,6 +994,10 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
         .unwrap();
 
     assert_eq!(chain.redundant_agreement_count(&receipts[0].receipt_id), 3);
+    assert_eq!(
+        chain.redundant_agreement_operator_count(&receipts[0].receipt_id),
+        3
+    );
     assert!(chain.has_redundant_agreement(&receipts[0].receipt_id));
     chain.settle_epoch(1_000, 500);
     assert_eq!(chain.state().settled_receipts().len(), 3);
@@ -1015,8 +1023,41 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .iter()
             .all(|reward| reward.claimable_at_height() == redundant_reward_delay_until_height)
     );
-    chain.set_position_for_testing(redundant_reward_delay_until_height, 0);
+    drop(delayed_claims);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    assert!(
+        chain
+            .state()
+            .included_receipts()
+            .contains(&receipts[0].receipt_id)
+    );
+    let inclusion_reward_delay_until_height = block
+        .height
+        .saturating_add(chain.params().reward_maturity_delay_blocks());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
+            .all(|reward| reward.claimable_at_height() == inclusion_reward_delay_until_height)
+    );
+    chain.set_position_for_testing(inclusion_reward_delay_until_height.saturating_sub(1), 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
+    chain.set_position_for_testing(inclusion_reward_delay_until_height, 0);
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased {
+            receipt_id,
+            beneficiary,
+            ..
+        } if *receipt_id == receipts[0].receipt_id && *beneficiary == receipts[0].miner
+    )));
+    assert!(chain.state().rewards().balance(&receipts[0].miner) > 0);
     assert!(
         chain
             .state()
@@ -1024,6 +1065,111 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .get(&receipts[0].receipt_id)
             .is_none()
     );
+}
+
+#[test]
+fn redundant_agreement_requires_distinct_miner_operators() {
+    let beacon = hash_bytes(b"test", &[b"operator-quorum-beacon"]);
+    let params = ChainParams {
+        agreement_quorum: 3,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let shared_operator = address(b"redundant-shared-operator");
+    let miners: Vec<_> = (0..5)
+        .map(|i| address(format!("operator-quorum-miner-{i}").as_bytes()))
+        .collect();
+    for miner in miners.iter().take(3) {
+        chain
+            .register_miner_with_operator(*miner, 100, shared_operator)
+            .unwrap();
+    }
+    let distinct_operator = address(b"redundant-distinct-operator-a");
+    chain
+        .register_miner_with_operator(miners[3], 100, distinct_operator)
+        .unwrap();
+    chain
+        .register_miner_with_operator(miners[4], 100, address(b"redundant-distinct-operator-b"))
+        .unwrap();
+    let validator = address(b"operator-quorum-validator");
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 10, 4, 4, 4, &beacon, 10);
+    chain.submit_job(JobState::TensorOp(job.clone()));
+    let receipts: Vec<_> = miners
+        .iter()
+        .map(|miner| TensorOpReceipt::from_job(&job, *miner, 1, 5).unwrap().0)
+        .collect();
+    for receipt in receipts.iter().take(3) {
+        chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[&receipt.receipt_id]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(chain.redundant_agreement_count(&receipts[0].receipt_id), 3);
+    assert_eq!(
+        chain.redundant_agreement_operator_count(&receipts[0].receipt_id),
+        1
+    );
+    assert!(!chain.has_redundant_agreement(&receipts[0].receipt_id));
+    chain.settle_epoch(1_000, 500);
+    assert!(chain.state().settled_receipts().is_empty());
+    let delay = chain
+        .state()
+        .redundant_settlement_delays()
+        .get(&receipts[0].receipt_id)
+        .expect("same-operator agreement should remain delayed");
+    assert_eq!(delay.observed_agreeing_miners, 3);
+    assert_eq!(delay.observed_agreeing_operators, 1);
+    assert_eq!(delay.required_agreement_quorum, 3);
+
+    for distinct_receipt in receipts.iter().skip(3) {
+        chain
+            .submit_tensor_op_receipt(distinct_receipt.clone())
+            .unwrap();
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: distinct_receipt.receipt_id,
+                    job_id: distinct_receipt.job_id,
+                    primitive_type: PrimitiveType::TensorOp,
+                    result: VerificationResult::Valid,
+                    checks_root: hash_bytes(b"test", &[&distinct_receipt.receipt_id]),
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    }
+
+    assert_eq!(chain.redundant_agreement_count(&receipts[0].receipt_id), 5);
+    assert_eq!(
+        chain.redundant_agreement_operator_count(&receipts[0].receipt_id),
+        3
+    );
+    assert!(chain.has_redundant_agreement(&receipts[0].receipt_id));
+    chain.settle_epoch(1_000, 500);
+    assert_eq!(chain.state().settled_receipts().len(), 5);
 }
 
 #[test]
@@ -1105,6 +1251,7 @@ fn conflicting_linear_training_roots_do_not_settle() {
         .expect("conflicting quorum-backed transition should record delayed settlement");
     assert_eq!(delay.primitive_type, PrimitiveType::LinearTrainingStep);
     assert_eq!(delay.observed_agreeing_miners, 1);
+    assert_eq!(delay.observed_agreeing_operators, 1);
     assert_eq!(delay.required_agreement_quorum, 1);
     assert_eq!(delay.conflicting_quorum_receipts, 1);
     assert_eq!(

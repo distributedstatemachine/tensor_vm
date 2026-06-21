@@ -308,6 +308,7 @@ pub struct RedundantSettlementDelayRecord {
     pub job_id: Hash,
     pub primitive_type: PrimitiveType,
     pub observed_agreeing_miners: usize,
+    pub observed_agreeing_operators: usize,
     pub required_agreement_quorum: usize,
     pub conflicting_quorum_receipts: usize,
     pub recorded_at_height: u64,

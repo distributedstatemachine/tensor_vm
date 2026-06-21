@@ -8,8 +8,16 @@ use crate::verify::VerificationResult;
 use std::collections::{BTreeMap, BTreeSet};
 
 pub(super) fn redundant_agreement_count(chain: &Chain, receipt_id: &Hash) -> usize {
+    redundant_agreeing_miners(chain, receipt_id).len()
+}
+
+pub(super) fn redundant_agreement_operator_count(chain: &Chain, receipt_id: &Hash) -> usize {
+    agreeing_operator_ids(chain, receipt_id).len()
+}
+
+fn redundant_agreeing_miners(chain: &Chain, receipt_id: &Hash) -> BTreeSet<Address> {
     let Some(receipt) = chain.state.receipts.get(receipt_id) else {
-        return 0;
+        return BTreeSet::new();
     };
     let mut agreeing_miners = BTreeSet::new();
     for (other_id, other) in &chain.state.receipts {
@@ -17,7 +25,20 @@ pub(super) fn redundant_agreement_count(chain: &Chain, receipt_id: &Hash) -> usi
             agreeing_miners.insert(other.miner());
         }
     }
-    agreeing_miners.len()
+    agreeing_miners
+}
+
+fn agreeing_operator_ids(chain: &Chain, receipt_id: &Hash) -> BTreeSet<Address> {
+    redundant_agreeing_miners(chain, receipt_id)
+        .into_iter()
+        .filter_map(|miner| {
+            chain
+                .state
+                .miners
+                .get(&miner)
+                .map(|state| state.operator_id)
+        })
+        .collect()
 }
 
 pub(super) fn has_redundant_agreement(chain: &Chain, receipt_id: &Hash) -> bool {
@@ -27,7 +48,7 @@ pub(super) fn has_redundant_agreement(chain: &Chain, receipt_id: &Hash) -> bool 
     if chain.params.agreement_quorum <= 1 {
         return true;
     }
-    redundant_agreement_count(chain, receipt_id) >= chain.params.agreement_quorum
+    redundant_agreement_operator_count(chain, receipt_id) >= chain.params.agreement_quorum
 }
 
 pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_reward_pool: u64) {
@@ -44,15 +65,17 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         }
         if chain.has_attestation_quorum(receipt_id) {
             let agreeing_miners = redundant_agreement_count(chain, receipt_id);
+            let agreeing_operators = redundant_agreement_operator_count(chain, receipt_id);
             let conflicting_quorum_receipts = conflicting_quorum_receipt_count(chain, *receipt_id);
-            if agreeing_miners < chain.params.agreement_quorum.max(1) {
+            if agreeing_operators < chain.params.agreement_quorum.max(1) {
                 delayed_records.push(redundant_settlement_delay_record(
                     chain,
                     *receipt_id,
                     receipt,
                     agreeing_miners,
+                    agreeing_operators,
                     conflicting_quorum_receipts,
-                    "awaiting redundant miner agreement quorum",
+                    "awaiting redundant independent operator agreement quorum",
                 ));
                 continue;
             }
@@ -64,6 +87,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                     *receipt_id,
                     &ReceiptState::LinearTrainingStep(receipt.clone()),
                     agreeing_miners,
+                    agreeing_operators,
                     conflicting_quorum_receipts,
                     "conflicting quorum-backed linear training transition",
                 ));
@@ -161,6 +185,7 @@ fn redundant_settlement_delay_record(
     receipt_id: Hash,
     receipt: &ReceiptState,
     observed_agreeing_miners: usize,
+    observed_agreeing_operators: usize,
     conflicting_quorum_receipts: usize,
     reason: &str,
 ) -> RedundantSettlementDelayRecord {
@@ -169,6 +194,7 @@ fn redundant_settlement_delay_record(
         job_id: receipt.job_id(),
         primitive_type: receipt.primitive_type(),
         observed_agreeing_miners,
+        observed_agreeing_operators,
         required_agreement_quorum: chain.params.agreement_quorum.max(1),
         conflicting_quorum_receipts,
         recorded_at_height: chain.state.height,

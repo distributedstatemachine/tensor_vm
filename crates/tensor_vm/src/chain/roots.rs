@@ -177,6 +177,7 @@ pub(super) fn redundant_settlement_delay_root(
         encoded.extend_from_slice(&delay.job_id);
         encoded.push(primitive_type_tag(delay.primitive_type));
         encoded.extend_from_slice(&(delay.observed_agreeing_miners as u64).to_le_bytes());
+        encoded.extend_from_slice(&(delay.observed_agreeing_operators as u64).to_le_bytes());
         encoded.extend_from_slice(&(delay.required_agreement_quorum as u64).to_le_bytes());
         encoded.extend_from_slice(&(delay.conflicting_quorum_receipts as u64).to_le_bytes());
         encoded.extend_from_slice(&delay.recorded_at_height.to_le_bytes());

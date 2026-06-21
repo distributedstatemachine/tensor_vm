@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 122 complete - explicit voided receipt reward challenge holds.
+- Active feature: Iteration 123 complete - operator-distinct redundant settlement quorum.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -18,9 +18,10 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   state-rooted challenge hold height before they can be swept without credit.
   Selected-receipt block openings now expose typed block-check transcript commitments and
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
-  records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
-  pending receipt reward claims inherit those redundant reward holds. External randomness beacon records
-  can now advance future receipt randomness through a rooted chain command. `Fixed32`
+  records when quorum-backed work cannot settle because distinct-operator agreement is missing or
+  conflicting, and later pending receipt reward claims inherit those redundant reward holds. Redundant
+  delay records persist both agreeing miner-address and agreeing operator counts. External randomness
+  beacon records can now advance future receipt randomness through a rooted chain command. `Fixed32`
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
@@ -54,13 +55,48 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
-| Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
+| Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 123: Operator-Distinct Redundant Settlement Quorum
+
+Feature capability: make redundant receipt settlement require distinct agreeing miner operators, not just
+distinct miner addresses, and persist the operator-count evidence in redundant delay records.
+Readiness requirements covered: `upow.md` §8.1 and `mvp_spec.md` §15 independent miner agreement.
+Files/modules likely touched: `chain::settlement`, `chain::state`, `chain::roots`,
+`storage::chain_state`, settlement/storage tests, and TensorVM docs.
+Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
+Parallelizable implementation workstreams: chain quorum/evidence, storage/root encoding, tests/docs.
+Tests/checkers/docs to add or update: settlement duplicate-operator quorum rejection, explicit
+pending-reward delay/release assertions after redundant holds, storage/root roundtrip/sensitivity,
+coverage/status/readiness/exec docs.
+Narrow validation commands: settlement and storage chain-state focused tests.
+Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
+release tests, and tarpaulin attempt if feasible.
+Expected observable evidence: a quorum of miner addresses sharing one `operator_id` stays delayed, the
+delay record reports distinct operator count below quorum, and later adding a distinct operator settles.
+Out of scope: public 7-day operator evidence, external identity attestation, full Tier-C fraud game,
+Docker `/health` rerun, and CUDA evidence.
+Split trigger: storage/schema fallout or broad settlement regressions that cannot be resolved inside the
+chain redundancy boundary.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused tests passed: `cargo test -p tensor_vm redundant_agreement --quiet` and
+  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`.
+- Focused redundant settlement coverage now verifies pending receipt rewards inherit the redundant hold,
+  stay uncredited before inclusion and before maturity, and release only through the normal pending reward
+  ledger after inclusion-derived maturity.
+- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+  final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
 
 ### Iteration 122: Voided Receipt Reward Challenge Holds
 
@@ -193,15 +229,13 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 121 on June 21, 2026:
+Latest full validation is Iteration 123 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm p2p::wire::tests --quiet
-cargo test -p tensor_vm p2p::service::tests --quiet
-cargo test -p tensor_vm p2p::node::tests --quiet
-cargo test -p tensor_vm node::message_ingest::tests::network_event_driver_counts_invalid_runtime_messages --quiet
-cargo fmt --all
+cargo test -p tensor_vm redundant_agreement --quiet
+cargo test -p tensor_vm delayed_receipt_rewards_before_release --quiet
+cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
