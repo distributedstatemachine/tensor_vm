@@ -180,6 +180,7 @@ pub(super) fn redundant_settlement_delay_root(
         encoded.extend_from_slice(&(delay.required_agreement_quorum as u64).to_le_bytes());
         encoded.extend_from_slice(&(delay.conflicting_quorum_receipts as u64).to_le_bytes());
         encoded.extend_from_slice(&delay.recorded_at_height.to_le_bytes());
+        encoded.extend_from_slice(&delay.reward_delay_until_height.to_le_bytes());
         encoded.extend_from_slice(&(delay.reason.len() as u64).to_le_bytes());
         encoded.extend_from_slice(delay.reason.as_bytes());
     }

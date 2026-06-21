@@ -960,6 +960,13 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert_eq!(delay.observed_agreeing_miners, 2);
     assert_eq!(delay.required_agreement_quorum, 3);
     assert_eq!(delay.conflicting_quorum_receipts, 0);
+    assert_eq!(
+        delay.reward_delay_until_height,
+        delay
+            .recorded_at_height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    assert!(chain.state().pending_receipt_rewards().is_empty());
     assert_eq!(delay.reason, "awaiting redundant miner agreement quorum");
 
     let receipt = &receipts[2];
@@ -1073,6 +1080,13 @@ fn conflicting_linear_training_roots_do_not_settle() {
     assert_eq!(delay.observed_agreeing_miners, 1);
     assert_eq!(delay.required_agreement_quorum, 1);
     assert_eq!(delay.conflicting_quorum_receipts, 1);
+    assert_eq!(
+        delay.reward_delay_until_height,
+        delay
+            .recorded_at_height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    assert!(chain.state().pending_receipt_rewards().is_empty());
     assert_eq!(
         delay.reason,
         "conflicting quorum-backed linear training transition"

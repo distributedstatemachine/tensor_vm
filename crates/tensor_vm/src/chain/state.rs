@@ -311,6 +311,7 @@ pub struct RedundantSettlementDelayRecord {
     pub required_agreement_quorum: usize,
     pub conflicting_quorum_receipts: usize,
     pub recorded_at_height: u64,
+    pub reward_delay_until_height: u64,
     pub reason: String,
 }
 

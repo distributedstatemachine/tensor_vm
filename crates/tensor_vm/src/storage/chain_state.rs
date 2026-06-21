@@ -738,6 +738,7 @@ fn encode_redundant_settlement_delays(
         write_len(out, delay.required_agreement_quorum);
         write_len(out, delay.conflicting_quorum_receipts);
         write_u64(out, delay.recorded_at_height);
+        write_u64(out, delay.reward_delay_until_height);
         write_len(out, delay.reason.len());
         out.extend_from_slice(delay.reason.as_bytes());
     }
@@ -758,6 +759,7 @@ fn decode_redundant_settlement_delays(
         let required_agreement_quorum = reader.read_len()?;
         let conflicting_quorum_receipts = reader.read_len()?;
         let recorded_at_height = reader.read_u64()?;
+        let reward_delay_until_height = reader.read_u64()?;
         let reason_len = reader.read_len()?;
         let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
             .map_err(|_| TvmError::Storage("invalid delayed-settlement reason"))?
@@ -772,6 +774,7 @@ fn decode_redundant_settlement_delays(
                 required_agreement_quorum,
                 conflicting_quorum_receipts,
                 recorded_at_height,
+                reward_delay_until_height,
                 reason,
             },
         );
@@ -1726,6 +1729,10 @@ mod tests {
             required_agreement_quorum: 2,
             conflicting_quorum_receipts: 1,
             recorded_at_height: chain.state().height(),
+            reward_delay_until_height: chain
+                .state()
+                .height()
+                .saturating_add(chain.params().reward_maturity_delay_blocks()),
             reason: "durable redundant settlement delay".to_owned(),
         });
         assert_ne!(chain.state_root(), state_root_before_delay);
@@ -1886,6 +1893,13 @@ mod tests {
         assert_eq!(delay.observed_agreeing_miners, 1);
         assert_eq!(delay.required_agreement_quorum, 2);
         assert_eq!(delay.conflicting_quorum_receipts, 1);
+        assert_eq!(
+            delay.reward_delay_until_height,
+            chain
+                .state()
+                .height()
+                .saturating_add(chain.params().reward_maturity_delay_blocks())
+        );
         assert_eq!(delay.reason, "durable redundant settlement delay");
         assert!(
             loaded

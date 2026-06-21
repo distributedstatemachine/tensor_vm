@@ -153,6 +153,10 @@ fn redundant_settlement_delay_record(
         required_agreement_quorum: chain.params.agreement_quorum.max(1),
         conflicting_quorum_receipts,
         recorded_at_height: chain.state.height,
+        reward_delay_until_height: chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks()),
         reason: reason.to_owned(),
     }
 }

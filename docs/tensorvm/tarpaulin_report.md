@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 106 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 107 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 106 coverage could not
-be regenerated. Iterations 78 through 106 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 107 coverage could not
+be regenerated. Iterations 78 through 107 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -150,6 +150,10 @@ clearing on settlement, state-root sensitivity, and chain-state roundtrip persis
 Iteration 106 adds state-rooted external randomness beacon records. Focused chain, status, RPC, explorer,
 and storage tests cover external beacon admission, stale/empty rejection, future receipt anchor binding,
 status/explorer evidence fields, state-root sensitivity, and chain-state roundtrip persistence.
+Iteration 107 adds explicit reward-delay height evidence to redundant settlement delay records. Focused
+settlement and storage tests cover missing redundant agreement quorum, conflicting quorum-backed linear
+training transitions, reward-delay height derivation from the chain maturity policy, state-root
+sensitivity, and chain-state roundtrip persistence.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:
