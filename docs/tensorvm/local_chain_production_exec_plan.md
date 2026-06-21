@@ -83,7 +83,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `0020c61` (`Dampen TensorWork reward concentration`) is ready to push to `origin/main`.
+- Feature commit: `0020c61` (`Dampen TensorWork reward concentration`) is pushed to `origin/main`.
+- Evidence commit: `334610d` (`Record TensorWork concentration evidence`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
