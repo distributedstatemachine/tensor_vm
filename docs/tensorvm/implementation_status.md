@@ -174,8 +174,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   shared chain transition instead of requiring adapter-side release workarounds; focused producer/peer
   regression coverage now proves included receipt rewards release through canonical block application
   without a manual release command. Voided proposer, receipt,
-  and challenge claims are pruned without credit. Receipt claims are voided/pruned if a block-check
-  challenge succeeds before release, and blocks with the old spendable-only reward root are rejected.
+  and challenge claims are pruned without credit. Receipt claims are explicitly delayed as voided
+  challenge-held claims if block-check, invalid-output, or data-unavailability evidence succeeds before
+  release, and blocks with the old spendable-only reward root are rejected.
   Slashed validators can submit signed, bounded mandatory-audit appeal records through the shared chain
   command path; those records are tied to an existing audit slash, accepted only from the slashed
   validator before the audit appeal deadline, committed in the state root, and persisted in chain-state
@@ -193,8 +194,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   delayed through the configured challenge window and active audit window before spendability.
   Late assigned invalid-output attestations now contest already settled receipts by removing the receipt
   from the settled set, marking it challenged, recording a state-rooted miner stake slash, crediting
-  treasury, and voiding delayed pending receipt reward claims before any mature release can credit
-  spendable balances.
+  treasury, and extending voided pending receipt reward claims to a challenge hold height before any
+  mature release can credit spendable balances.
   `ChainState::detection_probability_evidence` now derives structured verifier/fraud-path detection
   evidence from current params, live TensorOp and LinearTrainingStep job shapes, graph-job counts, and
   chain-state fraud counters; service status and explorer overview expose per-mechanism detection bps,

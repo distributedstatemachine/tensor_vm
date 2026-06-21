@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 121 complete - p2p trace-opening sampling.
+- Active feature: Iteration 122 complete - explicit voided receipt reward challenge holds.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -14,6 +14,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
+  Block-check, invalid-output, and data-unavailability evidence now delays voided receipt claims to a
+  state-rooted challenge hold height before they can be swept without credit.
   Selected-receipt block openings now expose typed block-check transcript commitments and
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
   records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
@@ -59,6 +61,26 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 122: Voided Receipt Reward Challenge Holds
+
+Feature capability: replace void-only receipt reward handling on challenge evidence with explicit delayed
+voided claims for block-check, invalid-output, and data-unavailability paths.
+Readiness requirements covered: `mvp_spec.md` §20.4 delayed reward settlement and economics/clawback
+invariant evidence.
+Canonical owner: chain reward maturity remains in `chain::state`/`chain::commands`; challenge and
+validation paths only extend affected pending receipt reward claims.
+Adapter callers: block-check challenge resolution and late validator attestation evidence.
+Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
+Out of scope: deployed-run detection measurements, full interactive fraud game, and Docker `/health` rerun.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused tests passed: `cargo test -p tensor_vm chain::tests::challenges::block_check_challenge_voids_pending_reward_and_throttles_proposer --quiet`
+  and `cargo test -p tensor_vm delayed_receipt_rewards_before_release --quiet`.
+- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+  final `cargo test -p tensor_vm local_testnet --release`.
 
 ### Iteration 121: P2P Trace-Opening Sampling
 

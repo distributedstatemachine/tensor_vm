@@ -632,13 +632,6 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
     }
     assert!(chain.has_attestation_quorum(&receipt.receipt_id));
     chain.settle_epoch(1_000, 500);
-    let claimable_at_height = chain
-        .state()
-        .pending_receipt_rewards()
-        .values()
-        .find(|reward| reward.receipt_id == receipt.receipt_id)
-        .unwrap()
-        .claimable_at_height();
     assert!(
         chain
             .state()
@@ -671,13 +664,18 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
         ))
         .unwrap();
 
+    let reward_hold_until_height = chain
+        .state()
+        .height()
+        .saturating_add(chain.params().reward_maturity_delay_blocks());
     assert!(
         chain
             .state()
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
-            .all(|reward| reward.voided_by_challenge)
+            .all(|reward| reward.voided_by_challenge
+                && reward.claimable_at_height() == reward_hold_until_height)
     );
     assert_eq!(
         chain
@@ -697,7 +695,16 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
             .settled_tensor_work,
         0
     );
-    chain.set_position_for_testing(claimable_at_height, 0);
+    chain.set_position_for_testing(reward_hold_until_height.saturating_sub(1), 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
+    chain.set_position_for_testing(reward_hold_until_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     for validator in validators.iter().take(2) {
@@ -775,13 +782,6 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .settled_receipts()
             .contains(&receipt.receipt_id)
     );
-    let claimable_at_height = chain
-        .state()
-        .pending_receipt_rewards()
-        .values()
-        .find(|reward| reward.receipt_id == receipt.receipt_id)
-        .unwrap()
-        .claimable_at_height();
     assert!(
         chain
             .state()
@@ -814,6 +814,10 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
         ))
         .unwrap();
 
+    let reward_hold_until_height = chain
+        .state()
+        .height()
+        .saturating_add(chain.params().reward_maturity_delay_blocks());
     assert!(
         !chain
             .state()
@@ -832,7 +836,8 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
-            .all(|reward| reward.voided_by_challenge)
+            .all(|reward| reward.voided_by_challenge
+                && reward.claimable_at_height() == reward_hold_until_height)
     );
     assert_eq!(
         chain
@@ -852,7 +857,16 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .settled_tensor_work,
         0
     );
-    chain.set_position_for_testing(claimable_at_height, 0);
+    chain.set_position_for_testing(reward_hold_until_height.saturating_sub(1), 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
+    chain.set_position_for_testing(reward_hold_until_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     for validator in validators.iter().take(2) {

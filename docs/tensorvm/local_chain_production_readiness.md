@@ -233,7 +233,9 @@ The local bundle is useful and should remain the first operational target:
   Late assigned invalid-output attestations now contest already settled receipts in chain validation:
   the receipt leaves the settled set, enters the challenged set, the miner's bonded stake is slashed into
   treasury through a state-rooted invalid-output slash record, and delayed miner plus validator receipt
-  rewards are voided before maturity instead of requiring spendable-balance clawback.
+  rewards are voided and held through an explicit challenge maturity height instead of requiring
+  spendable-balance clawback. Data-unavailability and block-check challenges now use the same
+  voided-but-delayed receipt-claim behavior, so affected claims remain state-rooted until the hold clears.
   Chain state, service status, and explorer overview now also expose structured detection-probability
   evidence for the implemented verifier and fraud mechanisms. Deployed-run measured detection records and
   remaining fraud paths remain open economics work.

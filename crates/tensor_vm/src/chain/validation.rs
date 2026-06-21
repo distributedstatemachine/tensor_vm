@@ -138,8 +138,13 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
             miner.reputation -= 1;
         }
         settlement::void_pending_miner_tensor_work(&mut chain.state, &attestation.receipt_id);
+        let receipt_reward_hold_until_height = chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
         for reward in chain.state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == attestation.receipt_id {
+                reward.delay_until(receipt_reward_hold_until_height);
                 reward.voided_by_challenge = true;
             }
         }
@@ -161,8 +166,13 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
             receipt_miner,
             attestation.validator,
         );
+        let receipt_reward_hold_until_height = chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
         for reward in chain.state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == attestation.receipt_id {
+                reward.delay_until(receipt_reward_hold_until_height);
                 reward.voided_by_challenge = true;
             }
         }

@@ -1428,8 +1428,8 @@ blockspace, then converts to an inclusion-derived claimable height after at leas
 `reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. Miner
 TensorWork activates only when the non-voided miner receipt claim is released. A valid block-check,
 invalid-output, or data-unavailability challenge before maturity voids the affected miner and validator
-receipt claims and clears pending miner TensorWork; matured voided claims are pruned without crediting
-spendable reward balances.
+receipt claims, extends those claims to a state-rooted challenge hold height, and clears pending miner
+TensorWork; matured voided claims are pruned without crediting spendable reward balances.
 
 TensorWork does not affect block proposer selection. Validators produce blocks by proving useful verification
 of the canonical settled-receipt set.

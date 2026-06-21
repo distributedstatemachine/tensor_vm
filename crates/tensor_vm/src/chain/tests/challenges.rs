@@ -204,7 +204,8 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
-            .all(|reward| reward.voided_by_challenge)
+            .all(|reward| reward.voided_by_challenge
+                && reward.claimable_at_height() == claimable_at_height)
     );
     assert_eq!(chain.state().rewards().balance(&challenger), 0);
     assert_eq!(chain.state().rewards().treasury(), 500);
@@ -263,7 +264,16 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .unwrap()
             .is_empty()
     );
-    chain.set_position_for_testing(100, 0);
+    chain.set_position_for_testing(claimable_at_height.saturating_sub(1), 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt.receipt_id)
+    );
+    chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert!(
         chain
