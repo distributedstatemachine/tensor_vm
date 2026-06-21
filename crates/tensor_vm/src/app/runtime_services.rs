@@ -1,7 +1,7 @@
 use super::{RuntimeP2pReport, ServiceRuntimeConfig, p2p_identity_report};
 use crate::{
     Faucet, Libp2pControlPlaneConfig, NodeStore, RpcGateway, RpcHttpServer, RpcNode, RpcPolicy,
-    TensorVmLibp2pService, spawn_libp2p_service, types::Hash,
+    Tensor, TensorVmLibp2pService, spawn_libp2p_service, storage::TensorArtifact, types::Hash,
 };
 use std::collections::BTreeMap;
 
@@ -80,6 +80,12 @@ pub fn start_runtime_services(
     hydrate_program_store(chain.state().program_bodies(), |graph_id, body| {
         p2p_service.register_program(graph_id, body)
     });
+    let tensor_artifacts = store.load_tensors().map_err(|error| {
+        format!(
+            "failed to load tensor artifacts {}: {error}",
+            config.node.data_dir().display()
+        )
+    })?;
     let p2p_info = p2p_service.info();
     let p2p_metadata = RuntimeP2pMetadata {
         peer_id: p2p_service.peer_id().to_string(),
@@ -92,7 +98,10 @@ pub fn start_runtime_services(
         max_concurrent_streams,
         idle_timeout_seconds,
     };
-    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    hydrate_tensor_artifacts(&mut node, &tensor_artifacts, |tensor| {
+        p2p_service.register_tensor(tensor)
+    });
     let gateway = RpcGateway::new(
         node,
         RpcPolicy {
@@ -123,10 +132,21 @@ fn hydrate_program_store(
     }
 }
 
+fn hydrate_tensor_artifacts(
+    node: &mut RpcNode,
+    artifacts: &[TensorArtifact],
+    mut register: impl FnMut(Tensor),
+) {
+    for artifact in artifacts {
+        node.insert_tensor(artifact.tensor.clone());
+        register(artifact.tensor.clone());
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::{DType, canonical_matmul_graph};
+    use crate::{Chain, DType, Faucet, Tensor, canonical_matmul_graph, types::hash_bytes};
 
     #[test]
     fn startup_program_hydration_registers_state_rooted_program_bodies() {
@@ -142,5 +162,28 @@ mod tests {
         });
 
         assert_eq!(registered.get(&graph_id), Some(&graph_body));
+    }
+
+    #[test]
+    fn startup_tensor_hydration_registers_rpc_and_p2p_artifacts() {
+        let tensor = Tensor::from_vec_with_scale(vec![2], DType::Fixed32, 3, vec![11, 12]).unwrap();
+        let root = tensor.commitment_root();
+        let artifact = TensorArtifact {
+            tensor: tensor.clone(),
+            retain_until_block: 99,
+        };
+        let mut node = RpcNode::with_faucet(
+            Chain::new(hash_bytes(b"test", &[b"startup-tensor-hydration"])),
+            Faucet::new(1_000_000, 100),
+        );
+        let mut registered = Vec::new();
+
+        hydrate_tensor_artifacts(&mut node, &[artifact], |tensor| registered.push(tensor));
+
+        assert_eq!(
+            node.tensor_by_commitment_root(&root).map(Tensor::scale),
+            Some(3)
+        );
+        assert_eq!(registered, vec![tensor]);
     }
 }

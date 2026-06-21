@@ -9,8 +9,9 @@ use crate::{
 };
 
 use super::{
-    ServiceRuntimeConfig, chain_announcement_checkpoint, publish_new_chain_announcements,
-    runtime_role_wallet_registration, validator_fetch::fetch_miner_role_missing_graph_artifacts,
+    ServiceRuntimeConfig, chain_announcement_checkpoint, persist_runtime_tensor,
+    publish_new_chain_announcements, runtime_role_wallet_registration,
+    validator_fetch::fetch_miner_role_missing_graph_artifacts,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -225,6 +226,7 @@ pub fn tick_miner_role_work_once(
     }
     if let Some(job_id) = job_to_submit {
         let fetch_report = fetch_miner_role_missing_graph_artifacts(
+            store,
             &mut server.gateway_mut().node,
             p2p_service,
             job_id,
@@ -257,6 +259,7 @@ pub fn tick_miner_role_work_once(
                 submission.tensors_inserted,
             );
             for tensor in submission.served_tensors {
+                persist_runtime_tensor(store, &server.gateway().node.chain, &tensor)?;
                 p2p_service.register_tensor(tensor);
             }
             let observation = miner_role_work_observation(&server.gateway().node.chain, miner);

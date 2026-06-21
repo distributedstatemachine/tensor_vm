@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 141 complete - explicit pre-inclusion receipt reward delay.
+- Active feature: Iteration 142 complete - durable restart-rehydrated tensor artifacts.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -63,9 +63,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: debug rolling restart continuity for restarted role runtime counters and gateway tensor
-  artifact persistence, then continue public/CUDA deployment runs, production drand/VRF verification,
-  and full interactive transcript disputes.
+- Next action: run Docker rolling-restart continuity with rebuilt local CPU images, then debug any remaining
+  restarted role runtime counter gaps, continue public/CUDA deployment runs, production drand/VRF
+  verification, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -87,6 +87,71 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 142: Durable Restart-Rehydrated Tensor Artifacts
+
+Feature capability: tensors served before a process restart are persisted as node artifacts and rehydrated
+into both RPC gateway tensor routes and libp2p request-response serving on startup.
+Readiness requirements covered: `upow.md` tensor-serving process boundary and retention model, `mvp_spec.md`
+validator tensor fetches through node RPC/request-response, and the local CPU rolling-restart requirement
+that tensor artifacts remain fetchable after service restart.
+Files/modules likely touched: `crates/tensor_vm/src/storage/node_store.rs`,
+`crates/tensor_vm/src/app/runtime_services.rs`, tensor insertion paths in `app/network.rs`,
+`app/miner_role.rs`, and `app/validator_fetch.rs`, local CPU restart checker/tests, and this execution
+plan.
+Parallel subagents run: readiness mapper, durable artifact codebase explorer, and restart/storage test
+coverage explorer.
+Parallelizable implementation workstreams: read-only mapping in parallel; parent owns storage/runtime/checker
+edits because persistence, hydration, and observable restart evidence must stay aligned.
+Tests/checkers/docs to add or update: tensor artifact storage roundtrip/corruption coverage, startup
+hydration coverage for both serving maps, restart checker probes for the same pre-restart tensor id/root,
+and local CPU compose static script assertions.
+Narrow validation commands: `cargo test -p tensor_vm node_store --lib`,
+`cargo test -p tensor_vm runtime_services --lib`, and local CPU compose script-shape tests.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo fmt --check --all`, and `git diff --check`.
+Expected observable evidence: `/tensor/latest`, `/tensor/:id/descriptor`, `/row/0`, `/chunk/0`, and
+`/opening/0` can serve a pre-restart tensor after restart, with the same tensor id and commitment root.
+Out of scope: role runtime counter restoration, public/CUDA evidence, production drand/VRF signatures, and
+interactive transcript disputes.
+Split trigger: if libp2p remote-by-root restart proof requires multi-node Docker orchestration beyond local
+artifact hydration, land storage/startup hydration first and keep peer-fetch proof as a follow-up.
+Canonical owner: `NodeStore` tensor artifact persistence and runtime startup hydration; chain state roots
+remain the owner of receipts/jobs/rewards, not artifact bytes.
+Adapter callers: `RpcNode`, `TensorVmLibp2pService`, miner/validator runtime insertion paths, and local
+CPU restart checkers only observe or write through the canonical store.
+Old shortcut removed: restart evidence no longer relies on fresh synthetic work repopulating in-memory
+gateway tensors or on checker sleeps that tolerate missing tensor routes. The same artifact must survive
+process restart.
+Regression evidence to add: persistence roundtrip including nonzero tensor scale, malformed artifact
+rejection, startup hydration into RPC and libp2p stores, and restart checker assertions for descriptor,
+row, chunk, and opening routes.
+Behavior with local synthetic block production disabled: already persisted tensor artifacts still hydrate
+and serve through RPC/libp2p after startup without requiring a new synthetic round.
+Behavior for producer and non-producer roles: any role that inserts or fetches tensors writes the same
+artifact format, and startup hydration is independent of producer election.
+Structured evidence source: durable files under the node data directory, RPC tensor routes, libp2p
+request-response tensor store, and local CPU rolling-restart checker output.
+Finality source: unchanged block finality; tensor retention is artifact availability policy, not consensus
+finality.
+Wire-size and codec boundary: durable storage uses its own bounded tensor artifact codec including shape,
+dtype, layout tag, scale, values, tensor id, and commitment root; it must not reuse the current p2p tensor
+payload codec that omits scale.
+
+Validation:
+
+```bash
+cargo test -p tensor_vm node_store --lib
+cargo test -p tensor_vm runtime_services --lib
+cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture
+cargo test -p tensor_vm --test tvmd_runtime miner_role -- --nocapture
+cargo test -p tensor_vm --test tvmd_runtime validator_role -- --nocapture
+cargo test -p tensor_vm rpc::tests::tensors --lib
+cargo test -p tensor_vm local_testnet --release
+cargo fmt --check --all
+git diff --check
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet
+```
 
 ### Iteration 141: Explicit Pre-Inclusion Receipt Reward Delay
 

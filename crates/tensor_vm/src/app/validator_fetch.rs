@@ -1,5 +1,5 @@
 use crate::{
-    ChainCommand, ChainEngine, JobState, ReceiptState, RpcNode, Tensor, TensorGraph,
+    ChainCommand, ChainEngine, JobState, NodeStore, ReceiptState, RpcNode, Tensor, TensorGraph,
     TensorVmLibp2pService,
     api::P2pMessage,
     decode_tensor_payload,
@@ -7,6 +7,8 @@ use crate::{
     types::{Hash, parse_hash_hex},
 };
 use std::time::Duration;
+
+use super::persist_runtime_tensor;
 
 #[derive(Clone, Copy, Debug, Default, Eq, PartialEq)]
 pub struct ValidatorRemoteTensorFetchReport {
@@ -46,6 +48,7 @@ pub fn fetch_graph_program_body_if_missing(
 }
 
 pub fn fetch_miner_role_missing_graph_artifacts(
+    store: &NodeStore,
     node: &mut RpcNode,
     p2p_service: &TensorVmLibp2pService,
     job_id: Hash,
@@ -67,11 +70,12 @@ pub fn fetch_miner_role_missing_graph_artifacts(
                 .filter_map(|uri| parse_hash_hex(uri).ok()),
         );
     }
-    fetch_missing_tensor_roots(node, p2p_service, roots, &mut report)?;
+    fetch_missing_tensor_roots(store, node, p2p_service, roots, &mut report)?;
     Ok(report)
 }
 
 pub fn fetch_validator_role_missing_tensors(
+    store: &NodeStore,
     node: &mut RpcNode,
     p2p_service: &TensorVmLibp2pService,
     receipt_id: Hash,
@@ -87,7 +91,7 @@ pub fn fetch_validator_role_missing_tensors(
     if missing_roots.is_empty() {
         return Ok(report);
     }
-    fetch_missing_tensor_roots(node, p2p_service, missing_roots, &mut report)?;
+    fetch_missing_tensor_roots(store, node, p2p_service, missing_roots, &mut report)?;
     Ok(report)
 }
 
@@ -152,6 +156,7 @@ fn fetch_graph_program_if_missing(
 }
 
 fn fetch_missing_tensor_roots(
+    store: &NodeStore,
     node: &mut RpcNode,
     p2p_service: &TensorVmLibp2pService,
     roots: Vec<Hash>,
@@ -186,6 +191,7 @@ fn fetch_missing_tensor_roots(
             };
             match validator_remote_tensor_response(root, response) {
                 ValidatorRemoteTensorResponse::Found { tensor, bytes } => {
+                    persist_runtime_tensor(store, &node.chain, &tensor)?;
                     node.insert_tensor(tensor.clone());
                     p2p_service.register_tensor(tensor);
                     report.bytes = report.bytes.saturating_add(bytes);

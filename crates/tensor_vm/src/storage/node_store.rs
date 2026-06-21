@@ -1,17 +1,29 @@
 use crate::chain::{Chain, ChainEngine, TensorBlock};
+use crate::codec::dtype_from_tag;
 use crate::error::{Result, TvmError};
+use crate::hash::hex;
 use crate::p2p::PeerBookStore;
+use crate::tensor::{Layout, Tensor};
 use crate::types::Hash;
+use std::fs::{self, OpenOptions};
+use std::io::Write;
 use std::path::{Path, PathBuf};
 use std::thread;
 use std::time::Duration;
 
+use super::codec::{StateReader, write_hash, write_i64, write_len, write_u64};
 use super::{BlockLogStore, ChainSnapshot, ChainStateStore, SnapshotStore};
 
 const SNAPSHOT_FILE_NAME: &str = "chain.snapshot";
 const BLOCK_LOG_FILE_NAME: &str = "blocks.log";
 const CHAIN_STATE_FILE_NAME: &str = "chain.state";
 const PEER_BOOK_FILE_NAME: &str = "peers.book";
+const TENSOR_ARTIFACT_DIR_NAME: &str = "tensors";
+const TENSOR_ARTIFACT_EXTENSION: &str = "tensor";
+const TENSOR_ARTIFACT_MAGIC: &[u8; 8] = b"TVMTEN1\0";
+const MAX_TENSOR_ARTIFACT_BYTES: u64 = 64 * 1024 * 1024;
+const MAX_TENSOR_ARTIFACT_RANK: usize = 16;
+const MAX_TENSOR_ARTIFACT_VALUES: usize = 8 * 1024 * 1024;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PersistedNodeState {
@@ -26,6 +38,12 @@ pub struct NodeStoreStatus {
     pub block_count: usize,
     pub latest_block_hash: Hash,
     pub block_log_root: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TensorArtifact {
+    pub tensor: Tensor,
+    pub retain_until_block: u64,
 }
 
 pub trait ChainStore {
@@ -74,6 +92,71 @@ impl NodeStore {
 
     pub fn peer_book_store(&self) -> &PeerBookStore {
         &self.peer_book_store
+    }
+
+    pub fn persist_tensor(&self, tensor: &Tensor, retain_until_block: u64) -> Result<Hash> {
+        let tensor_id = tensor.tensor_id();
+        let artifact_dir = self.tensor_artifact_dir();
+        fs::create_dir_all(&artifact_dir)
+            .map_err(|_| TvmError::Storage("failed to create tensor artifact directory"))?;
+        let path = self.tensor_artifact_path(&tensor_id);
+        let temp_path = path.with_extension("tmp");
+        let payload = encode_tensor_artifact(tensor, retain_until_block);
+        let mut file = OpenOptions::new()
+            .create(true)
+            .write(true)
+            .truncate(true)
+            .open(&temp_path)
+            .map_err(|_| TvmError::Storage("failed to open tensor artifact"))?;
+        file.write_all(&payload)
+            .map_err(|_| TvmError::Storage("failed to write tensor artifact"))?;
+        file.sync_all()
+            .map_err(|_| TvmError::Storage("failed to sync tensor artifact"))?;
+        drop(file);
+        fs::rename(&temp_path, &path)
+            .map_err(|_| TvmError::Storage("failed to commit tensor artifact"))?;
+        Ok(tensor_id)
+    }
+
+    pub fn load_tensors(&self) -> Result<Vec<TensorArtifact>> {
+        let artifact_dir = self.tensor_artifact_dir();
+        if !artifact_dir.exists() {
+            return Ok(Vec::new());
+        }
+        let mut artifacts = Vec::new();
+        let entries = fs::read_dir(&artifact_dir)
+            .map_err(|_| TvmError::Storage("failed to read tensor artifact directory"))?;
+        for entry in entries {
+            let entry = entry
+                .map_err(|_| TvmError::Storage("failed to read tensor artifact directory entry"))?;
+            let path = entry.path();
+            if path.extension().and_then(|extension| extension.to_str())
+                != Some(TENSOR_ARTIFACT_EXTENSION)
+            {
+                continue;
+            }
+            let metadata = entry
+                .metadata()
+                .map_err(|_| TvmError::Storage("failed to stat tensor artifact"))?;
+            if !metadata.is_file() || metadata.len() > MAX_TENSOR_ARTIFACT_BYTES {
+                return Err(TvmError::Storage("invalid tensor artifact file"));
+            }
+            let bytes =
+                fs::read(&path).map_err(|_| TvmError::Storage("failed to read tensor artifact"))?;
+            let artifact = decode_tensor_artifact(&bytes)?;
+            let expected_file_name = format!(
+                "{}.{}",
+                hex(&artifact.tensor.tensor_id()),
+                TENSOR_ARTIFACT_EXTENSION
+            );
+            if path.file_name().and_then(|name| name.to_str()) != Some(expected_file_name.as_str())
+            {
+                return Err(TvmError::Storage("tensor artifact filename mismatch"));
+            }
+            artifacts.push(artifact);
+        }
+        artifacts.sort_by_key(|artifact| artifact.tensor.tensor_id());
+        Ok(artifacts)
     }
 
     pub fn persist_chain(&self, chain: &Chain) -> Result<NodeStoreStatus> {
@@ -186,6 +269,15 @@ impl NodeStore {
             block_log_root: self.block_log_store.file_root()?,
         })
     }
+
+    fn tensor_artifact_dir(&self) -> PathBuf {
+        self.data_dir.join(TENSOR_ARTIFACT_DIR_NAME)
+    }
+
+    fn tensor_artifact_path(&self, tensor_id: &Hash) -> PathBuf {
+        self.tensor_artifact_dir()
+            .join(format!("{}.{}", hex(tensor_id), TENSOR_ARTIFACT_EXTENSION))
+    }
 }
 
 impl ChainStore for NodeStore {
@@ -198,6 +290,76 @@ impl ChainStore for NodeStore {
     fn load_chain(&self) -> Result<Self::Chain> {
         NodeStore::load_chain(self)
     }
+}
+
+fn encode_tensor_artifact(tensor: &Tensor, retain_until_block: u64) -> Vec<u8> {
+    let mut out = Vec::new();
+    out.extend_from_slice(TENSOR_ARTIFACT_MAGIC);
+    write_hash(&mut out, &tensor.tensor_id());
+    write_hash(&mut out, &tensor.commitment_root());
+    write_u64(&mut out, retain_until_block);
+    write_len(&mut out, tensor.shape().len());
+    for dim in tensor.shape() {
+        write_u64(&mut out, *dim as u64);
+    }
+    out.push(tensor.dtype().tag());
+    out.push(tensor.layout().tag());
+    write_i64(&mut out, tensor.scale());
+    write_len(&mut out, tensor.as_slice().len());
+    for value in tensor.as_slice() {
+        write_u64(&mut out, *value);
+    }
+    out
+}
+
+fn decode_tensor_artifact(bytes: &[u8]) -> Result<TensorArtifact> {
+    let mut reader = StateReader::new(bytes);
+    if reader.read_exact(TENSOR_ARTIFACT_MAGIC.len())? != TENSOR_ARTIFACT_MAGIC {
+        return Err(TvmError::Storage("invalid tensor artifact magic"));
+    }
+    let expected_tensor_id = reader.read_hash()?;
+    let expected_commitment_root = reader.read_hash()?;
+    let retain_until_block = reader.read_u64()?;
+    let rank = reader.read_len()?;
+    if rank == 0 || rank > MAX_TENSOR_ARTIFACT_RANK {
+        return Err(TvmError::Storage("invalid tensor artifact rank"));
+    }
+    let mut shape = Vec::with_capacity(rank);
+    for _ in 0..rank {
+        let dim = usize::try_from(reader.read_u64()?)
+            .map_err(|_| TvmError::Storage("tensor artifact dimension overflow"))?;
+        shape.push(dim);
+    }
+    let dtype = dtype_from_tag(reader.read_u8()?)
+        .ok_or(TvmError::Storage("invalid tensor artifact dtype"))?;
+    let layout = match reader.read_u8()? {
+        1 => Layout::RowMajor,
+        _ => return Err(TvmError::Storage("unsupported tensor artifact layout")),
+    };
+    let scale = reader.read_i64()?;
+    let value_count = reader.read_len()?;
+    if value_count > MAX_TENSOR_ARTIFACT_VALUES {
+        return Err(TvmError::Storage("tensor artifact values too large"));
+    }
+    let mut values = Vec::with_capacity(value_count);
+    for _ in 0..value_count {
+        values.push(reader.read_u64()?);
+    }
+    reader.finish()?;
+    let tensor = Tensor::from_vec_with_scale(shape, dtype, scale, values)?;
+    if tensor.layout() != layout {
+        return Err(TvmError::Storage("tensor artifact layout mismatch"));
+    }
+    if tensor.tensor_id() != expected_tensor_id {
+        return Err(TvmError::Storage("tensor artifact id mismatch"));
+    }
+    if tensor.commitment_root() != expected_commitment_root {
+        return Err(TvmError::Storage("tensor artifact root mismatch"));
+    }
+    Ok(TensorArtifact {
+        tensor,
+        retain_until_block,
+    })
 }
 
 #[cfg(test)]
@@ -397,6 +559,55 @@ mod tests {
         let _ = std::fs::remove_file(store.block_log_store().path());
         let _ = std::fs::remove_file(store.chain_state_store().path());
         let _ = std::fs::remove_dir(store.data_dir());
+    }
+
+    #[test]
+    fn node_store_persists_scaled_tensor_artifacts() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-node-tensor-artifact-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let store = NodeStore::open(data_dir.clone());
+        let tensor =
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 4, vec![1, 2, 3, 4]).unwrap();
+        let tensor_id = tensor.tensor_id();
+        let root = tensor.commitment_root();
+
+        assert_eq!(store.persist_tensor(&tensor, 77).unwrap(), tensor_id);
+        let loaded = store.load_tensors().unwrap();
+
+        assert_eq!(loaded.len(), 1);
+        assert_eq!(loaded[0].retain_until_block, 77);
+        assert_eq!(loaded[0].tensor, tensor);
+        assert_eq!(loaded[0].tensor.scale(), 4);
+        assert_eq!(loaded[0].tensor.tensor_id(), tensor_id);
+        assert_eq!(loaded[0].tensor.commitment_root(), root);
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn node_store_rejects_tampered_tensor_artifacts() {
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-node-tensor-artifact-tamper-{}",
+            std::process::id()
+        ));
+        let _ = std::fs::remove_dir_all(&data_dir);
+        let store = NodeStore::open(data_dir.clone());
+        let tensor = Tensor::from_vec(vec![2], DType::FieldElement, vec![9, 10]).unwrap();
+        let tensor_id = tensor.tensor_id();
+        store.persist_tensor(&tensor, 88).unwrap();
+        let path = store.tensor_artifact_path(&tensor_id);
+        let mut bytes = std::fs::read(&path).unwrap();
+        let last = bytes.last_mut().unwrap();
+        *last = last.wrapping_add(1);
+        std::fs::write(&path, bytes).unwrap();
+
+        assert_eq!(
+            store.load_tensors(),
+            Err(TvmError::Storage("tensor artifact id mismatch"))
+        );
+        let _ = std::fs::remove_dir_all(data_dir);
     }
 
     #[test]

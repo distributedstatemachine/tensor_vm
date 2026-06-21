@@ -46,6 +46,7 @@ pub fn tick_validator_role_work_once(
         && let Some(receipt_id) = receipt_to_fetch
     {
         let fetch_report = fetch_validator_role_missing_tensors(
+            store,
             &mut server.gateway_mut().node,
             p2p_service,
             receipt_id,

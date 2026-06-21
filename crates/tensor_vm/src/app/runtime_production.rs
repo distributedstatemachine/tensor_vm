@@ -1,6 +1,6 @@
 use std::time::{Duration, Instant};
 
-use super::produce_and_publish_synthetic_job;
+use super::produce_and_publish_synthetic_job_with_store;
 use crate::{
     ChainProfile, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService, types::Address,
 };
@@ -47,10 +47,11 @@ impl LocalProductionSchedule {
                 self.next_block_at = Some(Instant::now() + interval);
                 return Ok(false);
             }
-            if produce_and_publish_synthetic_job(
+            if produce_and_publish_synthetic_job_with_store(
                 context.server,
                 context.p2p_service,
                 context.profile,
+                Some(context.store),
             )?
             .is_some()
             {

@@ -511,7 +511,9 @@ fn validator_role_fetches_remote_tensors_before_attesting() {
         observation.artifact_missing_receipts,
         BTreeSet::from([receipt_id])
     );
-    let report = fetch_validator_role_missing_tensors(&mut node, &requester, receipt_id).unwrap();
+    let store = NodeStore::open(unique_temp_data_dir("validator-remote-fetch"));
+    let report =
+        fetch_validator_role_missing_tensors(&store, &mut node, &requester, receipt_id).unwrap();
     assert_eq!(report.successes, 3);
     assert_eq!(report.failures, 0);
     assert_eq!(report.tensors_inserted, 3);
@@ -609,7 +611,9 @@ fn validator_role_fetches_remote_graph_const_blobs_before_attesting() {
             .unwrap()
             .is_none()
     );
-    let report = fetch_validator_role_missing_tensors(&mut node, &requester, receipt_id).unwrap();
+    let store = NodeStore::open(unique_temp_data_dir("validator-remote-graph-fetch"));
+    let report =
+        fetch_validator_role_missing_tensors(&store, &mut node, &requester, receipt_id).unwrap();
     assert_eq!(report.successes, 3);
     assert_eq!(report.tensors_inserted, 3);
 

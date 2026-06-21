@@ -7,7 +7,10 @@ RUN cargo build -p tensor_vm_explorer --release
 
 FROM debian:bookworm-slim
 
-RUN useradd --system --home-dir /var/lib/tensorvm --shell /usr/sbin/nologin tensorvm \
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends curl ca-certificates \
+    && rm -rf /var/lib/apt/lists/* \
+    && useradd --system --home-dir /var/lib/tensorvm --shell /usr/sbin/nologin tensorvm \
     && install -d -o tensorvm -g tensorvm /var/lib/tensorvm
 
 COPY --from=builder /workspace/target/release/tvmd /usr/local/bin/tvmd

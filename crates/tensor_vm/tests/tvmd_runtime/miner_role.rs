@@ -221,8 +221,10 @@ fn miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution() {
     wait_for_connected_role_services(&provider, &requester);
 
     assert!(submit_miner_role_receipt(&mut node, miner, job.job_id).is_err());
+    let store = NodeStore::open(unique_temp_data_dir("miner-remote-graph-artifacts"));
     let report =
-        fetch_miner_role_missing_graph_artifacts(&mut node, &requester, job.job_id).unwrap();
+        fetch_miner_role_missing_graph_artifacts(&store, &mut node, &requester, job.job_id)
+            .unwrap();
     assert_eq!(report.successes, 2);
     assert_eq!(report.tensors_inserted, 2);
 

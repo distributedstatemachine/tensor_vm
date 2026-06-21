@@ -1,6 +1,7 @@
 use crate::{
     Chain, ChainCommand, ChainEngine, ChainProfile, DeterministicBlockCheckChallenge, JobState,
-    NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
+    NetworkEventIngest, NodeStore, PendingNetworkPayloads, RpcHttpServer, Tensor,
+    TensorVmLibp2pService,
     api::P2pMessage,
     decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
     encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
@@ -172,6 +173,15 @@ pub fn produce_and_publish_synthetic_job(
     p2p_service: &TensorVmLibp2pService,
     profile: &ChainProfile,
 ) -> std::result::Result<Option<Hash>, String> {
+    produce_and_publish_synthetic_job_with_store(server, p2p_service, profile, None)
+}
+
+pub fn produce_and_publish_synthetic_job_with_store(
+    server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
+    profile: &ChainProfile,
+    store: Option<&NodeStore>,
+) -> std::result::Result<Option<Hash>, String> {
     let Some(mut job_source) = profile.synthetic_job_source() else {
         return Ok(None);
     };
@@ -208,6 +218,9 @@ pub fn produce_and_publish_synthetic_job(
                 })
                 .map_err(|error| format!("synthetic graph program registration failed: {error}"))?;
             for tensor in inputs.values() {
+                if let Some(store) = store {
+                    persist_runtime_tensor(store, &node.chain, tensor)?;
+                }
                 node.insert_tensor(tensor.clone());
                 p2p_service.register_tensor(tensor.clone());
             }
@@ -225,6 +238,19 @@ pub fn produce_and_publish_synthetic_job(
         &server.gateway().node.chain,
     )?;
     Ok(Some(job_id))
+}
+
+pub fn persist_runtime_tensor(
+    store: &NodeStore,
+    chain: &Chain,
+    tensor: &Tensor,
+) -> std::result::Result<Hash, String> {
+    let retain_until_block = chain
+        .params()
+        .tensor_retention_deadline(chain.state().height());
+    store
+        .persist_tensor(tensor, retain_until_block)
+        .map_err(|error| format!("failed to persist tensor artifact: {error}"))
 }
 
 pub fn publish_validator_block_proposal(

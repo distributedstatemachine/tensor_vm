@@ -7,6 +7,7 @@ REPO_ROOT=$(CDPATH= cd -- "$BUNDLE_DIR/../../.." && pwd)
 COMPOSE_FILE="$BUNDLE_DIR/docker-compose.yml"
 CHECK_SCRIPT="$SCRIPT_DIR/check-local-testnet.sh"
 TOPOLOGY_FILE="$SCRIPT_DIR/local-cpu-topology.sh"
+AUTH_TOKEN="${TENSORVM_AUTH_TOKEN:-local-cpu-testnet-token}"
 ZERO_HASH="0000000000000000000000000000000000000000000000000000000000000000"
 
 fail() {
@@ -21,6 +22,7 @@ DEFAULT_RESTART_SERVICES="$LOCAL_CPU_DEFAULT_RESTART_SERVICES"
 EXPECTED_SEED_HEIGHT="$LOCAL_CPU_SEED_HEIGHT"
 EXPECTED_RESTART_CHECKER_RETRY_LIMIT="$LOCAL_CPU_RESTART_CHECKER_RETRY_LIMIT"
 EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS="$LOCAL_CPU_DOCKER_EXEC_TIMEOUT_SECONDS"
+EXPECTED_HTTP_TIMEOUT_SECONDS="$LOCAL_CPU_HTTP_TIMEOUT_SECONDS"
 EXPECTED_CHECKER_RETRY_SLEEP_SECONDS="$LOCAL_CPU_CHECKER_RETRY_SLEEP_SECONDS"
 EXPECTED_RESTART_COMMAND_TIMEOUT_SECONDS="$LOCAL_CPU_RESTART_COMMAND_TIMEOUT_SECONDS"
 EXPECTED_RESTART_CHECK_SCRIPT_TIMEOUT_SECONDS="$LOCAL_CPU_RESTART_CHECK_SCRIPT_TIMEOUT_SECONDS"
@@ -50,6 +52,60 @@ status_value() {
   key_value_from_stdin "$key" <<EOF
 $document
 EOF
+}
+
+json_string() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)[sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+if isinstance(value, str):
+    print(value)
+    sys.exit(0)
+sys.exit(1)
+' "$key"
+}
+
+json_number() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)[sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    print(value)
+    sys.exit(0)
+sys.exit(1)
+' "$key"
+}
+
+json_array_length() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)[sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+if isinstance(value, list):
+    print(len(value))
+    sys.exit(0)
+sys.exit(1)
+' "$key"
 }
 
 file_value() {
@@ -106,6 +162,70 @@ wait_service_ready() {
     sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
   done
   return 1
+}
+
+service_rpc_get() {
+  service="$1"
+  path="$2"
+  timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" \
+    curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:8545${path}" 2>/dev/null < /dev/null
+}
+
+capture_service_tensor() {
+  phase="$1"
+  service="$2"
+  out_file="$3"
+  attempt=0
+  while [ "$attempt" -lt "$EXPECTED_RESTART_CHECKER_RETRY_LIMIT" ]; do
+    if tensor=$(service_rpc_get "$service" /tensor/latest); then
+      tensor_id=$(json_string tensor_id "$tensor") || tensor_id=""
+      tensor_root=$(json_string root "$tensor") || tensor_root=""
+      tensor_count=$(json_number tensor_count "$tensor") || tensor_count=0
+      if [ -n "$tensor_id" ] && [ -n "$tensor_root" ] && [ "$tensor_count" -gt 0 ]; then
+        {
+          printf 'tensor_id=%s\n' "$tensor_id"
+          printf 'tensor_root=%s\n' "$tensor_root"
+          printf 'tensor_count=%s\n' "$tensor_count"
+        } > "$out_file"
+        return 0
+      fi
+    fi
+    attempt=$((attempt + 1))
+    sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
+  done
+  fail "$phase tensor artifact was not available for $service"
+}
+
+assert_service_tensor_artifact() {
+  service="$1"
+  tensor_id="$2"
+  tensor_root="$3"
+  descriptor=$(service_rpc_get "$service" "/tensor/${tensor_id}/descriptor") \
+    || fail "$service did not serve pre-restart tensor descriptor after restart"
+  descriptor_root=$(json_string root "$descriptor") \
+    || fail "$service pre-restart tensor descriptor did not expose root"
+  [ "$descriptor_root" = "$tensor_root" ] \
+    || fail "$service pre-restart tensor descriptor root changed after restart"
+  row=$(service_rpc_get "$service" "/tensor/${tensor_id}/row/0") \
+    || fail "$service did not serve pre-restart tensor row after restart"
+  [ "$(json_array_length row "$row")" -gt 0 ] \
+    || fail "$service pre-restart tensor row was empty after restart"
+  chunk=$(service_rpc_get "$service" "/tensor/${tensor_id}/chunk/0") \
+    || fail "$service did not serve pre-restart tensor chunk after restart"
+  chunk_bytes=$(json_string bytes "$chunk") \
+    || fail "$service pre-restart tensor chunk did not expose bytes"
+  [ -n "$chunk_bytes" ] \
+    || fail "$service pre-restart tensor chunk was empty after restart"
+  [ "$(json_number chunk_index "$chunk")" = "0" ] \
+    || fail "$service pre-restart tensor chunk index changed after restart"
+  opening=$(service_rpc_get "$service" "/tensor/${tensor_id}/opening/0") \
+    || fail "$service did not serve pre-restart tensor opening after restart"
+  opening_proof_len=$(json_number proof_len "$opening") \
+    || fail "$service pre-restart tensor opening did not expose proof length"
+  [ -n "$opening_proof_len" ] \
+    || fail "$service pre-restart tensor opening proof length was empty after restart"
+  [ "$(json_number chunk_index "$opening")" = "0" ] \
+    || fail "$service pre-restart tensor opening index changed after restart"
 }
 
 capture_snapshot() {
@@ -183,6 +303,7 @@ capture_snapshot() {
 cd "$REPO_ROOT"
 
 require_command docker
+require_command python3
 require_command timeout
 
 [ -x "$CHECK_SCRIPT" ] || fail "check-local-testnet.sh is not executable"
@@ -195,6 +316,9 @@ mkdir -p "$TMP_DIR/before" "$TMP_DIR/after"
 trap 'rm -rf "$TMP_DIR"' EXIT INT TERM
 
 capture_snapshot before "$TMP_DIR/before"
+for service in $RESTART_SERVICES; do
+  capture_service_tensor before "$service" "$TMP_DIR/before/${service}.tensor"
+done
 
 timeout "${EXPECTED_RESTART_COMMAND_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" restart $RESTART_SERVICES
 for service in $RESTART_SERVICES; do
@@ -260,6 +384,9 @@ for service in $RESTART_SERVICES; do
     || fail "$service after-restart block-log root is empty"
   [ "$after_block_log_root" != "$before_block_log_root" ] \
     || fail "$service block-log root did not advance across restart"
+  before_tensor_id=$(file_value tensor_id "$TMP_DIR/before/${service}.tensor")
+  before_tensor_root=$(file_value tensor_root "$TMP_DIR/before/${service}.tensor")
+  assert_service_tensor_artifact "$service" "$before_tensor_id" "$before_tensor_root"
 done
 
 RESTART_SERVICE_LIST=$(printf '%s\n' "$RESTART_SERVICES" | tr ' ' ',')
@@ -284,6 +411,7 @@ restart_block_log_roots_observed=true
 restart_block_log_roots_advance=true
 restart_previous_common_head_preserved=true
 restart_previous_common_state_root_preserved=true
+restart_tensor_artifact_preserved=true
 restart_blocks_continue=true
 restart_common_head_convergence=true
 STATUS
