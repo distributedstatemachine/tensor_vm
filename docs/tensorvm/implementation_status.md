@@ -265,18 +265,21 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   current chain randomness. `ChainState::randomness_binding_evidence`, service status, and explorer
   overview now expose the local finalized-beacon source, local finalized-height-to-beacon-round mapping,
   local validator VRF-seed derivation, assignment/commitment/reveal seed domains, commit-reveal ordering,
-  receipt-anchor consistency counts, finalized beacon round mapping counts, validator VRF seed counts, and
-  an explicit current-block-hash randomness ban. `ChainCommand::SubmitExternalRandomnessBeacon` now records
+  receipt-anchor consistency counts, finalized beacon round mapping counts, validator VRF seed counts,
+  validator VRF reveal record counts, and an explicit current-block-hash randomness ban.
+  `ChainCommand::SubmitExternalRandomnessBeacon` now records
   strictly newer externally observed beacon rounds as state-rooted `ExternalRandomnessBeaconRecord` entries,
   advances finalized beacon randomness for future receipt anchors, persists those records through
   chain-state snapshots, and exposes external beacon count/latest-round evidence through status and explorer
   JSON. Local CPU role runtimes now ingest the configured deterministic drand-style fixture through that
   command before network/role work, persist accepted records, expose observed/applied/skipped/failure
   counters through role and node status, relay accepted beacon records as bounded p2p payloads, apply
-  network-originated beacon payloads idempotently through the same chain command, and the local checker
-  gates the external-beacon record, network-applied beacon, and current-block-hash-ban evidence. Public
-  drand signature verification, public VRF attestations, and deployed commit-reveal lifecycle evidence
-  remain open.
+  network-originated beacon payloads idempotently through the same chain command, submit chain-verified
+  validator VRF reveal records before validator receipt rewards can become spendable, relay/retry bounded
+  reveal payloads through the same p2p/node ingest path, and the local checker gates the external-beacon
+  record, validator-reveal record, network-applied beacon/reveal, and current-block-hash-ban evidence.
+  Public drand signature verification, production validator VRF signatures, and deployed commit-reveal
+  lifecycle evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

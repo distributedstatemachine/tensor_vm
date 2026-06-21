@@ -379,6 +379,7 @@ pub struct ExplorerRandomnessBindingEvidence {
     pub finalized_beacon_anchor_count: usize,
     pub finalized_beacon_round_mapping_count: usize,
     pub validator_vrf_seed_count: usize,
+    pub validator_vrf_reveal_count: usize,
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
@@ -390,7 +391,7 @@ pub struct ExplorerRandomnessBindingEvidence {
 impl ExplorerRandomnessBindingEvidence {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"external_beacon_record_count\":{},\"latest_external_beacon_round\":{},\"all_receipt_anchors_consistent\":{}}}",
+            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"validator_vrf_reveal_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"external_beacon_record_count\":{},\"latest_external_beacon_round\":{},\"all_receipt_anchors_consistent\":{}}}",
             escape_json(&self.beacon_source),
             escape_json(&self.drand_round_mapping),
             escape_json(&self.vrf_construction),
@@ -403,6 +404,7 @@ impl ExplorerRandomnessBindingEvidence {
             self.finalized_beacon_anchor_count,
             self.finalized_beacon_round_mapping_count,
             self.validator_vrf_seed_count,
+            self.validator_vrf_reveal_count,
             self.receipt_bound_anchor_count,
             self.consistent_anchor_count,
             self.current_block_hash_anchor_count,
@@ -919,6 +921,7 @@ mod tests {
             finalized_beacon_anchor_count: 2,
             finalized_beacon_round_mapping_count: 2,
             validator_vrf_seed_count: 10,
+            validator_vrf_reveal_count: 4,
             receipt_bound_anchor_count: 2,
             consistent_anchor_count: 2,
             current_block_hash_anchor_count: 0,
@@ -936,6 +939,11 @@ mod tests {
             randomness
                 .to_json()
                 .contains("\"validator_vrf_seed_count\":10")
+        );
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"validator_vrf_reveal_count\":4")
         );
         assert!(
             randomness

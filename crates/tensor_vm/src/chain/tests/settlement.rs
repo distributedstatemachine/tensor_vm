@@ -132,6 +132,12 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
     );
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     chain.set_position_for_testing(claimable_at_height, 0);
+    let reveal =
+        validation::validator_vrf_reveal_record(&chain, receipt.receipt_id, validators[0], 0)
+            .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+        .unwrap();
     let release_events = chain.release_matured_receipt_rewards().unwrap();
     assert!(release_events.iter().any(|event| matches!(
         event,

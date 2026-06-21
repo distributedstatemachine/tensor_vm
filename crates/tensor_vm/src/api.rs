@@ -58,6 +58,12 @@ pub enum P2pMessage {
         beacon_round: u64,
         payload: Vec<u8>,
     },
+    NewValidatorVrfRevealPayload {
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Address,
+        payload: Vec<u8>,
+    },
     RequestTensorChunk {
         tensor_id: Hash,
         chunk_index: u64,

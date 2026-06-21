@@ -2,7 +2,7 @@ use super::payload_application::{
     apply_network_attestation_payload, apply_network_block_check_challenge_payload,
     apply_network_block_payload, apply_network_block_vote_payload, apply_network_job_payload,
     apply_network_observed_block_check_challenge_payload, apply_network_receipt_payload,
-    apply_network_validator_audit_report_payload,
+    apply_network_validator_audit_report_payload, apply_network_validator_vrf_reveal_payload,
 };
 use crate::{chain::Chain, types::Hash};
 
@@ -67,6 +67,14 @@ pub trait NetworkPayloadProcessor {
         &mut self,
         audit_id: Hash,
         auditor: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply;
+
+    fn apply_validator_vrf_reveal(
+        &mut self,
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Hash,
         payload: &[u8],
     ) -> NetworkPayloadApply;
 }
@@ -165,6 +173,22 @@ impl NetworkPayloadProcessor for ChainNetworkPayloadProcessor<'_> {
     ) -> NetworkPayloadApply {
         apply_network_validator_audit_report_payload(self.chain, audit_id, auditor, payload)
     }
+
+    fn apply_validator_vrf_reveal(
+        &mut self,
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_validator_vrf_reveal_payload(
+            self.chain,
+            &reveal_id,
+            &receipt_id,
+            &validator,
+            payload,
+        )
+    }
 }
 
 pub(super) struct ContextNetworkPayloadProcessor<'a, C: NetworkEventContext + ?Sized> {
@@ -249,6 +273,22 @@ impl<C: NetworkEventContext + ?Sized> NetworkPayloadProcessor
             self.context.chain(),
             audit_id,
             auditor,
+            payload,
+        )
+    }
+
+    fn apply_validator_vrf_reveal(
+        &mut self,
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_validator_vrf_reveal_payload(
+            self.context.chain(),
+            &reveal_id,
+            &receipt_id,
+            &validator,
             payload,
         )
     }

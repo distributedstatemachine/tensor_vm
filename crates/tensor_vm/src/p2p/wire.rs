@@ -1,6 +1,7 @@
 use crate::api::P2pMessage;
 use crate::chain::{
     BlockVote, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+    ValidatorVrfRevealRecord,
 };
 use crate::challenge::{BlockCheckChallenge, block_check_challenge_id};
 use crate::codec::{self, CodecError};
@@ -40,6 +41,7 @@ const BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN: usize = codec::BLOCK_CHECK_CHALLENGE_PA
 const EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES: usize = 96;
 const EXTERNAL_RANDOMNESS_BEACON_PAYLOAD_MAX_LEN: usize =
     8 + EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES + 8 + 32 + 32;
+const VALIDATOR_VRF_REVEAL_PAYLOAD_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 32 + 32 + 32 + 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalRandomnessBeaconPayload {
@@ -47,6 +49,11 @@ pub struct ExternalRandomnessBeaconPayload {
     pub beacon_round: u64,
     pub randomness: Hash,
     pub proof_hash: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorVrfRevealPayload {
+    pub reveal: ValidatorVrfRevealRecord,
 }
 
 pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
@@ -68,6 +75,7 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. } => Some(GossipTopic::Attestations),
         P2pMessage::NewExternalRandomnessBeaconPayload { .. } => Some(GossipTopic::Blocks),
+        P2pMessage::NewValidatorVrfRevealPayload { .. } => Some(GossipTopic::Attestations),
         P2pMessage::PeerInfo { .. } => Some(GossipTopic::Peers),
         P2pMessage::RequestTensorChunk { .. }
         | P2pMessage::TensorChunkResponse { .. }
@@ -118,6 +126,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. }
         | P2pMessage::NewExternalRandomnessBeaconPayload { .. }
+        | P2pMessage::NewValidatorVrfRevealPayload { .. }
         | P2pMessage::PeerInfo { .. } => None,
     }
 }
@@ -270,6 +279,18 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             out.push(27);
             write_string(&mut out, source_id);
             write_u64(&mut out, *beacon_round);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewValidatorVrfRevealPayload {
+            reveal_id,
+            receipt_id,
+            validator,
+            payload,
+        } => {
+            out.push(28);
+            write_hash(&mut out, reveal_id);
+            write_hash(&mut out, receipt_id);
+            write_hash(&mut out, validator);
             write_bytes(&mut out, payload);
         }
         P2pMessage::RequestTensorChunk {
@@ -498,6 +519,27 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             P2pMessage::NewExternalRandomnessBeaconPayload {
                 source_id,
                 beacon_round,
+                payload,
+            }
+        }
+        28 => {
+            let reveal_id = reader.read_hash()?;
+            let receipt_id = reader.read_hash()?;
+            let validator = reader.read_hash()?;
+            let payload = reader.read_bytes_with_max(VALIDATOR_VRF_REVEAL_PAYLOAD_LEN)?;
+            let decoded = decode_validator_vrf_reveal_payload(&payload)?;
+            if decoded.reveal.reveal_id != reveal_id
+                || decoded.reveal.receipt_id != receipt_id
+                || decoded.reveal.validator != validator
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf reveal payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id,
+                receipt_id,
+                validator,
                 payload,
             }
         }
@@ -817,6 +859,43 @@ pub fn decode_external_randomness_beacon_payload(
     })
 }
 
+pub fn encode_validator_vrf_reveal_payload(reveal: &ValidatorVrfRevealRecord) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_hash(&mut out, &reveal.reveal_id);
+    write_hash(&mut out, &reveal.receipt_id);
+    write_hash(&mut out, &reveal.job_id);
+    write_hash(&mut out, &reveal.validator);
+    write_u64(&mut out, reveal.beacon_round);
+    write_u64(&mut out, reveal.validation_round);
+    write_hash(&mut out, &reveal.vrf_output);
+    write_hash(&mut out, &reveal.proof_hash);
+    write_hash(&mut out, &reveal.signature);
+    write_u64(&mut out, reveal.observed_at_height);
+    out
+}
+
+pub fn decode_validator_vrf_reveal_payload(input: &[u8]) -> TvmResult<ValidatorVrfRevealPayload> {
+    let mut reader = Reader::new(input);
+    let reveal = ValidatorVrfRevealRecord {
+        reveal_id: reader.read_hash()?,
+        receipt_id: reader.read_hash()?,
+        job_id: reader.read_hash()?,
+        validator: reader.read_hash()?,
+        beacon_round: reader.read_u64()?,
+        validation_round: reader.read_u64()?,
+        vrf_output: reader.read_hash()?,
+        proof_hash: reader.read_hash()?,
+        signature: reader.read_hash()?,
+        observed_at_height: reader.read_u64()?,
+    };
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing validator vrf reveal payload bytes",
+        ));
+    }
+    Ok(ValidatorVrfRevealPayload { reveal })
+}
+
 fn p2p_codec_error(error: CodecError, trailing_error: &'static str) -> TvmError {
     match error {
         CodecError::Truncated => TvmError::InvalidReceipt("short p2p message"),
@@ -1087,6 +1166,19 @@ mod tests {
             &beacon_randomness,
             &beacon_proof_hash,
         );
+        let vrf_reveal = ValidatorVrfRevealRecord {
+            reveal_id: hash_bytes(b"test", &[b"roundtrip-reveal-id"]),
+            receipt_id: receipt.receipt_id(),
+            job_id: receipt.job_id(),
+            validator: address(b"roundtrip-vrf-validator"),
+            beacon_round,
+            validation_round: 0,
+            vrf_output: hash_bytes(b"test", &[b"roundtrip-vrf-output"]),
+            proof_hash: hash_bytes(b"test", &[b"roundtrip-vrf-proof"]),
+            signature: [9; 32],
+            observed_at_height: 3,
+        };
+        let vrf_reveal_payload = encode_validator_vrf_reveal_payload(&vrf_reveal);
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -1142,6 +1234,12 @@ mod tests {
                 source_id: beacon_source,
                 beacon_round,
                 payload: beacon_payload,
+            },
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: vrf_reveal.reveal_id,
+                receipt_id: vrf_reveal.receipt_id,
+                validator: vrf_reveal.validator,
+                payload: vrf_reveal_payload,
             },
             P2pMessage::RequestTensorChunk {
                 tensor_id: h,
@@ -1245,6 +1343,62 @@ mod tests {
             payload,
         };
         assert!(decode_message(&encode_message(&mismatched)).is_err());
+    }
+
+    #[test]
+    fn validator_vrf_reveal_payloads_roundtrip_and_reject_malformed_edges() {
+        let reveal = ValidatorVrfRevealRecord {
+            reveal_id: hash_bytes(b"test", &[b"vrf-reveal-id"]),
+            receipt_id: hash_bytes(b"test", &[b"vrf-reveal-receipt"]),
+            job_id: hash_bytes(b"test", &[b"vrf-reveal-job"]),
+            validator: address(b"vrf-reveal-validator"),
+            beacon_round: 77,
+            validation_round: 2,
+            vrf_output: hash_bytes(b"test", &[b"vrf-output"]),
+            proof_hash: hash_bytes(b"test", &[b"vrf-proof"]),
+            signature: [7; 32],
+            observed_at_height: 5,
+        };
+        let payload = encode_validator_vrf_reveal_payload(&reveal);
+        assert_eq!(
+            decode_validator_vrf_reveal_payload(&payload).unwrap(),
+            ValidatorVrfRevealPayload {
+                reveal: reveal.clone()
+            }
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(0);
+        assert_eq!(
+            decode_validator_vrf_reveal_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing validator vrf reveal payload bytes"
+            ))
+        );
+        assert!(decode_validator_vrf_reveal_payload(&payload[..payload.len() - 1]).is_err());
+
+        for message in [
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: hash_bytes(b"test", &[b"wrong-reveal"]),
+                receipt_id: reveal.receipt_id,
+                validator: reveal.validator,
+                payload: payload.clone(),
+            },
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: reveal.reveal_id,
+                receipt_id: hash_bytes(b"test", &[b"wrong-receipt"]),
+                validator: reveal.validator,
+                payload: payload.clone(),
+            },
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: reveal.reveal_id,
+                receipt_id: reveal.receipt_id,
+                validator: address(b"wrong-validator"),
+                payload: payload.clone(),
+            },
+        ] {
+            assert!(decode_message(&encode_message(&message)).is_err());
+        }
     }
 
     #[test]
@@ -1902,6 +2056,17 @@ mod tests {
             Some(GossipTopic::Blocks)
         );
         assert_eq!(request_response_protocol_for_message(&beacon_message), None);
+        let reveal_message = P2pMessage::NewValidatorVrfRevealPayload {
+            reveal_id: h,
+            receipt_id: hash_bytes(b"test", &[b"mapping-receipt"]),
+            validator: address(b"mapping-vrf-validator"),
+            payload: vec![1, 2, 3],
+        };
+        assert_eq!(
+            gossip_topic_for_message(&reveal_message),
+            Some(GossipTopic::Attestations)
+        );
+        assert_eq!(request_response_protocol_for_message(&reveal_message), None);
         assert_eq!(
             gossip_topic_for_message(&P2pMessage::NewJob(h)),
             Some(GossipTopic::Jobs)

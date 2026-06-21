@@ -166,6 +166,102 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
 }
 
 #[test]
+fn validator_receipt_reward_waits_for_vrf_reveal_after_maturity() {
+    let beacon = hash_bytes(b"test", &[b"validator-reward-vrf-delay"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"validator-reward-vrf-miner");
+    let validator = address(b"validator-reward-vrf-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain
+        .register_validator(validator, chain.params().validator_min_stake)
+        .unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 4, 4, 4, &beacon, 10);
+    let (receipt, a, b, c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    let report = verify_tensor_op(
+        &job,
+        &receipt,
+        &a,
+        &b,
+        &c,
+        &hash_bytes(b"test", &[b"validator-reward-vrf-validation"]),
+        &chain.params().freivalds,
+    )
+    .unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+    let assigned_validator = JobScheduler::default()
+        .assign_validators(
+            &chain,
+            receipt_id,
+            &chain.validator_assignment_seed(&receipt_id),
+        )
+        .validators[0];
+    assert_eq!(assigned_validator, validator);
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            validator,
+            chain.params().validator_min_stake,
+            AttestationStatement {
+                receipt_id,
+                job_id: chain.state().receipts().get(&receipt_id).unwrap().job_id(),
+                primitive_type: PrimitiveType::TensorOp,
+                result: report.result,
+                checks_root: report.checks_root,
+                data_availability_passed: report.data_availability_passed,
+            },
+        ))
+        .unwrap();
+    chain.settle_epoch(1_000, 500);
+    chain.produce_block(validator, 1_000).unwrap();
+
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == validator)
+        .unwrap()
+        .claimable_at_height()
+        .unwrap();
+    chain.set_position_for_testing(claimable_at_height, 0);
+    let events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(events.iter().all(|event| !matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased { beneficiary, .. } if *beneficiary == validator
+    )));
+    assert_eq!(chain.state().rewards().balance(&validator), 0);
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| { reward.receipt_id == receipt_id && reward.beneficiary == validator })
+    );
+
+    let reveal = validation::validator_vrf_reveal_record(&chain, receipt_id, validator, 0).unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+        .unwrap();
+    let release_events = chain.release_matured_receipt_rewards().unwrap();
+    assert!(release_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ReceiptRewardReleased { beneficiary, amount, .. }
+            if *beneficiary == validator && *amount == 500
+    )));
+    assert_eq!(chain.state().rewards().balance(&validator), 500);
+}
+
+#[test]
 fn block_reward_root_rejects_spendable_only_root_when_pending_rewards_exist() {
     let beacon = hash_bytes(b"test", &[b"reward-root-rejects-spendable"]);
     let mut parent = Chain::new(beacon);

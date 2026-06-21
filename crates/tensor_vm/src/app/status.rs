@@ -137,6 +137,8 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_network_validator_audit_reports_applied",
     "role_network_external_randomness_beacons_ingested",
     "role_network_external_randomness_beacons_applied",
+    "role_network_validator_vrf_reveals_ingested",
+    "role_network_validator_vrf_reveals_applied",
     "role_network_peer_events_ingested",
     "role_network_invalid_events",
     "role_latest_height",
@@ -433,6 +435,10 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         randomness.validator_vrf_seed_count,
     );
     report.field(
+        "randomness_validator_vrf_reveal_count",
+        randomness.validator_vrf_reveal_count,
+    );
+    report.field(
         "randomness_receipt_bound_anchor_count",
         randomness.receipt_bound_anchor_count,
     );
@@ -623,7 +629,7 @@ mod tests {
         RANDOMNESS_DRAND_ROUND_MAPPING, RANDOMNESS_VRF_CONSTRUCTION, ReceiptRewardKind,
         ReceiptRewardMaturity, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
     };
-    use crate::jobs::MatmulJob;
+    use crate::jobs::{MatmulJob, TensorOpReceipt};
     use crate::types::{address, hash_bytes};
     use std::time::{SystemTime, UNIX_EPOCH};
 
@@ -878,6 +884,23 @@ mod tests {
             b"test",
             &[b"status-randomness-receipt"],
         ));
+        let miner = address(b"status-randomness-miner");
+        let validator = address(b"status-randomness-validator");
+        chain.register_miner(miner, 100).unwrap();
+        chain
+            .register_validator(validator, chain.params().validator_min_stake)
+            .unwrap();
+        let job = MatmulJob::synthetic(9, 0, 2, 2, 2, &chain.state().finalized_randomness(), 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 1).unwrap();
+        let receipt_id = receipt.receipt_id;
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt).unwrap();
+        let reveal = chain
+            .validator_vrf_reveal_record(receipt_id, validator, 0)
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+            .unwrap();
 
         let data_dir = std::env::temp_dir().join(format!(
             "tensor-vm-status-randomness-{}-{}",
@@ -928,26 +951,30 @@ mod tests {
             fields.value("randomness_current_block_hash_allowed"),
             Some("false")
         );
-        assert_eq!(fields.value("randomness_receipt_anchor_count"), Some("1"));
+        assert_eq!(fields.value("randomness_receipt_anchor_count"), Some("2"));
         assert_eq!(
             fields.value("randomness_finalized_beacon_anchor_count"),
-            Some("1")
+            Some("2")
         );
         assert_eq!(
             fields.value("randomness_finalized_beacon_round_mapping_count"),
-            Some("1")
+            Some("2")
         );
         assert_eq!(
             fields.value("randomness_validator_vrf_seed_count"),
-            Some("0")
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_validator_vrf_reveal_count"),
+            Some("1")
         );
         assert_eq!(
             fields.value("randomness_receipt_bound_anchor_count"),
-            Some("1")
+            Some("2")
         );
         assert_eq!(
             fields.value("randomness_consistent_anchor_count"),
-            Some("1")
+            Some("2")
         );
         assert_eq!(
             fields.value("randomness_current_block_hash_anchor_count"),

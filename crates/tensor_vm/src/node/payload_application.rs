@@ -6,7 +6,7 @@ use crate::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
-        decode_validator_audit_report_payload,
+        decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -344,6 +344,45 @@ pub fn apply_network_external_randomness_beacon_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+pub fn apply_network_validator_vrf_reveal_payload(
+    chain: &mut Chain,
+    reveal_id: &Hash,
+    receipt_id: &Hash,
+    validator: &Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    let Ok(decoded) = decode_validator_vrf_reveal_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    let reveal = decoded.reveal;
+    if &reveal.reveal_id != reveal_id
+        || &reveal.receipt_id != receipt_id
+        || &reveal.validator != validator
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if chain
+        .state()
+        .validator_vrf_reveals()
+        .contains_key(&reveal.reveal_id)
+    {
+        return NetworkPayloadApply::Applied;
+    }
+    if !chain.state().validators().contains_key(&reveal.validator)
+        || !chain.state().receipts().contains_key(&reveal.receipt_id)
+        || !chain
+            .state()
+            .receipt_randomness_anchors()
+            .contains_key(&reveal.receipt_id)
+    {
+        return NetworkPayloadApply::Pending;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn apply_network_block_check_challenge_payload(
     chain: &mut Chain,
     challenge_id: Hash,
@@ -518,6 +557,7 @@ mod tests {
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_payload_with_selected_receipts, encode_block_vote_payload,
             encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
+            encode_validator_vrf_reveal_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -1058,6 +1098,92 @@ mod tests {
                 &mut testnet.chain.clone(),
                 conflicting_id,
                 &encode_attestation_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn validator_vrf_reveal_payload_application_reports_pending_applied_and_invalid_edges() {
+        let testnet = local_matmul_round(b"validator-vrf-reveal");
+        let receipt_id = *testnet
+            .chain
+            .state()
+            .receipts()
+            .keys()
+            .next()
+            .expect("local round must produce a receipt");
+        let validator = *testnet
+            .chain
+            .state()
+            .validators()
+            .keys()
+            .next()
+            .expect("local round must register validators");
+        let reveal = testnet
+            .chain
+            .validator_vrf_reveal_record(receipt_id, validator, 0)
+            .unwrap();
+        let payload = encode_validator_vrf_reveal_payload(&reveal);
+
+        let mut missing_receipt_chain = testnet.chain.clone();
+        missing_receipt_chain.remove_receipt_for_testing(&receipt_id);
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut missing_receipt_chain,
+                &reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+
+        let mut apply_chain = testnet.chain.clone();
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut apply_chain,
+                &reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_chain
+                .state()
+                .validator_vrf_reveals()
+                .get(&reveal.reveal_id),
+            Some(&reveal)
+        );
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut apply_chain,
+                &reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut apply_chain,
+                &hash_bytes(b"test", &[b"wrong-reveal"]),
+                &receipt_id,
+                &validator,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut apply_chain,
+                &reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &[1, 2, 3],
             ),
             NetworkPayloadApply::Invalid
         );

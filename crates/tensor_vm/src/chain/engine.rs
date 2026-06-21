@@ -1,6 +1,6 @@
 use super::state::{
     BlockVote, ChainParams, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditAppeal,
-    ValidatorAuditAppealResolution, ValidatorAuditReport,
+    ValidatorAuditAppealResolution, ValidatorAuditReport, ValidatorVrfRevealRecord,
 };
 use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
 use crate::error::Result;
@@ -68,6 +68,7 @@ pub enum ChainCommand {
         randomness: Hash,
         proof_hash: Hash,
     },
+    SubmitValidatorVrfReveal(ValidatorVrfRevealRecord),
     Transfer {
         from: Address,
         to: Address,
@@ -135,6 +136,12 @@ pub enum ChainEvent {
         source_id: String,
         beacon_round: u64,
         randomness: Hash,
+    },
+    ValidatorVrfRevealAccepted {
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Address,
+        beacon_round: u64,
     },
     AccountTransferred {
         from: Address,

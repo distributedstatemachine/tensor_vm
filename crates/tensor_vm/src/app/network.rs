@@ -5,6 +5,7 @@ use crate::{
     decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
     encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
     encode_receipt_payload, encode_validator_audit_report_payload,
+    encode_validator_vrf_reveal_payload,
     localnet::produce_synthetic_cpu_work_with_profile,
     node::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
@@ -301,6 +302,7 @@ pub struct ChainAnnouncementCheckpoint {
     receipts: BTreeSet<Hash>,
     attestations: BTreeSet<Hash>,
     validator_audit_reports: BTreeSet<(Hash, Address)>,
+    validator_vrf_reveals: BTreeSet<Hash>,
     block_votes: BTreeSet<(Hash, Address)>,
 }
 
@@ -314,6 +316,12 @@ pub fn chain_announcement_checkpoint(chain: &Chain) -> ChainAnnouncementCheckpoi
             .validator_audit_results()
             .values()
             .map(|result| (result.audit_id, result.auditor))
+            .collect(),
+        validator_vrf_reveals: chain
+            .state()
+            .validator_vrf_reveals()
+            .keys()
+            .copied()
             .collect(),
         block_votes: block_vote_announcement_keys(chain).collect(),
     }
@@ -359,6 +367,20 @@ pub fn publish_new_chain_announcements(
             p2p_service
                 .publish_gossip(P2pMessage::NewReceipt(*receipt_id))
                 .map_err(|error| format!("failed to publish receipt gossip: {error}"))?;
+        }
+    }
+    for reveal in chain.state().validator_vrf_reveals().values() {
+        if !before.validator_vrf_reveals.contains(&reveal.reveal_id) {
+            p2p_service
+                .publish_gossip(P2pMessage::NewValidatorVrfRevealPayload {
+                    reveal_id: reveal.reveal_id,
+                    receipt_id: reveal.receipt_id,
+                    validator: reveal.validator,
+                    payload: encode_validator_vrf_reveal_payload(reveal),
+                })
+                .map_err(|error| {
+                    format!("failed to publish validator vrf reveal payload gossip: {error}")
+                })?;
         }
     }
     for attestation in chain

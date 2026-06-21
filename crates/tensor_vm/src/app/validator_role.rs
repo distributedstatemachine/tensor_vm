@@ -279,6 +279,30 @@ pub fn submit_validator_role_attestation(
             "validator role produced attestation for the wrong receipt or validator".to_owned(),
         );
     }
+    let reveal = node
+        .chain
+        .validator_vrf_reveal_record(receipt_id, validator, 0)
+        .map_err(|error| {
+            format!(
+                "validator role failed to build vrf reveal {}: {error}",
+                hex(&receipt_id)
+            )
+        })?;
+    if !node
+        .chain
+        .state()
+        .validator_vrf_reveals()
+        .contains_key(&reveal.reveal_id)
+    {
+        node.chain
+            .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+            .map_err(|error| {
+                format!(
+                    "validator role failed to submit vrf reveal {}: {error}",
+                    hex(&receipt_id)
+                )
+            })?;
+    }
     node.chain
         .apply_command(ChainCommand::SubmitAttestation(attestation))
         .map_err(|error| {

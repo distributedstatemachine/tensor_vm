@@ -37,6 +37,15 @@ impl ChainEngine for Chain {
                     randomness: record.randomness,
                 }])
             }
+            ChainCommand::SubmitValidatorVrfReveal(reveal) => {
+                let record = super::validation::submit_validator_vrf_reveal(self, reveal)?;
+                Ok(vec![ChainEvent::ValidatorVrfRevealAccepted {
+                    reveal_id: record.reveal_id,
+                    receipt_id: record.receipt_id,
+                    validator: record.validator,
+                    beacon_round: record.beacon_round,
+                }])
+            }
             ChainCommand::Transfer { from, to, amount } => {
                 self.transfer(from, to, amount)?;
                 Ok(vec![ChainEvent::AccountTransferred { from, to, amount }])
@@ -462,6 +471,8 @@ fn release_matured_receipt_rewards_with_policy(
         .filter(|(_, reward)| {
             reward.is_mature_at(state.height)
                 && state.included_receipts.contains(&reward.receipt_id)
+                && (receipt_reward_can_be_pruned_without_credit(state, reward)
+                    || validator_receipt_reward_has_vrf_reveal(state, reward))
                 && (prune_voided || !reward.voided_by_challenge)
                 && !(hold_unresolved_validator_audits
                     && unresolved_validator_audit_blocks_reward_release(state, reward))
@@ -505,6 +516,23 @@ fn release_matured_receipt_rewards_with_policy(
         });
     }
     events
+}
+
+fn receipt_reward_can_be_pruned_without_credit(
+    state: &ChainState,
+    reward: &PendingReceiptReward,
+) -> bool {
+    reward.voided_by_challenge || state.data_unavailable_receipts.contains(&reward.receipt_id)
+}
+
+fn validator_receipt_reward_has_vrf_reveal(
+    state: &ChainState,
+    reward: &PendingReceiptReward,
+) -> bool {
+    reward.kind != ReceiptRewardKind::Validator
+        || state.validator_vrf_reveals.values().any(|reveal| {
+            reveal.receipt_id == reward.receipt_id && reveal.validator == reward.beneficiary
+        })
 }
 
 fn unresolved_validator_audit_blocks_reward_release(

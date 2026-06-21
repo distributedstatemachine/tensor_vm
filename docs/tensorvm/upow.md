@@ -449,12 +449,15 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > explorer overview. Admitted receipts persist a finalized-beacon anchor, assignment seed, and validation
 > seed commitment; `ChainState::randomness_binding_evidence` reports the exact local seed domains,
 > commit→reveal ordering (`receipt_id + finalized_beacon_round` committed before validator/job/round seed
-> reveal), zero current-block-hash anchors, and consistency counts for persisted receipt anchors. Local CPU
-> role runtimes can now ingest a configured deterministic drand-style external beacon fixture through
-> `ChainCommand::SubmitExternalRandomnessBeacon`, persist the state-rooted beacon record, and expose
-> observed/applied/skipped/failure counters plus external-beacon count/latest-round evidence through
+> reveal), zero current-block-hash anchors, consistency counts for persisted receipt anchors, and
+> state-rooted local validator VRF reveal records. Local CPU role runtimes can now ingest a configured
+> deterministic drand-style external beacon fixture through `ChainCommand::SubmitExternalRandomnessBeacon`,
+> persist the state-rooted beacon record, submit validator reveal records before validator reward release,
+> relay bounded reveal payloads over p2p/node ingest, retry out-of-order reveal payloads until receipt
+> anchors arrive, and expose observed/applied counters plus external-beacon/reveal count evidence through
 > status, explorer JSON, and the local checker. Public drand signature verification, external drand round
-> mapping, and validator VRF construction remain TODO before claiming the full §10 construction.
+> mapping, production validator VRF signatures, and deployed commit-reveal lifecycle evidence remain TODO
+> before claiming the full §10 construction.
 
 ---
 

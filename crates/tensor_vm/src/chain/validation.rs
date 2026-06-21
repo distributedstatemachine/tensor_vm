@@ -2,11 +2,11 @@ use super::{
     BlockVote, Chain, ExternalRandomnessBeaconRecord, InvalidOutputSlashRecord, ReceiptRewardKind,
     ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
     ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, blocks, settlement,
+    ValidatorAuditSlashRecord, ValidatorVrfRevealRecord, blocks, settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
-use crate::types::{Address, Hash, hash_bytes};
+use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::BTreeSet;
 
@@ -20,6 +20,9 @@ pub const RANDOMNESS_VRF_CONSTRUCTION: &str =
 pub const ASSIGNMENT_SEED_DOMAIN: &str = "tensor-vm-validator-assignment-seed-v1";
 pub const VALIDATION_SEED_COMMITMENT_DOMAIN: &str = "tensor-vm-validation-seed-commitment-v1";
 pub const VALIDATION_SEED_REVEAL_DOMAIN: &str = "tensor-vm-committed-validation-seed-v1";
+pub const VALIDATOR_VRF_REVEAL_ID_DOMAIN: &str = "tensor-vm-validator-vrf-reveal-id-v1";
+pub const VALIDATOR_VRF_PROOF_DOMAIN: &str = "tensor-vm-validator-vrf-proof-v1";
+pub const VALIDATOR_VRF_SIGNATURE_DOMAIN: &str = "tensor-vm-validator-vrf-signature-v1";
 
 pub fn submit_external_randomness_beacon(
     chain: &mut Chain,
@@ -66,6 +69,93 @@ pub fn submit_external_randomness_beacon(
         .external_randomness_beacons
         .insert(beacon_round, record.clone());
     Ok(record)
+}
+
+pub fn submit_validator_vrf_reveal(
+    chain: &mut Chain,
+    mut reveal: ValidatorVrfRevealRecord,
+) -> Result<ValidatorVrfRevealRecord> {
+    if !chain.state.validators.contains_key(&reveal.validator) {
+        return Err(TvmError::UnknownValidator);
+    }
+    let receipt = chain
+        .state
+        .receipts
+        .get(&reveal.receipt_id)
+        .ok_or(TvmError::UnknownReceipt)?;
+    if receipt.job_id() != reveal.job_id {
+        return Err(TvmError::InvalidReceipt(
+            "validator vrf reveal job mismatch",
+        ));
+    }
+    let anchor = chain
+        .state
+        .receipt_randomness_anchors
+        .get(&reveal.receipt_id)
+        .ok_or(TvmError::InvalidReceipt(
+            "receipt randomness anchor missing for validator vrf reveal",
+        ))?;
+    if anchor.beacon_round != reveal.beacon_round {
+        return Err(TvmError::InvalidReceipt(
+            "validator vrf reveal beacon round mismatch",
+        ));
+    }
+    let expected_output = committed_seed(
+        &anchor.validation_seed_commitment,
+        &reveal.receipt_id,
+        &reveal.job_id,
+        &reveal.validator,
+        reveal.validation_round,
+    );
+    if reveal.vrf_output != expected_output {
+        return Err(TvmError::InvalidReceipt(
+            "validator vrf reveal output mismatch",
+        ));
+    }
+    let expected_proof = validator_vrf_proof_hash(
+        &anchor.validation_seed_commitment,
+        &reveal.receipt_id,
+        &reveal.job_id,
+        &reveal.validator,
+        reveal.validation_round,
+        &reveal.vrf_output,
+    );
+    if reveal.proof_hash != expected_proof {
+        return Err(TvmError::InvalidReceipt(
+            "validator vrf reveal proof mismatch",
+        ));
+    }
+    let expected_reveal_id = validator_vrf_reveal_id(
+        &reveal.receipt_id,
+        &reveal.job_id,
+        &reveal.validator,
+        reveal.beacon_round,
+        reveal.validation_round,
+        &reveal.vrf_output,
+        &reveal.proof_hash,
+    );
+    if reveal.reveal_id != expected_reveal_id {
+        return Err(TvmError::InvalidReceipt("validator vrf reveal id mismatch"));
+    }
+    let message = validator_vrf_reveal_signature_message(&reveal);
+    if !verify_signature(&reveal.validator, &message, &reveal.signature) {
+        return Err(TvmError::InvalidReceipt(
+            "bad validator vrf reveal signature",
+        ));
+    }
+    if chain
+        .state
+        .validator_vrf_reveals
+        .contains_key(&reveal.reveal_id)
+    {
+        return Err(TvmError::InvalidReceipt("duplicate validator vrf reveal"));
+    }
+    reveal.observed_at_height = chain.state.height;
+    chain
+        .state
+        .validator_vrf_reveals
+        .insert(reveal.reveal_id, reveal.clone());
+    Ok(reveal)
 }
 
 pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) -> Result<()> {
@@ -723,6 +813,126 @@ pub fn committed_seed(
             &validation_round.to_le_bytes(),
         ],
     )
+}
+
+pub fn validator_vrf_proof_hash(
+    validation_seed_commitment: &Hash,
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    validation_round: u64,
+    vrf_output: &Hash,
+) -> Hash {
+    hash_bytes(
+        VALIDATOR_VRF_PROOF_DOMAIN.as_bytes(),
+        &[
+            validation_seed_commitment,
+            receipt_id,
+            job_id,
+            validator,
+            &validation_round.to_le_bytes(),
+            vrf_output,
+        ],
+    )
+}
+
+pub fn validator_vrf_reveal_id(
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    beacon_round: u64,
+    validation_round: u64,
+    vrf_output: &Hash,
+    proof_hash: &Hash,
+) -> Hash {
+    hash_bytes(
+        VALIDATOR_VRF_REVEAL_ID_DOMAIN.as_bytes(),
+        &[
+            receipt_id,
+            job_id,
+            validator,
+            &beacon_round.to_le_bytes(),
+            &validation_round.to_le_bytes(),
+            vrf_output,
+            proof_hash,
+        ],
+    )
+}
+
+pub fn validator_vrf_reveal_signature_message(reveal: &ValidatorVrfRevealRecord) -> Hash {
+    hash_bytes(
+        VALIDATOR_VRF_SIGNATURE_DOMAIN.as_bytes(),
+        &[
+            &reveal.reveal_id,
+            &reveal.receipt_id,
+            &reveal.job_id,
+            &reveal.validator,
+            &reveal.beacon_round.to_le_bytes(),
+            &reveal.validation_round.to_le_bytes(),
+            &reveal.vrf_output,
+            &reveal.proof_hash,
+        ],
+    )
+}
+
+pub fn validator_vrf_reveal_record(
+    chain: &Chain,
+    receipt_id: Hash,
+    validator: Address,
+    validation_round: u64,
+) -> Result<ValidatorVrfRevealRecord> {
+    let receipt = chain
+        .state()
+        .receipts()
+        .get(&receipt_id)
+        .ok_or(TvmError::UnknownReceipt)?;
+    let anchor = chain
+        .state()
+        .receipt_randomness_anchors()
+        .get(&receipt_id)
+        .ok_or(TvmError::InvalidReceipt(
+            "receipt randomness anchor missing for validator vrf reveal",
+        ))?;
+    let job_id = receipt.job_id();
+    let vrf_output = committed_seed(
+        &anchor.validation_seed_commitment,
+        &receipt_id,
+        &job_id,
+        &validator,
+        validation_round,
+    );
+    let proof_hash = validator_vrf_proof_hash(
+        &anchor.validation_seed_commitment,
+        &receipt_id,
+        &job_id,
+        &validator,
+        validation_round,
+        &vrf_output,
+    );
+    let reveal_id = validator_vrf_reveal_id(
+        &receipt_id,
+        &job_id,
+        &validator,
+        anchor.beacon_round,
+        validation_round,
+        &vrf_output,
+        &proof_hash,
+    );
+    let mut reveal = ValidatorVrfRevealRecord {
+        reveal_id,
+        receipt_id,
+        job_id,
+        validator,
+        beacon_round: anchor.beacon_round,
+        validation_round,
+        vrf_output,
+        proof_hash,
+        signature: [0; 32],
+        observed_at_height: chain.state().height(),
+    };
+    let message = validator_vrf_reveal_signature_message(&reveal);
+    reveal.signature = sign(&validator, &message);
+    Ok(reveal)
 }
 
 pub fn missing_anchor_seed(receipt_id: &Hash, validator: &Address) -> Hash {

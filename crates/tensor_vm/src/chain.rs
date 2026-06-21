@@ -42,7 +42,7 @@ pub use state::{
     RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
     ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
     ValidatorAuditAssignment, ValidatorAuditEconomicCalibration, ValidatorAuditReport,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 pub use validation::{
@@ -336,6 +336,15 @@ impl Chain {
                     )
                 },
             )
+    }
+
+    pub fn validator_vrf_reveal_record(
+        &self,
+        receipt_id: Hash,
+        validator: Address,
+        validation_round: u64,
+    ) -> Result<ValidatorVrfRevealRecord> {
+        validation::validator_vrf_reveal_record(self, receipt_id, validator, validation_round)
     }
 
     pub fn settle_epoch(&mut self, miner_reward_pool: u64, validator_reward_pool: u64) {

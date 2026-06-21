@@ -5,7 +5,7 @@ use super::{
     PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
     RedundantSettlementDelayRecord, RewardState, ValidatorAuditAppealRecord,
     ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -57,6 +57,7 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&receipt_randomness_anchor_root(
         &state.receipt_randomness_anchors,
     ));
+    parts.extend_from_slice(&validator_vrf_reveal_root(&state.validator_vrf_reveals));
     parts.extend_from_slice(&attestation_root(&state.attestations));
     parts.extend_from_slice(&block_finality_root(
         &state.block_votes,
@@ -135,6 +136,26 @@ pub(super) fn external_randomness_beacon_root(
         encoded.extend_from_slice(&beacon.observed_at_height.to_le_bytes());
     }
     hash_bytes(b"tensor-vm-external-randomness-beacon-root-v1", &[&encoded])
+}
+
+pub(super) fn validator_vrf_reveal_root(
+    reveals: &BTreeMap<Hash, ValidatorVrfRevealRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (reveal_id, reveal) in reveals {
+        encoded.extend_from_slice(reveal_id);
+        encoded.extend_from_slice(&reveal.reveal_id);
+        encoded.extend_from_slice(&reveal.receipt_id);
+        encoded.extend_from_slice(&reveal.job_id);
+        encoded.extend_from_slice(&reveal.validator);
+        encoded.extend_from_slice(&reveal.beacon_round.to_le_bytes());
+        encoded.extend_from_slice(&reveal.validation_round.to_le_bytes());
+        encoded.extend_from_slice(&reveal.vrf_output);
+        encoded.extend_from_slice(&reveal.proof_hash);
+        encoded.extend_from_slice(&reveal.signature);
+        encoded.extend_from_slice(&reveal.observed_at_height.to_le_bytes());
+    }
+    hash_bytes(b"tensor-vm-validator-vrf-reveal-root-v1", &[&encoded])
 }
 
 pub(super) fn program_body_root(programs: &BTreeMap<Hash, Vec<u8>>) -> Hash {

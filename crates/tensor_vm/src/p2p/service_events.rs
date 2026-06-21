@@ -145,7 +145,9 @@ pub(super) fn handle_swarm_event(
                 }
                 if matches!(
                     &message,
-                    P2pMessage::NewAttestation(_) | P2pMessage::NewAttestationPayload { .. }
+                    P2pMessage::NewAttestation(_)
+                        | P2pMessage::NewAttestationPayload { .. }
+                        | P2pMessage::NewValidatorVrfRevealPayload { .. }
                 ) {
                     metrics
                         .observed_attestation_gossip_count

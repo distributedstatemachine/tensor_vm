@@ -1138,6 +1138,14 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_network_external_randomness_beacons_applied",
             ),
             (
+                "SERVICE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS",
+                "role_network_validator_vrf_reveals_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED",
+                "role_network_validator_vrf_reveals_applied",
+            ),
+            (
                 "SERVICE_ROLE_NETWORK_INVALID_EVENTS",
                 "role_network_invalid_events",
             ),
@@ -1215,7 +1223,10 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"all_operator_miner_receipt_status=true"#,
             r#"all_operator_validator_attestation_status=true"#,
             r#"all_operator_validator_remote_tensor_fetch_status=true"#,
+            r#"live_validator_vrf_reveals=${LIVE_VALIDATOR_VRF_REVEAL_COUNT}"#,
             r#"live_role_network_external_randomness_beacons_applied=${LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED}"#,
+            r#"live_role_network_validator_vrf_reveals=${LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS}"#,
+            r#"live_role_network_validator_vrf_reveals_applied=${LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED}"#,
             r#"all_operator_chain_profiles=true"#,
             r#"all_operator_role_production_policy=true"#,
             r#"all_operator_role_runtime_counters=true"#,
@@ -1234,6 +1245,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"live_role_validator_fallback_blocks_proposed=${LIVE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED}"#,
             r#"live_role_network_block_check_challenges=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES}"#,
             r#"live_role_network_block_check_challenges_applied=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED}"#,
+            r#"live_validator_vrf_reveal_evidence=$([ "${LIVE_VALIDATOR_VRF_REVEAL_COUNT:-0}" -gt 0 ] && [ "$LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)"#,
             r#"live_role_owned_miner_receipts=true"#,
             r#"live_role_owned_validator_attestations=true"#,
             r#"single_local_synthetic_job_producer=true"#,

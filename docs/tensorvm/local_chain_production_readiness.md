@@ -249,10 +249,12 @@ The local bundle is useful and should remain the first operational target:
   evidence for the implemented verifier and fraud mechanisms. Local CPU role runtimes now ingest the
   configured deterministic drand-style external beacon fixture through the shared chain command before
   network/role work, persist the accepted beacon record, relay it as a bounded p2p payload, apply
-  network-originated beacon payloads through the same chain command, and expose checker-gated role counters
-  plus external-beacon count/latest-round evidence; public drand verification and validator VRF
-  construction remain open. Deployed-run measured detection records and remaining fraud paths remain open
-  economics work.
+  network-originated beacon payloads through the same chain command, submit chain-verified local validator
+  VRF reveal records before validator receipt rewards can become spendable, relay/retry bounded reveal
+  payloads through p2p/node ingest, and expose checker-gated role counters plus external-beacon
+  count/latest-round and validator-reveal count evidence; public drand verification and production
+  validator VRF signatures remain open. Deployed-run measured detection records and remaining fraud paths
+  remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 

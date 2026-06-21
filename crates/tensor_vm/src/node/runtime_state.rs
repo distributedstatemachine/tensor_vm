@@ -26,6 +26,8 @@ pub struct NetworkEventIngest {
     pub validator_audit_reports_applied: usize,
     pub external_randomness_beacons: usize,
     pub external_randomness_beacons_applied: usize,
+    pub validator_vrf_reveals: usize,
+    pub validator_vrf_reveals_applied: usize,
     pub peers: usize,
     pub invalid_events: usize,
     pub applied_blocks: usize,
@@ -39,6 +41,7 @@ impl NetworkEventIngest {
             || self.attestation_payloads_applied > 0
             || self.validator_audit_reports_applied > 0
             || self.external_randomness_beacons_applied > 0
+            || self.validator_vrf_reveals_applied > 0
             || self.block_payloads_applied > 0
             || self.block_votes_applied > 0
             || self.block_check_challenges_applied > 0
@@ -95,6 +98,12 @@ impl NetworkEventIngest {
         self.external_randomness_beacons_applied = self
             .external_randomness_beacons_applied
             .saturating_add(other.external_randomness_beacons_applied);
+        self.validator_vrf_reveals = self
+            .validator_vrf_reveals
+            .saturating_add(other.validator_vrf_reveals);
+        self.validator_vrf_reveals_applied = self
+            .validator_vrf_reveals_applied
+            .saturating_add(other.validator_vrf_reveals_applied);
         self.peers = self.peers.saturating_add(other.peers);
         self.invalid_events = self.invalid_events.saturating_add(other.invalid_events);
         self.applied_blocks = self.applied_blocks.saturating_add(other.applied_blocks);

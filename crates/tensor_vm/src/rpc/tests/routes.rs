@@ -684,6 +684,7 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         Some(0)
     );
     assert_eq!(randomness["validator_vrf_seed_count"].as_u64(), Some(0));
+    assert_eq!(randomness["validator_vrf_reveal_count"].as_u64(), Some(0));
     assert_eq!(
         randomness["current_block_hash_anchor_count"].as_u64(),
         Some(0)

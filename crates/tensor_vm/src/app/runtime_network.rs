@@ -23,7 +23,8 @@ pub fn ingest_network_once(
         || ingested.attestation_payloads_applied > 0
         || ingested.block_votes_applied > 0
         || ingested.block_check_challenges_applied > 0
-        || ingested.external_randomness_beacons_applied > 0;
+        || ingested.external_randomness_beacons_applied > 0
+        || ingested.validator_vrf_reveals_applied > 0;
     runtime_state.record_network_ingest(ingested);
     if should_persist {
         store

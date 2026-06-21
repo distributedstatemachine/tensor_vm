@@ -6,6 +6,7 @@ use std::collections::BTreeMap;
 
 type BlockCheckChallengeKey = (Hash, Hash, Hash);
 type ObservedBlockCheckChallengePayload = (Vec<u8>, Vec<u8>);
+type ValidatorVrfRevealKey = (Hash, Hash, Hash);
 
 #[derive(Debug, Default)]
 pub struct PendingNetworkPayloads {
@@ -18,6 +19,7 @@ pub struct PendingNetworkPayloads {
     receipts: BTreeMap<Hash, Vec<u8>>,
     attestations: BTreeMap<Hash, Vec<u8>>,
     validator_audit_reports: BTreeMap<(Hash, Hash), Vec<u8>>,
+    validator_vrf_reveals: BTreeMap<ValidatorVrfRevealKey, Vec<u8>>,
 }
 
 impl PendingNetworkPayloads {
@@ -30,6 +32,7 @@ impl PendingNetworkPayloads {
             && self.receipts.is_empty()
             && self.attestations.is_empty()
             && self.validator_audit_reports.is_empty()
+            && self.validator_vrf_reveals.is_empty()
     }
 
     pub fn pending_job_count(&self) -> usize {
@@ -70,6 +73,10 @@ impl PendingNetworkPayloads {
 
     pub fn pending_validator_audit_report_count(&self) -> usize {
         self.validator_audit_reports.len()
+    }
+
+    pub fn pending_validator_vrf_reveal_count(&self) -> usize {
+        self.validator_vrf_reveals.len()
     }
 
     pub fn queue_receipt(&mut self, receipt_id: Hash, payload: Vec<u8>) {
@@ -123,6 +130,18 @@ impl PendingNetworkPayloads {
     ) {
         self.validator_audit_reports
             .entry((audit_id, auditor))
+            .or_insert(payload);
+    }
+
+    pub fn queue_validator_vrf_reveal(
+        &mut self,
+        reveal_id: Hash,
+        receipt_id: Hash,
+        validator: Hash,
+        payload: Vec<u8>,
+    ) {
+        self.validator_vrf_reveals
+            .entry((reveal_id, receipt_id, validator))
             .or_insert(payload);
     }
 
@@ -338,6 +357,36 @@ impl PendingNetworkPayloads {
                     }
                 }
             }
+            for (reveal_id, receipt_id, validator) in self
+                .validator_vrf_reveals
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+            {
+                let payload = self
+                    .validator_vrf_reveals
+                    .get(&(reveal_id, receipt_id, validator))
+                    .expect("queued validator vrf reveal payload must exist")
+                    .clone();
+                match processor
+                    .apply_validator_vrf_reveal(reveal_id, receipt_id, validator, &payload)
+                {
+                    NetworkPayloadApply::Applied => {
+                        self.validator_vrf_reveals
+                            .remove(&(reveal_id, receipt_id, validator));
+                        ingested.validator_vrf_reveals_applied =
+                            ingested.validator_vrf_reveals_applied.saturating_add(1);
+                        progressed = true;
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        self.validator_vrf_reveals
+                            .remove(&(reveal_id, receipt_id, validator));
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                        progressed = true;
+                    }
+                }
+            }
             if !progressed {
                 break;
             }
@@ -355,12 +404,14 @@ mod tests {
         receipt_result: NetworkPayloadApply,
         attestation_result: NetworkPayloadApply,
         validator_audit_report_result: NetworkPayloadApply,
+        validator_vrf_reveal_result: NetworkPayloadApply,
         block_check_challenge_result: NetworkPayloadApply,
         observed_block_check_challenge_result: NetworkPayloadApply,
         block_attempts: usize,
         receipt_attempts: usize,
         attestation_attempts: usize,
         validator_audit_report_attempts: usize,
+        validator_vrf_reveal_attempts: usize,
         block_check_challenge_attempts: usize,
         observed_block_check_challenge_attempts: usize,
     }
@@ -439,6 +490,18 @@ mod tests {
                 self.validator_audit_report_attempts.saturating_add(1);
             self.validator_audit_report_result
         }
+
+        fn apply_validator_vrf_reveal(
+            &mut self,
+            _reveal_id: Hash,
+            _receipt_id: Hash,
+            _validator: Hash,
+            _payload: &[u8],
+        ) -> NetworkPayloadApply {
+            self.validator_vrf_reveal_attempts =
+                self.validator_vrf_reveal_attempts.saturating_add(1);
+            self.validator_vrf_reveal_result
+        }
     }
 
     impl RetryProcessor {
@@ -451,12 +514,14 @@ mod tests {
                 receipt_result,
                 attestation_result,
                 validator_audit_report_result: NetworkPayloadApply::Pending,
+                validator_vrf_reveal_result: NetworkPayloadApply::Pending,
                 block_check_challenge_result: NetworkPayloadApply::Pending,
                 observed_block_check_challenge_result: NetworkPayloadApply::Pending,
                 block_attempts: 0,
                 receipt_attempts: 0,
                 attestation_attempts: 0,
                 validator_audit_report_attempts: 0,
+                validator_vrf_reveal_attempts: 0,
                 block_check_challenge_attempts: 0,
                 observed_block_check_challenge_attempts: 0,
             }
@@ -507,6 +572,7 @@ mod tests {
         pending.queue_receipt([5; 32], vec![50]);
         pending.queue_attestation([6; 32], vec![60]);
         pending.queue_validator_audit_report([7; 32], [8; 32], vec![70]);
+        pending.queue_validator_vrf_reveal([15; 32], [16; 32], [17; 32], vec![75]);
         pending.queue_block_check_challenge([9; 32], [10; 32], [11; 32], vec![80]);
         pending.queue_observed_block_check_challenge(
             [12; 32],
@@ -524,10 +590,12 @@ mod tests {
         assert_eq!(pending.pending_receipt_count(), 1);
         assert_eq!(pending.pending_attestation_count(), 1);
         assert_eq!(pending.pending_validator_audit_report_count(), 1);
+        assert_eq!(pending.pending_validator_vrf_reveal_count(), 1);
         assert_eq!(pending.pending_block_check_challenge_count(), 2);
         assert_eq!(processor.receipt_attempts, 1);
         assert_eq!(processor.attestation_attempts, 1);
         assert_eq!(processor.validator_audit_report_attempts, 1);
+        assert_eq!(processor.validator_vrf_reveal_attempts, 1);
         assert_eq!(processor.block_check_challenge_attempts, 1);
         assert_eq!(processor.observed_block_check_challenge_attempts, 1);
     }
@@ -539,6 +607,7 @@ mod tests {
             receipt_payloads: Vec<Vec<u8>>,
             attestation_payloads: Vec<Vec<u8>>,
             validator_audit_report_payloads: Vec<Vec<u8>>,
+            validator_vrf_reveal_payloads: Vec<Vec<u8>>,
             block_check_challenge_payloads: Vec<Vec<u8>>,
             observed_block_check_challenge_payloads: Vec<(Vec<u8>, Vec<u8>)>,
         }
@@ -614,6 +683,17 @@ mod tests {
                 self.validator_audit_report_payloads.push(payload.to_vec());
                 NetworkPayloadApply::Applied
             }
+
+            fn apply_validator_vrf_reveal(
+                &mut self,
+                _reveal_id: Hash,
+                _receipt_id: Hash,
+                _validator: Hash,
+                payload: &[u8],
+            ) -> NetworkPayloadApply {
+                self.validator_vrf_reveal_payloads.push(payload.to_vec());
+                NetworkPayloadApply::Applied
+            }
         }
 
         let mut pending = PendingNetworkPayloads::default();
@@ -623,6 +703,8 @@ mod tests {
         pending.queue_attestation([8; 32], vec![81]);
         pending.queue_validator_audit_report([9; 32], [10; 32], vec![90]);
         pending.queue_validator_audit_report([9; 32], [10; 32], vec![91]);
+        pending.queue_validator_vrf_reveal([17; 32], [18; 32], [19; 32], vec![95]);
+        pending.queue_validator_vrf_reveal([17; 32], [18; 32], [19; 32], vec![96]);
         pending.queue_block_check_challenge([11; 32], [12; 32], [13; 32], vec![100]);
         pending.queue_block_check_challenge([11; 32], [12; 32], [13; 32], vec![101]);
         pending.queue_observed_block_check_challenge(
@@ -644,6 +726,7 @@ mod tests {
             receipt_payloads: Vec::new(),
             attestation_payloads: Vec::new(),
             validator_audit_report_payloads: Vec::new(),
+            validator_vrf_reveal_payloads: Vec::new(),
             block_check_challenge_payloads: Vec::new(),
             observed_block_check_challenge_payloads: Vec::new(),
         };
@@ -653,10 +736,12 @@ mod tests {
         assert_eq!(ingested.receipt_payloads_applied, 1);
         assert_eq!(ingested.attestation_payloads_applied, 1);
         assert_eq!(ingested.validator_audit_reports_applied, 1);
+        assert_eq!(ingested.validator_vrf_reveals_applied, 1);
         assert_eq!(ingested.block_check_challenges_applied, 2);
         assert_eq!(processor.receipt_payloads, vec![vec![70]]);
         assert_eq!(processor.attestation_payloads, vec![vec![80]]);
         assert_eq!(processor.validator_audit_report_payloads, vec![vec![90]]);
+        assert_eq!(processor.validator_vrf_reveal_payloads, vec![vec![95]]);
         assert_eq!(processor.block_check_challenge_payloads, vec![vec![100]]);
         assert_eq!(
             processor.observed_block_check_challenge_payloads,

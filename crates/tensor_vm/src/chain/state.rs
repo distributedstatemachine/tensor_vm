@@ -538,6 +538,7 @@ pub struct RandomnessBindingEvidence {
     pub current_block_hash_anchor_count: usize,
     pub external_beacon_record_count: usize,
     pub latest_external_beacon_round: u64,
+    pub validator_vrf_reveal_count: usize,
     pub all_receipt_anchors_consistent: bool,
 }
 
@@ -557,6 +558,20 @@ pub struct ReceiptRandomnessAnchor {
     pub finalized_randomness: Hash,
     pub assignment_seed: Hash,
     pub validation_seed_commitment: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ValidatorVrfRevealRecord {
+    pub reveal_id: Hash,
+    pub receipt_id: Hash,
+    pub job_id: Hash,
+    pub validator: Address,
+    pub beacon_round: u64,
+    pub validation_round: u64,
+    pub vrf_output: Hash,
+    pub proof_hash: Hash,
+    pub signature: Signature,
+    pub observed_at_height: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1190,6 +1205,7 @@ pub struct ChainState {
     pub(in crate::chain) program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub(in crate::chain) receipts: BTreeMap<Hash, ReceiptState>,
     pub(in crate::chain) receipt_randomness_anchors: BTreeMap<Hash, ReceiptRandomnessAnchor>,
+    pub(in crate::chain) validator_vrf_reveals: BTreeMap<Hash, ValidatorVrfRevealRecord>,
     pub(in crate::chain) attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub(in crate::chain) block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub(in crate::chain) finalized_blocks: BTreeSet<Hash>,
@@ -1233,6 +1249,7 @@ pub(crate) struct ChainStateParts {
     pub program_bodies: BTreeMap<Hash, Vec<u8>>,
     pub receipts: BTreeMap<Hash, ReceiptState>,
     pub receipt_randomness_anchors: BTreeMap<Hash, ReceiptRandomnessAnchor>,
+    pub validator_vrf_reveals: BTreeMap<Hash, ValidatorVrfRevealRecord>,
     pub attestations: BTreeMap<Hash, Vec<ValidatorAttestation>>,
     pub block_votes: BTreeMap<Hash, Vec<BlockVote>>,
     pub finalized_blocks: BTreeSet<Hash>,
@@ -1276,6 +1293,7 @@ impl ChainState {
             program_bodies: parts.program_bodies,
             receipts: parts.receipts,
             receipt_randomness_anchors: parts.receipt_randomness_anchors,
+            validator_vrf_reveals: parts.validator_vrf_reveals,
             attestations: parts.attestations,
             block_votes: parts.block_votes,
             finalized_blocks: parts.finalized_blocks,
@@ -1363,6 +1381,10 @@ impl ChainState {
         &self.receipt_randomness_anchors
     }
 
+    pub fn validator_vrf_reveals(&self) -> &BTreeMap<Hash, ValidatorVrfRevealRecord> {
+        &self.validator_vrf_reveals
+    }
+
     pub fn randomness_binding_evidence(&self) -> RandomnessBindingEvidence {
         let mut finalized_beacon_anchor_count = 0_usize;
         let mut finalized_beacon_round_mapping_count = 0_usize;
@@ -1427,6 +1449,7 @@ impl ChainState {
             current_block_hash_anchor_count: 0,
             external_beacon_record_count: self.external_randomness_beacons.len(),
             latest_external_beacon_round,
+            validator_vrf_reveal_count: self.validator_vrf_reveals.len(),
             all_receipt_anchors_consistent: receipt_anchor_count == consistent_anchor_count,
         }
     }

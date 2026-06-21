@@ -6,6 +6,7 @@ use crate::chain::{
     ReceiptRewardKind, ReceiptRewardMaturity, ReceiptState, RedundantSettlementDelayRecord,
     RewardState, TensorBlock, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
     ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorVrfRevealRecord,
 };
 use crate::codec::{
     self as payload_codec, primitive_type_from_tag, primitive_type_tag,
@@ -235,6 +236,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_program_bodies(out, state.program_bodies());
     encode_receipts(out, state.receipts());
     encode_receipt_randomness_anchors(out, state.receipt_randomness_anchors());
+    encode_validator_vrf_reveals(out, state.validator_vrf_reveals());
     encode_attestations(out, state.attestations());
     encode_block_votes(out, state.block_votes());
     encode_hash_set(out, state.finalized_blocks());
@@ -290,6 +292,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         program_bodies: decode_program_bodies(reader)?,
         receipts: decode_receipts(reader)?,
         receipt_randomness_anchors: decode_receipt_randomness_anchors(reader)?,
+        validator_vrf_reveals: decode_validator_vrf_reveals(reader)?,
         attestations: decode_attestations(reader)?,
         block_votes: decode_block_votes(reader)?,
         finalized_blocks: decode_hash_set(reader)?,
@@ -568,6 +571,51 @@ fn decode_receipt_randomness_anchors(
         );
     }
     Ok(anchors)
+}
+
+fn encode_validator_vrf_reveals(
+    out: &mut Vec<u8>,
+    reveals: &BTreeMap<Hash, ValidatorVrfRevealRecord>,
+) {
+    write_len(out, reveals.len());
+    for (key, reveal) in reveals {
+        write_hash(out, key);
+        write_hash(out, &reveal.reveal_id);
+        write_hash(out, &reveal.receipt_id);
+        write_hash(out, &reveal.job_id);
+        write_hash(out, &reveal.validator);
+        write_u64(out, reveal.beacon_round);
+        write_u64(out, reveal.validation_round);
+        write_hash(out, &reveal.vrf_output);
+        write_hash(out, &reveal.proof_hash);
+        write_hash(out, &reveal.signature);
+        write_u64(out, reveal.observed_at_height);
+    }
+}
+
+fn decode_validator_vrf_reveals(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, ValidatorVrfRevealRecord>> {
+    let mut reveals = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        reveals.insert(
+            key,
+            ValidatorVrfRevealRecord {
+                reveal_id: reader.read_hash()?,
+                receipt_id: reader.read_hash()?,
+                job_id: reader.read_hash()?,
+                validator: reader.read_hash()?,
+                beacon_round: reader.read_u64()?,
+                validation_round: reader.read_u64()?,
+                vrf_output: reader.read_hash()?,
+                proof_hash: reader.read_hash()?,
+                signature: reader.read_hash()?,
+                observed_at_height: reader.read_u64()?,
+            },
+        );
+    }
+    Ok(reveals)
 }
 
 fn encode_external_randomness_beacons(
@@ -1553,6 +1601,12 @@ mod tests {
             },
         );
         submit_attestation(&mut chain, attestation);
+        let reveal = chain
+            .validator_vrf_reveal_record(receipt.receipt_id, validator, 0)
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+            .unwrap();
 
         let model_id = hash_bytes(b"test", &[b"durable-model"]);
         let weights =
@@ -1850,6 +1904,10 @@ mod tests {
         assert_eq!(
             loaded.state().receipt_randomness_anchors(),
             chain.state().receipt_randomness_anchors()
+        );
+        assert_eq!(
+            loaded.state().validator_vrf_reveals(),
+            chain.state().validator_vrf_reveals()
         );
         assert!(loaded.state().receipts().keys().all(|receipt_id| {
             loaded

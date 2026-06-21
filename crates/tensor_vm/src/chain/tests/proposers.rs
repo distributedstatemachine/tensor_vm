@@ -133,6 +133,106 @@ fn external_randomness_beacon_command_rejects_stale_and_empty_records() {
 }
 
 #[test]
+fn validator_vrf_reveal_records_are_chain_verified_and_state_rooted() {
+    let beacon = hash_bytes(b"test", &[b"validator-vrf-reveal-beacon"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"validator-vrf-reveal-miner");
+    let validator = address(b"validator-vrf-reveal-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(17, 0, 4, 4, 4, &beacon, 10);
+    let job_id = job.job_id;
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+
+    let root_before = chain.state_root();
+    let reveal = validation::validator_vrf_reveal_record(&chain, receipt_id, validator, 0).unwrap();
+    let expected_output = chain.validation_seed(&receipt_id, &validator);
+    assert_eq!(reveal.job_id, job_id);
+    assert_eq!(reveal.vrf_output, expected_output);
+
+    let events = chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal.clone()))
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![ChainEvent::ValidatorVrfRevealAccepted {
+            reveal_id: reveal.reveal_id,
+            receipt_id,
+            validator,
+            beacon_round: reveal.beacon_round,
+        }]
+    );
+    assert_ne!(chain.state_root(), root_before);
+    assert_eq!(
+        chain.state().validator_vrf_reveals().get(&reveal.reveal_id),
+        Some(&ValidatorVrfRevealRecord {
+            observed_at_height: 0,
+            ..reveal.clone()
+        })
+    );
+    assert_eq!(
+        chain
+            .state()
+            .randomness_binding_evidence()
+            .validator_vrf_reveal_count,
+        1
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal)),
+        Err(TvmError::InvalidReceipt("duplicate validator vrf reveal"))
+    );
+}
+
+#[test]
+fn validator_vrf_reveal_rejects_tampered_binding_fields() {
+    let beacon = hash_bytes(b"test", &[b"validator-vrf-reveal-reject"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"validator-vrf-reject-miner");
+    let validator = address(b"validator-vrf-reject-validator");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(18, 0, 4, 4, 4, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+
+    let reveal = validation::validator_vrf_reveal_record(&chain, receipt_id, validator, 0).unwrap();
+
+    let mut bad_output = reveal.clone();
+    bad_output.vrf_output = hash_bytes(b"test", &[b"bad-vrf-output"]);
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(bad_output)),
+        Err(TvmError::InvalidReceipt(
+            "validator vrf reveal output mismatch"
+        ))
+    );
+
+    let mut bad_proof = reveal.clone();
+    bad_proof.proof_hash = hash_bytes(b"test", &[b"bad-vrf-proof"]);
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(bad_proof)),
+        Err(TvmError::InvalidReceipt(
+            "validator vrf reveal proof mismatch"
+        ))
+    );
+
+    let mut bad_signature = reveal;
+    bad_signature.signature = [7; 32];
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(bad_signature)),
+        Err(TvmError::InvalidReceipt(
+            "bad validator vrf reveal signature"
+        ))
+    );
+}
+
+#[test]
 fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
     let beacon = hash_bytes(b"test", &[b"anchored-receipt-beacon"]);
     let mut chain = Chain::new(beacon);

@@ -6,6 +6,7 @@ use super::{
         apply_network_block_vote_payload, apply_network_external_randomness_beacon_payload,
         apply_network_job_payload, apply_network_observed_block_check_challenge_payload,
         apply_network_receipt_payload, apply_network_validator_audit_report_payload,
+        apply_network_validator_vrf_reveal_payload,
     },
     payload_processor,
 };
@@ -307,6 +308,33 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id,
+                receipt_id,
+                validator,
+                payload,
+            } => {
+                ingested.validator_vrf_reveals = ingested.validator_vrf_reveals.saturating_add(1);
+                match apply_network_validator_vrf_reveal_payload(
+                    context.chain(),
+                    &reveal_id,
+                    &receipt_id,
+                    &validator,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.validator_vrf_reveals_applied =
+                            ingested.validator_vrf_reveals_applied.saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {
+                        pending_payloads
+                            .queue_validator_vrf_reveal(reveal_id, receipt_id, validator, payload);
+                    }
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::PeerInfo { address } => {
                 ingested.peers = ingested.peers.saturating_add(1);
                 if address == [0; 32] {
@@ -379,7 +407,7 @@ mod tests {
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_external_randomness_beacon_payload, encode_job_payload, encode_receipt_payload,
-            encode_validator_audit_report_payload,
+            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -753,6 +781,77 @@ mod tests {
         )
         .unwrap();
         assert_eq!(duplicate.external_randomness_beacons_applied, 1);
+        assert_eq!(duplicate.invalid_events, 0);
+    }
+
+    #[test]
+    fn network_event_driver_applies_validator_vrf_reveal_payloads() {
+        let testnet = local_matmul_round(b"driver-vrf-reveal");
+        let receipt_id = *testnet
+            .chain
+            .state()
+            .receipts()
+            .keys()
+            .next()
+            .expect("local round must produce a receipt");
+        let validator = *testnet
+            .chain
+            .state()
+            .validators()
+            .keys()
+            .next()
+            .expect("local round must register validators");
+        let reveal = testnet
+            .chain
+            .validator_vrf_reveal_record(receipt_id, validator, 0)
+            .unwrap();
+        let payload = encode_validator_vrf_reveal_payload(&reveal);
+        let mut context = TestNetworkEventContext {
+            chain: testnet.chain,
+            applied_payloads: Vec::new(),
+            applied_blocks: 0,
+        };
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: reveal.reveal_id,
+                receipt_id,
+                validator,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.events, 1);
+        assert_eq!(ingested.validator_vrf_reveals, 1);
+        assert_eq!(ingested.validator_vrf_reveals_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert!(
+            context
+                .chain
+                .state()
+                .validator_vrf_reveals()
+                .contains_key(&reveal.reveal_id)
+        );
+
+        let duplicate = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewValidatorVrfRevealPayload {
+                reveal_id: reveal.reveal_id,
+                receipt_id,
+                validator,
+                payload,
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(duplicate.validator_vrf_reveals_applied, 1);
         assert_eq!(duplicate.invalid_events, 0);
     }
 
