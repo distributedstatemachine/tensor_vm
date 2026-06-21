@@ -273,6 +273,8 @@ pub(super) fn explorer_randomness_binding_evidence(
         receipt_bound_anchor_count: evidence.receipt_bound_anchor_count,
         consistent_anchor_count: evidence.consistent_anchor_count,
         current_block_hash_anchor_count: evidence.current_block_hash_anchor_count,
+        external_beacon_record_count: evidence.external_beacon_record_count,
+        latest_external_beacon_round: evidence.latest_external_beacon_round,
         all_receipt_anchors_consistent: evidence.all_receipt_anchors_consistent,
     }
 }

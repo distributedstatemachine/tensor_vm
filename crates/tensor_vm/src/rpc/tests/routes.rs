@@ -531,6 +531,14 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         claimable_at_height: 10,
         voided_by_challenge: false,
     });
+    chain
+        .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: "drand-mainnet-round-v1".to_owned(),
+            beacon_round: 9,
+            randomness: hash_bytes(b"test", &[b"rpc-external-randomness"]),
+            proof_hash: hash_bytes(b"test", &[b"rpc-external-randomness-proof"]),
+        })
+        .unwrap();
     let rpc = RpcNode::new(chain);
 
     let overview = rpc.handle(&RpcRequest {
@@ -661,6 +669,8 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         randomness["current_block_hash_anchor_count"].as_u64(),
         Some(0)
     );
+    assert_eq!(randomness["external_beacon_record_count"].as_u64(), Some(1));
+    assert_eq!(randomness["latest_external_beacon_round"].as_u64(), Some(9));
     assert_eq!(
         randomness["all_receipt_anchors_consistent"].as_bool(),
         Some(true)

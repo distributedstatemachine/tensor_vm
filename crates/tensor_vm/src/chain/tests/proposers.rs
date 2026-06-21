@@ -42,6 +42,97 @@ fn validation_seed_is_bound_to_validator_and_beacon_round() {
 }
 
 #[test]
+fn external_randomness_beacon_command_advances_receipt_anchor_source() {
+    let genesis_beacon = hash_bytes(b"test", &[b"external-randomness-genesis"]);
+    let external_beacon = hash_bytes(b"test", &[b"external-randomness-round-7"]);
+    let proof_hash = hash_bytes(b"test", &[b"external-randomness-proof"]);
+    let mut chain = Chain::new(genesis_beacon);
+    let events = chain
+        .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: "drand-mainnet-round-v1".to_owned(),
+            beacon_round: 7,
+            randomness: external_beacon,
+            proof_hash,
+        })
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![ChainEvent::ExternalRandomnessBeaconAccepted {
+            source_id: "drand-mainnet-round-v1".to_owned(),
+            beacon_round: 7,
+            randomness: external_beacon,
+        }]
+    );
+    assert_eq!(chain.state().finalized_beacon_round(), 7);
+    assert_eq!(chain.state().finalized_randomness(), external_beacon);
+    let record = chain
+        .state()
+        .external_randomness_beacons()
+        .get(&7)
+        .expect("external beacon should be recorded");
+    assert_eq!(record.source_id, "drand-mainnet-round-v1");
+    assert_eq!(record.randomness, external_beacon);
+    assert_eq!(record.proof_hash, proof_hash);
+    let evidence = chain.state().randomness_binding_evidence();
+    assert_eq!(evidence.external_beacon_record_count, 1);
+    assert_eq!(evidence.latest_external_beacon_round, 7);
+
+    let miner = address(b"external-randomness-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let job = MatmulJob::synthetic(7, 0, 4, 4, 4, &external_beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+    let anchor = chain
+        .state()
+        .receipt_randomness_anchors()
+        .get(&receipt_id)
+        .expect("receipt should anchor to current external beacon");
+    assert_eq!(anchor.beacon_round, 7);
+    assert_eq!(anchor.finalized_randomness, external_beacon);
+}
+
+#[test]
+fn external_randomness_beacon_command_rejects_stale_and_empty_records() {
+    let genesis_beacon = hash_bytes(b"test", &[b"external-randomness-reject"]);
+    let mut chain = Chain::new(genesis_beacon);
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: "drand-mainnet-round-v1".to_owned(),
+            beacon_round: 0,
+            randomness: hash_bytes(b"test", &[b"stale"]),
+            proof_hash: hash_bytes(b"test", &[b"stale-proof"]),
+        }),
+        Err(TvmError::InvalidReceipt(
+            "external randomness beacon round is not newer"
+        ))
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: "drand-mainnet-round-v1".to_owned(),
+            beacon_round: 1,
+            randomness: [0; 32],
+            proof_hash: hash_bytes(b"test", &[b"empty-proof"]),
+        }),
+        Err(TvmError::InvalidReceipt(
+            "external randomness beacon value is empty"
+        ))
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+            source_id: String::new(),
+            beacon_round: 1,
+            randomness: hash_bytes(b"test", &[b"bad-source"]),
+            proof_hash: hash_bytes(b"test", &[b"bad-source-proof"]),
+        }),
+        Err(TvmError::InvalidReceipt(
+            "external randomness source id out of bounds"
+        ))
+    );
+}
+
+#[test]
 fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
     let beacon = hash_bytes(b"test", &[b"anchored-receipt-beacon"]);
     let mut chain = Chain::new(beacon);

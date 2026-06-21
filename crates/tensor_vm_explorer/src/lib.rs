@@ -376,13 +376,15 @@ pub struct ExplorerRandomnessBindingEvidence {
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
+    pub external_beacon_record_count: usize,
+    pub latest_external_beacon_round: u64,
     pub all_receipt_anchors_consistent: bool,
 }
 
 impl ExplorerRandomnessBindingEvidence {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"all_receipt_anchors_consistent\":{}}}",
+            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"external_beacon_record_count\":{},\"latest_external_beacon_round\":{},\"all_receipt_anchors_consistent\":{}}}",
             escape_json(&self.beacon_source),
             escape_json(&self.drand_round_mapping),
             escape_json(&self.vrf_construction),
@@ -398,6 +400,8 @@ impl ExplorerRandomnessBindingEvidence {
             self.receipt_bound_anchor_count,
             self.consistent_anchor_count,
             self.current_block_hash_anchor_count,
+            self.external_beacon_record_count,
+            self.latest_external_beacon_round,
             self.all_receipt_anchors_consistent
         )
     }
@@ -903,6 +907,8 @@ mod tests {
             receipt_bound_anchor_count: 2,
             consistent_anchor_count: 2,
             current_block_hash_anchor_count: 0,
+            external_beacon_record_count: 1,
+            latest_external_beacon_round: 42,
             all_receipt_anchors_consistent: true,
         };
         assert!(
@@ -915,6 +921,16 @@ mod tests {
             randomness
                 .to_json()
                 .contains("\"validator_vrf_seed_count\":10")
+        );
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"external_beacon_record_count\":1")
+        );
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"latest_external_beacon_round\":42")
         );
         assert!(summary.to_json().contains("\"model_count\":1"));
         assert!(summary.to_json().contains("\"attestation_count\":30"));

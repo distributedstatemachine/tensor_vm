@@ -62,6 +62,12 @@ pub enum ChainCommand {
         address: Address,
         stake: u64,
     },
+    SubmitExternalRandomnessBeacon {
+        source_id: String,
+        beacon_round: u64,
+        randomness: Hash,
+        proof_hash: Hash,
+    },
     Transfer {
         from: Address,
         to: Address,
@@ -125,6 +131,11 @@ pub enum ChainCommand {
 pub enum ChainEvent {
     MinerRegistered(Address),
     ValidatorRegistered(Address),
+    ExternalRandomnessBeaconAccepted {
+        source_id: String,
+        beacon_round: u64,
+        randomness: Hash,
+    },
     AccountTransferred {
         from: Address,
         to: Address,

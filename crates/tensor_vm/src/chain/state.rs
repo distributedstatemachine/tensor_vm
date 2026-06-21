@@ -487,7 +487,18 @@ pub struct RandomnessBindingEvidence {
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
+    pub external_beacon_record_count: usize,
+    pub latest_external_beacon_round: u64,
     pub all_receipt_anchors_consistent: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExternalRandomnessBeaconRecord {
+    pub source_id: String,
+    pub beacon_round: u64,
+    pub randomness: Hash,
+    pub proof_hash: Hash,
+    pub observed_at_height: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1120,6 +1131,7 @@ pub struct ChainState {
     pub(in crate::chain) epoch: u64,
     pub(in crate::chain) finalized_beacon_round: u64,
     pub(in crate::chain) finalized_randomness: Hash,
+    pub(in crate::chain) external_randomness_beacons: BTreeMap<u64, ExternalRandomnessBeaconRecord>,
     pub(in crate::chain) genesis_beacon_round: u64,
     pub(in crate::chain) genesis_randomness: Hash,
     pub(in crate::chain) accounts: BTreeMap<Address, AccountState>,
@@ -1161,6 +1173,7 @@ pub(crate) struct ChainStateParts {
     pub epoch: u64,
     pub finalized_beacon_round: u64,
     pub finalized_randomness: Hash,
+    pub external_randomness_beacons: BTreeMap<u64, ExternalRandomnessBeaconRecord>,
     pub genesis_beacon_round: u64,
     pub genesis_randomness: Hash,
     pub accounts: BTreeMap<Address, AccountState>,
@@ -1202,6 +1215,7 @@ impl ChainState {
             epoch: parts.epoch,
             finalized_beacon_round: parts.finalized_beacon_round,
             finalized_randomness: parts.finalized_randomness,
+            external_randomness_beacons: parts.external_randomness_beacons,
             genesis_beacon_round: parts.genesis_beacon_round,
             genesis_randomness: parts.genesis_randomness,
             accounts: parts.accounts,
@@ -1251,6 +1265,10 @@ impl ChainState {
 
     pub fn finalized_randomness(&self) -> Hash {
         self.finalized_randomness
+    }
+
+    pub fn external_randomness_beacons(&self) -> &BTreeMap<u64, ExternalRandomnessBeaconRecord> {
+        &self.external_randomness_beacons
     }
 
     pub fn genesis_beacon_round(&self) -> u64 {
@@ -1333,6 +1351,12 @@ impl ChainState {
             }
         }
         let receipt_anchor_count = self.receipt_randomness_anchors.len();
+        let latest_external_beacon_round = self
+            .external_randomness_beacons
+            .keys()
+            .next_back()
+            .copied()
+            .unwrap_or_default();
         RandomnessBindingEvidence {
             beacon_source: super::validation::RANDOMNESS_BEACON_SOURCE,
             drand_round_mapping: super::validation::RANDOMNESS_DRAND_ROUND_MAPPING,
@@ -1349,6 +1373,8 @@ impl ChainState {
             receipt_bound_anchor_count,
             consistent_anchor_count,
             current_block_hash_anchor_count: 0,
+            external_beacon_record_count: self.external_randomness_beacons.len(),
+            latest_external_beacon_round,
             all_receipt_anchors_consistent: receipt_anchor_count == consistent_anchor_count,
         }
     }

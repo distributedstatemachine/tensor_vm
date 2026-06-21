@@ -1,9 +1,9 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
-    ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, InvalidOutputSlashRecord,
-    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind,
-    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
+    ChainStateParts, DataUnavailabilitySlashRecord, ExternalRandomnessBeaconRecord, HardwareClass,
+    InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
+    PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
+    ReceiptRewardKind, ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
     ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
     ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
@@ -223,6 +223,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     write_u64(out, state.epoch());
     write_u64(out, state.finalized_beacon_round());
     write_hash(out, &state.finalized_randomness());
+    encode_external_randomness_beacons(out, state.external_randomness_beacons());
     write_u64(out, state.genesis_beacon_round());
     write_hash(out, &state.genesis_randomness());
     encode_accounts(out, state.accounts());
@@ -263,6 +264,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         epoch: reader.read_u64()?,
         finalized_beacon_round: reader.read_u64()?,
         finalized_randomness: reader.read_hash()?,
+        external_randomness_beacons: decode_external_randomness_beacons(reader)?,
         genesis_beacon_round: reader.read_u64()?,
         genesis_randomness: reader.read_hash()?,
         accounts: decode_accounts(reader)?,
@@ -549,6 +551,50 @@ fn decode_receipt_randomness_anchors(
         );
     }
     Ok(anchors)
+}
+
+fn encode_external_randomness_beacons(
+    out: &mut Vec<u8>,
+    beacons: &BTreeMap<u64, ExternalRandomnessBeaconRecord>,
+) {
+    write_len(out, beacons.len());
+    for (round, beacon) in beacons {
+        write_u64(out, *round);
+        write_len(out, beacon.source_id.len());
+        out.extend_from_slice(beacon.source_id.as_bytes());
+        write_u64(out, beacon.beacon_round);
+        write_hash(out, &beacon.randomness);
+        write_hash(out, &beacon.proof_hash);
+        write_u64(out, beacon.observed_at_height);
+    }
+}
+
+fn decode_external_randomness_beacons(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<u64, ExternalRandomnessBeaconRecord>> {
+    let mut beacons = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_u64()?;
+        let source_id_len = reader.read_len()?;
+        let source_id = std::str::from_utf8(reader.read_exact(source_id_len)?)
+            .map_err(|_| TvmError::Storage("invalid external randomness source id"))?
+            .to_owned();
+        let beacon_round = reader.read_u64()?;
+        let randomness = reader.read_hash()?;
+        let proof_hash = reader.read_hash()?;
+        let observed_at_height = reader.read_u64()?;
+        beacons.insert(
+            key,
+            ExternalRandomnessBeaconRecord {
+                source_id,
+                beacon_round,
+                randomness,
+                proof_hash,
+                observed_at_height,
+            },
+        );
+    }
+    Ok(beacons)
 }
 
 fn encode_attestations(
@@ -1602,6 +1648,16 @@ mod tests {
                 ValidatorAuditAppealResolution::ReverseRewardVoid,
             )
             .unwrap();
+        let state_root_before_external_beacon = chain.state_root();
+        chain
+            .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+                source_id: "drand-mainnet-round-v1".to_owned(),
+                beacon_round: chain.state().finalized_beacon_round().saturating_add(10),
+                randomness: hash_bytes(b"test", &[b"durable-external-randomness"]),
+                proof_hash: hash_bytes(b"test", &[b"durable-external-randomness-proof"]),
+            })
+            .unwrap();
+        assert_ne!(chain.state_root(), state_root_before_external_beacon);
         chain
     }
 
@@ -1796,6 +1852,27 @@ mod tests {
         assert_eq!(
             loaded.state().invalid_output_slashes(),
             chain.state().invalid_output_slashes()
+        );
+        assert_eq!(
+            loaded.state().external_randomness_beacons(),
+            chain.state().external_randomness_beacons()
+        );
+        let external_beacon = loaded
+            .state()
+            .external_randomness_beacons()
+            .values()
+            .next()
+            .expect("durable fixture should preserve external randomness beacon evidence");
+        let original_external_beacon = chain
+            .state()
+            .external_randomness_beacons()
+            .values()
+            .next()
+            .expect("durable fixture should include external randomness beacon evidence");
+        assert_eq!(external_beacon.source_id, "drand-mainnet-round-v1");
+        assert_eq!(
+            external_beacon.observed_at_height,
+            original_external_beacon.observed_at_height
         );
         assert_eq!(
             loaded.state().redundant_settlement_delays(),

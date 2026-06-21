@@ -1,7 +1,8 @@
 use super::{
-    BlockVote, Chain, InvalidOutputSlashRecord, ReceiptRewardKind, ValidatorAuditAppeal,
-    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, blocks, settlement,
+    BlockVote, Chain, ExternalRandomnessBeaconRecord, InvalidOutputSlashRecord, ReceiptRewardKind,
+    ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, blocks, settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
@@ -10,6 +11,7 @@ use crate::verify::{ValidatorAttestation, VerificationResult};
 use std::collections::BTreeSet;
 
 const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
+const EXTERNAL_RANDOMNESS_SOURCE_ID_MAX_BYTES: usize = 96;
 pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
 pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str =
     "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round";
@@ -18,6 +20,53 @@ pub const RANDOMNESS_VRF_CONSTRUCTION: &str =
 pub const ASSIGNMENT_SEED_DOMAIN: &str = "tensor-vm-validator-assignment-seed-v1";
 pub const VALIDATION_SEED_COMMITMENT_DOMAIN: &str = "tensor-vm-validation-seed-commitment-v1";
 pub const VALIDATION_SEED_REVEAL_DOMAIN: &str = "tensor-vm-committed-validation-seed-v1";
+
+pub fn submit_external_randomness_beacon(
+    chain: &mut Chain,
+    source_id: String,
+    beacon_round: u64,
+    randomness: Hash,
+    proof_hash: Hash,
+) -> Result<ExternalRandomnessBeaconRecord> {
+    if source_id.is_empty() || source_id.len() > EXTERNAL_RANDOMNESS_SOURCE_ID_MAX_BYTES {
+        return Err(TvmError::InvalidReceipt(
+            "external randomness source id out of bounds",
+        ));
+    }
+    if beacon_round <= chain.state.finalized_beacon_round {
+        return Err(TvmError::InvalidReceipt(
+            "external randomness beacon round is not newer",
+        ));
+    }
+    if randomness == [0; 32] {
+        return Err(TvmError::InvalidReceipt(
+            "external randomness beacon value is empty",
+        ));
+    }
+    if chain
+        .state
+        .external_randomness_beacons
+        .contains_key(&beacon_round)
+    {
+        return Err(TvmError::InvalidReceipt(
+            "external randomness beacon round already recorded",
+        ));
+    }
+    let record = ExternalRandomnessBeaconRecord {
+        source_id,
+        beacon_round,
+        randomness,
+        proof_hash,
+        observed_at_height: chain.state.height,
+    };
+    chain.state.finalized_beacon_round = beacon_round;
+    chain.state.finalized_randomness = randomness;
+    chain
+        .state
+        .external_randomness_beacons
+        .insert(beacon_round, record.clone());
+    Ok(record)
+}
 
 pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) -> Result<()> {
     let validator_stake = chain

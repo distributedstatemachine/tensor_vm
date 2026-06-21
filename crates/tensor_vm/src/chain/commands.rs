@@ -18,6 +18,25 @@ impl ChainEngine for Chain {
                 self.register_validator(address, stake)?;
                 Ok(vec![ChainEvent::ValidatorRegistered(address)])
             }
+            ChainCommand::SubmitExternalRandomnessBeacon {
+                source_id,
+                beacon_round,
+                randomness,
+                proof_hash,
+            } => {
+                let record = super::validation::submit_external_randomness_beacon(
+                    self,
+                    source_id,
+                    beacon_round,
+                    randomness,
+                    proof_hash,
+                )?;
+                Ok(vec![ChainEvent::ExternalRandomnessBeaconAccepted {
+                    source_id: record.source_id,
+                    beacon_round: record.beacon_round,
+                    randomness: record.randomness,
+                }])
+            }
             ChainCommand::Transfer { from, to, amount } => {
                 self.transfer(from, to, amount)?;
                 Ok(vec![ChainEvent::AccountTransferred { from, to, amount }])

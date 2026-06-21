@@ -10,6 +10,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             epoch: 0,
             finalized_beacon_round: 0,
             finalized_randomness,
+            external_randomness_beacons: BTreeMap::new(),
             genesis_beacon_round: 0,
             genesis_randomness: finalized_randomness,
             accounts: BTreeMap::new(),

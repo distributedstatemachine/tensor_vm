@@ -1,10 +1,11 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockCheckTranscript, BlockVote, ChainState,
-    DataUnavailabilitySlashRecord, InvalidOutputSlashRecord, JobState, MinerState, ModelState,
-    PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRandomnessAnchor, ReceiptState, RedundantSettlementDelayRecord, RewardState,
-    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    DataUnavailabilitySlashRecord, ExternalRandomnessBeaconRecord, InvalidOutputSlashRecord,
+    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
+    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
+    RedundantSettlementDelayRecord, RewardState, ValidatorAuditAppealRecord,
+    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -42,6 +43,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&state.epoch.to_le_bytes());
     parts.extend_from_slice(&state.finalized_beacon_round.to_le_bytes());
     parts.extend_from_slice(&state.finalized_randomness);
+    parts.extend_from_slice(&external_randomness_beacon_root(
+        &state.external_randomness_beacons,
+    ));
     parts.extend_from_slice(&state.genesis_beacon_round.to_le_bytes());
     parts.extend_from_slice(&state.genesis_randomness);
     parts.extend_from_slice(&account_root(&state.accounts));
@@ -112,6 +116,22 @@ pub(super) fn receipt_randomness_anchor_root(
         encoded.extend_from_slice(&anchor.validation_seed_commitment);
     }
     hash_bytes(b"tensor-vm-receipt-randomness-anchor-root-v1", &[&encoded])
+}
+
+pub(super) fn external_randomness_beacon_root(
+    beacons: &BTreeMap<u64, ExternalRandomnessBeaconRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (round, beacon) in beacons {
+        encoded.extend_from_slice(&round.to_le_bytes());
+        encoded.extend_from_slice(&(beacon.source_id.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(beacon.source_id.as_bytes());
+        encoded.extend_from_slice(&beacon.beacon_round.to_le_bytes());
+        encoded.extend_from_slice(&beacon.randomness);
+        encoded.extend_from_slice(&beacon.proof_hash);
+        encoded.extend_from_slice(&beacon.observed_at_height.to_le_bytes());
+    }
+    hash_bytes(b"tensor-vm-external-randomness-beacon-root-v1", &[&encoded])
 }
 
 pub(super) fn program_body_root(programs: &BTreeMap<Hash, Vec<u8>>) -> Hash {

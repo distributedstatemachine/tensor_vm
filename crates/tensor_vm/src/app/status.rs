@@ -424,6 +424,14 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         randomness.current_block_hash_anchor_count,
     );
     report.field(
+        "randomness_external_beacon_record_count",
+        randomness.external_beacon_record_count,
+    );
+    report.field(
+        "randomness_latest_external_beacon_round",
+        randomness.latest_external_beacon_round,
+    );
+    report.field(
         "randomness_all_receipt_anchors_consistent",
         randomness.all_receipt_anchors_consistent,
     );
@@ -824,6 +832,14 @@ mod tests {
     fn service_status_exports_randomness_binding_evidence() {
         let beacon = hash_bytes(b"test", &[b"status-randomness-binding"]);
         let mut chain = Chain::new(beacon);
+        chain
+            .apply_command(ChainCommand::SubmitExternalRandomnessBeacon {
+                source_id: "drand-mainnet-round-v1".to_owned(),
+                beacon_round: 9,
+                randomness: hash_bytes(b"test", &[b"status-external-randomness"]),
+                proof_hash: hash_bytes(b"test", &[b"status-external-randomness-proof"]),
+            })
+            .unwrap();
         chain.anchor_receipt_randomness_for_testing(hash_bytes(
             b"test",
             &[b"status-randomness-receipt"],
@@ -902,6 +918,14 @@ mod tests {
         assert_eq!(
             fields.value("randomness_current_block_hash_anchor_count"),
             Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_external_beacon_record_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_latest_external_beacon_round"),
+            Some("9")
         );
         assert_eq!(
             fields.value("randomness_all_receipt_anchors_consistent"),
