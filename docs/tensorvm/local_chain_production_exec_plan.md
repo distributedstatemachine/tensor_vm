@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 107 complete - redundant reward delay records.
+- Active feature: Iteration 108 complete - redundant delayed reward claims.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -16,9 +16,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   and settled receipt rewards explicitly await canonical blockspace inclusion before their maturity clock starts.
   Selected-receipt block openings now expose typed block-check transcript commitments and
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
-  records when quorum-backed work cannot settle because agreement is missing or conflicting, and those
-  records now carry explicit reward-delay height evidence. External randomness beacon records can now
-  advance future receipt randomness through a rooted chain command.
+  records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
+  pending receipt reward claims inherit those redundant reward holds. External randomness beacon records
+  can now advance future receipt randomness through a rooted chain command.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -41,13 +41,45 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
-| Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, and state-rooted redundant settlement delay records with explicit reward-delay heights | Continue Tier-C committee policy and public/operator independence evidence |
+| Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 108: Redundant Delayed Reward Claims
+
+Feature capability: carry redundant settlement delay heights into the normal pending receipt reward ledger
+once delayed work finally settles.
+Canonical owner: `chain::settlement` creates receipt reward claims; `ChainState::pending_receipt_rewards`
+owns rooted claim maturity.
+Adapter callers: unchanged; status/RPC/storage read the same rooted pending reward map.
+Old shortcut being removed: redundant reward delay existed only as a delay record or omitted claim before
+settlement.
+Regression test that proves the shortcut is gone: `chain::tests::redundant_agreement_quorum_is_required_before_settlement`.
+Behavior with local synthetic block production disabled: unchanged; claims are created by shared settlement.
+Behavior for producer and non-producer roles: unchanged; inclusion later applies the same max maturity rule.
+Structured evidence source: `RedundantSettlementDelayRecord.reward_delay_until_height` and
+`PendingReceiptReward.claimable_at_height`.
+Finality source: canonical block inclusion still starts the ordinary receipt maturity clock.
+Wire-size and codec boundary: no wire or storage codec shape change; existing claim field carries the hold.
+Validation target: focused settlement test, format/diff, crate/workspace tests, clippy, final Gate 0,
+tarpaulin attempt.
+Out of scope: public Tier-C committee evidence, live drand/VRF, Docker rerun, interactive fraud proofs.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm redundant_agreement_quorum_is_required_before_settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm conflicting_linear_training_roots_do_not_settle --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 437 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
 
 ### Iteration 107: Redundant Reward Delay Records
 

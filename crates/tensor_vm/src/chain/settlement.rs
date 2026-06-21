@@ -69,7 +69,13 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 ));
                 continue;
             }
-            newly_settled.push((*receipt_id, receipt.clone()));
+            let reward_delay_until_height = chain
+                .state
+                .redundant_settlement_delays
+                .get(receipt_id)
+                .map(|record| record.reward_delay_until_height)
+                .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT);
+            newly_settled.push((*receipt_id, receipt.clone(), reward_delay_until_height));
         }
     }
 
@@ -83,12 +89,20 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
             .insert(record.receipt_id, record);
     }
 
-    let miner_rewards = miner_reward_allocations(&newly_settled, miner_reward_pool);
+    let miner_reward_inputs = newly_settled
+        .iter()
+        .map(|(receipt_id, receipt, _)| (*receipt_id, receipt.clone()))
+        .collect::<Vec<_>>();
+    let miner_rewards = miner_reward_allocations(&miner_reward_inputs, miner_reward_pool);
     let newly_settled_ids: BTreeSet<Hash> = newly_settled
         .iter()
-        .map(|(receipt_id, _)| *receipt_id)
+        .map(|(receipt_id, _, _)| *receipt_id)
         .collect();
-    for (receipt_id, receipt) in newly_settled {
+    let reward_delay_by_receipt = newly_settled
+        .iter()
+        .map(|(receipt_id, _, reward_delay_until_height)| (*receipt_id, *reward_delay_until_height))
+        .collect::<BTreeMap<_, _>>();
+    for (receipt_id, receipt, reward_delay_until_height) in newly_settled {
         chain.state.settled_receipts.insert(receipt_id);
         chain.state.redundant_settlement_delays.remove(&receipt_id);
         let mut miner_claim = None;
@@ -110,6 +124,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 beneficiary,
                 reward,
                 ReceiptRewardKind::Miner,
+                reward_delay_until_height,
             );
         }
     }
@@ -132,6 +147,10 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 attestation.validator,
                 validator_reward,
                 ReceiptRewardKind::Validator,
+                reward_delay_by_receipt
+                    .get(&attestation.receipt_id)
+                    .copied()
+                    .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT),
             );
         }
     }
@@ -291,6 +310,7 @@ fn enqueue_pending_receipt_reward(
     beneficiary: Address,
     amount: u64,
     kind: ReceiptRewardKind,
+    claimable_at_height: u64,
 ) {
     if amount == 0 {
         return;
@@ -306,7 +326,7 @@ fn enqueue_pending_receipt_reward(
             beneficiary,
             amount,
             kind,
-            claimable_at_height: RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
+            claimable_at_height,
             voided_by_challenge: false,
         });
 }

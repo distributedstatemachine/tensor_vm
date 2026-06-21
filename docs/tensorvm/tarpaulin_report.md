@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 107 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 108 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 107 coverage could not
-be regenerated. Iterations 78 through 107 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 108 coverage could not
+be regenerated. Iterations 78 through 108 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -154,6 +154,9 @@ Iteration 107 adds explicit reward-delay height evidence to redundant settlement
 settlement and storage tests cover missing redundant agreement quorum, conflicting quorum-backed linear
 training transitions, reward-delay height derivation from the chain maturity policy, state-root
 sensitivity, and chain-state roundtrip persistence.
+Iteration 108 threads that delay into the normal pending receipt reward ledger once a delayed receipt
+eventually settles. Focused settlement tests cover delayed miner and validator receipt claims inheriting
+the redundant reward hold before inclusion-based maturity can release them.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

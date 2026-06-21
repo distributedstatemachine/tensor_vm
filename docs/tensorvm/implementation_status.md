@@ -302,7 +302,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   delayed rather than rewarded. `ChainState::redundant_settlement_delays` now persists state-rooted
   `RedundantSettlementDelayRecord` entries for missing agreement quorum and conflicting quorum-backed
   linear-transition receipts, including `reward_delay_until_height` derived from the same reward maturity
-  policy as receipt claims, and clears the record when the receipt settles.
+  policy as receipt claims. When a previously delayed receipt later settles, its pending miner and
+  validator receipt reward claims inherit that height as a lower-bound hold, then canonical block inclusion
+  extends the claim with the ordinary receipt-maturity delay.
 - Miner node executor with receipt submission and tensor serving
 - Validator node attestation flow for TensorOp and LinearTrainingStep receipts
 - Server-backed TensorOp data availability verification with unavailable attestations

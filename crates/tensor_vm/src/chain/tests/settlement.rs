@@ -966,6 +966,7 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .recorded_at_height
             .saturating_add(chain.params().reward_maturity_delay_blocks())
     );
+    let redundant_reward_delay_until_height = delay.reward_delay_until_height;
     assert!(chain.state().pending_receipt_rewards().is_empty());
     assert_eq!(delay.reason, "awaiting redundant miner agreement quorum");
 
@@ -990,6 +991,30 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert!(chain.has_redundant_agreement(&receipts[0].receipt_id));
     chain.settle_epoch(1_000, 500);
     assert_eq!(chain.state().settled_receipts().len(), 3);
+    let delayed_claims = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
+        .collect::<Vec<_>>();
+    assert_eq!(delayed_claims.len(), 2);
+    assert!(
+        delayed_claims
+            .iter()
+            .any(|reward| reward.kind == ReceiptRewardKind::Miner)
+    );
+    assert!(
+        delayed_claims
+            .iter()
+            .any(|reward| reward.kind == ReceiptRewardKind::Validator)
+    );
+    assert!(
+        delayed_claims
+            .iter()
+            .all(|reward| reward.claimable_at_height == redundant_reward_delay_until_height)
+    );
+    chain.set_position_for_testing(redundant_reward_delay_until_height, 0);
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert!(
         chain
             .state()
