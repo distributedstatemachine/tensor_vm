@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 130 complete - local proof/status drift cleanup.
+- Active feature: Iteration 131 complete - reward maturity boundary cleanup.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -15,6 +15,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
+  Block application now advances the child state height before sweeping matured claims, so delayed rewards
+  release on the transition that reaches their claim height instead of relying on an extra follow-up sweep.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
   awaiting-inclusion rewards into a synthetic claim height, and the internal receipt reward claim-height
   API now returns no height for awaiting-inclusion claims instead of a sentinel workaround.
@@ -66,6 +68,39 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 131: Reward Maturity Boundary Cleanup
+
+Feature capability: make delayed rewards release at the protocol claim height during normal block
+application instead of depending on a one-block workaround or manual post-height sweep.
+Readiness requirements covered: chain-owned economics, delayed reward finality, reward-root binding, and
+local no-shortcut reward evidence.
+Files/modules touched: block state transition, reward transition tests, and this plan.
+Parallel subagents run: previously launched read-only randomness subagents completed; this user-directed
+slice stayed single-writer because it touches one consensus transition path.
+Tests/checkers/docs to add or update: proposer/fallback reward transition assertions and this plan.
+Narrow validation commands: focused proposer, receipt, and fallback reward transition tests.
+Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
+final Gate 0, and tarpaulin attempt if available.
+Expected observable evidence: a reward claim with `claimable_at_height = H` is released by the block
+transition whose child state reaches height `H`, with producer and peer states remaining identical.
+Out of scope: public/CUDA deployment evidence, live drand/VRF wiring, and new reward ledgers.
+Split trigger: any reward-root, storage, or Docker local-testnet regression would split this into a deeper
+economics audit before commit.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused checks passed: `cargo test -p tensor_vm --lib block_transition_releases_matured_rewards_without_manual_command -- --nocapture`,
+  `cargo test -p tensor_vm --lib block_transition_releases_matured_receipt_rewards_without_manual_command -- --nocapture`,
+  `cargo test -p tensor_vm --lib mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply -- --nocapture`,
+  and `cargo test -p tensor_vm --lib fallback_proposer_reward_uses_explicit_maturity_delay -- --nocapture`.
+- Broad checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
+  final `cargo test -p tensor_vm local_testnet --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 130: Local Proof Status Drift Cleanup
 

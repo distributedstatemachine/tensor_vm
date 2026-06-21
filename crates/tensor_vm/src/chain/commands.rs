@@ -1,7 +1,7 @@
 use super::{
     BlockAdmission, Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, ChainState,
-    PendingCreditReward, ReceiptRewardKind, ReceiptState, TensorBlock, accounts, challenges,
-    receipts, settlement,
+    PendingCreditReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, TensorBlock,
+    accounts, challenges, receipts, settlement,
 };
 use crate::challenge::ChallengeOutcome;
 use crate::error::{Result, TvmError};
@@ -361,7 +361,7 @@ impl ChainEngine for Chain {
 
 pub(super) fn release_all_matured_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     let mut events = release_matured_proposer_rewards(state);
-    events.extend(release_matured_receipt_rewards(state));
+    events.extend(release_matured_receipt_rewards_for_block_transition(state));
     events.extend(release_matured_challenge_rewards(state));
     events.extend(release_matured_credit_rewards(state));
     events
@@ -402,6 +402,18 @@ fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
 }
 
 fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    release_matured_receipt_rewards_with_policy(state, true, false)
+}
+
+fn release_matured_receipt_rewards_for_block_transition(state: &mut ChainState) -> Vec<ChainEvent> {
+    release_matured_receipt_rewards_with_policy(state, false, true)
+}
+
+fn release_matured_receipt_rewards_with_policy(
+    state: &mut ChainState,
+    prune_voided: bool,
+    hold_unresolved_validator_audits: bool,
+) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
         .pending_receipt_rewards
@@ -409,6 +421,9 @@ fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
         .filter(|(_, reward)| {
             reward.is_mature_at(state.height)
                 && state.included_receipts.contains(&reward.receipt_id)
+                && (prune_voided || !reward.voided_by_challenge)
+                && !(hold_unresolved_validator_audits
+                    && unresolved_validator_audit_blocks_reward_release(state, reward))
         })
         .map(|(claim_id, reward)| {
             (
@@ -448,6 +463,26 @@ fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
         });
     }
     events
+}
+
+fn unresolved_validator_audit_blocks_reward_release(
+    state: &ChainState,
+    reward: &PendingReceiptReward,
+) -> bool {
+    reward.kind == ReceiptRewardKind::Validator
+        && state
+            .validator_audit_assignments
+            .values()
+            .any(|assignment| {
+                assignment.receipt_id == reward.receipt_id
+                    && assignment.validator == reward.beneficiary
+                    && !state
+                        .validator_audit_results
+                        .contains_key(&assignment.audit_id)
+                    && !state
+                        .validator_audit_slashes
+                        .contains_key(&assignment.audit_id)
+            })
 }
 
 fn release_pending_miner_tensor_work(

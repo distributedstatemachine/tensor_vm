@@ -699,14 +699,14 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     let block2 = producer
         .produce_block_with_rewards(proposer, 1_024, 80, 20)
         .unwrap();
-    assert_eq!(producer.state().rewards().balance(&proposer), 0);
-    assert!(producer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(producer.state().rewards().balance(&proposer), 500);
+    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(block2.reward_root, reward_root(producer.state()));
 
     peer.apply_command(ChainCommand::SubmitBlock(block2))
         .unwrap();
-    assert_eq!(peer.state().rewards().balance(&proposer), 0);
-    assert!(peer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(peer.state().rewards().balance(&proposer), 500);
+    assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
 
     add_settled_receipt_for_blockspace(&mut producer, &beacon);
@@ -714,13 +714,13 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     let block3 = producer
         .produce_block_with_rewards(proposer, 1_036, 80, 20)
         .unwrap();
-    assert_eq!(producer.state().rewards().balance(&proposer), 500);
+    assert_eq!(producer.state().rewards().balance(&proposer), 600);
     assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(block3.reward_root, reward_root(producer.state()));
 
     peer.apply_command(ChainCommand::SubmitBlock(block3))
         .unwrap();
-    assert_eq!(peer.state().rewards().balance(&proposer), 500);
+    assert_eq!(peer.state().rewards().balance(&proposer), 600);
     assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
 }
@@ -903,12 +903,6 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
         });
         chain.produce_block(proposer, timestamp).unwrap();
     }
-    let events = chain.release_matured_proposer_rewards().unwrap();
-    assert!(events.contains(&ChainEvent::ProposerRewardReleased {
-        block_height: fallback.height,
-        proposer,
-        amount: 50,
-    }));
     assert_eq!(chain.state().rewards().balance(&proposer), 50);
     assert!(
         !chain

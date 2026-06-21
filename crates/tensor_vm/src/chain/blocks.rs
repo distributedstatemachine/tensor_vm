@@ -1167,9 +1167,9 @@ fn apply_block_to_parent_state(
         reward_context.validator_audit_sample_denominator,
         reward_context.validator_audit_window_blocks,
     );
-    super::commands::release_all_matured_rewards(&mut child_state);
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
+    super::commands::release_all_matured_rewards(&mut child_state);
     let (next_round, next_beacon) =
         next_finalized_beacon(beacon_round, beacon, child_state.height, child_state.epoch);
     child_state.finalized_beacon_round = next_round;
