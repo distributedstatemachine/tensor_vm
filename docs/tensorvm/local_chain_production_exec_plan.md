@@ -79,6 +79,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `cc80d84` (`Add local randomness construction evidence`) is ready to push to
+  `origin/main`.
 
 ## Recent Iterations
 
