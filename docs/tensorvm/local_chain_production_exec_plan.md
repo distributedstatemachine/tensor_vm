@@ -107,6 +107,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `4fceaeb` (`Add packed int8 tensor payload API`) pushed to `origin/main`.
 
 ## Recent Iterations
 
