@@ -243,8 +243,11 @@ The local bundle is useful and should remain the first operational target:
   operator quorum separately, so redundant-agreement collusion evidence follows the same operator-distinct
   rule as settlement.
   Chain state, service status, and explorer overview now also expose structured detection-probability
-  evidence for the implemented verifier and fraud mechanisms. Deployed-run measured detection records and
-  remaining fraud paths remain open economics work.
+  evidence for the implemented verifier and fraud mechanisms. Local CPU role runtimes now ingest the
+  configured deterministic drand-style external beacon fixture through the shared chain command before
+  network/role work, persist the accepted beacon record, and expose checker-gated role counters plus
+  external-beacon count/latest-round evidence; public drand verification and validator VRF construction
+  remain open. Deployed-run measured detection records and remaining fraud paths remain open economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 
@@ -444,10 +447,10 @@ availability evidence. The checker currently verifies some seed strings and aggr
 Required fix:
 
 - Query live receipt details and prove at least one new post-startup receipt has validator attestations.
-- Query pending miner and validator receipt reward claims after live jobs, and separately verify mature
-  release into spendable balances once the reward-settlement delay plus challenge window has elapsed.
+- Query pending miner and validator receipt reward claims after live jobs, and separately verify they remain
+  pending until a beneficiary `ClaimReward` after the reward-settlement delay plus challenge window.
 - Query pending block-check challenger reward claims after a successful live challenge scenario, and
-  separately verify mature release into spendable balances instead of immediate bounty credit. The shared
+  separately verify mature claimability through `ClaimReward` instead of immediate bounty credit. The shared
   p2p/node payload path, status counters, chain-owned full reward-maturity delay for challenge bounties,
   deterministic local diagnostic bad-block challenge generation, validator-proposer diagnostic emission,
   observed malformed-block side-cache ingestion, and hard checker gate for future-maturity challenge reward
@@ -839,7 +842,7 @@ block finality votes are produced by validator containers and gossiped/applied b
 TensorOp and LinearTrainingStep live jobs both settle after startup
 tensor rows/chunks/openings are fetched through the local tensor-server path
 live pending reward claims accrue to miners, validators, and observed successful block-check challengers,
-and matured claims release into spendable balances
+and matured claims become spendable only through beneficiary `ClaimReward`
 telemetry reflects live post-startup work
 local evidence remains explicitly non-public
 ```

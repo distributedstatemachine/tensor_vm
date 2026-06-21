@@ -84,6 +84,54 @@ fn role_runtime_mutating_rpc_persists_chain() {
 }
 
 #[test]
+fn role_runtime_external_randomness_beacon_tick_persists_chain_and_status() {
+    let data_dir = unique_temp_data_dir("role-runtime-randomness-beacon");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let mut config = test_service_runtime_config(&data_dir, "secret");
+    config.randomness_beacon =
+        RandomnessBeaconRuntimeConfig::local_deterministic("test-local-drand", 17);
+    let chain = config
+        .node
+        .build_chain(hash_bytes(b"test", &[b"runtime-randomness-beacon"]));
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+
+    let mut runtime = RoleRuntimeLoop::start(config).unwrap();
+    runtime.tick_randomness_beacon_once().unwrap();
+    let persisted = store.load_chain().unwrap();
+    assert_eq!(persisted.state().finalized_beacon_round(), 17);
+    assert!(
+        persisted
+            .state()
+            .external_randomness_beacons()
+            .contains_key(&17)
+    );
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(
+        report_field(&status, "role_randomness_beacon_mode"),
+        "local_deterministic"
+    );
+    assert_eq!(
+        report_field(&status, "role_randomness_latest_source_id"),
+        "test-local-drand"
+    );
+    assert_eq!(report_u64(&status, "role_randomness_latest_round"), 17);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 0);
+    assert_eq!(report_u64(&status, "role_randomness_beacon_failures"), 0);
+
+    runtime.tick_randomness_beacon_once().unwrap();
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 0);
+
+    drop(runtime);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
 fn validator_remote_tensor_fetch_status_does_not_persist_chain() {
     let data_dir = unique_temp_data_dir("validator-fetch-no-persist");
     let _ = std::fs::remove_dir_all(&data_dir);
@@ -141,6 +189,7 @@ fn validator_remote_tensor_fetch_status_does_not_persist_chain() {
             0,
         )
         .unwrap(),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     let mut runtime = RoleRuntimeLoop::start(config).unwrap();
 

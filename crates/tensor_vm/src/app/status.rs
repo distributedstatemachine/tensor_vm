@@ -77,6 +77,19 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_validator_remote_tensor_fetch_bytes",
     "role_validator_remote_tensors_inserted",
     "role_validator_attestations_submitted",
+    "role_randomness_beacon_mode",
+    "role_randomness_beacon_configured",
+    "role_randomness_beacon_configured_source",
+    "role_randomness_beacon_configured_round",
+    "role_randomness_beacon_configured_randomness",
+    "role_randomness_beacon_configured_proof_hash",
+    "role_randomness_beacons_observed",
+    "role_randomness_beacons_applied",
+    "role_randomness_beacons_skipped",
+    "role_randomness_beacon_failures",
+    "role_randomness_latest_source_id",
+    "role_randomness_latest_round",
+    "role_randomness_last_error",
     "role_validator_audit_work_ready",
     "role_validator_assigned_audits_seen",
     "role_validator_unreported_audits",
@@ -944,6 +957,72 @@ mod tests {
             fields.value("randomness_all_receipt_anchors_consistent"),
             Some("true")
         );
+
+        let _ = std::fs::remove_dir_all(data_dir);
+    }
+
+    #[test]
+    fn service_status_forwards_role_randomness_beacon_evidence() {
+        let beacon = hash_bytes(b"test", &[b"status-role-randomness"]);
+        let chain = Chain::new(beacon);
+        let data_dir = std::env::temp_dir().join(format!(
+            "tensor-vm-status-role-randomness-{}-{}",
+            std::process::id(),
+            SystemTime::now()
+                .duration_since(UNIX_EPOCH)
+                .unwrap()
+                .as_nanos()
+        ));
+        let store = NodeStore::open(data_dir.clone());
+        store.persist_chain(&chain).unwrap();
+        std::fs::write(
+            data_dir.join("role-runtime.status"),
+            "\
+role_randomness_beacon_mode=local_deterministic
+role_randomness_beacon_configured=true
+role_randomness_beacon_configured_source=local_deterministic:local_drand_fixture_v1
+role_randomness_beacon_configured_round=1000
+role_randomness_beacon_configured_randomness=0000000000000000000000000000000000000000000000000000000000000001
+role_randomness_beacon_configured_proof_hash=0000000000000000000000000000000000000000000000000000000000000002
+role_randomness_beacons_observed=1
+role_randomness_beacons_applied=1
+role_randomness_beacons_skipped=0
+role_randomness_beacon_failures=0
+role_randomness_latest_source_id=local_drand_fixture_v1
+role_randomness_latest_round=1000
+role_randomness_last_error=none
+",
+        )
+        .unwrap();
+
+        let status = service_status(data_dir.to_str().unwrap()).unwrap();
+        let fields = KeyValueReport::parse_strict(&status).unwrap();
+        assert_eq!(
+            fields.value("role_randomness_beacon_mode"),
+            Some("local_deterministic")
+        );
+        assert_eq!(
+            fields.value("role_randomness_beacon_configured"),
+            Some("true")
+        );
+        assert_eq!(
+            fields.value("role_randomness_beacon_configured_source"),
+            Some("local_deterministic:local_drand_fixture_v1")
+        );
+        assert_eq!(
+            fields.value("role_randomness_beacon_configured_round"),
+            Some("1000")
+        );
+        assert_eq!(fields.value("role_randomness_beacons_observed"), Some("1"));
+        assert_eq!(fields.value("role_randomness_beacons_applied"), Some("1"));
+        assert_eq!(fields.value("role_randomness_beacons_skipped"), Some("0"));
+        assert_eq!(fields.value("role_randomness_beacon_failures"), Some("0"));
+        assert_eq!(
+            fields.value("role_randomness_latest_source_id"),
+            Some("local_drand_fixture_v1")
+        );
+        assert_eq!(fields.value("role_randomness_latest_round"), Some("1000"));
+        assert_eq!(fields.value("role_randomness_last_error"), Some("none"));
 
         let _ = std::fs::remove_dir_all(data_dir);
     }

@@ -1,5 +1,6 @@
 use super::*;
 use std::time::Duration;
+use tensor_vm::ChainEvent;
 use tensor_vm::app::{
     LocalProductionContext, LocalProductionSchedule, RoleServiceConfig, RoleServiceRunner,
     RuntimeRole, chain_profile_from_label, produce_and_publish_synthetic_job,
@@ -420,6 +421,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         )
         .with_block_interval(Some(Duration::from_millis(1)))
         .with_local_producer(true),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     let mut runtime_state = NodeRuntimeState::default();
     let changed = tick_validator_role_work_once(
@@ -514,7 +516,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .state()
             .pending_proposer_rewards()
             .get(&block_height)
-            .is_none()
+            .is_some()
     );
     assert_eq!(
         server
@@ -524,6 +526,38 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .state()
             .rewards()
             .balance(&validator),
+        0
+    );
+    let claim_events = server
+        .gateway_mut()
+        .node
+        .chain
+        .apply_command(ChainCommand::ClaimReward(validator))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: validator,
+        amount: 1_000,
+    }));
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block_height)
+            .is_none()
+    );
+    assert_eq!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .accounts()
+            .get(&validator)
+            .unwrap()
+            .balance,
         1_000
     );
 
@@ -604,6 +638,7 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
             data_dir.clone(),
         )
         .with_local_producer(true),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     assert!(config.node.local_block_proposer());
     assert!(!config.node.local_synthetic_producer());
@@ -763,6 +798,7 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
             data_dir.clone(),
         )
         .with_local_producer(true),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     let mut runtime_state = NodeRuntimeState::default();
 

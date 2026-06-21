@@ -1,6 +1,7 @@
 use super::{
     KeyValueReportWriter, RuntimeP2pReport, RuntimeStatusSnapshot, ServiceRuntimeConfig,
-    hex_hash_list, runtime_role_wallet_address_text,
+    hex_hash_list, randomness_beacon_hash_label, randomness_beacon_source_label,
+    runtime_role_wallet_address_text,
 };
 use crate::hash::hex;
 
@@ -77,6 +78,55 @@ pub fn format_role_runtime_report(
     report.field(
         "validator_remote_tensors_inserted",
         snapshot.validator_remote_tensors_inserted,
+    );
+    report.field(
+        "randomness_beacon_mode",
+        config.randomness_beacon.mode.label(),
+    );
+    report.field(
+        "randomness_beacon_configured",
+        config.randomness_beacon.enabled(),
+    );
+    report.field(
+        "randomness_beacon_configured_source",
+        randomness_beacon_source_label(&config.randomness_beacon),
+    );
+    report.field(
+        "randomness_beacon_configured_round",
+        config.randomness_beacon.beacon_round,
+    );
+    report.field(
+        "randomness_beacon_configured_randomness",
+        randomness_beacon_hash_label(&config.randomness_beacon.randomness),
+    );
+    report.field(
+        "randomness_beacon_configured_proof_hash",
+        randomness_beacon_hash_label(&config.randomness_beacon.proof_hash),
+    );
+    report.field(
+        "randomness_beacons_observed",
+        snapshot.randomness_beacons_observed,
+    );
+    report.field(
+        "randomness_beacons_applied",
+        snapshot.randomness_beacons_applied,
+    );
+    report.field(
+        "randomness_beacons_skipped",
+        snapshot.randomness_beacons_skipped,
+    );
+    report.field(
+        "randomness_beacon_failures",
+        snapshot.randomness_beacon_failures,
+    );
+    report.field(
+        "randomness_latest_source_id",
+        nonempty_status_label(&snapshot.randomness_latest_source_id),
+    );
+    report.field("randomness_latest_round", snapshot.randomness_latest_round);
+    report.field(
+        "randomness_last_error",
+        nonempty_status_label(&snapshot.randomness_last_error),
     );
     report.field(
         "validator_attestations_submitted",
@@ -357,6 +407,58 @@ pub fn write_role_runtime_status(
         snapshot.validator_remote_tensors_inserted,
     );
     report.field(
+        "role_randomness_beacon_mode",
+        config.randomness_beacon.mode.label(),
+    );
+    report.field(
+        "role_randomness_beacon_configured",
+        config.randomness_beacon.enabled(),
+    );
+    report.field(
+        "role_randomness_beacon_configured_source",
+        randomness_beacon_source_label(&config.randomness_beacon),
+    );
+    report.field(
+        "role_randomness_beacon_configured_round",
+        config.randomness_beacon.beacon_round,
+    );
+    report.field(
+        "role_randomness_beacon_configured_randomness",
+        randomness_beacon_hash_label(&config.randomness_beacon.randomness),
+    );
+    report.field(
+        "role_randomness_beacon_configured_proof_hash",
+        randomness_beacon_hash_label(&config.randomness_beacon.proof_hash),
+    );
+    report.field(
+        "role_randomness_beacons_observed",
+        snapshot.randomness_beacons_observed,
+    );
+    report.field(
+        "role_randomness_beacons_applied",
+        snapshot.randomness_beacons_applied,
+    );
+    report.field(
+        "role_randomness_beacons_skipped",
+        snapshot.randomness_beacons_skipped,
+    );
+    report.field(
+        "role_randomness_beacon_failures",
+        snapshot.randomness_beacon_failures,
+    );
+    report.field(
+        "role_randomness_latest_source_id",
+        nonempty_status_label(&snapshot.randomness_latest_source_id),
+    );
+    report.field(
+        "role_randomness_latest_round",
+        snapshot.randomness_latest_round,
+    );
+    report.field(
+        "role_randomness_last_error",
+        nonempty_status_label(&snapshot.randomness_last_error),
+    );
+    report.field(
         "role_validator_attestations_submitted",
         snapshot.validator_attestations_submitted,
     );
@@ -551,4 +653,8 @@ pub fn write_role_runtime_status(
             path.display()
         )
     })
+}
+
+fn nonempty_status_label(value: &str) -> &str {
+    if value.is_empty() { "none" } else { value }
 }

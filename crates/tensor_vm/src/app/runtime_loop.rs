@@ -6,7 +6,7 @@ use super::{
     LocalProductionContext, LocalProductionSchedule, RuntimeP2pMetadata, RuntimeRole,
     RuntimeServices, RuntimeStatusSnapshot, ServiceRuntimeConfig, format_role_runtime_report,
     ingest_network_once as ingest_runtime_network_once, serve_rpc_once as serve_runtime_rpc_once,
-    start_runtime_services, tick_miner_role_work_once,
+    start_runtime_services, tick_miner_role_work_once, tick_randomness_beacon_once,
     tick_validator_role_work_once as tick_validator_role_worker_once, write_role_runtime_status,
 };
 
@@ -59,6 +59,7 @@ impl RoleRuntimeLoop {
                 break;
             }
             self.serve_rpc_once()?;
+            self.tick_randomness_beacon_once()?;
             self.ingest_network_once()?;
             self.tick_role_work_once()?;
             self.produce_local_round_if_due()?;
@@ -85,6 +86,18 @@ impl RoleRuntimeLoop {
             &mut self.server,
             &self.p2p_service,
             self.local_producer,
+            &mut self.runtime_state,
+        )? {
+            self.write_status()?;
+        }
+        Ok(())
+    }
+
+    pub fn tick_randomness_beacon_once(&mut self) -> std::result::Result<(), String> {
+        if tick_randomness_beacon_once(
+            &self.config.randomness_beacon,
+            &self.store,
+            &mut self.server,
             &mut self.runtime_state,
         )? {
             self.write_status()?;

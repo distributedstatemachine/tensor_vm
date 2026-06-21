@@ -630,7 +630,7 @@ fn detection_probability_evidence_uses_live_jobs_and_params() {
 }
 
 #[test]
-fn block_transition_releases_matured_rewards_without_manual_command() {
+fn block_transition_preserves_matured_rewards_until_claim() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {
         epoch_length: 1,
@@ -699,14 +699,35 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     let block2 = producer
         .produce_block_with_rewards(proposer, 1_024, 80, 20)
         .unwrap();
-    assert_eq!(producer.state().rewards().balance(&proposer), 500);
-    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(producer.state().rewards().balance(&proposer), 0);
+    assert!(producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(block2.reward_root, reward_root(producer.state()));
 
     peer.apply_command(ChainCommand::SubmitBlock(block2))
         .unwrap();
-    assert_eq!(peer.state().rewards().balance(&proposer), 500);
-    assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(peer.state().rewards().balance(&proposer), 0);
+    assert!(peer.state().pending_proposer_rewards().contains_key(&0));
+    assert_eq!(peer.state(), producer.state());
+
+    let claim_events = producer
+        .apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::ProposerRewardReleased {
+        block_height: 0,
+        proposer,
+        amount: 500,
+    }));
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: proposer,
+        amount: 500,
+    }));
+    assert_eq!(
+        producer.state().accounts().get(&proposer).unwrap().balance,
+        500
+    );
+    assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
+    peer.apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
     assert_eq!(peer.state(), producer.state());
 
     add_settled_receipt_for_blockspace(&mut producer, &beacon);
@@ -714,19 +735,19 @@ fn block_transition_releases_matured_rewards_without_manual_command() {
     let block3 = producer
         .produce_block_with_rewards(proposer, 1_036, 80, 20)
         .unwrap();
-    assert_eq!(producer.state().rewards().balance(&proposer), 600);
+    assert_eq!(producer.state().rewards().balance(&proposer), 0);
     assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(block3.reward_root, reward_root(producer.state()));
 
     peer.apply_command(ChainCommand::SubmitBlock(block3))
         .unwrap();
-    assert_eq!(peer.state().rewards().balance(&proposer), 600);
+    assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
 }
 
 #[test]
-fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
+fn block_transition_preserves_matured_receipt_rewards_until_claim() {
     let beacon = hash_bytes(b"test", &[b"receipt-reward-block-transition-release"]);
     let params = ChainParams {
         agreement_quorum: 1,
@@ -808,7 +829,31 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
             .unwrap();
     }
 
-    assert_eq!(producer.state().rewards().balance(&miner), 1_000);
+    assert_eq!(producer.state().rewards().balance(&miner), 0);
+    assert!(
+        producer
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .any(|reward| reward.receipt_id == receipt_id)
+    );
+    let claim_events = producer
+        .apply_command(ChainCommand::ClaimReward(miner))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::ReceiptRewardReleased {
+        claim_id,
+        receipt_id,
+        beneficiary: miner,
+        amount: 1_000,
+    }));
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: miner,
+        amount: 1_000,
+    }));
+    assert_eq!(
+        producer.state().accounts().get(&miner).unwrap().balance,
+        1_000
+    );
     assert!(
         producer
             .state()
@@ -816,7 +861,9 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
             .values()
             .all(|reward| reward.receipt_id != receipt_id)
     );
-    assert_eq!(peer.state().rewards().balance(&miner), 1_000);
+    assert_eq!(peer.state().rewards().balance(&miner), 0);
+    peer.apply_command(ChainCommand::ClaimReward(miner))
+        .unwrap();
     assert_eq!(peer.state(), producer.state());
 }
 
@@ -903,7 +950,20 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
         });
         chain.produce_block(proposer, timestamp).unwrap();
     }
-    assert_eq!(chain.state().rewards().balance(&proposer), 50);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&fallback.height)
+    );
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: proposer,
+        amount: 50,
+    }));
     assert!(
         !chain
             .state()

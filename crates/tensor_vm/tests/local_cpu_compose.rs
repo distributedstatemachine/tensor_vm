@@ -376,6 +376,18 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         "false"
     );
     assert_eq!(
+        env_file_value(&env_file, "TENSORVM_RANDOMNESS_BEACON_MODE"),
+        "local_deterministic"
+    );
+    assert_eq!(
+        env_file_value(&env_file, "TENSORVM_RANDOMNESS_BEACON_SOURCE_ID"),
+        "local_drand_fixture_v1"
+    );
+    assert_eq!(
+        env_file_u64(&env_file, "TENSORVM_RANDOMNESS_BEACON_ROUND"),
+        1000
+    );
+    assert_eq!(
         env_file_value(&env_file, "TENSORVM_BOOTSTRAP_PEER_ID"),
         "12D3KooWS2oXcVvmNNWTiUzwDWJavRHQmewe1NDfJB7SxP43jA7s"
     );
@@ -745,6 +757,10 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=$(json_future_pending_reward_count receipt "$LIVE_HEIGHT" "$LIVE_OVERVIEW")"#,
             r#"LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=$(json_future_pending_reward_count proposer "$LIVE_HEIGHT" "$LIVE_OVERVIEW")"#,
             r#"LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=$(json_future_pending_reward_count challenge "$LIVE_HEIGHT" "$LIVE_OVERVIEW")"#,
+            r#"LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS=$(json_randomness_number external_beacon_record_count "$LIVE_OVERVIEW")"#,
+            r#"LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND=$(json_randomness_number latest_external_beacon_round "$LIVE_OVERVIEW")"#,
+            r#"LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED=$(json_randomness_bool current_block_hash_randomness_allowed "$LIVE_OVERVIEW")"#,
+            r#"LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT=$(json_randomness_bool all_receipt_anchors_consistent "$LIVE_OVERVIEW")"#,
             r#"LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")"#,
             r#"[ "${LIVE_HEIGHT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "gateway chain head did not advance past seeded height $EXPECTED_SEED_HEIGHT""#,
             r#"[ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway chain block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks""#,
@@ -762,8 +778,13 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims""#,
             r#"[ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not add delayed challenge rewards""#,
             r#"[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not expose future-maturity pending challenge reward claims""#,
+            r#"[ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] || fail "live runtime did not persist an external randomness beacon record""#,
+            r#"[ "${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND:-0}" -ge "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] || fail "live runtime did not expose the configured external randomness beacon round""#,
+            r#"[ "$LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED" = "false" ] || fail "randomness evidence allowed current-block-hash randomness""#,
+            r#"[ "$LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT" = "true" ] || fail "randomness evidence did not report consistent receipt anchors""#,
             r#"[ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges""#,
             r#"[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims""#,
+            r#"[ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators applied the configured local randomness beacon""#,
             r#"LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")"#,
             r#"LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")"#,
             r#"[ -n "$LIVE_TENSOR_ID" ] || fail "live tensor route did not report a tensor id""#,

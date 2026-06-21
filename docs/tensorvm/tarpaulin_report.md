@@ -72,12 +72,13 @@ Iteration 79 added durable block-parent `ChainState` snapshots for replay-stable
 future receipts/blocks and after chain-state save/load.
 Iteration 80 added chain-level PoW-skip fallback timeout validation. Focused fallback and retarget tests
 cover producer and non-producer rejection of early empty fallback blocks while preserving useful UVPoW.
-Iteration 81 added inclusion-gated receipt reward release. Focused reward and settlement tests cover
+Iteration 81 added inclusion-gated receipt reward claimability. Focused reward and settlement tests cover
 height-mature settled receipt claims staying pending before blockspace inclusion, inclusion extending
-claim maturity from the block height, and spendable release only after the inclusion-based maturity height.
-Iteration 82 added chain-owned delayed receipt reward release evidence. Focused reward tests cover producer
-and peer block transitions releasing included matured receipt rewards through canonical child-state
-application, without a manual adapter-side release command.
+claim maturity from the block height, and spendable credit only after the inclusion-based maturity height
+through beneficiary claim.
+Iteration 82 added chain-owned delayed receipt reward evidence. Focused reward tests cover producer and
+peer block transitions preserving included matured receipt rewards as pending child-state claims until
+beneficiary claim, without an adapter-side release workaround.
 Iteration 83 added receipt-bound validation challenge seed evidence. Focused randomness/proposer and
 storage tests cover persisted validation seed commitments, stable challenge-vector seeds after later beacon
 advancement, and attestation rejection when stored receipts are missing their randomness anchor.
@@ -110,7 +111,7 @@ counts for Freivalds, row-sampling, random-linear, graph replay, data availabili
 block-check paths.
 Iteration 93 added late invalid-output delayed reward voiding. Focused settlement tests cover assigned
 `Invalid` attestations contesting already settled receipts, voiding pending miner and validator receipt
-claims before maturity, and preventing mature release from crediting spendable rewards.
+claims before maturity, and preventing mature claim from crediting spendable rewards.
 Iteration 94 added side-branch fork-tree storage. Focused chain, node payload, and storage tests cover
 known-parent side branch admission, side-branch grandchildren, canonical-state preservation, and
 chain-state roundtrip of side-branch block plus child-state maps.
@@ -171,7 +172,7 @@ tests cover the byte-exact `TVQ8` payload, malformed payload rejection, shared e
 unchanged CPU conformance profile behavior.
 Iteration 115 removes the remaining direct spendable reward-credit test helper. Focused chain and
 telemetry tests cover generic rewards entering pending credit claims, failing claim attempts before
-maturity, mature release through the chain command, and only then spendable reward accounting.
+maturity, mature beneficiary claim through the chain command, and only then spendable reward accounting.
 Iteration 116 adds first-class packed int8 tensor artifact APIs. Focused tensor, IR, and conformance tests
 cover construction of packed `TVQ8` payloads as `Uint8` tensors, descriptor/chunk/opening verification,
 decode validation, exact replay, and unchanged conformance vectors.
@@ -186,7 +187,7 @@ output, and `const_blob` tensors before attestation.
 Iteration 119 replaces the receipt reward awaiting-inclusion height sentinel with an explicit
 `ReceiptRewardMaturity` state committed by reward roots and chain-state storage. Focused reward,
 settlement, attestation, and storage tests cover awaiting-inclusion claims, inclusion-derived delayed
-heights, mature release, audit delay/voiding, and roundtrip persistence.
+heights, mature beneficiary claim, audit delay/voiding, and roundtrip persistence.
 Iteration 123 makes redundant settlement quorum operator-distinct. Focused settlement and storage tests
 cover same-operator miner-address agreement staying delayed, distinct-operator agreement settling, delay
 records preserving both agreeing miner and operator counts, and chain-state roundtrip persistence.

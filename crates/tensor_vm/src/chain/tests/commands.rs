@@ -474,7 +474,7 @@ fn chain_engine_rejects_invalid_or_conflicting_program_bodies() {
 }
 
 #[test]
-fn generic_credit_rewards_release_only_after_maturity() {
+fn generic_credit_rewards_claim_only_after_maturity() {
     let beacon = hash_bytes(b"test", &[b"delayed-credit-reward"]);
     let mut chain = Chain::with_params(
         ChainParams {
@@ -507,26 +507,27 @@ fn generic_credit_rewards_release_only_after_maturity() {
         chain.apply_command(ChainCommand::ClaimReward(beneficiary)),
         Err(TvmError::InvalidReceipt("no reward to claim"))
     );
-    assert!(
-        chain
-            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
-            .unwrap()
-            .is_empty()
-    );
-
     chain.set_position_for_testing(claimable_at_height, 0);
-    let release_events = chain
-        .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(beneficiary))
         .unwrap();
-    assert!(release_events.contains(&ChainEvent::CreditRewardReleased {
+    assert!(claim_events.contains(&ChainEvent::CreditRewardReleased {
         claim_id,
         beneficiary,
         amount: 25,
     }));
-    assert!(release_events.contains(&ChainEvent::RewardCredited {
+    assert!(claim_events.contains(&ChainEvent::RewardCredited {
+        address: beneficiary,
+        amount: 25,
+    }));
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
         address: beneficiary,
         amount: 25,
     }));
     assert_eq!(chain.state().pending_credit_rewards().len(), 0);
-    assert_eq!(chain.state().rewards().balance(&beneficiary), 25);
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 0);
+    assert_eq!(
+        chain.state().accounts().get(&beneficiary).unwrap().balance,
+        25
+    );
 }

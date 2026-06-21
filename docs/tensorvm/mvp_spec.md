@@ -1429,7 +1429,7 @@ Receipt-derived miner and validator rewards are first recorded as pending claims
 claim stores an explicit awaiting-inclusion maturity state until the receipt has been included in
 blockspace, then converts to an inclusion-derived claimable height after at least
 `reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. Miner
-TensorWork activates only when the non-voided miner receipt claim is released. A valid block-check,
+TensorWork activates only when the non-voided miner receipt claim is claimed after maturity. A valid block-check,
 invalid-output, or data-unavailability challenge before maturity voids the affected miner and validator
 receipt claims, extends those claims to a state-rooted challenge hold height, and clears pending miner
 TensorWork; matured voided claims are pruned without crediting spendable reward balances.
@@ -1739,7 +1739,7 @@ miner_reward = miner_valid_tensorwork / sum(valid_tensorwork_by_miner) * miner_r
 ```
 
 Each receipt-level miner claim remains traceable and delayed. The miner's pending TensorWork becomes
-settled TensorWork only when that delayed claim is released.
+settled TensorWork only when that delayed claim is claimed after maturity.
 
 ### 25.4 Validator Rewards
 

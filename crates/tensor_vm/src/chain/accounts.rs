@@ -27,12 +27,12 @@ pub fn transfer(chain: &mut Chain, from: Address, to: Address, amount: u64) -> R
     Ok(())
 }
 
-pub fn claim_reward(chain: &mut Chain, address: Address) -> Result<()> {
+pub fn claim_reward(chain: &mut Chain, address: Address) -> Result<u64> {
     let reward = chain.state.rewards.balance(&address);
     if reward == 0 {
         return Err(TvmError::InvalidReceipt("no reward to claim"));
     }
     credit(chain, address, reward);
     chain.state.rewards.clear_balance(address);
-    Ok(())
+    Ok(reward)
 }

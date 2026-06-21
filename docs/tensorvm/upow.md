@@ -449,8 +449,12 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > explorer overview. Admitted receipts persist a finalized-beacon anchor, assignment seed, and validation
 > seed commitment; `ChainState::randomness_binding_evidence` reports the exact local seed domains,
 > commit→reveal ordering (`receipt_id + finalized_beacon_round` committed before validator/job/round seed
-> reveal), zero current-block-hash anchors, and consistency counts for persisted receipt anchors. External
-> drand round mapping and validator VRF construction remain TODO before claiming the full §10 construction.
+> reveal), zero current-block-hash anchors, and consistency counts for persisted receipt anchors. Local CPU
+> role runtimes can now ingest a configured deterministic drand-style external beacon fixture through
+> `ChainCommand::SubmitExternalRandomnessBeacon`, persist the state-rooted beacon record, and expose
+> observed/applied/skipped/failure counters plus external-beacon count/latest-round evidence through
+> status, explorer JSON, and the local checker. Public drand signature verification, external drand round
+> mapping, and validator VRF construction remain TODO before claiming the full §10 construction.
 
 ---
 
@@ -521,7 +525,7 @@ TensorBlock {
   availability.
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
-  and released only after its maturity height.
+  and claimable only after its maturity height.
 - Proposer rewards use an additional proposer-specific hold after the normal reward maturity delay. This
   keeps block rewards escrowed past the block-check fraud window so a disproven block voids the pending
   proposer claim before it can become spendable.
@@ -554,7 +558,7 @@ TensorBlock {
 > Appeal resolution is also chain-owned for the reward and stake sides: an upheld appeal keeps the delayed
 > validator receipt reward voided for normal pruning, while a reversed reward-void outcome reinstates the
 > pending claim, refunds the recorded stake slash from treasury back to validator stake, and still releases
-> the reward only through the normal maturity sweep.
+> the reward only through the normal beneficiary `ClaimReward` maturity sweep.
 > Chain state also exposes live economic calibration from current params and pending reward exposure. The
 > validator-audit view reports configured audit sampling probability, slash amount, non-voided pending
 > validator receipt reward exposure, required slashable bond, and pass/fail invariant. The broader
@@ -666,8 +670,10 @@ This section is non-normative guidance on how the spec components partition into
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.
 - [~] Beacon binding: local finalized-beacon receipt anchors now expose chain-owned seed-domain,
-  commit→reveal, and current-block-hash-ban evidence through status/explorer; external drand round ↔ epoch
-  mapping and validator VRF construction remain TODO (§10).
+  commit→reveal, and current-block-hash-ban evidence through status/explorer; local role runtimes now
+  ingest a deterministic drand-style external beacon fixture and expose checker-gated applied-record
+  evidence. Public drand verification, external drand round ↔ epoch mapping, and validator VRF construction
+  remain TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
 - [~] Retention evidence: selected-receipt block openings now anchor `expires_at_block` to receipt
   submission height plus the configured tensor-retention window, so delayed inclusion cannot extend the

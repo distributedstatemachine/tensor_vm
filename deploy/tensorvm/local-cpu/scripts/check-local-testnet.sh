@@ -8,6 +8,10 @@ COMPOSE_FILE="$BUNDLE_DIR/docker-compose.yml"
 RPC_PORT="${TENSORVM_LOCAL_CPU_RPC_PORT:-8545}"
 EXPLORER_PORT="${TENSORVM_LOCAL_CPU_EXPLORER_PORT:-8080}"
 AUTH_TOKEN="${TENSORVM_AUTH_TOKEN:-local-cpu-testnet-token}"
+EXPECTED_RANDOMNESS_BEACON_MODE="${TENSORVM_RANDOMNESS_BEACON_MODE:-local_deterministic}"
+EXPECTED_RANDOMNESS_BEACON_SOURCE_ID="${TENSORVM_RANDOMNESS_BEACON_SOURCE_ID:-local_drand_fixture_v1}"
+EXPECTED_RANDOMNESS_BEACON_ROUND="${TENSORVM_RANDOMNESS_BEACON_ROUND:-1000}"
+EXPECTED_RANDOMNESS_BEACON_SOURCE_LABEL="${EXPECTED_RANDOMNESS_BEACON_MODE}:${EXPECTED_RANDOMNESS_BEACON_SOURCE_ID}"
 TOPOLOGY_FILE="$SCRIPT_DIR/local-cpu-topology.sh"
 
 fail() {
@@ -170,6 +174,40 @@ if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
     print(value)
     sys.exit(0)
 sys.exit(1)
+	' "$key"
+}
+
+json_randomness_number() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)["randomness_binding_evidence"][sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+if isinstance(value, int) and not isinstance(value, bool) and value >= 0:
+    print(value)
+    sys.exit(0)
+sys.exit(1)
+' "$key"
+}
+
+json_randomness_bool() {
+  key="$1"
+  document="$2"
+  printf '%s\n' "$document" | python3 -c '
+import json
+import sys
+
+try:
+    value = json.load(sys.stdin)["randomness_binding_evidence"][sys.argv[1]]
+except (KeyError, TypeError, json.JSONDecodeError):
+    sys.exit(1)
+print("true" if value is True else "false" if value is False else "")
+sys.exit(0 if isinstance(value, bool) else 1)
 ' "$key"
 }
 
@@ -495,6 +533,10 @@ LIVE_PENDING_PROPOSER_REWARD_COUNT=0
 LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=0
 LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=0
 LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=0
+LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS=0
+LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND=0
+LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED=true
+LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT=false
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_CHAIN_HEAD=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/chain/head")
@@ -513,6 +555,10 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=$(json_future_pending_reward_count receipt "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=$(json_future_pending_reward_count proposer "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
   LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS=$(json_future_pending_reward_count challenge "$LIVE_HEIGHT" "$LIVE_OVERVIEW")
+  LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS=$(json_randomness_number external_beacon_record_count "$LIVE_OVERVIEW")
+  LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND=$(json_randomness_number latest_external_beacon_round "$LIVE_OVERVIEW")
+  LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED=$(json_randomness_bool current_block_hash_randomness_allowed "$LIVE_OVERVIEW")
+  LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT=$(json_randomness_bool all_receipt_anchors_consistent "$LIVE_OVERVIEW")
   LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
   LIVE_TENSOR_OP_RECEIPT_COUNT=$(json_string_field_count primitive_type tensor_op "$LIVE_RECEIPTS")
@@ -532,7 +578,11 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] \
     && [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] \
     && [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] \
-    && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ]; then
+    && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] \
+    && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] \
+    && [ "${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND:-0}" -ge "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] \
+    && [ "$LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED" = "false" ] \
+    && [ "$LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT" = "true" ]; then
     break
   fi
   attempt=$((attempt + 1))
@@ -555,6 +605,10 @@ done
 [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims"
 [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not add delayed challenge rewards"
 [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not expose future-maturity pending challenge reward claims"
+[ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] || fail "live runtime did not persist an external randomness beacon record"
+[ "${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND:-0}" -ge "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] || fail "live runtime did not expose the configured external randomness beacon round"
+[ "$LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED" = "false" ] || fail "randomness evidence allowed current-block-hash randomness"
+[ "$LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT" = "true" ] || fail "randomness evidence did not report consistent receipt anchors"
 
 LIVE_TENSOR=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/tensor/latest")
 LIVE_TENSOR_ID=$(json_string tensor_id "$LIVE_TENSOR")
@@ -765,6 +819,8 @@ LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
 LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
 LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
 LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
+LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS=0
+LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED=0
 attempt=0
 while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   CONVERGED_OPERATOR_COUNT=0
@@ -780,6 +836,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS=0
   LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=0
   LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=0
+  LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS=0
+  LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED=0
   STATUS_MISMATCH=false
   for service in $EXPECTED_SERVICES; do
     if STATUS_RAW=$(read_service_status "$service"); then
@@ -837,6 +895,17 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=$(status_value role_validator_fallback_blocks_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED=$(status_value role_validator_receipts_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED=$(status_value role_validator_block_votes_submitted "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACON_MODE=$(status_value role_randomness_beacon_mode "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACON_CONFIGURED=$(status_value role_randomness_beacon_configured "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACON_SOURCE=$(status_value role_randomness_beacon_configured_source "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACON_ROUND=$(status_value role_randomness_beacon_configured_round "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACONS_OBSERVED=$(status_value role_randomness_beacons_observed "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACONS_APPLIED=$(status_value role_randomness_beacons_applied "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACONS_SKIPPED=$(status_value role_randomness_beacons_skipped "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_BEACON_FAILURES=$(status_value role_randomness_beacon_failures "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_LATEST_SOURCE_ID=$(status_value role_randomness_latest_source_id "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_LATEST_ROUND=$(status_value role_randomness_latest_round "$STATUS")
+    SERVICE_ROLE_RANDOMNESS_LAST_ERROR=$(status_value role_randomness_last_error "$STATUS")
     SERVICE_ROLE_LOCAL_PRODUCER=$(status_value role_local_producer "$STATUS")
     SERVICE_ROLE_PRODUCED_BLOCKS=$(status_value role_produced_blocks "$STATUS")
     SERVICE_ROLE_NETWORK_APPLIED_BLOCKS=$(status_value role_network_applied_blocks "$STATUS")
@@ -1000,6 +1069,19 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACON_MODE" = "$EXPECTED_RANDOMNESS_BEACON_MODE" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACON_CONFIGURED" = "true" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACON_SOURCE" = "$EXPECTED_RANDOMNESS_BEACON_SOURCE_LABEL" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACON_ROUND" -eq "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACONS_OBSERVED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACONS_SKIPPED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_BEACON_FAILURES" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_LATEST_SOURCE_ID" = "$EXPECTED_RANDOMNESS_BEACON_SOURCE_ID" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_LATEST_ROUND" -eq "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_RANDOMNESS_LAST_ERROR" = "none" ] || { STATUS_MISMATCH=true; continue; }
+    LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS=$((LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS + 1))
+    LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED=$((LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED + SERVICE_ROLE_RANDOMNESS_BEACONS_APPLIED))
     if [ "$SERVICE_ROLE_LOCAL_PRODUCER" != "true" ]; then
       [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
       [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" != "none" ] || { STATUS_MISMATCH=true; continue; }
@@ -1270,6 +1352,8 @@ done
 [ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
 [ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges"
 [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
+[ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators applied the configured local randomness beacon"
+[ "$LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED" -ge "$EXPECTED_SERVICE_COUNT" ] || fail "operator randomness beacon apply total did not cover all operators"
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1310,6 +1394,10 @@ live_delayed_receipt_reward_claims=${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS}
 live_delayed_proposer_reward_claims=${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS}
 live_pending_challenge_rewards=${LIVE_PENDING_CHALLENGE_REWARD_COUNT}
 live_delayed_challenge_reward_claims=${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS}
+live_external_randomness_beacon_records=${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS}
+live_latest_external_randomness_beacon_round=${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND}
+live_randomness_current_block_hash_allowed=${LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED}
+live_randomness_receipt_anchors_consistent=${LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT}
 all_operator_status_count=${EXPECTED_SERVICE_COUNT}
 all_operator_min_height=${ALL_OPERATOR_MIN_HEIGHT}
 all_operator_first_live_block_hash=${ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH}
@@ -1345,6 +1433,8 @@ live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_P
 live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}
 live_role_network_block_check_challenges=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES}
 live_role_network_block_check_challenges_applied=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED}
+live_role_randomness_beacon_operators=${LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS}
+live_role_randomness_beacons_applied=${LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED}
 live_role_owned_miner_receipts=true
 live_role_owned_validator_attestations=true
 single_local_producer=true
@@ -1359,6 +1449,7 @@ finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}
 block_vote_finality_evidence=${BLOCK_FINALITY_VOTE_EVIDENCE}
 live_validator_proposer_networking=false
 live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
+live_external_randomness_beacon_evidence=$([ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_block_vote_networking=true
 all_non_producer_network_applied_blocks=true
 all_non_producer_network_block_payload_ingestion=true

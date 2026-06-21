@@ -277,6 +277,7 @@ fn miner_role_tick_keeps_missing_graph_artifacts_pending_without_exiting() {
             0,
         )
         .unwrap(),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     let mut services = start_runtime_services(&config).unwrap();
     let mut runtime_state = NodeRuntimeState::default();

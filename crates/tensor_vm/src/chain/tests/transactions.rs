@@ -62,23 +62,32 @@ fn chain_applies_register_transfer_and_claim_reward_transactions() {
         Err(TvmError::InvalidReceipt("no reward to claim"))
     );
     chain.set_position_for_testing(claimable_at_height, 0);
-    assert!(
-        chain
-            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
-            .unwrap()
-            .contains(&ChainEvent::RewardCredited {
-                address: miner,
-                amount: 42,
-            })
-    );
+    let claim_id = chain
+        .state()
+        .pending_credit_rewards()
+        .keys()
+        .next()
+        .copied()
+        .unwrap();
     assert_eq!(
         chain
             .apply_transaction(None, Transaction::ClaimReward(miner))
             .unwrap(),
-        vec![ChainEvent::RewardClaimed {
-            address: miner,
-            amount: 42,
-        }]
+        vec![
+            ChainEvent::CreditRewardReleased {
+                claim_id,
+                beneficiary: miner,
+                amount: 42,
+            },
+            ChainEvent::RewardCredited {
+                address: miner,
+                amount: 42,
+            },
+            ChainEvent::RewardClaimed {
+                address: miner,
+                amount: 42,
+            },
+        ]
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 417);

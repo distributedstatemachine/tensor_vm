@@ -12,8 +12,8 @@ use tensor_vm::{
     ValidatorAttestation, VerificationResult,
     api::P2pMessage,
     app::{
-        RoleRuntimeLoop, RuntimeRole, ServiceRuntimeConfig, local_cpu_seed_beacon,
-        runtime_node_config,
+        RandomnessBeaconRuntimeConfig, RoleRuntimeLoop, RuntimeRole, ServiceRuntimeConfig,
+        local_cpu_seed_beacon, runtime_node_config,
     },
     encode_attestation_payload, encode_job_payload, encode_receipt_payload,
     hash::hex,

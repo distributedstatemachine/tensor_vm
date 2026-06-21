@@ -8,6 +8,7 @@ mod miner_role;
 mod network;
 mod operator_checks;
 mod operator_validation;
+mod randomness_beacon;
 mod role_services;
 mod runtime_config;
 mod runtime_loop;
@@ -41,6 +42,10 @@ pub use network::{
     produce_and_publish_synthetic_job, produce_and_publish_synthetic_round,
     produce_and_publish_synthetic_work, publish_new_chain_announcements,
     publish_observed_block_check_challenge, publish_validator_block_proposal,
+};
+pub use randomness_beacon::{
+    RandomnessBeaconMode, RandomnessBeaconRuntimeConfig, randomness_beacon_hash_label,
+    randomness_beacon_source_label, tick_randomness_beacon_once,
 };
 pub use role_services::RoleServiceRunner;
 pub use runtime_config::{

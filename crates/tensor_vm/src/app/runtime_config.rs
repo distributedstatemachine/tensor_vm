@@ -6,6 +6,8 @@ use crate::{
     types::{Address, address},
 };
 
+use super::RandomnessBeaconRuntimeConfig;
+
 #[derive(Clone, Copy, Debug)]
 pub struct RoleServiceConfig<'a> {
     pub wallet: &'a str,
@@ -88,6 +90,14 @@ pub struct ServiceRuntimeConfig {
     pub role: RuntimeRole,
     pub role_wallet_address: Option<Address>,
     pub node: NodeConfig,
+    pub randomness_beacon: RandomnessBeaconRuntimeConfig,
+}
+
+impl ServiceRuntimeConfig {
+    pub fn randomness_beacon_from_env(mut self) -> std::result::Result<Self, String> {
+        self.randomness_beacon = RandomnessBeaconRuntimeConfig::from_env()?;
+        Ok(self)
+    }
 }
 
 pub fn role_wallet_address(wallet: &str) -> std::result::Result<Address, String> {

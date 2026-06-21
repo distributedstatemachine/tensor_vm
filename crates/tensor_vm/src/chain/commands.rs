@@ -66,9 +66,10 @@ impl ChainEngine for Chain {
                 }])
             }
             ChainCommand::ClaimReward(address) => {
-                let amount = self.state.rewards.balance(&address);
-                accounts::claim_reward(self, address)?;
-                Ok(vec![ChainEvent::RewardClaimed { address, amount }])
+                let mut events = claim_matured_rewards_for_beneficiary(&mut self.state, address);
+                let amount = accounts::claim_reward(self, address)?;
+                events.push(ChainEvent::RewardClaimed { address, amount });
+                Ok(events)
             }
             ChainCommand::RegisterProgramBody { graph_id, bytes } => {
                 receipts::register_program_body(self, graph_id, bytes)?;
@@ -360,19 +361,62 @@ impl ChainEngine for Chain {
 }
 
 pub(super) fn release_all_matured_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
-    let mut events = release_matured_proposer_rewards(state);
-    events.extend(release_matured_receipt_rewards_for_block_transition(state));
-    events.extend(release_matured_challenge_rewards(state));
-    events.extend(release_matured_credit_rewards(state));
+    prune_matured_voided_rewards(state)
+}
+
+fn claim_matured_rewards_for_beneficiary(
+    state: &mut ChainState,
+    beneficiary: Address,
+) -> Vec<ChainEvent> {
+    let mut events =
+        release_matured_proposer_rewards_for_beneficiary(state, Some(beneficiary), false);
+    events.extend(release_matured_receipt_rewards_with_policy(
+        state,
+        true,
+        true,
+        Some(beneficiary),
+    ));
+    events.extend(release_matured_challenge_rewards_for_beneficiary(
+        state,
+        Some(beneficiary),
+        false,
+    ));
+    events.extend(release_matured_credit_rewards_for_beneficiary(
+        state,
+        Some(beneficiary),
+    ));
+    events
+}
+
+fn prune_matured_voided_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    let mut events = Vec::new();
+    events.extend(release_matured_proposer_rewards_for_beneficiary(
+        state, None, true,
+    ));
+    events.extend(release_matured_challenge_rewards_for_beneficiary(
+        state, None, true,
+    ));
     events
 }
 
 fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    release_matured_proposer_rewards_for_beneficiary(state, None, false)
+}
+
+fn release_matured_proposer_rewards_for_beneficiary(
+    state: &mut ChainState,
+    beneficiary: Option<Address>,
+    voided_only: bool,
+) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
         .pending_proposer_rewards
         .iter()
-        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .filter(|(_, reward)| {
+            reward.claimable_at_height <= state.height
+                && beneficiary.is_none_or(|address| reward.proposer == address)
+                && (!voided_only || reward.voided_by_challenge)
+        })
         .map(|(height, reward)| {
             (
                 *height,
@@ -402,17 +446,14 @@ fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
 }
 
 fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
-    release_matured_receipt_rewards_with_policy(state, true, false)
-}
-
-fn release_matured_receipt_rewards_for_block_transition(state: &mut ChainState) -> Vec<ChainEvent> {
-    release_matured_receipt_rewards_with_policy(state, false, true)
+    release_matured_receipt_rewards_with_policy(state, true, false, None)
 }
 
 fn release_matured_receipt_rewards_with_policy(
     state: &mut ChainState,
     prune_voided: bool,
     hold_unresolved_validator_audits: bool,
+    beneficiary_filter: Option<Address>,
 ) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
@@ -424,6 +465,7 @@ fn release_matured_receipt_rewards_with_policy(
                 && (prune_voided || !reward.voided_by_challenge)
                 && !(hold_unresolved_validator_audits
                     && unresolved_validator_audit_blocks_reward_release(state, reward))
+                && beneficiary_filter.is_none_or(|beneficiary| reward.beneficiary == beneficiary)
         })
         .map(|(claim_id, reward)| {
             (
@@ -508,11 +550,23 @@ fn release_pending_miner_tensor_work(
 }
 
 fn release_matured_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    release_matured_challenge_rewards_for_beneficiary(state, None, false)
+}
+
+fn release_matured_challenge_rewards_for_beneficiary(
+    state: &mut ChainState,
+    beneficiary: Option<Address>,
+    voided_only: bool,
+) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
         .pending_challenge_rewards
         .iter()
-        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .filter(|(_, reward)| {
+            reward.claimable_at_height <= state.height
+                && beneficiary.is_none_or(|beneficiary| reward.challenger == beneficiary)
+                && (!voided_only || reward.voided_by_challenge)
+        })
         .map(|(claim_id, reward)| {
             (
                 *claim_id,
@@ -544,11 +598,21 @@ fn release_matured_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> 
 }
 
 fn release_matured_credit_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+    release_matured_credit_rewards_for_beneficiary(state, None)
+}
+
+fn release_matured_credit_rewards_for_beneficiary(
+    state: &mut ChainState,
+    beneficiary: Option<Address>,
+) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
         .pending_credit_rewards
         .iter()
-        .filter(|(_, reward)| reward.claimable_at_height <= state.height)
+        .filter(|(_, reward)| {
+            reward.claimable_at_height <= state.height
+                && beneficiary.is_none_or(|beneficiary| reward.beneficiary == beneficiary)
+        })
         .map(|(claim_id, reward)| (*claim_id, reward.beneficiary, reward.amount))
         .collect::<Vec<_>>();
     for (claim_id, beneficiary, amount) in matured {

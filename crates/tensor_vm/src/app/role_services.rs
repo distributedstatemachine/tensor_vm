@@ -1,6 +1,6 @@
 use super::{
-    RoleServiceConfig, RuntimeRole, ServiceRuntimeConfig, role_wallet_address,
-    run_role_runtime_loop, runtime_node_config,
+    RandomnessBeaconRuntimeConfig, RoleServiceConfig, RuntimeRole, ServiceRuntimeConfig,
+    role_wallet_address, run_role_runtime_loop, runtime_node_config,
 };
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -55,7 +55,7 @@ impl RoleServiceRunner {
         config: RoleServiceConfig<'_>,
     ) -> std::result::Result<ServiceRuntimeConfig, String> {
         let role = self.runtime_role();
-        Ok(ServiceRuntimeConfig {
+        ServiceRuntimeConfig {
             runtime_command: self.runtime_command(),
             role,
             role_wallet_address: Some(role_wallet_address(config.wallet)?),
@@ -68,7 +68,9 @@ impl RoleServiceRunner {
                 config.auth_token,
                 config.max_requests,
             )?,
-        })
+            randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
+        }
+        .randomness_beacon_from_env()
     }
 
     pub fn run(self, config: RoleServiceConfig<'_>) -> std::result::Result<String, String> {

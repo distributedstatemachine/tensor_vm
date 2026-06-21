@@ -163,29 +163,28 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   explicit full reward-maturity delay plus a proposer-specific hold, with fallback claims carrying the reduced reward amount. Pending
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
   Receipt, challenge, and generic credit reward claims are state-rooted and persisted. Receipt rewards
-  release only after the receipt is included in canonical blockspace and the inclusion-based maturity
-  height has elapsed; pre-inclusion receipt claims do not carry a normal claimable height, so the reward
-  delay is modeled directly instead of relying on a mature-but-unincluded release guard. Challenge and
-  generic credit claims release only after their own maturity heights.
+  become claimable only after the receipt is included in canonical blockspace and the inclusion-based
+  maturity height has elapsed; pre-inclusion receipt claims do not carry a normal claimable height, so the
+  reward delay is modeled directly instead of relying on a mature-but-unincluded release guard. Challenge
+  and generic credit claims become claimable only after their own maturity heights.
   Command, transaction, and telemetry coverage now exercise generic rewards through the pending credit
-  ledger and mature-release command instead of a direct spendable reward-credit test helper.
+  ledger and delayed claim path instead of a direct spendable reward-credit test helper.
   Challenge bounty spendability is separate from proposer penalty duration.
   Normal block transitions first apply the current block's receipt-inclusion
-  delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the
-  shared chain transition instead of requiring adapter-side release workarounds; focused producer/peer
-  regression coverage now proves included receipt rewards release through canonical block application
-  without a manual release command. Voided proposer, receipt,
-  and challenge claims are pruned without credit. Receipt claims are explicitly delayed as voided
+  delays and slash/audit voiding, then preserve still-matured non-voided claims as pending state until the
+  beneficiary submits `ClaimReward`; focused producer/peer regression coverage now proves included receipt
+  rewards do not auto-credit during canonical block application. Voided proposer and challenge claims are
+  pruned without credit after maturity. Receipt claims are explicitly delayed as voided
   challenge-held claims if block-check, invalid-output, or data-unavailability evidence succeeds before
-  release, and blocks with the old spendable-only reward root are rejected.
+  claim, and blocks with the old spendable-only reward root are rejected.
   Slashed validators can submit signed, bounded mandatory-audit appeal records through the shared chain
   command path; those records are tied to an existing audit slash, accepted only from the slashed
   validator before the audit appeal deadline, committed in the state root, and persisted in chain-state
   snapshots. Audit slashes now keep the affected validator's voided pending receipt reward claim held
   through that appeal deadline before it can be pruned without credit. Appeal resolution can now uphold the
   slash-side reward void or reverse it; reversed outcomes restore the pending validator receipt claim,
-  refund the recorded stake slash from treasury back to validator stake, and still require the normal
-  maturity sweep before spendable reward credit. Chain state
+  refund the recorded stake slash from treasury back to validator stake, and still require beneficiary
+  `ClaimReward` after maturity before spendable reward credit. Chain state
   now also exposes live validator-audit economic calibration plus a broader implemented-path fraud
   calibration view covering validator-audit, miner data-unavailability, invalid-output, and
   block-check/proposer clawback paths; service status and explorer overview render required slashable bonds, aggregate
@@ -195,8 +194,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   delayed through the configured challenge window and active audit window before spendability.
   Late assigned invalid-output attestations now contest already settled receipts by removing the receipt
   from the settled set, marking it challenged, recording a state-rooted miner stake slash, crediting
-  treasury, and extending voided pending receipt reward claims to a challenge hold height before any
-  mature release can credit spendable balances.
+  treasury, and extending voided pending receipt reward claims to a challenge hold height before they can
+  be pruned without credit.
   `ChainState::detection_probability_evidence` now derives structured verifier/fraud-path detection
   evidence from current params, live TensorOp and LinearTrainingStep job shapes, graph-job counts, and
   chain-state fraud counters; service status and explorer overview expose per-mechanism detection bps,
@@ -220,7 +219,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
 - Chain-owned delayed miner TensorWork activation: settlement records newly settled receipt TWU as pending
   miner TensorWork, allocates miner rewards proportionally by raw receipt TWU, and activates settled
-  TensorWork only when the matching non-voided miner receipt reward is released after inclusion and
+  TensorWork only when the matching non-voided miner receipt reward is claimed after inclusion and
   maturity; invalid-output, data-unavailability, and block-check paths clear pending work when rewards are
   voided.
 - Chain parameters, chain state, block/vote, job/receipt, account, miner, validator, reward, model, and
@@ -270,8 +269,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   strictly newer externally observed beacon rounds as state-rooted `ExternalRandomnessBeaconRecord` entries,
   advances finalized beacon randomness for future receipt anchors, persists those records through
   chain-state snapshots, and exposes external beacon count/latest-round evidence through status and explorer
-  JSON. Live drand service wiring, public VRF attestations, and deployed commit-reveal lifecycle evidence
-  remain open.
+  JSON. Local CPU role runtimes now ingest the configured deterministic drand-style fixture through that
+  command before network/role work, persist accepted records, expose observed/applied/skipped/failure
+  counters through role and node status, and the local checker gates the external-beacon record plus
+  current-block-hash-ban evidence. Public drand signature verification, public VRF attestations, p2p beacon
+  relay, and deployed commit-reveal lifecycle evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

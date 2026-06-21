@@ -126,6 +126,13 @@ pub struct NodeRuntimeState {
     validator_remote_tensor_fetch_failures: usize,
     validator_remote_tensor_fetch_bytes: usize,
     validator_remote_tensors_inserted: usize,
+    randomness_beacons_observed: usize,
+    randomness_beacons_applied: usize,
+    randomness_beacons_skipped: usize,
+    randomness_beacon_failures: usize,
+    randomness_latest_source_id: String,
+    randomness_latest_round: u64,
+    randomness_last_error: String,
 }
 
 impl NodeRuntimeState {
@@ -275,6 +282,34 @@ impl NodeRuntimeState {
 
     pub fn validator_remote_tensors_inserted(&self) -> usize {
         self.validator_remote_tensors_inserted
+    }
+
+    pub fn randomness_beacons_observed(&self) -> usize {
+        self.randomness_beacons_observed
+    }
+
+    pub fn randomness_beacons_applied(&self) -> usize {
+        self.randomness_beacons_applied
+    }
+
+    pub fn randomness_beacons_skipped(&self) -> usize {
+        self.randomness_beacons_skipped
+    }
+
+    pub fn randomness_beacon_failures(&self) -> usize {
+        self.randomness_beacon_failures
+    }
+
+    pub fn randomness_latest_source_id(&self) -> &str {
+        &self.randomness_latest_source_id
+    }
+
+    pub fn randomness_latest_round(&self) -> u64 {
+        self.randomness_latest_round
+    }
+
+    pub fn randomness_last_error(&self) -> &str {
+        &self.randomness_last_error
     }
 
     pub fn record_served_request(&mut self) {
@@ -429,6 +464,39 @@ impl NodeRuntimeState {
             .validator_remote_tensors_inserted
             .saturating_add(tensors_inserted);
     }
+
+    pub fn record_randomness_beacon_observed(&mut self, source_id: &str, beacon_round: u64) {
+        self.randomness_beacons_observed = self.randomness_beacons_observed.saturating_add(1);
+        self.randomness_latest_source_id = source_id.to_owned();
+        self.randomness_latest_round = beacon_round;
+        self.randomness_last_error.clear();
+    }
+
+    pub fn record_randomness_beacon_applied(&mut self, source_id: &str, beacon_round: u64) {
+        self.randomness_beacons_applied = self.randomness_beacons_applied.saturating_add(1);
+        self.randomness_latest_source_id = source_id.to_owned();
+        self.randomness_latest_round = beacon_round;
+        self.randomness_last_error.clear();
+    }
+
+    pub fn record_randomness_beacon_skipped(&mut self, source_id: &str, beacon_round: u64) {
+        self.randomness_beacons_skipped = self.randomness_beacons_skipped.saturating_add(1);
+        self.randomness_latest_source_id = source_id.to_owned();
+        self.randomness_latest_round = beacon_round;
+        self.randomness_last_error.clear();
+    }
+
+    pub fn record_randomness_beacon_failure(
+        &mut self,
+        source_id: &str,
+        beacon_round: u64,
+        error: &str,
+    ) {
+        self.randomness_beacon_failures = self.randomness_beacon_failures.saturating_add(1);
+        self.randomness_latest_source_id = source_id.to_owned();
+        self.randomness_latest_round = beacon_round;
+        self.randomness_last_error = error.to_owned();
+    }
 }
 
 #[cfg(test)]
@@ -513,6 +581,17 @@ mod tests {
         assert_eq!(state.validator_remote_tensor_fetch_failures(), 1);
         assert_eq!(state.validator_remote_tensor_fetch_bytes(), 128);
         assert_eq!(state.validator_remote_tensors_inserted(), 2);
+        state.record_randomness_beacon_observed("fixture", 7);
+        state.record_randomness_beacon_applied("fixture", 7);
+        state.record_randomness_beacon_skipped("fixture", 7);
+        state.record_randomness_beacon_failure("fixture", 8, "bad proof");
+        assert_eq!(state.randomness_beacons_observed(), 1);
+        assert_eq!(state.randomness_beacons_applied(), 1);
+        assert_eq!(state.randomness_beacons_skipped(), 1);
+        assert_eq!(state.randomness_beacon_failures(), 1);
+        assert_eq!(state.randomness_latest_source_id(), "fixture");
+        assert_eq!(state.randomness_latest_round(), 8);
+        assert_eq!(state.randomness_last_error(), "bad proof");
     }
 
     #[test]

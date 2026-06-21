@@ -457,8 +457,8 @@ mod tests {
     use super::*;
     use crate::{
         chain::{
-            BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainParams, JobState,
-            ReceiptState, TensorBlock, ValidatorAuditReport,
+            BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainEvent, ChainParams,
+            JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
         },
         challenge::{BlockCheckChallenge, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
@@ -1179,6 +1179,7 @@ mod tests {
                 .saturating_add(apply_chain.params().reward_maturity_delay_blocks())
         );
         let challenge_reward_claimable_at_height = pending_reward.claimable_at_height;
+        let challenge_reward_claim_id = pending_reward.claim_id;
         assert_eq!(
             apply_chain.state().rewards().balance(&challenge.challenger),
             0
@@ -1194,15 +1195,30 @@ mod tests {
             0
         );
         apply_chain.set_position_for_testing(challenge_reward_claimable_at_height, 1);
-        assert_eq!(
-            apply_chain
-                .release_matured_challenge_rewards()
-                .unwrap()
-                .len(),
-            2
-        );
+        let claim_events = apply_chain
+            .apply_command(ChainCommand::ClaimReward(challenge.challenger))
+            .unwrap();
+        assert!(claim_events.contains(&ChainEvent::ChallengeRewardReleased {
+            claim_id: challenge_reward_claim_id,
+            challenge_id,
+            challenger: challenge.challenger,
+            amount: 500,
+        }));
+        assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+            address: challenge.challenger,
+            amount: 500,
+        }));
         assert_eq!(
             apply_chain.state().rewards().balance(&challenge.challenger),
+            0
+        );
+        assert_eq!(
+            apply_chain
+                .state()
+                .accounts()
+                .get(&challenge.challenger)
+                .unwrap()
+                .balance,
             500
         );
         assert_eq!(

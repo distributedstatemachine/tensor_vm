@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 131 complete - reward maturity boundary cleanup.
+- Active feature: Iteration 133 complete locally - claim-owned delayed reward release.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -14,9 +14,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
-  and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
-  Block application now advances the child state height before sweeping matured claims, so delayed rewards
-  release on the transition that reaches their claim height instead of relying on an extra follow-up sweep.
+  and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before claim.
+  Reward maturity now makes state-rooted pending claims claimable, but spendable credit is owned by
+  `ClaimReward` instead of automatic block-transition release.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
   awaiting-inclusion rewards into a synthetic claim height, and the internal receipt reward claim-height
   API now returns no height for awaiting-inclusion claims instead of a sentinel workaround.
@@ -45,8 +45,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: broaden local delayed reward/fallback evidence into public/CUDA deployment runs, live
-  drand/VRF wiring, multi-validator proposer competition, and full interactive transcript disputes.
+- Next action: broaden public/CUDA deployment runs, public drand/VRF proofing, multi-validator proposer
+  competition, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -63,42 +63,46 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; status/explorer/checker expose seed-domain, external beacon count/latest round, role applied counters, and block-hash-ban evidence | Add public drand verification, validator VRF construction, p2p beacon relay, and deployed commit-reveal lifecycle |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, claim-owned spendability, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
+### Iteration 133: Claim-Owned Delayed Reward Release
+
+Feature capability: keep matured rewards as state-rooted pending claims until the beneficiary submits
+`ClaimReward`, removing block-transition auto-credit as the reward-release workaround.
+Implementation result: `ClaimReward(beneficiary)` now sweeps matured non-void proposer, receipt, challenge,
+and credit claims into `RewardState`, credits the account, and clears the reward balance in one command.
+Block transition no longer auto-promotes matured non-void claims; it only prunes matured voided
+proposer/challenge claims. Explicit low-level release commands remain for direct chain API/test coverage.
+Validation evidence: Gate 0 first command passed; focused reward/command/transaction/settlement/challenge/
+attestation/payload/runtime-role tests passed; `cargo fmt --check --all`, `git diff --check`,
+`cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`,
+`cargo test --workspace --release`, final Gate 0, compose config, Docker build, Docker `up --wait`,
+checker, and Docker `down -v` passed. The live checker reported
+`live_delayed_receipt_reward_claims=18`, `live_delayed_proposer_reward_claims=1`,
+`live_delayed_challenge_reward_claims=1`, plus external beacon evidence. Coverage regeneration remained
+blocked by missing `cargo-tarpaulin`.
+
+### Iteration 132: Local External Beacon Runtime Wiring
+
+Feature capability: local role runtimes ingest a configured deterministic drand-style beacon through
+`ChainCommand::SubmitExternalRandomnessBeacon`, persist accepted state, and expose status/checker evidence.
+Validation evidence: Gate 0 ultimately passed after an empty status value fix; focused runtime/status,
+randomness, service-status, local CPU compose, shell syntax, and compose config checks passed; broad fmt,
+diff, `cargo test -p tensor_vm --quiet`, clippy, workspace release, final Gate 0, and Docker
+build/up/check/down passed with `live_external_randomness_beacon_records=1`,
+`live_latest_external_randomness_beacon_round=1000`, and `live_role_randomness_beacons_applied=15`.
+Coverage regeneration remained blocked by missing `cargo-tarpaulin`.
+
 ### Iteration 131: Reward Maturity Boundary Cleanup
 
 Feature capability: make delayed rewards release at the protocol claim height during normal block
-application instead of depending on a one-block workaround or manual post-height sweep.
-Readiness requirements covered: chain-owned economics, delayed reward finality, reward-root binding, and
-local no-shortcut reward evidence.
-Files/modules touched: block state transition, reward transition tests, and this plan.
-Parallel subagents run: previously launched read-only randomness subagents completed; this user-directed
-slice stayed single-writer because it touches one consensus transition path.
-Tests/checkers/docs to add or update: proposer/fallback reward transition assertions and this plan.
-Narrow validation commands: focused proposer, receipt, and fallback reward transition tests.
-Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
-final Gate 0, and tarpaulin attempt if available.
-Expected observable evidence: a reward claim with `claimable_at_height = H` is released by the block
-transition whose child state reaches height `H`, with producer and peer states remaining identical.
-Out of scope: public/CUDA deployment evidence, live drand/VRF wiring, and new reward ledgers.
-Split trigger: any reward-root, storage, or Docker local-testnet regression would split this into a deeper
-economics audit before commit.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused checks passed: `cargo test -p tensor_vm --lib block_transition_releases_matured_rewards_without_manual_command -- --nocapture`,
-  `cargo test -p tensor_vm --lib block_transition_releases_matured_receipt_rewards_without_manual_command -- --nocapture`,
-  `cargo test -p tensor_vm --lib mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply -- --nocapture`,
-  and `cargo test -p tensor_vm --lib fallback_proposer_reward_uses_explicit_maturity_delay -- --nocapture`.
-- Broad checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --lib`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-  final `cargo test -p tensor_vm local_testnet --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
+application instead of depending on a one-block/manual sweep workaround. Validation evidence: Gate 0,
+focused proposer/receipt/fallback/audit reward tests, fmt, diff check, tensor_vm lib tests, clippy,
+workspace release tests, and final Gate 0 passed; tarpaulin remained unavailable.
 
 ## Recent Iterations
 
@@ -225,20 +229,9 @@ error: no such command: `tarpaulin`
 
 ## Archive
 
-- Iterations 75-83: diagnostic block-check challenge path, fallback timeout, inclusion-gated and
-  chain-owned reward release, and receipt-bound validation seed landed in commits `8787912`, `40f14d5`,
-  `06be27e`, `f5a0aa2`, `1647a47`, `8ce051f`, `e08f7c9`, and related evidence commits.
-- Iterations 84-86: validator-audit stake-slash reversal, audit-window reward escrow, and fraud-path
-  economic calibration landed in commits `1feeb1d`, `ea230b3`, `5df4870`, `1116beb`, and `abf78d1`.
-- Iterations 87-93: delayed block-check proposer rewards, competing-head fork choice, receipt fraud
-  exposure, chain-owned randomness binding, explicit fraud-window delay, live detection probability, and
-  invalid-output reward voiding landed across commits including `1923692`, `1484592`, `ece08ff`,
-  `c6baaf5`, `31bcc49`, `5697593`, and `bf0d5fa`.
-- Iterations 94-103: side-branch storage/reorg, invalid-output miner stake slashing, role-owned graph
-  production, typed block-check openings, submission-anchored retention, and inclusion-started receipt
-  reward delay landed across commits including `c33ef38`, `695c66e`, `4d585f8`, `5af3fcf`, `8aef9bb`,
-  `aa2e9f3`, and `456ab81`.
-- Iterations 73-74: live validator-audit economic calibration and appeal reward-delay resolution landed in
-  commits `493191c`, `8dbb654`, `c8a6f9e`, `32fb557`, and `7026c94`.
+- Iterations 73-103: validator-audit calibration/appeal, diagnostic block-check challenges, fallback
+  timeout, receipt-bound randomness, fork choice/side-branch storage, invalid-output slashing, role-owned
+  graph production, typed block-check openings, retention deadlines, and inclusion-started reward delay
+  landed across the archived commits listed in earlier plan revisions.
 - Iterations 59-64: exact `clamp`, field `div`, split/einsum, registry/conformance guard, and graph
   verifier coverage landed across commits including `85a2956`, `d659e14`, and `b6e0887`.

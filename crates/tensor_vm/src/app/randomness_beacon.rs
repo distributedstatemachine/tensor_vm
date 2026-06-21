@@ -1,0 +1,194 @@
+use crate::{
+    ChainCommand, ChainEngine, NodeRuntimeState, NodeStore, RpcHttpServer,
+    hash::hex,
+    types::{Hash, hash_bytes, parse_hash_hex},
+};
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum RandomnessBeaconMode {
+    Off,
+    LocalDeterministic,
+}
+
+impl RandomnessBeaconMode {
+    pub fn label(self) -> &'static str {
+        match self {
+            Self::Off => "off",
+            Self::LocalDeterministic => "local_deterministic",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RandomnessBeaconRuntimeConfig {
+    pub mode: RandomnessBeaconMode,
+    pub source_id: String,
+    pub beacon_round: u64,
+    pub randomness: Hash,
+    pub proof_hash: Hash,
+}
+
+impl RandomnessBeaconRuntimeConfig {
+    pub fn off() -> Self {
+        Self {
+            mode: RandomnessBeaconMode::Off,
+            source_id: String::new(),
+            beacon_round: 0,
+            randomness: [0; 32],
+            proof_hash: [0; 32],
+        }
+    }
+
+    pub fn local_deterministic(source_id: impl Into<String>, beacon_round: u64) -> Self {
+        let source_id = source_id.into();
+        let round = beacon_round.to_le_bytes();
+        let randomness = hash_bytes(
+            b"tensor-vm-local-drand-fixture-randomness-v1",
+            &[source_id.as_bytes(), &round],
+        );
+        let proof_hash = hash_bytes(
+            b"tensor-vm-local-drand-fixture-proof-v1",
+            &[source_id.as_bytes(), &round, &randomness],
+        );
+        Self {
+            mode: RandomnessBeaconMode::LocalDeterministic,
+            source_id,
+            beacon_round,
+            randomness,
+            proof_hash,
+        }
+    }
+
+    pub fn from_env() -> std::result::Result<Self, String> {
+        let mode =
+            std::env::var("TENSORVM_RANDOMNESS_BEACON_MODE").unwrap_or_else(|_| "off".to_owned());
+        match mode.as_str() {
+            "" | "off" | "OFF" | "disabled" | "DISABLED" => Ok(Self::off()),
+            "local_deterministic" => {
+                let source_id = std::env::var("TENSORVM_RANDOMNESS_BEACON_SOURCE_ID")
+                    .unwrap_or_else(|_| "local_drand_fixture_v1".to_owned());
+                if source_id.trim().is_empty() {
+                    return Err(
+                        "TENSORVM_RANDOMNESS_BEACON_SOURCE_ID must not be empty in local_deterministic mode"
+                            .to_owned(),
+                    );
+                }
+                let beacon_round = std::env::var("TENSORVM_RANDOMNESS_BEACON_ROUND")
+                    .map_err(|_| {
+                        "TENSORVM_RANDOMNESS_BEACON_ROUND is required for local_deterministic mode"
+                            .to_owned()
+                    })?
+                    .parse::<u64>()
+                    .map_err(|error| {
+                        format!("invalid TENSORVM_RANDOMNESS_BEACON_ROUND: {error}")
+                    })?;
+                if beacon_round == 0 {
+                    return Err(
+                        "TENSORVM_RANDOMNESS_BEACON_ROUND must be greater than zero in local_deterministic mode"
+                            .to_owned(),
+                    );
+                }
+                let mut config = Self::local_deterministic(source_id, beacon_round);
+                if let Ok(randomness) = std::env::var("TENSORVM_RANDOMNESS_BEACON_RANDOMNESS") {
+                    config.randomness =
+                        parse_env_hash("TENSORVM_RANDOMNESS_BEACON_RANDOMNESS", &randomness)?;
+                }
+                if let Ok(proof_hash) = std::env::var("TENSORVM_RANDOMNESS_BEACON_PROOF_HASH") {
+                    config.proof_hash =
+                        parse_env_hash("TENSORVM_RANDOMNESS_BEACON_PROOF_HASH", &proof_hash)?;
+                }
+                Ok(config)
+            }
+            other => Err(format!(
+                "unsupported TENSORVM_RANDOMNESS_BEACON_MODE {other:?}; expected off or local_deterministic"
+            )),
+        }
+    }
+
+    pub fn enabled(&self) -> bool {
+        self.mode != RandomnessBeaconMode::Off
+    }
+}
+
+fn parse_env_hash(name: &str, value: &str) -> std::result::Result<Hash, String> {
+    parse_hash_hex(value).map_err(|error| format!("invalid {name}: {error:?}"))
+}
+
+pub fn tick_randomness_beacon_once(
+    config: &RandomnessBeaconRuntimeConfig,
+    store: &NodeStore,
+    server: &mut RpcHttpServer,
+    runtime_state: &mut NodeRuntimeState,
+) -> std::result::Result<bool, String> {
+    if !config.enabled() {
+        return Ok(false);
+    }
+    if runtime_state.randomness_latest_source_id() == config.source_id
+        && runtime_state.randomness_latest_round() == config.beacon_round
+        && runtime_state.randomness_beacons_observed() > 0
+    {
+        return Ok(false);
+    }
+    runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
+    let chain = &mut server.gateway_mut().node.chain;
+    if config.beacon_round <= chain.state().finalized_beacon_round()
+        || chain
+            .state()
+            .external_randomness_beacons()
+            .contains_key(&config.beacon_round)
+    {
+        runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
+        return Ok(true);
+    }
+    let command = ChainCommand::SubmitExternalRandomnessBeacon {
+        source_id: config.source_id.clone(),
+        beacon_round: config.beacon_round,
+        randomness: config.randomness,
+        proof_hash: config.proof_hash,
+    };
+    match chain.apply_command(command) {
+        Ok(_) => {
+            store.persist_chain(chain).map_err(|error| {
+                format!("failed to persist external randomness beacon: {error}")
+            })?;
+            runtime_state.record_randomness_beacon_applied(&config.source_id, config.beacon_round);
+            Ok(true)
+        }
+        Err(error) => {
+            runtime_state.record_randomness_beacon_failure(
+                &config.source_id,
+                config.beacon_round,
+                &error.to_string(),
+            );
+            Ok(true)
+        }
+    }
+}
+
+pub fn randomness_beacon_source_label(config: &RandomnessBeaconRuntimeConfig) -> String {
+    if !config.enabled() {
+        return "none".to_owned();
+    }
+    format!("{}:{}", config.mode.label(), config.source_id)
+}
+
+pub fn randomness_beacon_hash_label(hash: &Hash) -> String {
+    hex(hash)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn local_deterministic_beacon_config_is_stable() {
+        let left = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 7);
+        let right = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 7);
+        let changed = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 8);
+        assert_eq!(left, right);
+        assert_ne!(left.randomness, [0; 32]);
+        assert_ne!(left.proof_hash, [0; 32]);
+        assert_ne!(left.randomness, changed.randomness);
+        assert_eq!(left.mode.label(), "local_deterministic");
+    }
+}

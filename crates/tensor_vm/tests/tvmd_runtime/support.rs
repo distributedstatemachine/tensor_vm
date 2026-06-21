@@ -114,6 +114,7 @@ pub(super) fn test_service_runtime_config(
             0,
         )
         .unwrap(),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     }
 }
 
