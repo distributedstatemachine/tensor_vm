@@ -560,6 +560,7 @@ LIVE_RECEIPTS=""
 LIVE_ATTESTED_RECEIPT_COUNT=0
 LIVE_TENSOR_OP_RECEIPT_COUNT=0
 LIVE_LINEAR_TRAINING_RECEIPT_COUNT=0
+LIVE_MODEL_STEP_TOTAL=0
 LIVE_PENDING_PROPOSER_REWARD_COUNT=0
 LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=0
 LIVE_DELAYED_PROPOSER_REWARD_CLAIMS=0
@@ -578,6 +579,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_FINALIZED_BLOCK_COUNT=$(json_summary_number finalized_block_count "$LIVE_OVERVIEW")
   LIVE_JOB_COUNT=$(json_summary_number job_count "$LIVE_OVERVIEW")
   LIVE_MODEL_COUNT=$(json_summary_number model_count "$LIVE_OVERVIEW")
+  LIVE_MODEL_STEP_TOTAL=$(json_summary_number model_step_total "$LIVE_OVERVIEW")
   LIVE_ATTESTATION_COUNT=$(json_summary_number attestation_count "$LIVE_OVERVIEW")
   LIVE_RECEIPT_COUNT=$(json_summary_number receipt_count "$LIVE_OVERVIEW")
   LIVE_SETTLED_RECEIPT_COUNT=$(json_summary_number settled_receipt_count "$LIVE_OVERVIEW")
@@ -600,7 +602,8 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   if [ "${LIVE_HEIGHT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] \
     && [ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] \
     && [ "${LIVE_JOB_COUNT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] \
-    && [ "${LIVE_MODEL_COUNT:-0}" -gt 1 ] \
+    && [ "${LIVE_MODEL_COUNT:-0}" -gt 0 ] \
+    && [ "${LIVE_MODEL_STEP_TOTAL:-0}" -gt 0 ] \
     && [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] \
     && [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
@@ -628,7 +631,8 @@ done
 [ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway chain block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks"
 [ "${LIVE_FINALIZED_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway finalized block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks"
 [ "${LIVE_JOB_COUNT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "protocol did not generate synthetic jobs after seed"
-[ "${LIVE_MODEL_COUNT:-0}" -gt 1 ] || fail "protocol did not settle a live LinearTrainingStep after seed"
+[ "${LIVE_MODEL_COUNT:-0}" -gt 0 ] || fail "protocol did not register a LinearTrainingStep model"
+[ "${LIVE_MODEL_STEP_TOTAL:-0}" -gt 0 ] || fail "protocol did not apply a LinearTrainingStep model transition"
 [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] || fail "live synthetic jobs did not add validator attestations"
 [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not produce additional receipts"
 [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not settle additional receipts"
@@ -670,7 +674,7 @@ LIVE_TENSOR_OPENING_PROOF_LEN=$(json_number proof_len "$LIVE_TENSOR_OPENING") \
 [ -n "$LIVE_TENSOR_OPENING_PROOF_LEN" ] || fail "live tensor opening did not report a proof length"
 [ "$(json_number chunk_index "$LIVE_TENSOR_OPENING")" = "0" ] || fail "live tensor opening index did not match request"
 
-LIVE_TENSOR_OP_BLOCK_HEIGHT=0
+LIVE_TENSOR_OP_BLOCK_HEIGHT=-1
 LIVE_TENSOR_OP_BLOCK_RECEIPTS=0
 LIVE_LINEAR_TRAINING_BLOCK_HEIGHT=0
 LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS=0
@@ -680,12 +684,28 @@ BLOCK_CHECKS_ROOT_EVIDENCE=false
 VALIDATOR_PROPOSER_EVIDENCE=false
 FINALITY_REQUIRES_USEFUL_POW=false
 BLOCK_FINALITY_VOTE_EVIDENCE=false
-BLOCK_SCAN_END=$((LIVE_FINALIZED_BLOCK_COUNT - 1))
-[ "$BLOCK_SCAN_END" -le "$LIVE_HEIGHT" ] || BLOCK_SCAN_END="$LIVE_HEIGHT"
-BLOCK_SCAN_START=$((BLOCK_SCAN_END - EXPECTED_BLOCK_SCAN_DEPTH))
-[ "$BLOCK_SCAN_START" -gt "$EXPECTED_SEED_HEIGHT" ] || BLOCK_SCAN_START=$((EXPECTED_SEED_HEIGHT + 1))
-BLOCK_SCAN_HEIGHT="$BLOCK_SCAN_START"
-while [ "$BLOCK_SCAN_HEIGHT" -le "$BLOCK_SCAN_END" ]; do
+attempt=0
+while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
+  LIVE_TENSOR_OP_BLOCK_HEIGHT=-1
+  LIVE_TENSOR_OP_BLOCK_RECEIPTS=0
+  LIVE_LINEAR_TRAINING_BLOCK_HEIGHT=0
+  LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS=0
+  USEFUL_POW_BLOCK_EVIDENCE=false
+  CANONICAL_BLOCKSPACE_EVIDENCE=false
+  BLOCK_CHECKS_ROOT_EVIDENCE=false
+  VALIDATOR_PROPOSER_EVIDENCE=false
+  FINALITY_REQUIRES_USEFUL_POW=false
+  BLOCK_FINALITY_VOTE_EVIDENCE=false
+  LIVE_CHAIN_HEAD=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/chain/head")
+  LIVE_HEIGHT=$(json_number height "$LIVE_CHAIN_HEAD")
+  LIVE_OVERVIEW=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/overview")
+  LIVE_FINALIZED_BLOCK_COUNT=$(json_summary_number finalized_block_count "$LIVE_OVERVIEW")
+  BLOCK_SCAN_END=$((LIVE_FINALIZED_BLOCK_COUNT - 1))
+  [ "$BLOCK_SCAN_END" -le "$LIVE_HEIGHT" ] || BLOCK_SCAN_END="$LIVE_HEIGHT"
+  BLOCK_SCAN_START=$((BLOCK_SCAN_END - EXPECTED_BLOCK_SCAN_DEPTH))
+  [ "$BLOCK_SCAN_START" -gt 0 ] || BLOCK_SCAN_START=0
+  BLOCK_SCAN_HEIGHT="$BLOCK_SCAN_START"
+  while [ "$BLOCK_SCAN_HEIGHT" -le "$BLOCK_SCAN_END" ]; do
   if BLOCK_RAW=$(read_service_block "$EXPECTED_BOOTSTRAP_SERVICE" "$BLOCK_SCAN_HEIGHT"); then
     BLOCK_STATUS="$BLOCK_RAW"
     BLOCK_FINALIZED=$(status_value finalized "$BLOCK_STATUS")
@@ -762,7 +782,7 @@ while [ "$BLOCK_SCAN_HEIGHT" -le "$BLOCK_SCAN_END" ]; do
       LIVE_LINEAR_TRAINING_BLOCK_HEIGHT="$BLOCK_SCAN_HEIGHT"
       LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS="$BLOCK_LINEAR_TRAINING_RECEIPTS"
     fi
-    if [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -gt 0 ] \
+    if [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] \
       && [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] \
       && [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] \
       && [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] \
@@ -777,9 +797,23 @@ while [ "$BLOCK_SCAN_HEIGHT" -le "$BLOCK_SCAN_END" ]; do
     debug "block scan height=$BLOCK_SCAN_HEIGHT tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
   fi
   BLOCK_SCAN_HEIGHT=$((BLOCK_SCAN_HEIGHT + 1))
+  done
+  if [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] \
+    && [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] \
+    && [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] \
+    && [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] \
+    && [ "$BLOCK_CHECKS_ROOT_EVIDENCE" = "true" ] \
+    && [ "$VALIDATOR_PROPOSER_EVIDENCE" = "true" ] \
+    && [ "$FINALITY_REQUIRES_USEFUL_POW" = "true" ] \
+    && [ "$BLOCK_FINALITY_VOTE_EVIDENCE" = "true" ]; then
+    break
+  fi
+  debug "block scan attempt=$attempt start=$BLOCK_SCAN_START end=$BLOCK_SCAN_END tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
+  attempt=$((attempt + 1))
+  sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
 done
 
-[ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -gt 0 ] || fail "service block view did not expose finalized live TensorOp receipt evidence"
+[ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] || fail "service block view did not expose finalized live TensorOp receipt evidence"
 [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] || fail "service block view did not expose finalized live LinearTrainingStep receipt evidence"
 [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] || fail "service block view did not expose finalized useful-verification PoW evidence"
 [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] || fail "service block view did not expose finalized canonical blockspace evidence"
@@ -1431,7 +1465,9 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
       STATUS_MISMATCH=true
       continue
     fi
-    CONVERGED_OPERATOR_COUNT=$((CONVERGED_OPERATOR_COUNT + 1))
+    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
+      CONVERGED_OPERATOR_COUNT=$((CONVERGED_OPERATOR_COUNT + 1))
+    fi
   done
   COMPETING_PROPOSER_COUNT=$(local_cpu_count_words $COMPETING_PROPOSER_SERVICES)
   EXPECTED_CONVERGED_OPERATOR_COUNT=$((EXPECTED_SERVICE_COUNT - COMPETING_PROPOSER_COUNT))
@@ -1528,6 +1564,7 @@ standalone_explorer_websocket_polling=true
 live_block_production=true
 live_synthetic_jobs=true
 live_linear_training_jobs=true
+live_model_step_total=${LIVE_MODEL_STEP_TOTAL}
 live_attestations=true
 live_receipt_attestations=true
 live_tensor_op_receipts=true

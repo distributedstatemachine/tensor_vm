@@ -19,6 +19,12 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         validator_count: chain.state().validators().len(),
         job_count: chain.state().jobs().len(),
         model_count: chain.state().model_states().len(),
+        model_step_total: chain
+            .state()
+            .model_states()
+            .values()
+            .map(|model| model.step)
+            .sum(),
         attestation_count: chain.state().attestations().values().map(Vec::len).sum(),
         receipt_count: chain.state().receipts().len(),
         settled_receipt_count: chain.state().settled_receipts().len(),

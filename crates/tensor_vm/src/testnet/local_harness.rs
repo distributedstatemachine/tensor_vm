@@ -380,6 +380,7 @@ impl LocalTestnet {
             validator_count: state.validators().len(),
             job_count: state.jobs().len(),
             model_count: state.model_states().len(),
+            model_step_total: state.model_states().values().map(|model| model.step).sum(),
             attestation_count: state.attestations().values().map(Vec::len).sum(),
             receipt_count: state.receipts().len(),
             settled_receipt_count: state.settled_receipts().len(),

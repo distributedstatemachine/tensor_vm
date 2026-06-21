@@ -15,6 +15,7 @@ pub struct ExplorerSummary {
     pub validator_count: usize,
     pub job_count: usize,
     pub model_count: usize,
+    pub model_step_total: u64,
     pub attestation_count: usize,
     pub receipt_count: usize,
     pub settled_receipt_count: usize,
@@ -37,7 +38,7 @@ pub struct ExplorerSummary {
 impl ExplorerSummary {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
+            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"model_step_total\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
             self.height,
             self.epoch,
             self.block_count,
@@ -45,6 +46,7 @@ impl ExplorerSummary {
             self.validator_count,
             self.job_count,
             self.model_count,
+            self.model_step_total,
             self.attestation_count,
             self.receipt_count,
             self.settled_receipt_count,
@@ -792,6 +794,7 @@ mod tests {
             validator_count: 5,
             job_count: 2,
             model_count: 1,
+            model_step_total: 1,
             attestation_count: 30,
             receipt_count: 10,
             settled_receipt_count: 10,
@@ -964,6 +967,7 @@ mod tests {
                 .contains("\"latest_external_beacon_round\":42")
         );
         assert!(summary.to_json().contains("\"model_count\":1"));
+        assert!(summary.to_json().contains("\"model_step_total\":1"));
         assert!(summary.to_json().contains("\"attestation_count\":30"));
         let receipts = receipts_json(&[ExplorerReceipt {
             receipt_id: "receipt".to_owned(),

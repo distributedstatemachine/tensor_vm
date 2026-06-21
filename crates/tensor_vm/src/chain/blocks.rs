@@ -6,12 +6,13 @@ use super::roots::{
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
     BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState,
-    DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptRewardKind, ReceiptState,
-    SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment, ValidatorAuditSlashRecord,
-    settlement,
+    DataUnavailabilitySlashRecord, JobState, ModelState, PendingProposerReward, ReceiptRewardKind,
+    ReceiptState, SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment,
+    ValidatorAuditSlashRecord, settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
+use crate::scheduler::SyntheticLocalJobSource;
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use num_bigint::BigUint;
 use std::collections::BTreeSet;
@@ -197,36 +198,6 @@ pub(super) fn prepare_parent_state(chain: &mut Chain) -> Result<()> {
         miner_reward_pool: 1_000,
         validator_reward_pool: 500,
     })?;
-    let settled_receipts = chain
-        .state
-        .settled_receipts
-        .iter()
-        .copied()
-        .collect::<Vec<_>>();
-    let mut linear_transitions = BTreeSet::new();
-    for receipt_id in settled_receipts {
-        let Some(ReceiptState::LinearTrainingStep(receipt)) =
-            chain.state.receipts.get(&receipt_id).cloned()
-        else {
-            continue;
-        };
-        if !linear_transitions.insert((receipt.model_id, receipt.step, receipt.weight_root_before))
-        {
-            continue;
-        }
-        let Some(model) = chain.state.model_states.get(&receipt.model_id) else {
-            continue;
-        };
-        if model.step != receipt.step || model.weight_root != receipt.weight_root_before {
-            continue;
-        }
-        chain.apply_command(ChainCommand::ApplyModelTransition {
-            model_id: receipt.model_id,
-            step: receipt.step,
-            weight_root_before: receipt.weight_root_before,
-            weight_root_after: receipt.weight_root_after,
-        })?;
-    }
     Ok(())
 }
 
@@ -1203,6 +1174,7 @@ fn apply_block_to_parent_state(
             }
         }
     }
+    apply_selected_linear_model_transitions(&mut child_state, selected_receipts);
     apply_data_unavailability_slashes(
         &mut child_state,
         block_height,
@@ -1249,6 +1221,53 @@ fn apply_block_to_parent_state(
             .insert(reward_context.proposer, block_height);
     }
     child_state
+}
+
+fn apply_selected_linear_model_transitions(
+    child_state: &mut ChainState,
+    selected_receipts: &[Hash],
+) {
+    let mut linear_transitions = BTreeSet::new();
+    for receipt_id in selected_receipts {
+        let Some(ReceiptState::LinearTrainingStep(receipt)) =
+            child_state.receipts.get(receipt_id).cloned()
+        else {
+            continue;
+        };
+        if !linear_transitions.insert((receipt.model_id, receipt.step, receipt.weight_root_before))
+        {
+            continue;
+        }
+        if !child_state.model_states.contains_key(&receipt.model_id)
+            && matches!(
+                child_state.jobs.get(&receipt.job_id),
+                Some(JobState::LinearTrainingStep(job))
+                    if job.model_id == receipt.model_id
+                        && job.step == receipt.step
+                        && job.weight_root_before == receipt.weight_root_before
+            )
+        {
+            child_state.model_states.insert(
+                receipt.model_id,
+                ModelState {
+                    model_id: receipt.model_id,
+                    architecture_hash: SyntheticLocalJobSource::linear_training_architecture_hash(),
+                    weight_root: receipt.weight_root_before,
+                    optimizer_state_root: None,
+                    step: receipt.step,
+                    config_hash: SyntheticLocalJobSource::linear_training_config_hash(),
+                },
+            );
+        }
+        let Some(model) = child_state.model_states.get_mut(&receipt.model_id) else {
+            continue;
+        };
+        if model.step != receipt.step || model.weight_root != receipt.weight_root_before {
+            continue;
+        }
+        model.weight_root = receipt.weight_root_after;
+        model.step = model.step.saturating_add(1);
+    }
 }
 
 fn apply_missed_validator_audit_slashes(

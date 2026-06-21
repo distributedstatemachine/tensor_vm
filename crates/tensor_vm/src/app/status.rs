@@ -497,6 +497,15 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         pending_credit_reward_claims(&chain, 16),
     );
     report.field("model_count", chain.state().model_states().len());
+    report.field(
+        "model_step_total",
+        chain
+            .state()
+            .model_states()
+            .values()
+            .map(|model| model.step)
+            .sum::<u64>(),
+    );
     report.field("bootstrap_peer_count", bootstrap_peer_count);
     report.field("node_store_ready", true);
     report.field("status_source", "node_store");

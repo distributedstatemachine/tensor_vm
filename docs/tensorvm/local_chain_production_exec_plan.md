@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 139 complete - validator VRF reward holds preserve later reward delays.
+- Active feature: Iteration 140 complete - selected LinearTrainingStep model transitions are block-applied.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -21,6 +21,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   claimable height.
   Later challenge, audit, or redundant-settlement reward delays now extend that same reveal-held
   maturity height instead of converting it to a plain claimable reward.
+  Selected `LinearTrainingStep` receipt inclusion now applies the model-state transition inside the
+  deterministic block child-state transition, including deterministic registration of the selected
+  job's missing model state before the first transition. Proposer parent-state preparation no longer
+  advances linear models as a pre-block side effect. Status and explorer summaries expose
+  `model_step_total`, and the local CPU checker verifies a rooted model transition separately from
+  live linear receipt block evidence.
   Reward maturity now makes state-rooted pending claims claimable, but spendable credit is owned by
   `ClaimReward` instead of automatic block-transition release.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
@@ -54,15 +60,15 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: debug the full local CPU Docker checker's live LinearTrainingStep model-count convergence
-  after the new validator reveal gates, then continue public/CUDA deployment runs, production drand/VRF
-  verification, and full interactive transcript disputes.
+- Next action: debug rolling restart continuity for restarted role runtime counters and gateway tensor
+  artifact persistence, then continue public/CUDA deployment runs, production drand/VRF verification,
+  and full interactive transcript disputes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 139; post-edit rerun also passed | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 140; post-edit rerun also passed | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -78,6 +84,42 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 140: Block-Applied Linear Model Transitions
+
+Feature capability: selected `LinearTrainingStep` receipts now advance canonical model state during
+deterministic block child-state application, not during proposer parent-state preparation.
+Readiness requirements covered: `upow.md` §11 deterministic blockspace/state transition, `mvp_spec.md`
+§20.3/§23 model state, and the local CPU evidence requirement that linear work has chain-visible model
+state rather than checker-only settlement inference.
+Canonical owner: `apply_block_to_parent_state`, `apply_selected_linear_model_transitions`, `ModelState`,
+state roots, service status, explorer summary, and the local CPU checker.
+Old shortcut removed: `prepare_parent_state` no longer walks settled receipts and mutates model state
+before block production. The checker no longer treats `model_count` alone as a settlement proxy; it also
+surfaces `model_step_total` and separately scans finalized blocks for live linear receipt evidence.
+Regression evidence: `block_application_registers_missing_linear_job_model_before_transition` covers the
+missing-model registration path, and existing block tests assert block/state-root recomputation after
+linear transitions.
+Docker evidence: local CPU compose checker passed on June 21, 2026 with `live_model_step_total=1`,
+`live_delayed_receipt_reward_claims=18`, `live_delayed_proposer_reward_claims=1`, and finalized passive
+operator convergence. Rolling restart continuity was attempted after restarting `miner-03` and remains a
+separate blocker because restarted role runtime counters and gateway tensor artifacts are not yet stable
+post-restart invariants.
+
+Validation:
+
+```bash
+cargo test -p tensor_vm local_testnet --release
+cargo test -p tensor_vm chain::tests::blocks -- --nocapture
+cargo test -p tensor_vm explorer -- --nocapture
+cargo test -p tensor_vm service_status -- --nocapture
+cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture
+cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract -- --nocapture
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet
+deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
+cargo fmt --check --all
+git diff --check
+```
 
 ### Iteration 139: Preserve Validator Reveal Holds Through Later Reward Delays
 
@@ -209,28 +251,24 @@ evidence, and interactive trace disputes.
 
 ## Validation Evidence
 
-Latest local validation is Iteration 137 on June 21, 2026:
+Latest local validation is Iteration 140 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm validator_vrf_reveal -- --nocapture
-cargo test -p tensor_vm validator_receipt_reward_waits_for_vrf_reveal_after_maturity -- --nocapture
-cargo test -p tensor_vm p2p -- --nocapture
-cargo test -p tensor_vm reward -- --nocapture
-cargo test -p tensor_vm service_status_exports_randomness_binding_evidence -- --nocapture
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture
-cargo test -p tensor_vm --test tvmd_cli role_run_commands_serve_through_role_specific_surfaces -- --nocapture
+cargo test -p tensor_vm chain::tests::blocks -- --nocapture
+cargo test -p tensor_vm explorer -- --nocapture
+cargo test -p tensor_vm service_status -- --nocapture
 cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture
-cargo test -p tensor_vm --test tvmd_runtime runtime_state -- --nocapture
 cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract -- --nocapture
-bash -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet
+deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
 cargo fmt --check --all
-cargo check -p tensor_vm
 git diff --check
 ```
 
-Docker proof still needs a fresh full checker run after the new reveal gates; static checker shape and
-script syntax are covered locally.
+Rolling restart continuity is not yet a passing evidence item after this iteration; the post-restart
+checker currently fails on restarted role runtime counters/gossip observations and gateway tensor artifact
+availability.
 
 Current coverage blocker:
 
