@@ -9,8 +9,9 @@ blockspace, selected receipts are marked included once, and block votes validate
 parent-root checks before counting stake. Long-running validator roles can now submit and gossip explicit
 block votes for unfinalized valid blocks, so block append is separated from finality in the runtime path.
 Historical useful block evidence now stores exact parent `ChainState` snapshots keyed by block hash and
-persists them in the chain-state file, so `BlockApplyOutcome`, selected-receipt openings, checks roots, and
-child roots stay replay-stable after later receipts and blocks. PoW-skip fallback validation now enforces
+persists them in the chain-state file, so `BlockApplyOutcome`, selected-receipt openings, typed
+block-check transcripts, checks roots, and child roots stay replay-stable after later receipts and blocks.
+PoW-skip fallback validation now enforces
 the configured `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks.
 The current-head fork-choice policy now replaces an unfinalized useful head only when a competing useful
 UVPoW block on the same parent has a strictly better PoW hash, while finalized heads and accepted fallback
@@ -18,7 +19,7 @@ heads remain stable. Valid known-parent side branches are retained in chain-owne
 parent and child state snapshots, survive chain-state persistence, and do not mutate canonical head state
 unless the current-head replacement rule applies; strictly longer unfinalized branches now automatically
 reorganize canonical head state while finalized canonical blocks remain protected. Remaining consensus gaps
-are full verifier-transcript challenge semantics and a fresh full Docker proof of live validator
+are full interactive verifier-transcript challenge semantics and a fresh full Docker proof of live validator
 proposer/block-assembly networking and diagnostic challenge evidence after the current `/health` blocker
 clears. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p

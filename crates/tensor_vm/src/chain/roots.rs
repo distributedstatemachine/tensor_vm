@@ -1,9 +1,10 @@
 use super::{
-    AccountState, BlockCheckChallengeRecord, BlockVote, ChainState, DataUnavailabilitySlashRecord,
-    InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
-    PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
-    ReceiptState, RewardState, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
-    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    AccountState, BlockCheckChallengeRecord, BlockCheckTranscript, BlockVote, ChainState,
+    DataUnavailabilitySlashRecord, InvalidOutputSlashRecord, JobState, MinerState, ModelState,
+    PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
+    ReceiptRandomnessAnchor, ReceiptState, RewardState, ValidatorAuditAppealRecord,
+    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -602,10 +603,31 @@ pub(super) fn block_check_leaves(
     beacon: &Hash,
     parent_hash: &Hash,
 ) -> Vec<Hash> {
+    block_check_transcripts(
+        selected_receipts,
+        receipts,
+        attestations,
+        beacon_round,
+        beacon,
+        parent_hash,
+    )
+    .into_iter()
+    .map(|transcript| transcript.leaf())
+    .collect()
+}
+
+pub(super) fn block_check_transcripts(
+    selected_receipts: &[Hash],
+    receipts: &BTreeMap<Hash, ReceiptState>,
+    attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
+    beacon_round: u64,
+    beacon: &Hash,
+    parent_hash: &Hash,
+) -> Vec<BlockCheckTranscript> {
     selected_receipts
         .iter()
         .map(|receipt_id| {
-            block_check_leaf(
+            block_check_transcript(
                 receipt_id,
                 receipts.get(receipt_id),
                 attestations,
@@ -617,31 +639,29 @@ pub(super) fn block_check_leaves(
         .collect()
 }
 
-pub(super) fn block_check_leaf(
+pub(super) fn block_check_transcript(
     receipt_id: &Hash,
     receipt: Option<&ReceiptState>,
     attestations: &BTreeMap<Hash, Vec<ValidatorAttestation>>,
     beacon_round: u64,
     beacon: &Hash,
     parent_hash: &Hash,
-) -> Hash {
+) -> BlockCheckTranscript {
     let receipt_checks_root =
         canonical_receipt_checks_root(receipt_id, attestations.get(receipt_id));
     let check_seed = block_check_seed(beacon_round, beacon, parent_hash, receipt_id);
-    let mut encoded = Vec::new();
-    encoded.extend_from_slice(&beacon_round.to_le_bytes());
-    encoded.extend_from_slice(beacon);
-    encoded.extend_from_slice(parent_hash);
-    encoded.extend_from_slice(&check_seed);
-    encoded.extend_from_slice(receipt_id);
-    encoded.extend_from_slice(&selected_receipt_leaf(receipt_id, receipt));
-    encoded.extend_from_slice(&receipt_checks_root);
-    if let Some(receipt) = receipt {
-        encoded.push(primitive_type_tag(receipt.primitive_type()));
-        encoded.extend_from_slice(&receipt.tensor_work_units().to_le_bytes());
-        encoded.extend_from_slice(&receipt.estimated_block_bytes().to_le_bytes());
+    BlockCheckTranscript {
+        receipt_id: *receipt_id,
+        beacon_round,
+        beacon: *beacon,
+        parent_hash: *parent_hash,
+        check_seed,
+        selected_receipt_leaf: selected_receipt_leaf(receipt_id, receipt),
+        receipt_checks_root,
+        primitive_type: receipt.map(ReceiptState::primitive_type),
+        tensor_work_units: receipt.map_or(0, ReceiptState::tensor_work_units),
+        estimated_block_bytes: receipt.map_or(0, ReceiptState::estimated_block_bytes),
     }
-    hash_bytes(b"tensor-vm-block-check-leaf-v1", &[&encoded])
 }
 
 pub(super) fn block_check_seed(

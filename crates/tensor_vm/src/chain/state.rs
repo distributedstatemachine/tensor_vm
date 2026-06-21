@@ -1,3 +1,4 @@
+use crate::codec::primitive_type_tag;
 use crate::field;
 use crate::ir::TensorGraph;
 use crate::jobs::{
@@ -216,11 +217,45 @@ pub struct BlockParentSnapshot {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct BlockCheckTranscript {
+    pub receipt_id: Hash,
+    pub beacon_round: u64,
+    pub beacon: Hash,
+    pub parent_hash: Hash,
+    pub check_seed: Hash,
+    pub selected_receipt_leaf: Hash,
+    pub receipt_checks_root: Hash,
+    pub primitive_type: Option<PrimitiveType>,
+    pub tensor_work_units: u64,
+    pub estimated_block_bytes: u64,
+}
+
+impl BlockCheckTranscript {
+    pub fn leaf(&self) -> Hash {
+        let mut encoded = Vec::new();
+        encoded.extend_from_slice(&self.beacon_round.to_le_bytes());
+        encoded.extend_from_slice(&self.beacon);
+        encoded.extend_from_slice(&self.parent_hash);
+        encoded.extend_from_slice(&self.check_seed);
+        encoded.extend_from_slice(&self.receipt_id);
+        encoded.extend_from_slice(&self.selected_receipt_leaf);
+        encoded.extend_from_slice(&self.receipt_checks_root);
+        if let Some(primitive_type) = self.primitive_type {
+            encoded.push(primitive_type_tag(primitive_type));
+            encoded.extend_from_slice(&self.tensor_work_units.to_le_bytes());
+            encoded.extend_from_slice(&self.estimated_block_bytes.to_le_bytes());
+        }
+        hash_bytes(b"tensor-vm-block-check-leaf-v1", &[&encoded])
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct SelectedReceiptOpening {
     pub receipt_id: Hash,
     pub receipt_leaf: Hash,
     pub receipt_leaf_index: u64,
     pub receipt_leaf_proof: Option<MerkleProof>,
+    pub check_transcript: BlockCheckTranscript,
     pub check_leaf: Hash,
     pub check_leaf_index: u64,
     pub check_leaf_proof: Option<MerkleProof>,

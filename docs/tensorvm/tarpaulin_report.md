@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 100 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 101 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,9 +15,9 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 98 coverage could not
-be regenerated. Iterations 78 through 98 rechecked the same command and hit the same missing-binary blocker.
-The most recent completed coverage report below remains the prior May 23, 2026 run.
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 101 coverage could not
+be regenerated. Iterations 78 through 101 rechecked the same command and hit the same missing-binary
+blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
 
@@ -130,6 +130,10 @@ Iteration 100 replaced the TensorWork reward-curve workaround with delayed Tenso
 settlement coverage checks that newly settled miner work remains pending until the matching non-voided
 miner receipt reward is released, and that unavailable or invalid receipts clear pending work before it can
 become settled.
+Iteration 101 added typed block-check transcript openings. Focused block apply and block-check challenge
+coverage checks that selected-receipt openings expose the beacon, parent hash, check seed, selected receipt
+leaf, receipt checks root, and receipt metadata that hash into the Merkle-proven check leaf before a
+challenge is admitted.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

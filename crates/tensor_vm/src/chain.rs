@@ -31,9 +31,9 @@ pub use engine::{BlockAdmission, BlockInvalidReason, ChainCommand, ChainEngine, 
 #[cfg(test)]
 use settlement::{has_conflicting_linear_receipt, receipts_agree};
 pub use state::{
-    AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockParentSnapshot,
-    BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainParams,
-    ChainState, DataUnavailabilitySlashRecord, DetectionProbabilityEvidence,
+    AccountState, BlockApplyOutcome, BlockCheckChallengeRecord, BlockCheckTranscript,
+    BlockParentSnapshot, BlockProductionKind, BlockVote, BlockspaceCaps, BlockspaceSelection,
+    Chain, ChainParams, ChainState, DataUnavailabilitySlashRecord, DetectionProbabilityEvidence,
     DetectionProbabilityEvidenceSummary, HardwareClass, InvalidOutputSlashRecord, JobState,
     MinerState, ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
     PendingReceiptReward, RandomnessBindingEvidence, ReceiptRandomnessAnchor, ReceiptRewardKind,

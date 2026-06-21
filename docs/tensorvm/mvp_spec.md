@@ -1563,6 +1563,13 @@ recomputed verification transcript
 challenger_signature
 ```
 
+Current local-reference status: selected-receipt block openings expose a typed block-check transcript
+containing the finalized beacon round/randomness, parent hash, check seed, selected-receipt leaf,
+canonical receipt checks root, primitive type, TensorWork, and byte metadata. The transcript hash is the
+expected `check_leaf` proven against `checks_root`, and block-check challenge admission verifies that
+recomputed transcript commitment before accepting the mismatch proof. The multi-round interactive fraud
+game over receipt `trace_root` remains future work.
+
 If the challenge proves the block proposer committed to a wrong verification result:
 
 ```text

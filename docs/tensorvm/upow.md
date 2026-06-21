@@ -647,6 +647,9 @@ This section is non-normative guidance on how the spec components partition into
   where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
   mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
+- [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
+  (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
+  commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.
 - [~] Beacon binding: local finalized-beacon receipt anchors now expose chain-owned seed-domain,
   commit→reveal, and current-block-hash-ban evidence through status/explorer; external drand round ↔ epoch
   mapping and validator VRF construction remain TODO (§10).

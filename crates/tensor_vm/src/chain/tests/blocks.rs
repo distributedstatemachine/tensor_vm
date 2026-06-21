@@ -1139,6 +1139,50 @@ fn block_apply_outcome_exposes_parent_child_and_check_openings() {
     assert!(opening.data_available);
     assert_eq!(opening.primitive_type, Some(PrimitiveType::TensorOp));
     assert_eq!(opening.tensor_work_units, receipt.tensor_work_units);
+    assert_eq!(opening.check_transcript.receipt_id, receipt.receipt_id);
+    assert_eq!(opening.check_transcript.beacon_round, block.beacon_round);
+    assert_eq!(opening.check_transcript.beacon, block.beacon);
+    assert_eq!(opening.check_transcript.parent_hash, block.parent_hash);
+    assert_eq!(
+        opening.check_transcript.selected_receipt_leaf,
+        opening.receipt_leaf
+    );
+    assert_eq!(
+        opening.check_transcript.check_seed,
+        hash_bytes(
+            b"tensor-vm-block-check-seed-v1",
+            &[
+                &block.beacon_round.to_le_bytes(),
+                &block.beacon,
+                &block.parent_hash,
+                &receipt.receipt_id,
+                b"checks",
+            ],
+        )
+    );
+    let mut expected_receipt_checks = Vec::new();
+    expected_receipt_checks.extend_from_slice(&receipt.receipt_id);
+    expected_receipt_checks.extend_from_slice(&report.checks_root);
+    assert_eq!(
+        opening.check_transcript.receipt_checks_root,
+        hash_bytes(
+            b"tensor-vm-receipt-checks-root",
+            &[&expected_receipt_checks]
+        )
+    );
+    assert_eq!(
+        opening.check_transcript.primitive_type,
+        Some(PrimitiveType::TensorOp)
+    );
+    assert_eq!(
+        opening.check_transcript.tensor_work_units,
+        receipt.tensor_work_units
+    );
+    assert_eq!(
+        opening.check_transcript.estimated_block_bytes,
+        ReceiptState::TensorOp(receipt.clone()).estimated_block_bytes()
+    );
+    assert_eq!(opening.check_transcript.leaf(), opening.check_leaf);
     assert!(
         opening
             .receipt_leaf_proof

@@ -1,7 +1,7 @@
 use super::roots::{
-    attestation_root, block_check_leaves, block_checks_root, data_unavailability_slash_root,
-    hash_set_root, reward_root, selected_receipt_commitment_root, selected_receipt_leaves,
-    selected_receipt_root, state_root,
+    attestation_root, block_check_leaves, block_check_transcripts, block_checks_root,
+    data_unavailability_slash_root, hash_set_root, reward_root, selected_receipt_commitment_root,
+    selected_receipt_leaves, selected_receipt_root, state_root,
 };
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
@@ -1366,6 +1366,14 @@ fn selected_receipt_openings(
         beacon,
         parent_hash,
     );
+    let check_transcripts = block_check_transcripts(
+        selected_receipts,
+        &parent_state.receipts,
+        &parent_state.attestations,
+        beacon_round,
+        beacon,
+        parent_hash,
+    );
     let checks_root = merkle_root(&check_leaves);
     selected_receipts
         .iter()
@@ -1374,6 +1382,7 @@ fn selected_receipt_openings(
             let receipt = parent_state.receipts.get(receipt_id);
             let receipt_leaf = receipt_leaves[index];
             let receipt_leaf_proof = build_proof(&receipt_leaves, index as u64).ok();
+            let check_transcript = check_transcripts[index].clone();
             let check_leaf = check_leaves[index];
             let check_leaf_proof = build_proof(&check_leaves, index as u64).ok();
             let receipt_opening_valid = receipt_leaf_proof
@@ -1389,6 +1398,7 @@ fn selected_receipt_openings(
                 receipt_leaf,
                 receipt_leaf_index: index as u64,
                 receipt_leaf_proof,
+                check_transcript,
                 check_leaf,
                 check_leaf_index: index as u64,
                 check_leaf_proof,

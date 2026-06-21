@@ -218,6 +218,11 @@ pub fn submit_block_check(
     if opening.check_leaf_index != challenge.check_leaf_index {
         return Err(TvmError::InvalidReceipt("challenge receipt index mismatch"));
     }
+    if opening.check_transcript.leaf() != opening.check_leaf {
+        return Err(TvmError::InvalidReceipt(
+            "challenge transcript leaf mismatch",
+        ));
+    }
     if opening.check_leaf != challenge.expected_check_leaf {
         return Err(TvmError::InvalidReceipt("challenge expected leaf mismatch"));
     }

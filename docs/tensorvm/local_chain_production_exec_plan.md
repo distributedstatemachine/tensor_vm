@@ -5,21 +5,22 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 100 in progress - delayed TensorWork activation.
+- Active feature: Iteration 101 complete - typed block-check transcript openings.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
-  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement.
+  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
+  and selected-receipt block openings now expose typed block-check transcript commitments.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue verifier-transcript disputes, external randomness, deployed-run economics evidence,
+- Next action: continue full verifier-transcript disputes, external randomness, deployed-run economics evidence,
   or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
@@ -33,7 +34,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full transcript disputes and fresh Docker proof |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
@@ -41,6 +42,52 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 101: Typed Block-Check Transcript Openings
+
+Feature capability: expose the recomputed per-receipt verification transcript committed into block
+`checks_root`, instead of leaving selected receipt `check_leaf` evidence as an opaque hash.
+
+Canonical owner: `chain::roots`, `chain::blocks`, and `chain::challenges`.
+Adapter callers: block apply outcome views, diagnostic challenge construction, status/explorer block
+evidence, and p2p challenge payload validation.
+Old shortcut being removed: block-check challenge evidence could prove an opaque leaf mismatch but did not
+surface the typed transcript fields that generated the expected leaf.
+Regression test that proves the shortcut is gone:
+`chain::tests::block_apply_outcome_exposes_parent_child_and_check_openings`.
+Behavior with local synthetic block production disabled: all blocks derive the same transcript fields from
+parent state, selected receipts, attestations, parent hash, and finalized beacon.
+Behavior for producer and non-producer roles: producers and peers recompute the same typed transcript from
+canonical parent snapshots before accepting a challenge.
+Structured evidence source: `SelectedReceiptOpening::check_transcript`, `check_leaf`, Merkle proof, and
+`BlockApplyOutcome::checks_root`.
+Finality source: unchanged; transcript challenges can void delayed proposer/receipt rewards before
+maturity.
+Wire-size and codec boundary: no p2p challenge payload change; the typed transcript is local block-apply
+evidence and hashes to the existing `check_leaf` wire field.
+
+Implementation summary:
+- Added `BlockCheckTranscript` with beacon, parent hash, check seed, selected receipt leaf, receipt checks
+  root, and receipt metadata fields.
+- `block_check_leaves` now hashes typed transcripts, and selected receipt openings expose the transcript
+  whose `leaf()` equals the Merkle-proven check leaf.
+- Block-check challenge admission now asserts that the recomputed transcript hashes back to the expected
+  leaf before accepting the mismatch proof.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet`
+  passed.
+- Focused: `cargo test -p tensor_vm block_check --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 434 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 100: Delayed TensorWork Activation
 
@@ -84,8 +131,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-
-## Recent Iterations
+- Feature commit: `48be88f` (`Delay TensorWork activation until reward release`) is pushed to
+  `origin/main`.
 
 ### Iteration 97: Role-Owned Graph Execution Production
 
@@ -169,43 +216,6 @@ fraud proceeds. Validation passed focused reward/storage/status/explorer/params/
 crate, clippy, workspace release, and first/final Gate 0. Commits `1923692`, `b638369`, and `d4d11b8` are
 pushed to `origin/main`.
 
-### Iteration 86: Fraud-Path Economic Calibration
-
-Implementation summary:
-- Added `ChainState::fraud_path_economic_calibration` for validator-audit, miner data-unavailability, and
-  block-check/proposer clawback paths.
-- Service status and explorer overview now render aggregate and per-path required-bond/pass-fail evidence.
-- Updated `upow.md`, readiness, coverage, implementation status, and tarpaulin docs.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm economic --quiet`, `cargo test -p tensor_vm status --quiet`, and
-  `cargo test -p tensor_vm explorer_overview_exports --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 415 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `1116beb` (`Expose fraud path economic calibration`) pushed to `origin/main`.
-- Evidence commit: `abf78d1` (`Record fraud path calibration evidence`) pushed to `origin/main`.
-
-### Iteration 85: Audit-Window Reward Escrow
-
-`ChainParams::reward_maturity_delay_blocks` now includes the validator-audit hold when audit sampling is
-enabled, and tensor retention mirrors the same audit-window bound. No-audit profiles keep the old
-zero-retention behavior. Validation passed focused parameter/audit/reward tests, full crate, clippy,
-workspace release, and first/final Gate 0. Commit `5df4870` (`Delay rewards through audit window`) is
-pushed to `origin/main`.
-
-### Iteration 84: Validator Audit Stake-Slash Reversal
-
-Reversed validator-audit appeals now refund the recorded stake slash from treasury back to validator stake
-exactly once while reward reinstatement still uses delayed pending claims. Validation passed focused
-audit/storage/reward tests, full crate, clippy, workspace release, and first/final Gate 0. Commits
-`1feeb1d` and `ea230b3` are pushed to `origin/main`.
-
 ## Decision Log
 
 - `upow.md` is canonical; `mvp_spec.md` wins where `upow.md` is silent.
@@ -218,13 +228,12 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 100 on June 21, 2026:
+Latest full validation is Iteration 101 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm settlement --quiet
-cargo test -p tensor_vm rewards --quiet
-cargo test -p tensor_vm telemetry --quiet
+cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet
+cargo test -p tensor_vm block_check --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
@@ -246,6 +255,8 @@ error: no such command: `tarpaulin`
 - Iterations 75-83: diagnostic block-check challenge path, fallback timeout, inclusion-gated and
   chain-owned reward release, and receipt-bound validation seed landed in commits `8787912`, `40f14d5`,
   `06be27e`, `f5a0aa2`, `1647a47`, `8ce051f`, `e08f7c9`, and related evidence commits.
+- Iterations 84-86: validator-audit stake-slash reversal, audit-window reward escrow, and fraud-path
+  economic calibration landed in commits `1feeb1d`, `ea230b3`, `5df4870`, `1116beb`, and `abf78d1`.
 - Iterations 73-74: live validator-audit economic calibration and appeal reward-delay resolution landed in
   commits `493191c`, `8dbb654`, `c8a6f9e`, `32fb557`, and `7026c94`.
 - Iterations 59-64: exact `clamp`, field `div`, split/einsum, registry/conformance guard, and graph
