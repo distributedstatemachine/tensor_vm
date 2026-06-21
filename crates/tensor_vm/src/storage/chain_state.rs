@@ -3,11 +3,14 @@ use crate::chain::{
     ChainStateParts, DataUnavailabilitySlashRecord, HardwareClass, InvalidOutputSlashRecord,
     JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
     PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind,
-    ReceiptState, RewardState, TensorBlock, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
-use crate::codec::{self as payload_codec, verification_result_from_tag, verification_result_tag};
+use crate::codec::{
+    self as payload_codec, primitive_type_from_tag, primitive_type_tag,
+    verification_result_from_tag, verification_result_tag,
+};
 use crate::error::{Result, TvmError};
 use crate::types::{Hash, hash_bytes};
 use crate::verify::{FreivaldsParams, ValidatorAttestation};
@@ -240,6 +243,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_validator_audit_slashes(out, state.validator_audit_slashes());
     encode_validator_audit_appeals(out, state.validator_audit_appeals());
     encode_hash_set(out, state.settled_receipts());
+    encode_redundant_settlement_delays(out, state.redundant_settlement_delays());
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
     encode_block_check_challenges(out, state.block_check_challenges());
@@ -279,6 +283,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         validator_audit_slashes: decode_validator_audit_slashes(reader)?,
         validator_audit_appeals: decode_validator_audit_appeals(reader)?,
         settled_receipts: decode_hash_set(reader)?,
+        redundant_settlement_delays: decode_redundant_settlement_delays(reader)?,
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
         block_check_challenges: decode_block_check_challenges(reader)?,
@@ -671,6 +676,61 @@ fn decode_hash_set(reader: &mut StateReader<'_>) -> Result<BTreeSet<Hash>> {
         items.insert(reader.read_hash()?);
     }
     Ok(items)
+}
+
+fn encode_redundant_settlement_delays(
+    out: &mut Vec<u8>,
+    delays: &BTreeMap<Hash, RedundantSettlementDelayRecord>,
+) {
+    write_len(out, delays.len());
+    for (receipt_id, delay) in delays {
+        write_hash(out, receipt_id);
+        write_hash(out, &delay.receipt_id);
+        write_hash(out, &delay.job_id);
+        out.push(primitive_type_tag(delay.primitive_type));
+        write_len(out, delay.observed_agreeing_miners);
+        write_len(out, delay.required_agreement_quorum);
+        write_len(out, delay.conflicting_quorum_receipts);
+        write_u64(out, delay.recorded_at_height);
+        write_len(out, delay.reason.len());
+        out.extend_from_slice(delay.reason.as_bytes());
+    }
+}
+
+fn decode_redundant_settlement_delays(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, RedundantSettlementDelayRecord>> {
+    let mut delays = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let key = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let job_id = reader.read_hash()?;
+        let primitive_type = primitive_type_from_tag(reader.read_u8()?).ok_or(
+            TvmError::Storage("unknown delayed-settlement primitive type"),
+        )?;
+        let observed_agreeing_miners = reader.read_len()?;
+        let required_agreement_quorum = reader.read_len()?;
+        let conflicting_quorum_receipts = reader.read_len()?;
+        let recorded_at_height = reader.read_u64()?;
+        let reason_len = reader.read_len()?;
+        let reason = std::str::from_utf8(reader.read_exact(reason_len)?)
+            .map_err(|_| TvmError::Storage("invalid delayed-settlement reason"))?
+            .to_owned();
+        delays.insert(
+            key,
+            RedundantSettlementDelayRecord {
+                receipt_id,
+                job_id,
+                primitive_type,
+                observed_agreeing_miners,
+                required_agreement_quorum,
+                conflicting_quorum_receipts,
+                recorded_at_height,
+                reason,
+            },
+        );
+    }
+    Ok(delays)
 }
 
 fn encode_data_unavailability_slashes(
@@ -1601,6 +1661,18 @@ mod tests {
                 },
             ),
         );
+        let state_root_before_delay = chain.state_root();
+        chain.insert_redundant_settlement_delay_for_testing(RedundantSettlementDelayRecord {
+            receipt_id: invalid_receipt.receipt_id,
+            job_id: invalid_receipt.job_id,
+            primitive_type: PrimitiveType::TensorOp,
+            observed_agreeing_miners: 1,
+            required_agreement_quorum: 2,
+            conflicting_quorum_receipts: 1,
+            recorded_at_height: chain.state().height(),
+            reason: "durable redundant settlement delay".to_owned(),
+        });
+        assert_ne!(chain.state_root(), state_root_before_delay);
         let path = std::env::temp_dir().join(format!(
             "tensor-vm-state-{}-{}.bin",
             std::process::id(),
@@ -1725,6 +1797,19 @@ mod tests {
             loaded.state().invalid_output_slashes(),
             chain.state().invalid_output_slashes()
         );
+        assert_eq!(
+            loaded.state().redundant_settlement_delays(),
+            chain.state().redundant_settlement_delays()
+        );
+        let delay = loaded
+            .state()
+            .redundant_settlement_delays()
+            .get(&invalid_receipt.receipt_id)
+            .expect("durable fixture should preserve redundant-settlement delay evidence");
+        assert_eq!(delay.observed_agreeing_miners, 1);
+        assert_eq!(delay.required_agreement_quorum, 2);
+        assert_eq!(delay.conflicting_quorum_receipts, 1);
+        assert_eq!(delay.reason, "durable redundant settlement delay");
         assert!(
             loaded
                 .state()

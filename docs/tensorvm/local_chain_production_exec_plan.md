@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 104 in progress - local finalized-beacon VRF evidence.
+- Active feature: Iteration 105 complete locally - redundant settlement delay records.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -15,16 +15,17 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards explicitly await canonical blockspace inclusion before their maturity clock starts.
   Selected-receipt block openings now expose typed block-check transcript commitments and
-  submission-anchored retention deadlines.
+  submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
+  records when quorum-backed work cannot settle because agreement is missing or conflicting.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: finish Iteration 104 validation, then continue full verifier-transcript disputes,
-  external randomness deployment, deployed-run economics evidence,
-  or rerun Docker after the `/health` blocker clears.
+- Next action: commit and push Iteration 105 evidence, then continue full verifier-transcript disputes,
+  Tier-C redundancy policy, external randomness deployment, deployed-run economics evidence, or rerun
+  Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -39,12 +40,49 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
+| Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, and state-rooted redundant settlement delay records | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, and block-hash-ban evidence | Add external drand/VRF service construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 105: Redundant Settlement Delay Records
+
+Feature capability: record quorum-backed receipts that cannot settle because redundant agreement is missing
+or conflicting quorum receipts exist, instead of representing delayed settlement only by omission from the
+settled set.
+
+Canonical owner: `chain::settlement` records delay evidence; `ChainState` owns persisted/rooted records.
+Adapter callers: watcher/status/docs can inspect `redundant_settlement_delays`; storage snapshots preserve
+the record.
+Old shortcut being removed: redundant disagreement/fewer-than-quorum settlement delay was implicit in a
+skipped settlement pass.
+Regression tests: `chain::tests::redundant_agreement_quorum_is_required_before_settlement`,
+`chain::tests::conflicting_linear_training_roots_do_not_settle`, and
+`storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`.
+Behavior with local synthetic block production disabled: unchanged; records are created by settlement from
+chain state and valid attestations.
+Behavior for producer and non-producer roles: unchanged; the record is in canonical chain state and roots.
+Structured evidence source: `RedundantSettlementDelayRecord`, `redundant_settlement_delay_root`, and
+`ChainState::redundant_settlement_delays`.
+Out of scope: interactive fraud proofs, external Tier-C committee evidence, and Docker/public-run proof.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+- Feature commit pending.
+
+## Recent Iterations
 
 ### Iteration 104: Local Finalized-Beacon VRF Evidence
 
@@ -79,10 +117,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `cc80d84` (`Add local randomness construction evidence`) is ready to push to
-  `origin/main`.
-
-## Recent Iterations
+- Feature commit: `cc80d84` (`Add local randomness construction evidence`) and evidence commit
+  `1bd9bc7` (`Record randomness evidence commit`) are pushed to `origin/main`.
 
 ### Iteration 103: Inclusion-Started Receipt Reward Delay
 
@@ -199,15 +235,12 @@ pushed to `origin/main`.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 103 on June 21, 2026:
+Latest full validation is Iteration 105 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm rewards --quiet
 cargo test -p tensor_vm settlement --quiet
-cargo test -p tensor_vm invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards --quiet
-cargo test -p tensor_vm mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply --quiet
-cargo test -p tensor_vm validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result --quiet
+cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

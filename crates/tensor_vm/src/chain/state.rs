@@ -303,6 +303,18 @@ pub struct BlockCheckChallengeRecord {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RedundantSettlementDelayRecord {
+    pub receipt_id: Hash,
+    pub job_id: Hash,
+    pub primitive_type: PrimitiveType,
+    pub observed_agreeing_miners: usize,
+    pub required_agreement_quorum: usize,
+    pub conflicting_quorum_receipts: usize,
+    pub recorded_at_height: u64,
+    pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PendingProposerReward {
     pub block_height: u64,
     pub proposer: Address,
@@ -1128,6 +1140,8 @@ pub struct ChainState {
     pub(in crate::chain) validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
     pub(in crate::chain) validator_audit_appeals: BTreeMap<Hash, ValidatorAuditAppealRecord>,
     pub(in crate::chain) settled_receipts: BTreeSet<Hash>,
+    pub(in crate::chain) redundant_settlement_delays:
+        BTreeMap<Hash, RedundantSettlementDelayRecord>,
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
     pub(in crate::chain) block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
@@ -1167,6 +1181,7 @@ pub(crate) struct ChainStateParts {
     pub validator_audit_slashes: BTreeMap<Hash, ValidatorAuditSlashRecord>,
     pub validator_audit_appeals: BTreeMap<Hash, ValidatorAuditAppealRecord>,
     pub settled_receipts: BTreeSet<Hash>,
+    pub redundant_settlement_delays: BTreeMap<Hash, RedundantSettlementDelayRecord>,
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
     pub block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
@@ -1207,6 +1222,7 @@ impl ChainState {
             validator_audit_slashes: parts.validator_audit_slashes,
             validator_audit_appeals: parts.validator_audit_appeals,
             settled_receipts: parts.settled_receipts,
+            redundant_settlement_delays: parts.redundant_settlement_delays,
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
             block_check_challenges: parts.block_check_challenges,
@@ -1379,6 +1395,10 @@ impl ChainState {
 
     pub fn settled_receipts(&self) -> &BTreeSet<Hash> {
         &self.settled_receipts
+    }
+
+    pub fn redundant_settlement_delays(&self) -> &BTreeMap<Hash, RedundantSettlementDelayRecord> {
+        &self.redundant_settlement_delays
     }
 
     pub fn included_receipts(&self) -> &BTreeSet<Hash> {

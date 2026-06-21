@@ -2,9 +2,9 @@ use super::{
     AccountState, BlockCheckChallengeRecord, BlockCheckTranscript, BlockVote, ChainState,
     DataUnavailabilitySlashRecord, InvalidOutputSlashRecord, JobState, MinerState, ModelState,
     PendingChallengeReward, PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    ReceiptRandomnessAnchor, ReceiptState, RewardState, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState,
+    ReceiptRandomnessAnchor, ReceiptState, RedundantSettlementDelayRecord, RewardState,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -73,6 +73,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&validator_audit_slash_root(&state.validator_audit_slashes));
     parts.extend_from_slice(&validator_audit_appeal_root(&state.validator_audit_appeals));
     parts.extend_from_slice(&settled_receipt_root(&state.settled_receipts));
+    parts.extend_from_slice(&redundant_settlement_delay_root(
+        &state.redundant_settlement_delays,
+    ));
     parts.extend_from_slice(&hash_set_root(
         b"tensor-vm-included-receipt-root-v1",
         &state.included_receipts,
@@ -142,6 +145,25 @@ pub(super) fn block_check_challenge_root(
         encoded.extend_from_slice(challenge.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-block-check-challenge-root-v1", &[&encoded])
+}
+
+pub(super) fn redundant_settlement_delay_root(
+    delays: &BTreeMap<Hash, RedundantSettlementDelayRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (receipt_id, delay) in delays {
+        encoded.extend_from_slice(receipt_id);
+        encoded.extend_from_slice(&delay.receipt_id);
+        encoded.extend_from_slice(&delay.job_id);
+        encoded.push(primitive_type_tag(delay.primitive_type));
+        encoded.extend_from_slice(&(delay.observed_agreeing_miners as u64).to_le_bytes());
+        encoded.extend_from_slice(&(delay.required_agreement_quorum as u64).to_le_bytes());
+        encoded.extend_from_slice(&(delay.conflicting_quorum_receipts as u64).to_le_bytes());
+        encoded.extend_from_slice(&delay.recorded_at_height.to_le_bytes());
+        encoded.extend_from_slice(&(delay.reason.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(delay.reason.as_bytes());
+    }
+    hash_bytes(b"tensor-vm-redundant-settlement-delay-root-v1", &[&encoded])
 }
 
 pub(super) fn data_unavailability_slash_root(

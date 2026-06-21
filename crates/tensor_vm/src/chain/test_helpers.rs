@@ -1,6 +1,6 @@
 use super::{
     BlockVote, Chain, PendingChallengeReward, PendingReceiptReward, ReceiptRandomnessAnchor,
-    ReceiptState, RewardState, TensorBlock, validation,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock, validation,
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash};
@@ -76,6 +76,15 @@ impl Chain {
 
     pub(crate) fn insert_receipt_for_testing(&mut self, receipt: ReceiptState) {
         self.state.receipts.insert(receipt.receipt_id(), receipt);
+    }
+
+    pub(crate) fn insert_redundant_settlement_delay_for_testing(
+        &mut self,
+        record: RedundantSettlementDelayRecord,
+    ) {
+        self.state
+            .redundant_settlement_delays
+            .insert(record.receipt_id, record);
     }
 
     pub(crate) fn remove_receipt_randomness_anchor_for_testing(&mut self, receipt_id: &Hash) {

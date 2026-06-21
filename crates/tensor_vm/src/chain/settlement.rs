@@ -1,6 +1,6 @@
 use super::{
     Chain, ChainEvent, ChainState, PendingReceiptReward, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
-    ReceiptRewardKind, ReceiptState,
+    ReceiptRewardKind, ReceiptState, RedundantSettlementDelayRecord,
 };
 use crate::jobs::LinearTrainingStepReceipt;
 use crate::types::{Address, Hash, hash_bytes};
@@ -32,24 +32,55 @@ pub(super) fn has_redundant_agreement(chain: &Chain, receipt_id: &Hash) -> bool 
 
 pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_reward_pool: u64) {
     let mut newly_settled = Vec::new();
+    let mut delayed_records = Vec::new();
+    let mut clear_delay_ids = Vec::new();
     for (receipt_id, receipt) in &chain.state.receipts {
         if chain.state.settled_receipts.contains(receipt_id) {
             continue;
         }
         if chain.state.challenged_receipts.contains(receipt_id) {
+            clear_delay_ids.push(*receipt_id);
             continue;
         }
         if chain.has_attestation_quorum(receipt_id) {
-            if !has_redundant_agreement(chain, receipt_id) {
+            let agreeing_miners = redundant_agreement_count(chain, receipt_id);
+            let conflicting_quorum_receipts = conflicting_quorum_receipt_count(chain, *receipt_id);
+            if agreeing_miners < chain.params.agreement_quorum.max(1) {
+                delayed_records.push(redundant_settlement_delay_record(
+                    chain,
+                    *receipt_id,
+                    receipt,
+                    agreeing_miners,
+                    conflicting_quorum_receipts,
+                    "awaiting redundant miner agreement quorum",
+                ));
                 continue;
             }
             if let ReceiptState::LinearTrainingStep(receipt) = receipt
                 && has_conflicting_linear_receipt(chain, *receipt_id, receipt)
             {
+                delayed_records.push(redundant_settlement_delay_record(
+                    chain,
+                    *receipt_id,
+                    &ReceiptState::LinearTrainingStep(receipt.clone()),
+                    agreeing_miners,
+                    conflicting_quorum_receipts,
+                    "conflicting quorum-backed linear training transition",
+                ));
                 continue;
             }
             newly_settled.push((*receipt_id, receipt.clone()));
         }
+    }
+
+    for receipt_id in clear_delay_ids {
+        chain.state.redundant_settlement_delays.remove(&receipt_id);
+    }
+    for record in delayed_records {
+        chain
+            .state
+            .redundant_settlement_delays
+            .insert(record.receipt_id, record);
     }
 
     let miner_rewards = miner_reward_allocations(&newly_settled, miner_reward_pool);
@@ -59,6 +90,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         .collect();
     for (receipt_id, receipt) in newly_settled {
         chain.state.settled_receipts.insert(receipt_id);
+        chain.state.redundant_settlement_delays.remove(&receipt_id);
         let mut miner_claim = None;
         let miner_reward = miner_rewards.get(&receipt_id).copied();
         if let Some(miner) = chain.state.miners.get_mut(&receipt.miner()) {
@@ -102,6 +134,64 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 ReceiptRewardKind::Validator,
             );
         }
+    }
+}
+
+fn redundant_settlement_delay_record(
+    chain: &Chain,
+    receipt_id: Hash,
+    receipt: &ReceiptState,
+    observed_agreeing_miners: usize,
+    conflicting_quorum_receipts: usize,
+    reason: &str,
+) -> RedundantSettlementDelayRecord {
+    RedundantSettlementDelayRecord {
+        receipt_id,
+        job_id: receipt.job_id(),
+        primitive_type: receipt.primitive_type(),
+        observed_agreeing_miners,
+        required_agreement_quorum: chain.params.agreement_quorum.max(1),
+        conflicting_quorum_receipts,
+        recorded_at_height: chain.state.height,
+        reason: reason.to_owned(),
+    }
+}
+
+fn conflicting_quorum_receipt_count(chain: &Chain, receipt_id: Hash) -> usize {
+    let Some(receipt) = chain.state.receipts.get(&receipt_id) else {
+        return 0;
+    };
+    chain
+        .state
+        .receipts
+        .iter()
+        .filter(|(other_id, other)| {
+            **other_id != receipt_id
+                && chain.has_attestation_quorum(other_id)
+                && !receipts_agree(receipt, other)
+                && comparable_for_redundant_agreement(receipt, other)
+        })
+        .count()
+}
+
+fn comparable_for_redundant_agreement(left: &ReceiptState, right: &ReceiptState) -> bool {
+    match (left, right) {
+        (ReceiptState::TensorOp(left), ReceiptState::TensorOp(right)) => {
+            left.job_id == right.job_id
+                && left.program_hash == right.program_hash
+                && left.input_roots == right.input_roots
+        }
+        (ReceiptState::LinearTrainingStep(left), ReceiptState::LinearTrainingStep(right)) => {
+            left.job_id == right.job_id
+                && left.model_id == right.model_id
+                && left.step == right.step
+                && left.weight_root_before == right.weight_root_before
+                && left.batch_root == right.batch_root
+        }
+        (ReceiptState::GraphExecution(left), ReceiptState::GraphExecution(right)) => {
+            left.job_id == right.job_id && left.graph_id == right.graph_id
+        }
+        _ => false,
     }
 }
 

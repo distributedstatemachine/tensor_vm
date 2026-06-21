@@ -295,7 +295,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   so local synthetic production drives miner execution and validator verification through role-owned
   components before submitting receipts and attestations through the shared chain engine
 - Redundant miner-output agreement quorum before settlement, with disagreement/fewer-than-quorum receipts
-  delayed rather than rewarded
+  delayed rather than rewarded. `ChainState::redundant_settlement_delays` now persists state-rooted
+  `RedundantSettlementDelayRecord` entries for missing agreement quorum and conflicting quorum-backed
+  linear-transition receipts, and clears the record when the receipt settles.
 - Miner node executor with receipt submission and tensor serving
 - Validator node attestation flow for TensorOp and LinearTrainingStep receipts
 - Server-backed TensorOp data availability verification with unavailable attestations

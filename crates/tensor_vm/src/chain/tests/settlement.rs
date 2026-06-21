@@ -949,6 +949,18 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert!(!chain.has_redundant_agreement(&receipts[0].receipt_id));
     chain.settle_epoch(1_000, 500);
     assert!(chain.state().settled_receipts().is_empty());
+    let delay = chain
+        .state()
+        .redundant_settlement_delays()
+        .get(&receipts[0].receipt_id)
+        .expect("quorum-backed receipt should record delayed redundant settlement");
+    assert_eq!(delay.receipt_id, receipts[0].receipt_id);
+    assert_eq!(delay.job_id, receipts[0].job_id);
+    assert_eq!(delay.primitive_type, PrimitiveType::TensorOp);
+    assert_eq!(delay.observed_agreeing_miners, 2);
+    assert_eq!(delay.required_agreement_quorum, 3);
+    assert_eq!(delay.conflicting_quorum_receipts, 0);
+    assert_eq!(delay.reason, "awaiting redundant miner agreement quorum");
 
     let receipt = &receipts[2];
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
@@ -971,6 +983,13 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert!(chain.has_redundant_agreement(&receipts[0].receipt_id));
     chain.settle_epoch(1_000, 500);
     assert_eq!(chain.state().settled_receipts().len(), 3);
+    assert!(
+        chain
+            .state()
+            .redundant_settlement_delays()
+            .get(&receipts[0].receipt_id)
+            .is_none()
+    );
 }
 
 #[test]
@@ -1045,4 +1064,17 @@ fn conflicting_linear_training_roots_do_not_settle() {
     chain.settle_epoch(1_000, 500);
     assert!(chain.state().settled_receipts().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
+    let delay = chain
+        .state()
+        .redundant_settlement_delays()
+        .get(&receipt.receipt_id)
+        .expect("conflicting quorum-backed transition should record delayed settlement");
+    assert_eq!(delay.primitive_type, PrimitiveType::LinearTrainingStep);
+    assert_eq!(delay.observed_agreeing_miners, 1);
+    assert_eq!(delay.required_agreement_quorum, 1);
+    assert_eq!(delay.conflicting_quorum_receipts, 1);
+    assert_eq!(
+        delay.reason,
+        "conflicting quorum-backed linear training transition"
+    );
 }
