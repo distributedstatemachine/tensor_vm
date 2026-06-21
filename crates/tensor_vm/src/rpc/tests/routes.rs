@@ -620,6 +620,22 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         Some(RANDOMNESS_BEACON_SOURCE)
     );
     assert_eq!(
+        randomness["drand_round_mapping"].as_str(),
+        Some(RANDOMNESS_DRAND_ROUND_MAPPING)
+    );
+    assert_ne!(
+        randomness["drand_round_mapping"].as_str(),
+        Some("not_configured_local_finalized_beacon")
+    );
+    assert_eq!(
+        randomness["vrf_construction"].as_str(),
+        Some(RANDOMNESS_VRF_CONSTRUCTION)
+    );
+    assert_ne!(
+        randomness["vrf_construction"].as_str(),
+        Some("not_configured_local_finalized_beacon")
+    );
+    assert_eq!(
         randomness["assignment_seed_domain"].as_str(),
         Some(ASSIGNMENT_SEED_DOMAIN)
     );
@@ -636,6 +652,11 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         Some(false)
     );
     assert_eq!(randomness["receipt_anchor_count"].as_u64(), Some(0));
+    assert_eq!(
+        randomness["finalized_beacon_round_mapping_count"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(randomness["validator_vrf_seed_count"].as_u64(), Some(0));
     assert_eq!(
         randomness["current_block_hash_anchor_count"].as_u64(),
         Some(0)

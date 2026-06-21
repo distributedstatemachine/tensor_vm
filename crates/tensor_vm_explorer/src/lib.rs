@@ -371,6 +371,8 @@ pub struct ExplorerRandomnessBindingEvidence {
     pub current_block_hash_randomness_allowed: bool,
     pub receipt_anchor_count: usize,
     pub finalized_beacon_anchor_count: usize,
+    pub finalized_beacon_round_mapping_count: usize,
+    pub validator_vrf_seed_count: usize,
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
@@ -380,7 +382,7 @@ pub struct ExplorerRandomnessBindingEvidence {
 impl ExplorerRandomnessBindingEvidence {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"all_receipt_anchors_consistent\":{}}}",
+            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"all_receipt_anchors_consistent\":{}}}",
             escape_json(&self.beacon_source),
             escape_json(&self.drand_round_mapping),
             escape_json(&self.vrf_construction),
@@ -391,6 +393,8 @@ impl ExplorerRandomnessBindingEvidence {
             self.current_block_hash_randomness_allowed,
             self.receipt_anchor_count,
             self.finalized_beacon_anchor_count,
+            self.finalized_beacon_round_mapping_count,
+            self.validator_vrf_seed_count,
             self.receipt_bound_anchor_count,
             self.consistent_anchor_count,
             self.current_block_hash_anchor_count,
@@ -881,8 +885,12 @@ mod tests {
         );
         let randomness = ExplorerRandomnessBindingEvidence {
             beacon_source: "local_finalized_chain_beacon_v1".to_owned(),
-            drand_round_mapping: "not_configured_local_finalized_beacon".to_owned(),
-            vrf_construction: "not_configured_local_finalized_beacon".to_owned(),
+            drand_round_mapping:
+                "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round"
+                    .to_owned(),
+            vrf_construction:
+                "local_validator_vrf_seed_v1:H(commitment,receipt_id,job_id,validator,round)"
+                    .to_owned(),
             assignment_seed_domain: "tensor-vm-validator-assignment-seed-v1".to_owned(),
             validation_seed_commitment_domain: "tensor-vm-validation-seed-commitment-v1".to_owned(),
             validation_seed_reveal_domain: "tensor-vm-committed-validation-seed-v1".to_owned(),
@@ -890,6 +898,8 @@ mod tests {
             current_block_hash_randomness_allowed: false,
             receipt_anchor_count: 2,
             finalized_beacon_anchor_count: 2,
+            finalized_beacon_round_mapping_count: 2,
+            validator_vrf_seed_count: 10,
             receipt_bound_anchor_count: 2,
             consistent_anchor_count: 2,
             current_block_hash_anchor_count: 0,
@@ -901,6 +911,11 @@ mod tests {
                 .contains("\"current_block_hash_randomness_allowed\":false")
         );
         assert!(randomness.to_json().contains("\"receipt_anchor_count\":2"));
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"validator_vrf_seed_count\":10")
+        );
         assert!(summary.to_json().contains("\"model_count\":1"));
         assert!(summary.to_json().contains("\"attestation_count\":30"));
         let receipts = receipts_json(&[ExplorerReceipt {

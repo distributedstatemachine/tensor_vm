@@ -11,8 +11,10 @@ use std::collections::BTreeSet;
 
 const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
 pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
-pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str = "not_configured_local_finalized_beacon";
-pub const RANDOMNESS_VRF_CONSTRUCTION: &str = "not_configured_local_finalized_beacon";
+pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str =
+    "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round";
+pub const RANDOMNESS_VRF_CONSTRUCTION: &str =
+    "local_validator_vrf_seed_v1:H(commitment,receipt_id,job_id,validator,round)";
 pub const ASSIGNMENT_SEED_DOMAIN: &str = "tensor-vm-validator-assignment-seed-v1";
 pub const VALIDATION_SEED_COMMITMENT_DOMAIN: &str = "tensor-vm-validation-seed-commitment-v1";
 pub const VALIDATION_SEED_REVEAL_DOMAIN: &str = "tensor-vm-committed-validation-seed-v1";

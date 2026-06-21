@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 103 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 104 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 103 coverage could not
-be regenerated. Iterations 78 through 103 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 104 coverage could not
+be regenerated. Iterations 78 through 104 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -141,6 +141,9 @@ Iteration 103 made settled receipt rewards explicitly await canonical blockspace
 reward maturity clock starts. Focused settlement, reward, block, and audit tests cover the
 awaiting-inclusion sentinel, inclusion-derived claimable heights, reward-root sensitivity, and continued
 voiding/slashing behavior.
+Iteration 104 adds local finalized-beacon randomness construction evidence. Focused randomness, status,
+RPC, and explorer tests cover non-placeholder local finalized-beacon round mapping, local validator VRF
+seed derivation labels, round-mapping counts, validator VRF seed counts, and the current-block-hash ban.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

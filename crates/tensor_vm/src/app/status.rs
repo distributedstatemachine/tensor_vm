@@ -404,6 +404,14 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         randomness.finalized_beacon_anchor_count,
     );
     report.field(
+        "randomness_finalized_beacon_round_mapping_count",
+        randomness.finalized_beacon_round_mapping_count,
+    );
+    report.field(
+        "randomness_validator_vrf_seed_count",
+        randomness.validator_vrf_seed_count,
+    );
+    report.field(
         "randomness_receipt_bound_anchor_count",
         randomness.receipt_bound_anchor_count,
     );
@@ -575,7 +583,8 @@ mod tests {
     use super::*;
     use crate::chain::{
         ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, JobState,
-        PendingChallengeReward, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE, ReceiptRewardKind,
+        PendingChallengeReward, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE,
+        RANDOMNESS_DRAND_ROUND_MAPPING, RANDOMNESS_VRF_CONSTRUCTION, ReceiptRewardKind,
         VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
     };
     use crate::jobs::MatmulJob;
@@ -838,6 +847,22 @@ mod tests {
             Some(RANDOMNESS_BEACON_SOURCE)
         );
         assert_eq!(
+            fields.value("randomness_drand_round_mapping"),
+            Some(RANDOMNESS_DRAND_ROUND_MAPPING)
+        );
+        assert_ne!(
+            fields.value("randomness_drand_round_mapping"),
+            Some("not_configured_local_finalized_beacon")
+        );
+        assert_eq!(
+            fields.value("randomness_vrf_construction"),
+            Some(RANDOMNESS_VRF_CONSTRUCTION)
+        );
+        assert_ne!(
+            fields.value("randomness_vrf_construction"),
+            Some("not_configured_local_finalized_beacon")
+        );
+        assert_eq!(
             fields.value("randomness_assignment_seed_domain"),
             Some(ASSIGNMENT_SEED_DOMAIN)
         );
@@ -857,6 +882,14 @@ mod tests {
         assert_eq!(
             fields.value("randomness_finalized_beacon_anchor_count"),
             Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_finalized_beacon_round_mapping_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_validator_vrf_seed_count"),
+            Some("0")
         );
         assert_eq!(
             fields.value("randomness_receipt_bound_anchor_count"),

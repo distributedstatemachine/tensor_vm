@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 103 complete - inclusion-started receipt reward delay.
+- Active feature: Iteration 104 in progress - local finalized-beacon VRF evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -22,7 +22,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue full verifier-transcript disputes, external randomness, deployed-run economics evidence,
+- Next action: finish Iteration 104 validation, then continue full verifier-transcript disputes,
+  external randomness deployment, deployed-run economics evidence,
   or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
@@ -39,49 +40,38 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, and block-hash-ban evidence | Add external drand/VRF service construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 103: Inclusion-Started Receipt Reward Delay
+### Iteration 104: Local Finalized-Beacon VRF Evidence
 
-Feature capability: make settled receipt reward claims explicitly await canonical blockspace inclusion, then
-start their spendability delay from the inclusion block instead of carrying a normal-looking pre-inclusion
-claimable height.
+Feature capability: replace placeholder randomness-construction labels with concrete local
+finalized-beacon round mapping and validator VRF-seed derivation evidence for receipt anchors.
 
-Canonical owner: `chain::settlement` creates receipt reward escrow; `chain::blocks` starts the maturity
-clock when a block selects the receipt.
-Adapter callers: status/explorer pending reward views, block reward roots, reward release, local checker
-pending reward evidence.
-Old shortcut being removed: pre-inclusion receipt rewards used a real claimable height and relied on the
-release sweeper's included-receipt guard to prevent early spendability.
-Regression test that proves the shortcut is gone:
-`chain::tests::produced_blocks_delay_receipt_rewards_from_inclusion_height`,
-`chain::tests::chain_settles_valid_tensorwork_and_rewards_participants`, and
-`chain::tests::chain_settles_valid_graph_execution_and_delays_rewards`.
-Behavior with local synthetic block production disabled: unchanged; any settlement path creates awaiting
-claims and any canonical inclusion starts maturity.
-Behavior for producer and non-producer roles: both recompute the same child reward root because inclusion
-delay is applied by block child-state transition.
-Structured evidence source: `RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT`,
-`PendingReceiptReward::claimable_at_height`, `included_receipts`, and reward-root tests.
-Finality source: unchanged; this is reward finality, not block finality.
-Wire-size and codec boundary: no new p2p payload or chain-state field; the existing `u64` claimable height
-uses a named consensus sentinel before inclusion.
-
-Implementation summary:
-- Settlement now enqueues miner and validator receipt rewards with the explicit awaiting-inclusion sentinel.
-- Block child-state application converts the sentinel to `block_height + reward_maturity_delay_blocks`
-  when the receipt is selected, while preserving later audit/challenge holds with `max`.
-- Removed the test helper that manually rewrote pending receipt claim heights as an old workaround.
+Canonical owner: `chain::validation` defines seed domains; `ChainState::randomness_binding_evidence`
+derives structured counts from state-rooted receipt anchors.
+Adapter callers: service status and explorer randomness evidence.
+Old shortcut being removed: status/explorer reported `not_configured_local_finalized_beacon` for drand
+round mapping and VRF construction even though local receipt anchors were already committed.
+Regression tests: `chain::tests::randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy`,
+`app::status::tests::service_status_exports_randomness_binding_evidence`, RPC explorer overview tests, and
+explorer JSON rendering tests.
+Behavior with local synthetic block production disabled: unchanged; the evidence is derived from admitted
+receipt anchors and registered validators, not synthetic production.
+Behavior for producer and non-producer roles: unchanged; both read the same chain-state evidence.
+Structured evidence source: `RANDOMNESS_DRAND_ROUND_MAPPING`, `RANDOMNESS_VRF_CONSTRUCTION`,
+`finalized_beacon_round_mapping_count`, and `validator_vrf_seed_count`.
+Out of scope: external drand service, public VRF attestations, and deployed commit/reveal lifecycle.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm rewards --quiet` passed.
-- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
-- Focused: `cargo test -p tensor_vm invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards --quiet` passed.
+- Focused: `cargo test -p tensor_vm randomness_binding_evidence --quiet` passed.
+- Focused: `cargo test -p tensor_vm service_status_exports_randomness_binding_evidence --quiet` passed.
+- Focused: `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet` passed.
+- Focused: `cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -89,10 +79,15 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `456ab81` (`Delay receipt rewards until inclusion`) and evidence commit `f1f89fc`
-  (`Record inclusion reward delay evidence`) are pushed to `origin/main`.
 
 ## Recent Iterations
+
+### Iteration 103: Inclusion-Started Receipt Reward Delay
+
+Settled receipt rewards now enter escrow with an awaiting-inclusion sentinel and start their claimable
+height from canonical blockspace inclusion. Validation passed focused reward/settlement/audit tests, full
+crate, clippy, workspace release, and first/final Gate 0. Commits `456ab81`, `f1f89fc`, and `627f54b`
+are pushed to `origin/main`.
 
 ### Iteration 102: Submission-Anchored Retention Openings
 

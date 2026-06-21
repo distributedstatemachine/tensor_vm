@@ -268,6 +268,8 @@ pub(super) fn explorer_randomness_binding_evidence(
         current_block_hash_randomness_allowed: evidence.current_block_hash_randomness_allowed,
         receipt_anchor_count: evidence.receipt_anchor_count,
         finalized_beacon_anchor_count: evidence.finalized_beacon_anchor_count,
+        finalized_beacon_round_mapping_count: evidence.finalized_beacon_round_mapping_count,
+        validator_vrf_seed_count: evidence.validator_vrf_seed_count,
         receipt_bound_anchor_count: evidence.receipt_bound_anchor_count,
         consistent_anchor_count: evidence.consistent_anchor_count,
         current_block_hash_anchor_count: evidence.current_block_hash_anchor_count,

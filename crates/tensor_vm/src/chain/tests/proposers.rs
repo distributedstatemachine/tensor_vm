@@ -187,6 +187,22 @@ fn randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy() {
     let evidence = chain.state().randomness_binding_evidence();
     assert_eq!(evidence.beacon_source, validation::RANDOMNESS_BEACON_SOURCE);
     assert_eq!(
+        evidence.drand_round_mapping,
+        validation::RANDOMNESS_DRAND_ROUND_MAPPING
+    );
+    assert_ne!(
+        evidence.drand_round_mapping,
+        "not_configured_local_finalized_beacon"
+    );
+    assert_eq!(
+        evidence.vrf_construction,
+        validation::RANDOMNESS_VRF_CONSTRUCTION
+    );
+    assert_ne!(
+        evidence.vrf_construction,
+        "not_configured_local_finalized_beacon"
+    );
+    assert_eq!(
         evidence.assignment_seed_domain,
         validation::ASSIGNMENT_SEED_DOMAIN
     );
@@ -201,6 +217,8 @@ fn randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy() {
     assert!(!evidence.current_block_hash_randomness_allowed);
     assert_eq!(evidence.receipt_anchor_count, 1);
     assert_eq!(evidence.finalized_beacon_anchor_count, 1);
+    assert_eq!(evidence.finalized_beacon_round_mapping_count, 1);
+    assert_eq!(evidence.validator_vrf_seed_count, 1);
     assert_eq!(evidence.receipt_bound_anchor_count, 1);
     assert_eq!(evidence.consistent_anchor_count, 1);
     assert_eq!(evidence.current_block_hash_anchor_count, 0);
@@ -209,6 +227,8 @@ fn randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy() {
     chain.produce_block(validator, 1_000).unwrap();
     let later_evidence = chain.state().randomness_binding_evidence();
     assert_eq!(later_evidence.receipt_anchor_count, 1);
+    assert_eq!(later_evidence.finalized_beacon_round_mapping_count, 1);
+    assert_eq!(later_evidence.validator_vrf_seed_count, 1);
     assert_eq!(later_evidence.consistent_anchor_count, 1);
     assert!(later_evidence.all_receipt_anchors_consistent);
 }

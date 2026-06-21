@@ -470,6 +470,8 @@ pub struct RandomnessBindingEvidence {
     pub current_block_hash_randomness_allowed: bool,
     pub receipt_anchor_count: usize,
     pub finalized_beacon_anchor_count: usize,
+    pub finalized_beacon_round_mapping_count: usize,
+    pub validator_vrf_seed_count: usize,
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
@@ -1277,11 +1279,18 @@ impl ChainState {
 
     pub fn randomness_binding_evidence(&self) -> RandomnessBindingEvidence {
         let mut finalized_beacon_anchor_count = 0_usize;
+        let mut finalized_beacon_round_mapping_count = 0_usize;
+        let mut validator_vrf_seed_count = 0_usize;
         let mut receipt_bound_anchor_count = 0_usize;
         let mut consistent_anchor_count = 0_usize;
         for (receipt_id, anchor) in &self.receipt_randomness_anchors {
             if anchor.finalized_randomness != [0; 32] {
                 finalized_beacon_anchor_count += 1;
+            }
+            if anchor.finalized_randomness != [0; 32]
+                && anchor.beacon_round <= self.finalized_beacon_round
+            {
+                finalized_beacon_round_mapping_count += 1;
             }
             if anchor.receipt_id == *receipt_id {
                 receipt_bound_anchor_count += 1;
@@ -1301,6 +1310,10 @@ impl ChainState {
                     )
             {
                 consistent_anchor_count += 1;
+                if self.receipts.contains_key(receipt_id) {
+                    validator_vrf_seed_count =
+                        validator_vrf_seed_count.saturating_add(self.validators.len());
+                }
             }
         }
         let receipt_anchor_count = self.receipt_randomness_anchors.len();
@@ -1315,6 +1328,8 @@ impl ChainState {
             current_block_hash_randomness_allowed: false,
             receipt_anchor_count,
             finalized_beacon_anchor_count,
+            finalized_beacon_round_mapping_count,
+            validator_vrf_seed_count,
             receipt_bound_anchor_count,
             consistent_anchor_count,
             current_block_hash_anchor_count: 0,
