@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 126 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 127 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 126 coverage could not
-be regenerated. Iterations 78 through 126 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 127 coverage could not
+be regenerated. Iterations 78 through 127 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -201,6 +201,9 @@ Iteration 126 extends that explicit delay state to `ReceiptRewardPending` settle
 remaining synthetic `u64::MAX` pending-event height with `claimable_at_height=None` plus
 `awaiting_inclusion=true`. Focused command tests cover newly pending miner and validator receipt reward
 events.
+Iteration 127 adds the checked Codex 5.5 local-chain workflow document. Focused deployment-doc coverage
+guards the Gate 0-first rule, context refresh list, local Docker gate, broad validation sequence,
+tarpaulin/Docker blockers, and commit/push evidence flow.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

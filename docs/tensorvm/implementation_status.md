@@ -732,6 +732,9 @@ These spec items require real deployment or non-reference infrastructure and are
 - published external public-testnet evidence bundle; the required bundle shape is documented in
   [`public_testnet_evidence.md`](public_testnet_evidence.md), and
   `deploy/tensorvm/RUNBOOK.md` records the external collection and publication flow, while
+  [`codex_5_5_local_chain_workflow.md`](codex_5_5_local_chain_workflow.md) records the recurring
+  Codex local-chain iteration gates, Docker gate, validation sequence, evidence updates, and commit/push
+  evidence requirements, and
   `docs/tensorvm/public-testnet.evidence` and
   `deploy/tensorvm/manifests/public-testnet.evidence.example` are checked as non-full-spec format
   examples, but no complete external bundle is available yet

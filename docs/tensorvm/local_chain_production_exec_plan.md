@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 126 complete - receipt reward pending events expose delay state.
+- Active feature: Iteration 127 complete - Codex 5.5 local-chain workflow doc.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -36,7 +36,6 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   tensor artifacts, including `const_blob` tensors, before execution or attestation. Exact IR execution
   now exposes verified per-op trace openings, and libp2p can sample them by `trace_root` and op index.
 - Current blockers:
-  - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
@@ -65,6 +64,33 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
+### Iteration 127: Codex 5.5 Local Chain Workflow Doc
+
+Feature capability: provide the referenced Codex local-chain workflow artifact for future goal-loop runs.
+Readiness requirements covered: `goal.md` commit/push workflow, `mvp_spec.md` §32.1 autonomous agent
+completion contract, and the local readiness acceptance gate.
+Files/modules likely touched: `docs/tensorvm/codex_5_5_local_chain_workflow.md`,
+`testnet/tests/deployment_docs.rs`, exec/status/coverage/tarpaulin docs.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
+Tests/checkers/docs to add or update: focused deployment-doc test requiring Gate 0, context refresh,
+Docker gate, validation, evidence, and commit/push workflow lines.
+Narrow validation commands: `cargo test -p tensor_vm codex_local_chain_workflow --quiet`.
+Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
+tarpaulin attempt, final Gate 0.
+Expected observable evidence: the referenced workflow file exists and names required commands/evidence flow.
+Out of scope: consensus mutation, Docker rerun, public evidence generation, CUDA evidence.
+Split trigger: if the doc guard reveals stale command names outside this workflow artifact.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused test passed: `cargo test -p tensor_vm codex_local_chain_workflow --quiet`.
+- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
+  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+
 ### Iteration 126: Receipt Reward Pending Event Delay State
 
 Feature capability: make `ReceiptRewardPending` events carry explicit delayed maturity state.
@@ -87,7 +113,8 @@ Validation evidence:
 - Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
   `error: no such command: tarpaulin`.
 - Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
-- Commit/push evidence: committed as `2c5cb68` and pushed to `origin/main`.
+- Commit/push evidence: implementation committed as `2c5cb68`; evidence follow-up committed as `c6613cb`;
+  both pushed to `origin/main`.
 
 ### Iteration 125: Explicit Pending Reward Maturity Views
 
@@ -131,104 +158,11 @@ Validation evidence:
 - Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
   `error: no such command: tarpaulin`.
 
-### Iteration 124: Operator-Aware Collusion Risk Evidence
-
-Feature capability: make the collusion-risk study evaluate redundant agreement by distinct colluding
-operator identities rather than colluding miner-address count.
-Readiness requirements covered: `upow.md` §8.1 honest-majority committee framing, §12 economic invariant
-evidence, and `mvp_spec.md` §15 independent miner agreement.
-Canonical owner: `study::collusion_risk_assessment`; settlement remains owned by `chain::settlement`.
-Adapter callers: exported study API and docs/coverage evidence only.
-Old shortcut being removed: miner-count-only redundant-agreement collusion evidence after settlement moved
-to operator-distinct quorum.
-Regression test that proves the shortcut is gone: a single colluding operator controlling enough miner
-addresses no longer satisfies redundant agreement in the study, while enough colluding operators do.
-Behavior with local synthetic block production disabled: unchanged; this is offline study evidence.
-Behavior for producer and non-producer roles: unchanged; no runtime role mutation.
-Structured evidence source: focused `study::tests::collusion_risk_assessment_reports_threshold_crossings`.
-Finality source: unchanged stake-threshold fields in the same study.
-Wire-size and codec boundary: none; no wire format changes.
-Files/modules likely touched: `study`, coverage/status/readiness/exec docs, tarpaulin note.
-Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
-Parallelizable implementation workstreams: study API/test update and docs evidence.
-Tests/checkers/docs to add or update: focused collusion study test and docs that name operator-aware
-redundant-agreement risk.
-Narrow validation commands: `cargo test -p tensor_vm collusion_risk --quiet`.
-Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
-release tests, tarpaulin attempt, and final Gate 0.
-Expected observable evidence: colluding miners below operator quorum fail redundant agreement even when
-their address count reaches quorum; colluding operators at quorum satisfy it.
-Out of scope: public operator identity evidence, settlement quorum mechanics, Docker `/health` rerun, and
-CUDA evidence.
-Split trigger: exported API fallout beyond study callers or docs-only changes failing to capture the
-behavior.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused test passed: `cargo test -p tensor_vm collusion_risk --quiet`.
-- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-  final `cargo test -p tensor_vm local_testnet --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-
-### Iteration 123: Operator-Distinct Redundant Settlement Quorum
-
-Feature capability: make redundant receipt settlement require distinct agreeing miner operators, not just
-distinct miner addresses, and persist the operator-count evidence in redundant delay records.
-Readiness requirements covered: `upow.md` §8.1 and `mvp_spec.md` §15 independent miner agreement.
-Files/modules likely touched: `chain::settlement`, `chain::state`, `chain::roots`,
-`storage::chain_state`, settlement/storage tests, and TensorVM docs.
-Parallel subagents to run: not used; available subagent tool forbids spawning unless explicitly requested.
-Parallelizable implementation workstreams: chain quorum/evidence, storage/root encoding, tests/docs.
-Tests/checkers/docs to add or update: settlement duplicate-operator quorum rejection, explicit
-pending-reward delay/release assertions after redundant holds, storage/root roundtrip/sensitivity,
-coverage/status/readiness/exec docs.
-Narrow validation commands: settlement and storage chain-state focused tests.
-Broad validation commands before commit: Gate 0, fmt, diff check, tensor_vm tests, clippy, workspace
-release tests, and tarpaulin attempt if feasible.
-Expected observable evidence: a quorum of miner addresses sharing one `operator_id` stays delayed, the
-delay record reports distinct operator count below quorum, and later adding a distinct operator settles.
-Out of scope: public 7-day operator evidence, external identity attestation, full Tier-C fraud game,
-Docker `/health` rerun, and CUDA evidence.
-Split trigger: storage/schema fallout or broad settlement regressions that cannot be resolved inside the
-chain redundancy boundary.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused tests passed: `cargo test -p tensor_vm redundant_agreement --quiet` and
-  `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet`.
-- Focused redundant settlement coverage now verifies pending receipt rewards inherit the redundant hold,
-  stay uncredited before inclusion and before maturity, and release only through the normal pending reward
-  ledger after inclusion-derived maturity.
-- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-  final `cargo test -p tensor_vm local_testnet --release`.
-- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
-  `error: no such command: tarpaulin`.
-
-### Iteration 122: Voided Receipt Reward Challenge Holds
-
-Feature capability: replace void-only receipt reward handling on challenge evidence with explicit delayed
-voided claims for block-check, invalid-output, and data-unavailability paths.
-Readiness requirements covered: `mvp_spec.md` §20.4 delayed reward settlement and economics/clawback
-invariant evidence.
-Canonical owner: chain reward maturity remains in `chain::state`/`chain::commands`; challenge and
-validation paths only extend affected pending receipt reward claims.
-Adapter callers: block-check challenge resolution and late validator attestation evidence.
-Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
-Out of scope: deployed-run detection measurements, full interactive fraud game, and Docker `/health` rerun.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused tests passed: `cargo test -p tensor_vm chain::tests::challenges::block_check_challenge_voids_pending_reward_and_throttles_proposer --quiet`
-  and `cargo test -p tensor_vm delayed_receipt_rewards_before_release --quiet`.
-- Final checks passed: `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
-  `cargo clippy --workspace --all-targets -- -D warnings`, `cargo test --workspace --release`, and
-  final `cargo test -p tensor_vm local_testnet --release`.
-
 ## Recent Iterations
 
+- Iteration 124 made collusion-risk study evidence operator-aware in commit `bdac46b`.
+- Iteration 123 made redundant settlement quorum operator-distinct in commit `1c86e13`.
+- Iteration 122 delayed voided receipt rewards through challenge holds in commit `bde7e51`.
 - Iterations 120-121: trace openings and p2p trace-opening sampling landed in `b3fe556` and `f631084`.
 - Iterations 116-119: packed int8 artifacts, external graph artifact fetch, and explicit receipt reward
   maturity landed in prior pushed commits.
@@ -249,11 +183,11 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 124 on June 21, 2026:
+Latest full validation is Iteration 127 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm collusion_risk --quiet
+cargo test -p tensor_vm codex_local_chain_workflow --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

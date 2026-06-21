@@ -303,7 +303,10 @@ new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` a
   checkpoint requirements, post-run validation flags, publication artifacts, and the explicit no-real-run
   blocker, `testnet::tests::public_deployment_readme_records_scaffold_boundary_and_operator_flow`
   guarding the deployment README's scaffold file list, public service routes, minimal operator flow,
-  evidence commands, and non-evidence boundary, signed public
+  evidence commands, and non-evidence boundary,
+  `testnet::tests::codex_local_chain_workflow_records_required_iteration_flow` guarding the Codex
+  local-chain workflow artifact for Gate 0, context refresh, Docker gate, validation, blockers, and
+  commit/push evidence flow, signed public
   libp2p network-observation CLI generation rejects missing or zero TCP listen ports plus non-public and
   single-label DNS multiaddrs, `evidence network from-service-log` derives signed observation records
   from captured `tvmd node serve` logs while still requiring public listen multiaddrs, process-level

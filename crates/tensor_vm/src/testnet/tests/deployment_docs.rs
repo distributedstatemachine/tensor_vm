@@ -207,6 +207,58 @@ fn public_deployment_readme_records_scaffold_boundary_and_operator_flow() {
 }
 
 #[test]
+fn codex_local_chain_workflow_records_required_iteration_flow() {
+    let workflow = include_str!("../../../../../docs/tensorvm/codex_5_5_local_chain_workflow.md");
+
+    assert_trimmed_lines(
+        workflow,
+        &[
+            "cargo test -p tensor_vm local_testnet --release",
+            "goal.md",
+            "docs/tensorvm/upow.md",
+            "docs/tensorvm/mvp_spec.md",
+            "docs/tensorvm/local_chain_production_readiness.md",
+            "docs/tensorvm/local_chain_production_exec_plan.md",
+            "docs/tensorvm/coverage_matrix.md",
+            "docs/tensorvm/implementation_status.md",
+            "docs/tensorvm/tarpaulin_report.md",
+        ],
+        "Codex workflow context and Gate 0",
+    );
+
+    assert_trimmed_lines(
+        workflow,
+        &[
+            "docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet",
+            "docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml build",
+            "docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up --wait",
+            "deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh",
+            "deploy/tensorvm/local-cpu/scripts/check-rolling-restart-continuity.sh",
+            "docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml down -v",
+        ],
+        "Codex workflow Docker gate",
+    );
+
+    assert_trimmed_lines(
+        workflow,
+        &[
+            "cargo fmt --check --all",
+            "git diff --check",
+            "cargo test -p tensor_vm --quiet",
+            "cargo clippy --workspace --all-targets -- -D warnings",
+            "cargo test --workspace --release",
+            "cargo tarpaulin --workspace --offline",
+            "git status --short",
+            "git commit -m \"<slice name>\"",
+            "git push origin main",
+            "error: no such command: tarpaulin",
+            "gateway /health timeout during the recorded full Docker run",
+        ],
+        "Codex workflow validation and blockers",
+    );
+}
+
+#[test]
 fn operator_docs_do_not_preserve_retired_tvmd_commands() {
     for (label, document) in [
         (
