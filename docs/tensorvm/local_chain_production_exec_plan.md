@@ -95,6 +95,7 @@ Validation evidence:
 - First Gate 0 passed before edits; focused packed tensor artifact, packed IR replay, verifier, and
   conformance/profile tests passed; format, diff, full `tensor_vm`, clippy, release workspace, and final
   Gate 0 passed. Tarpaulin remains blocked by missing `cargo-tarpaulin`.
+  Feature commit: `6f615f6` (`Add packed int8 tensor artifact APIs`) pushed to `origin/main`.
 
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
