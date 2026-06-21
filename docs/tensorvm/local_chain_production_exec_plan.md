@@ -89,8 +89,8 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `456ab81` (`Delay receipt rewards until inclusion`) is pending push with this evidence
-  update.
+- Feature commit: `456ab81` (`Delay receipt rewards until inclusion`) and evidence commit `f1f89fc`
+  (`Record inclusion reward delay evidence`) are pushed to `origin/main`.
 
 ## Recent Iterations
 
