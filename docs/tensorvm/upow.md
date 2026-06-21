@@ -376,12 +376,13 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > random-linear-checkable; exact but non-affine structural/pointwise Tier-B ops require deterministic
 > replay through the graph verifier and conformance profile; and `gather`/`scatter`/`embedding` are
 > present only as non-admitted index-consistency-gated vocabulary. Runtime tensors now carry scale
-> metadata, exact replay enforces `TensorSpec.scale`, fixed-point `cast`/`round` and same-scale `mul` use
-> canonical round-half-even rescale, and exact per-channel int8 quantize/dequantize replay is conformance covered.
+> metadata, exact replay enforces `TensorSpec.scale`, fixed-point `cast`/`round`, mixed-scale `add`/`sub`,
+> and same-scale `mul` use canonical round-half-even rescale, and exact per-channel int8
+> quantize/dequantize replay is conformance covered.
 > Byte-packed int8 quantization now uses a canonical flat `uint8` payload with explicit magic/version,
 > shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Field-only `div` is
 > admitted as exact modular-inverse replay, while fixed-point reciprocal division remains deferred.
-> Remaining fixed-point arithmetic policy for mixed-scale binary ops, reciprocal division, matmul
+> Remaining fixed-point arithmetic policy for mixed-scale `mul`, reciprocal division, matmul
 > accumulation/range, low-level packed tensor storage/chunking APIs, and full verifier coverage for every
 > exact Tier-B op remains TODO.
 
@@ -636,17 +637,18 @@ This section is non-normative guidance on how the spec components partition into
   vectors exist and gate those receipt verifiers; broader admitted-op and CUDA/Tier-C coverage remains
   blocking for full §3.3 safety.
 - [~] Exact `F_p` choice and fixed-point scale discipline: runtime tensor scale metadata, input-scale
-  enforcement, fixed-point `cast`/`round` round-half-even rescale, same-scale `Fixed32` `mul` rescale back
-  to the declared output scale, and canonical `int8`/`uint8`/`bool` dtype tags are implemented; exact
+  enforcement, fixed-point `cast`/`round` round-half-even rescale, mixed-scale `Fixed32` `add`/`sub`
+  RHS-to-lhs/output rescale, same-scale `Fixed32` `mul` rescale back to the declared output scale, and
+  canonical `int8`/`uint8`/`bool` dtype tags are implemented; exact
   per-channel int8 quantize/dequantize scale selection and saturation are conformance covered;
-  byte-packed quantization has a conformance-covered flat `uint8` payload layout; mixed-scale arithmetic,
+  byte-packed quantization has a conformance-covered flat `uint8` payload layout; mixed-scale `mul`,
   fixed-point reciprocal division, matmul accumulation/range policy, and low-level packed tensor storage
   APIs remain open.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,
-  comparison, generator, reduction, fixed-point `cast`/`round`, and same-scale `mul` rescale surface with
-  conformance gating where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
+  comparison, generator, reduction, fixed-point `cast`/`round`, mixed-scale `add`/`sub`, and same-scale
+  `mul` rescale surface with conformance gating where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
   mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
 - [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields

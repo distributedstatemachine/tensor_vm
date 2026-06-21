@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 109 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 110 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 109 coverage could not
-be regenerated. Iterations 78 through 109 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 110 coverage could not
+be regenerated. Iterations 78 through 110 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -160,6 +160,9 @@ the redundant reward hold before inclusion-based maturity can release them.
 Iteration 109 adds same-scale `Fixed32` multiply rescale semantics. Focused tensor, IR, and conformance
 tests cover signed raw-product multiplication, round-half-even rescale back to the declared tensor scale,
 broadcasted exact graph replay, and a CPU conformance vector for the admitted `mul` op.
+Iteration 110 adds mixed-scale `Fixed32` add/sub semantics. Focused tensor, IR, and conformance tests cover
+RHS-to-lhs/output scale rescale with round-half-to-even semantics, exact graph replay, and CPU conformance
+vectors for the admitted `add` and `sub` ops.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

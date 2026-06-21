@@ -106,6 +106,34 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[6],
         ),
         scaled_vector(
+            "fixed32-add-mixed-scale-rhs-to-lhs-half-even-v1",
+            "add",
+            "B",
+            &[&[5], &[5]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[2, 0],
+            &[],
+            &[&[6, p - 7, 3, p - 3, 5], &[2, p - 2, 1, p - 1, 0]],
+            DType::Fixed32,
+            2,
+            &[14, p - 15, 7, p - 7, 5],
+            &[5],
+        ),
+        scaled_vector(
+            "fixed32-sub-mixed-scale-rhs-to-lhs-half-even-v1",
+            "sub",
+            "B",
+            &[&[5], &[5]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[2, 0],
+            &[],
+            &[&[6, p - 7, 3, p - 3, 5], &[2, p - 2, 1, p - 1, 0]],
+            DType::Fixed32,
+            2,
+            &[p - 2, 1, p - 1, 1, 5],
+            &[5],
+        ),
+        scaled_vector(
             "field-div-broadcast-v1",
             "div",
             "B",
@@ -1862,6 +1890,12 @@ mod tests {
                 && vector.input_scales == vec![1]
                 && vector.expected_dtype == DType::Fixed32
                 && vector.expected_scale == 0
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-add-mixed-scale-rhs-to-lhs-half-even-v1"
+                && vector.input_scales == vec![2, 0]
+                && vector.expected_dtype == DType::Fixed32
+                && vector.expected_scale == 2
         }));
         assert!(vectors.iter().any(|vector| {
             vector.id == "fixed32-quantize-int8-per-channel-axis1-v1"

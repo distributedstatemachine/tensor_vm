@@ -235,25 +235,29 @@ impl Tensor {
 
     pub fn add(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
-        self.check_same_encoding(rhs)?;
+        self.check_add_sub_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
-            .map(|(lhs, rhs)| field::add(*lhs, *rhs))
-            .collect();
+            .map(|(lhs, rhs_elem)| {
+                add_elem_for_dtype(self.dtype, self.scale, rhs.scale, *lhs, *rhs_elem)
+            })
+            .collect::<Result<Vec<_>>>()?;
         Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
     pub fn sub(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
-        self.check_same_encoding(rhs)?;
+        self.check_add_sub_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
-            .map(|(lhs, rhs)| field::sub(*lhs, *rhs))
-            .collect();
+            .map(|(lhs, rhs_elem)| {
+                sub_elem_for_dtype(self.dtype, self.scale, rhs.scale, *lhs, *rhs_elem)
+            })
+            .collect::<Result<Vec<_>>>()?;
         Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
@@ -531,6 +535,16 @@ impl Tensor {
         }
         Ok(())
     }
+
+    fn check_add_sub_encoding(&self, rhs: &Self) -> Result<()> {
+        if self.dtype != rhs.dtype || (self.dtype != DType::Fixed32 && self.scale != rhs.scale) {
+            return Err(TvmError::InvalidTensorData {
+                expected: self.dtype.tag() as usize,
+                actual: rhs.dtype.tag() as usize,
+            });
+        }
+        Ok(())
+    }
 }
 
 pub fn random_field_vector(seed: &Hash, label: &[u8], len: usize) -> Vec<Elem> {
@@ -664,6 +678,36 @@ pub fn fixed32_mul_same_scale_half_even(lhs: Elem, rhs: Elem, scale: i64) -> Res
     Ok(signed_i128_to_elem(rescaled))
 }
 
+pub fn add_elem_for_dtype(
+    dtype: DType,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    lhs: Elem,
+    rhs: Elem,
+) -> Result<Elem> {
+    let rhs = if dtype == DType::Fixed32 {
+        rescale_signed_elem_half_even(rhs, rhs_scale, lhs_scale)?
+    } else {
+        rhs
+    };
+    Ok(field::add(lhs, rhs))
+}
+
+pub fn sub_elem_for_dtype(
+    dtype: DType,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    lhs: Elem,
+    rhs: Elem,
+) -> Result<Elem> {
+    let rhs = if dtype == DType::Fixed32 {
+        rescale_signed_elem_half_even(rhs, rhs_scale, lhs_scale)?
+    } else {
+        rhs
+    };
+    Ok(field::sub(lhs, rhs))
+}
+
 pub fn multiply_elem_for_dtype(dtype: DType, scale: i64, lhs: Elem, rhs: Elem) -> Result<Elem> {
     if dtype == DType::Fixed32 {
         fixed32_mul_same_scale_half_even(lhs, rhs, scale)
@@ -778,6 +822,33 @@ mod tests {
         assert_eq!(
             fixed32_mul_same_scale_half_even(5, p - 6, 2).unwrap(),
             p - 8
+        );
+    }
+
+    #[test]
+    fn fixed32_add_sub_rescale_rhs_to_lhs_scale_half_even() {
+        let p = field::MODULUS;
+        let lhs =
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![6, p - 7, 3, p - 3, 5])
+                .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 0, vec![2, p - 2, 1, p - 1, 0])
+                .unwrap();
+
+        assert_eq!(
+            lhs.add(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![14, p - 15, 7, p - 7, 5])
+                .unwrap()
+        );
+        assert_eq!(
+            lhs.sub(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![p - 2, 1, p - 1, 1, 5])
+                .unwrap()
+        );
+        assert_eq!(add_elem_for_dtype(DType::Fixed32, 0, 1, 2, 3).unwrap(), 4);
+        assert_eq!(
+            sub_elem_for_dtype(DType::Fixed32, 0, 1, p - 2, p - 3).unwrap(),
+            0
         );
     }
 

@@ -4,8 +4,8 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
 use crate::tensor::{
-    DType, Tensor, multiply_elem_for_dtype, rescale_signed_elem_half_even, signed_elem_to_i128,
-    signed_i128_to_elem,
+    DType, Tensor, add_elem_for_dtype, multiply_elem_for_dtype, rescale_signed_elem_half_even,
+    signed_elem_to_i128, signed_i128_to_elem, sub_elem_for_dtype,
 };
 use crate::types::{Hash, hash_bytes, parse_hash_hex};
 use serde_json::Value as JsonValue;
@@ -583,11 +583,11 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
         "add" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            binary_elementwise_tensor(lhs, rhs, field::add)?
+            binary_add_sub_tensor(lhs, rhs, add_elem_for_dtype)?
         }
         "sub" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            binary_elementwise_tensor(lhs, rhs, field::sub)?
+            binary_add_sub_tensor(lhs, rhs, sub_elem_for_dtype)?
         }
         "mul" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
@@ -909,12 +909,12 @@ fn triangular_tensor(
     )
 }
 
-fn binary_elementwise_tensor(
+fn binary_add_sub_tensor(
     lhs: &Tensor,
     rhs: &Tensor,
-    op: impl Fn(Elem, Elem) -> Elem,
+    op: impl Fn(DType, i64, i64, Elem, Elem) -> Result<Elem>,
 ) -> Result<Tensor> {
-    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
+    if lhs.dtype() != rhs.dtype() || (lhs.dtype() != DType::Fixed32 && lhs.scale() != rhs.scale()) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
@@ -922,9 +922,12 @@ fn binary_elementwise_tensor(
     let mut data = Vec::with_capacity(len);
     for index in 0..len {
         data.push(op(
+            lhs.dtype(),
+            lhs.scale(),
+            rhs.scale(),
             broadcast_value(lhs, &shape, index)?,
             broadcast_value(rhs, &shape, index)?,
-        ));
+        )?);
     }
     Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
@@ -2021,7 +2024,16 @@ fn infer_outputs(
             }
         }
         "einsum" => infer_einsum(args, kwargs)?,
-        "add" | "sub" | "mul" => {
+        "add" | "sub" => {
+            let [lhs, rhs] = two_args(args)?;
+            same_add_sub_dtype(lhs, rhs)?;
+            ValueShape {
+                shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
+                dtype: lhs.dtype,
+                scale: lhs.scale,
+            }
+        }
+        "mul" => {
             let [lhs, rhs] = two_args(args)?;
             same_dtype(lhs, rhs)?;
             ValueShape {
@@ -2514,6 +2526,13 @@ fn two_args(args: &[ValueShape]) -> Result<[&ValueShape; 2]> {
 
 fn same_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
     if lhs.dtype != rhs.dtype || lhs.scale != rhs.scale {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    Ok(())
+}
+
+fn same_add_sub_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
+    if lhs.dtype != rhs.dtype || (lhs.dtype != DType::Fixed32 && lhs.scale != rhs.scale) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     Ok(())
@@ -4746,6 +4765,84 @@ mod tests {
                 vec![9, 10, p - 9, p - 10, p - 12, 10],
             )
             .unwrap()
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_fixed32_add_sub_with_mixed_scales() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![5], DType::Fixed32, 2),
+                tensor_spec("rhs", vec![5], DType::Fixed32, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "add".to_owned(),
+                    args: vec![input_ref("lhs"), input_ref("rhs")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("sum", vec![5], DType::Fixed32, 2)],
+                },
+                OpNode {
+                    id: 1,
+                    op: "sub".to_owned(),
+                    args: vec![input_ref("lhs"), input_ref("rhs")],
+                    kwargs: BTreeMap::new(),
+                    out: vec![tensor_spec("diff", vec![5], DType::Fixed32, 2)],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "sum".to_owned(),
+                    value: op_ref(0),
+                },
+                GraphOutput {
+                    name: "diff".to_owned(),
+                    value: op_ref(1),
+                },
+            ],
+        };
+        graph.validate_for_consensus().unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![5],
+                            DType::Fixed32,
+                            2,
+                            vec![6, p - 7, 3, p - 3, 5],
+                        )
+                        .unwrap(),
+                    ),
+                    (
+                        "rhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![5],
+                            DType::Fixed32,
+                            0,
+                            vec![2, p - 2, 1, p - 1, 0],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["sum"],
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![14, p - 15, 7, p - 7, 5])
+                .unwrap()
+        );
+        assert_eq!(
+            execution.outputs["diff"],
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![p - 2, 1, p - 1, 1, 5])
+                .unwrap()
         );
     }
 

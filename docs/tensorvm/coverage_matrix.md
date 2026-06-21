@@ -48,7 +48,7 @@ node-store snapshot, hydrated into the runtime program server at startup, and se
 deterministic exact interpreter foundation for validated, consensus-admitted
 graphs over the currently implemented tensor runtime ops (`matmul`, exact Tier-A matrix-contraction `einsum`, broadcast-aware `add`/`sub`/`mul`,
 exact field-only modular-inverse `div`, `scalar_mul`, `transpose`, explicit-dim `sum`/`reduce_sum`, `identity`, `neg`, signed-residue
-`abs`/`sign`/`relu`, same-scale fixed-point `mul` with half-even rescale, fixed-point scale-aware half-even `round`, `reshape`, `broadcast`, single-output
+`abs`/`sign`/`relu`, mixed-scale fixed-point `add`/`sub` with RHS-to-lhs/output half-even rescale, same-scale fixed-point `mul` with half-even rescale, fixed-point scale-aware half-even `round`, `reshape`, `broadcast`, single-output
 structural `squeeze`/`unsqueeze`/`slice`/`tril`/`triu`, comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`,
 field-order `clamp`, `mean`, `cast`, `concat`, `stack`, `full`, and `arange`). Tensor
 metadata now also carries canonical `int8`, `uint8`, and `bool` dtype tags through tensor commitments,
@@ -72,6 +72,7 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::index_ops_require_index_consistency_and_are_not_consensus_admitted`,
 `ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace`,
 `ir::tests::exact_interpreter_executes_unary_tier_b_ops`,
+`ir::tests::exact_interpreter_executes_fixed32_add_sub_with_mixed_scales`,
 `ir::tests::exact_interpreter_executes_fixed32_mul_with_scale_rescale`,
 `ir::tests::exact_interpreter_executes_shaping_comparison_generators_and_where`,
 `ir::tests::exact_interpreter_executes_clamp`,
@@ -86,6 +87,7 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::exact_interpreter_executes_packed_int8_quantize_dequantize`,
 `tensor::tests::narrow_integer_tensors_enforce_canonical_ranges_and_commit_dtype`,
 `tensor::tests::random_narrow_integer_tensors_are_canonical`,
+`tensor::tests::fixed32_add_sub_rescale_rhs_to_lhs_scale_half_even`,
 `tensor::tests::fixed32_multiply_rescales_to_input_scale_half_even`,
 `ir::tests::linear_training_step_graph_validates_and_commits_shapes`,
 `jobs::tests::matmul_receipt_commits_to_outputs`, and
@@ -106,7 +108,7 @@ admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`,
 `tril`, `triu`, `concat`, `stack`, `matmul`, `einsum`, `full`, `arange`, and
 `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
 `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`, plus
-scale-aware fixed-point `cast`/`round` and same-scale `mul` vectors using per-input and expected output dtype/scale metadata,
+scale-aware fixed-point `cast`/`round`, mixed-scale `add`/`sub`, and same-scale `mul` vectors using per-input and expected output dtype/scale metadata,
 multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
 field-only modular-inverse `div`, Tier-A matrix-contraction `einsum`, field-order comparison, selection, and clamp
 vectors, row-major structural vectors, and byte-exact packed payload vectors. The suite has a stable hash, derives its admitted-op guard
@@ -132,7 +134,7 @@ Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: mixed-scale fixed-point arithmetic, fixed-point reciprocal division,
+Remaining Tensor IR/conformance gaps: mixed-scale fixed-point `mul`, fixed-point reciprocal division,
 matmul accumulation/range policy, low-level packed tensor storage/chunking APIs, index-consistency proofs for
 `gather`/`scatter`/`embedding`, additional mixed-dtype conformance vectors, public/p2p artifact propagation
 evidence for externally supplied arbitrary graph jobs, and CUDA conformance evidence when `cuda-kernels` is
