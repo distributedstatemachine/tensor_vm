@@ -5,21 +5,23 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 98 complete - Tensor IR const-blob execution.
+- Active feature: Iteration 99 complete - TensorWork anti-monopoly reward curve.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
-  implemented locally. Miner and validator role helpers can now execute and attest `GraphExecution` jobs
-  from registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors.
+  implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
+  registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner reward
+  settlement now applies a chain-owned square-root TensorWork curve per miner before delayed pending receipt
+  claims are created.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 98, then continue verifier-transcript disputes, external
-  randomness, remaining economics work, or rerun Docker after the `/health` blocker clears.
+- Next action: commit and push Iteration 99, then continue verifier-transcript disputes, external
+  randomness, deployed-run economics evidence, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -36,56 +38,51 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, TensorWork reward concentration curve, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 98: Tensor IR Const-Blob Execution
+### Iteration 99: TensorWork Anti-Monopoly Reward Curve
 
-Feature capability: execute and verify Tensor IR `const_blob` refs as content-addressed tensor artifacts
-instead of rejecting them as an external-fetch placeholder.
+Feature capability: damp miner reward concentration by allocating the miner reward pool with a
+chain-owned square-root TensorWork curve.
 
-Canonical owner: `ir::TensorGraph` exact replay and `jobs::GraphJob` graph execution binding.
-Adapter callers: miner/validator graph role helpers, verifier replay, validator remote-fetch planning,
-localnet tests, and existing tensor artifact serving.
-Old shortcut being removed: structurally valid `const_blob` refs always failed exact execution with
-`tensor ir const_blob execution requires external fetch`.
+Canonical owner: `chain::settlement`.
+Adapter callers: block transitions, status/explorer pending claim views, telemetry, and reward tests.
+Old shortcut being removed: raw proportional miner receipt rewards paid `pool * receipt_twu / total_twu`
+without a chain-owned diminishing-return curve.
 Regression test that proves the shortcut is gone:
-`ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,
-`jobs::tests::graph_receipt_replay_supports_const_blob_artifacts`, and
-`roles::tests::cpu_roles_execute_and_verify_graph_jobs_with_const_blob`.
-Behavior with local synthetic block production disabled: inbound graph work can execute only when the
-registered graph body plus required input/blob tensors are present locally or fetched by commitment root.
-Behavior for producer and non-producer roles: producer/miner/validator roles use the same node-local tensor
-store; missing blobs keep graph work artifact-missing/pending rather than fabricating constants.
-Structured evidence source: canonical graph body, `const_blob` URI, tensor commitment root, receipt output
-roots, trace root, and graph verifier checks root.
-Finality source: unchanged; graph receipts still settle into normal receipt blockspace and block-vote
-finality.
-Wire-size and codec boundary: no new wire codec; blob tensors use existing commitment-root tensor request
-and payload paths, and the URI remains canonical IR JSON.
+`chain::tests::miner_rewards_use_diminishing_tensorwork_curve_per_miner`.
+Behavior with local synthetic block production disabled: any settled receipt path uses the same settlement
+allocation, regardless of job source.
+Behavior for producer and non-producer roles: all roles recompute pending receipt claims from canonical
+chain state and settlement rules.
+Structured evidence source: pending receipt reward claims, raw miner settled TensorWork, and the focused
+settlement regression.
+Finality source: unchanged; rewards remain delayed pending claims until normal block inclusion and maturity.
+Wire-size and codec boundary: no new wire payload; no chain-state codec field changes.
 
 Implementation summary:
-- `TensorGraph::execute_exact` resolves `const_blob` refs from artifacts keyed by URI, parses the URI as a
-  tensor commitment, and checks root, shape, dtype, and zero scale before replay.
-- `GraphJob` and `GraphReceipt` expose blob-aware execution/receipt constructors while preserving existing
-  empty-blob APIs.
-- Miner and validator graph role helpers collect blob tensors from node-local storage by commitment root;
-  validator remote-fetch planning includes blob roots from the registered graph body.
+- Settlement aggregates newly settled raw TWU per miner, scores each miner with integer square root, and
+  allocates the miner pool by adjusted scores with deterministic remainder handling.
+- Each miner's allocation is split back across that miner's receipts by raw receipt TWU, preserving
+  receipt-level reward claims while damping miner-level concentration.
+- `upow.md`, `mvp_spec.md`, coverage, implementation status, and Tarpaulin notes now describe the local
+  curve and keep deployed concentration measurements open.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm const_blob --quiet`, `cargo test -p tensor_vm graph_jobs --quiet`,
-  and `cargo test -p tensor_vm role --quiet` passed.
+- Focused: `cargo test -p tensor_vm miner_rewards_use_diminishing_tensorwork_curve_per_miner --quiet`
+  passed.
+- Focused settlement suite: `cargo test -p tensor_vm settlement --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 433 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 434 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `960ad12` (`Execute graph const blobs from artifacts`) pushed to `origin/main`.
 
 ## Recent Iterations
 

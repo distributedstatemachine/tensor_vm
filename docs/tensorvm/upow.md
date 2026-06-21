@@ -495,7 +495,10 @@ TensorBlock {
 ## 12. Economics & Parameters
 
 ### 12.1 Incentives
-- **Miners** earn rewards proportional to settled, verified TensorWork (with diminishing returns / concentration analysis to resist monopoly). Reward requires surviving verification; a slashed receipt forfeits the bond.
+- **Miners** earn rewards from settled, verified TensorWork through a diminishing-return curve to resist
+  monopoly: the local reference aggregates newly settled TensorWork per miner, allocates the miner pool by
+  `sqrt(miner_epoch_twu)`, and then splits each miner's allocation across that miner's included receipts by
+  raw receipt TWU. Reward requires surviving verification; a slashed receipt forfeits the bond.
 - **Validators** earn (a) the block reward for the winning UVPoW block and (b) attestation fees / a share of slashed bonds for catching fraud. Verifying correctly is the paid job.
 - **Challengers** (§8.2) earn a share of the loser's slashed bond → bounty for finding fraud.
 - Miner and validator rewards derived from verifier-dependent receipt settlement are pending claims first.
@@ -654,7 +657,10 @@ This section is non-normative guidance on how the spec components partition into
   pass/fail invariants. Reward maturity includes an explicit fraud-window hold before spendability;
   status/explorer now expose structured detection-probability evidence for implemented verifier and fraud
   mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
-- [ ] Reward concentration / anti-monopoly curve for TensorWork.
+- [~] Reward concentration / anti-monopoly curve for TensorWork: the local reference now uses a
+  chain-owned square-root TensorWork reward curve per miner before delayed pending receipt claims are
+  created, while telemetry/study reporting still tracks raw concentration. Deployed-run concentration
+  measurements and governance tuning remain open.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [~] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with
   `const_blob` inputs. Exact graph execution now loads `const_blob` tensors by content URI from local

@@ -1409,10 +1409,14 @@ Each valid receipt contributes TensorWork Units.
 score_miner(epoch E) = sum(settled_valid_receipt.tensor_work_units from epoch E)
 ```
 
-Miner reward weight:
+Miner reward weight applies a deterministic anti-monopoly curve in the local reference. Raw TensorWork
+continues to drive blockspace accounting and telemetry; reward allocation first aggregates work per miner,
+then applies square-root diminishing returns before splitting each miner's allocation across its receipts:
 
 ```text
-reward_weight_miner(epoch E) = score_miner(epoch E) / total_valid_tensor_work(epoch E)
+adjusted_score_miner(epoch E) = sqrt(score_miner(epoch E))
+reward_weight_miner(epoch E) =
+  adjusted_score_miner(epoch E) / sum(adjusted_score_miner(epoch E))
 ```
 
 Receipt-derived miner and validator rewards are first recorded as pending claims. A pending receipt reward
@@ -1712,9 +1716,14 @@ Recommended MVP split:
 
 ### 25.3 Miner Rewards
 
+The local reference uses the chain-owned square-root TensorWork curve from §20.3:
+
 ```text
-miner_reward = miner_valid_tensorwork / total_valid_tensorwork * miner_reward_pool
+miner_reward = sqrt(miner_valid_tensorwork) / sum(sqrt(valid_tensorwork_by_miner)) * miner_reward_pool
 ```
+
+Each miner's resulting allocation is split across that miner's settled receipts by raw receipt TWU, so
+receipt-level claims remain traceable while miner-level concentration is damped.
 
 ### 25.4 Validator Rewards
 

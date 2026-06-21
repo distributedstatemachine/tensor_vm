@@ -49,10 +49,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         }
     }
 
-    let total_work: u64 = newly_settled
-        .iter()
-        .map(|(_, receipt)| receipt.tensor_work_units())
-        .sum();
+    let miner_rewards = miner_reward_allocations(&newly_settled, miner_reward_pool);
     let newly_settled_ids: BTreeSet<Hash> = newly_settled
         .iter()
         .map(|(receipt_id, _)| *receipt_id)
@@ -68,10 +65,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
             miner.settled_tensor_work = miner
                 .settled_tensor_work
                 .saturating_add(receipt.tensor_work_units());
-            if let Some(reward) = miner_reward_pool
-                .saturating_mul(receipt.tensor_work_units())
-                .checked_div(total_work)
-            {
+            if let Some(reward) = miner_rewards.get(&receipt_id).copied() {
                 miner_claim = Some((miner.address, reward));
             }
         }
@@ -109,6 +103,123 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
             );
         }
     }
+}
+
+fn miner_reward_allocations(
+    newly_settled: &[(Hash, ReceiptState)],
+    miner_reward_pool: u64,
+) -> BTreeMap<Hash, u64> {
+    let mut receipts_by_miner: BTreeMap<Address, Vec<(Hash, u64)>> = BTreeMap::new();
+    for (receipt_id, receipt) in newly_settled {
+        let work = receipt.tensor_work_units();
+        if work == 0 {
+            continue;
+        }
+        receipts_by_miner
+            .entry(receipt.miner())
+            .or_default()
+            .push((*receipt_id, work));
+    }
+    let miner_work = receipts_by_miner
+        .iter()
+        .map(|(miner, receipts)| {
+            let work = receipts
+                .iter()
+                .fold(0_u64, |acc, (_, work)| acc.saturating_add(*work));
+            (*miner, work)
+        })
+        .collect::<Vec<_>>();
+    let adjusted_scores = miner_work
+        .iter()
+        .map(|(miner, work)| (*miner, diminishing_tensorwork_score(*work)))
+        .collect::<Vec<_>>();
+    let total_adjusted: u64 = adjusted_scores
+        .iter()
+        .fold(0_u64, |acc, (_, score)| acc.saturating_add(*score));
+    if total_adjusted == 0 || miner_reward_pool == 0 {
+        return BTreeMap::new();
+    }
+
+    let miner_pools = allocate_by_scores(miner_reward_pool, &adjusted_scores);
+    let mut receipt_rewards = BTreeMap::new();
+    for (miner, miner_pool) in miner_pools {
+        let Some(receipts) = receipts_by_miner.get(&miner) else {
+            continue;
+        };
+        let receipt_scores = receipts
+            .iter()
+            .map(|(receipt_id, work)| (*receipt_id, *work))
+            .collect::<Vec<_>>();
+        for (receipt_id, amount) in allocate_by_scores(miner_pool, &receipt_scores) {
+            receipt_rewards.insert(receipt_id, amount);
+        }
+    }
+    receipt_rewards
+}
+
+fn diminishing_tensorwork_score(work: u64) -> u64 {
+    if work == 0 {
+        0
+    } else {
+        integer_sqrt(work).max(1)
+    }
+}
+
+fn integer_sqrt(value: u64) -> u64 {
+    if value < 2 {
+        return value;
+    }
+    let mut low = 1_u64;
+    let mut high = 1_u64 << 32;
+    while low + 1 < high {
+        let mid = low + ((high - low) / 2);
+        if (mid as u128) * (mid as u128) <= value as u128 {
+            low = mid;
+        } else {
+            high = mid;
+        }
+    }
+    low
+}
+
+fn allocate_by_scores<K>(pool: u64, scores: &[(K, u64)]) -> BTreeMap<K, u64>
+where
+    K: Copy + Ord,
+{
+    let total_score = scores
+        .iter()
+        .fold(0_u64, |acc, (_, score)| acc.saturating_add(*score));
+    if pool == 0 || total_score == 0 {
+        return BTreeMap::new();
+    }
+    let mut allocations = BTreeMap::new();
+    let mut remainders = Vec::new();
+    let mut allocated = 0_u64;
+    for (key, score) in scores {
+        if *score == 0 {
+            continue;
+        }
+        let numerator = (*score as u128) * (pool as u128);
+        let base = (numerator / total_score as u128) as u64;
+        let remainder = numerator % total_score as u128;
+        allocations.insert(*key, base);
+        allocated = allocated.saturating_add(base);
+        remainders.push((*key, remainder));
+    }
+    remainders.sort_by(|(left_key, left_rem), (right_key, right_rem)| {
+        right_rem
+            .cmp(left_rem)
+            .then_with(|| left_key.cmp(right_key))
+    });
+    for (key, _) in remainders
+        .into_iter()
+        .take(pool.saturating_sub(allocated) as usize)
+    {
+        if let Some(amount) = allocations.get_mut(&key) {
+            *amount = amount.saturating_add(1);
+        }
+    }
+    allocations
 }
 
 pub(super) fn events(

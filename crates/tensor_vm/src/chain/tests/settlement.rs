@@ -257,6 +257,131 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
 }
 
 #[test]
+fn miner_rewards_use_diminishing_tensorwork_curve_per_miner() {
+    let beacon = hash_bytes(b"test", &[b"reward-concentration-curve"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let dominant = address(b"dominant-tensorwork-miner");
+    let minority = address(b"minority-tensorwork-miner");
+    let validator = address(b"reward-curve-validator");
+    chain.register_miner(dominant, 100).unwrap();
+    chain.register_miner(minority, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+
+    let graph = canonical_matmul_graph(1, 1, 1, DType::FieldElement);
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let a = Tensor::from_vec(vec![1, 1], DType::FieldElement, vec![3]).unwrap();
+    let b = Tensor::from_vec(vec![1, 1], DType::FieldElement, vec![5]).unwrap();
+    let inputs = BTreeMap::from([("a".to_owned(), a), ("b".to_owned(), b)]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect::<BTreeMap<_, _>>();
+
+    let submit_graph_receipt =
+        |chain: &mut Chain, miner: Address, epoch: u64, work: u64| -> GraphReceipt {
+            let job = GraphJob::new(
+                epoch,
+                graph_id,
+                input_roots.clone(),
+                BTreeMap::new(),
+                10,
+                1,
+                work,
+            );
+            let (receipt, _outputs) =
+                GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+            chain
+                .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+                    job.clone(),
+                )))
+                .unwrap();
+            chain
+                .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+                    receipt.clone(),
+                )))
+                .unwrap();
+            chain
+                .submit_attestation(ValidatorAttestation::new(
+                    validator,
+                    10_000,
+                    AttestationStatement {
+                        receipt_id: receipt.receipt_id,
+                        job_id: receipt.job_id,
+                        primitive_type: PrimitiveType::GraphExecution,
+                        result: VerificationResult::Valid,
+                        checks_root: hash_bytes(b"test", &[&receipt.receipt_id]),
+                        data_availability_passed: true,
+                    },
+                ))
+                .unwrap();
+            receipt
+        };
+
+    let dominant_receipt = submit_graph_receipt(&mut chain, dominant, 0, 10_000);
+    let minority_receipt = submit_graph_receipt(&mut chain, minority, 1, 100);
+
+    chain.settle_epoch(1_100, 0);
+
+    let dominant_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == dominant_receipt.receipt_id)
+        .unwrap()
+        .amount;
+    let minority_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == minority_receipt.receipt_id)
+        .unwrap()
+        .amount;
+    let raw_dominant_reward = 1_100_u64 * 10_000 / 10_100;
+    let raw_minority_reward = 1_100_u64 * 100 / 10_100;
+
+    assert_eq!(dominant_reward + minority_reward, 1_100);
+    assert_eq!(dominant_reward, 1_000);
+    assert_eq!(minority_reward, 100);
+    assert!(dominant_reward < raw_dominant_reward);
+    assert!(minority_reward > raw_minority_reward);
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&dominant)
+            .unwrap()
+            .settled_tensor_work,
+        10_000
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&minority)
+            .unwrap()
+            .settled_tensor_work,
+        100
+    );
+}
+
+#[test]
 fn receipt_rewards_use_minimum_reward_maturity_delay_when_epochs_are_zero() {
     let beacon = hash_bytes(b"test", &[b"zero-epoch-receipt-delay"]);
     let params = ChainParams {
