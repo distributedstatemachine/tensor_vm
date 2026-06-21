@@ -3,8 +3,8 @@ use std::collections::BTreeMap;
 use crate::error::{Result, TvmError};
 use crate::field::Elem;
 use crate::ir::{
-    IrExecution, IrExecutionInputs, TensorGraph, canonical_linear_training_step_graph,
-    canonical_matmul_graph,
+    IrExecution, IrExecutionInputs, IrTraceOpening, TensorGraph,
+    canonical_linear_training_step_graph, canonical_matmul_graph,
 };
 use crate::tensor::{DType, Tensor};
 use crate::types::{Address, Hash, Signature, hash_bytes, sign};
@@ -230,6 +230,17 @@ impl GraphReceipt {
             submitted_at_block: self.submitted_at_block,
         })
     }
+
+    pub fn trace_opening(&self, execution: &IrExecution, op_index: u64) -> Result<IrTraceOpening> {
+        if execution.trace_root != self.trace_root {
+            return Err(TvmError::InvalidReceipt("receipt trace root mismatch"));
+        }
+        let opening = execution.trace_opening(op_index)?;
+        if !opening.verify() {
+            return Err(TvmError::InvalidReceipt("invalid receipt trace opening"));
+        }
+        Ok(opening)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -412,6 +423,17 @@ impl TensorOpReceipt {
             execution_time_ms: self.execution_time_ms,
             submitted_at_block: self.submitted_at_block,
         })
+    }
+
+    pub fn trace_opening(&self, execution: &IrExecution, op_index: u64) -> Result<IrTraceOpening> {
+        if execution.trace_root != self.trace_root {
+            return Err(TvmError::InvalidReceipt("receipt trace root mismatch"));
+        }
+        let opening = execution.trace_opening(op_index)?;
+        if !opening.verify() {
+            return Err(TvmError::InvalidReceipt("invalid receipt trace opening"));
+        }
+        Ok(opening)
     }
 }
 
@@ -674,6 +696,17 @@ impl LinearTrainingStepReceipt {
             submitted_at_block: self.submitted_at_block,
         })
     }
+
+    pub fn trace_opening(&self, execution: &IrExecution, op_index: u64) -> Result<IrTraceOpening> {
+        if execution.trace_root != self.trace_root {
+            return Err(TvmError::InvalidReceipt("receipt trace root mismatch"));
+        }
+        let opening = execution.trace_opening(op_index)?;
+        if !opening.verify() {
+            return Err(TvmError::InvalidReceipt("invalid receipt trace opening"));
+        }
+        Ok(opening)
+    }
 }
 
 struct ReceiptDigestInput<'a> {
@@ -806,6 +839,11 @@ mod tests {
         );
         assert_eq!(receipt.tensor_work_units, 48);
         assert_eq!(receipt.program_hash, job.tensor_ir_graph().graph_id());
+        let execution = job.exact_ir_execution(&a, &b).unwrap();
+        let opening = receipt.trace_opening(&execution, 0).unwrap();
+        assert!(opening.verify());
+        assert_eq!(opening.trace_root, receipt.trace_root);
+        assert_eq!(opening.op_trace.output_roots, receipt.output_roots);
     }
 
     #[test]
@@ -846,6 +884,10 @@ mod tests {
             receipt.receipt_id,
             receipt.recompute_receipt_id(&job.program_hash())
         );
+        let execution = job.exact_ir_execution(&weights, &output).unwrap();
+        let opening = receipt.trace_opening(&execution, 0).unwrap();
+        assert!(opening.verify());
+        assert_eq!(opening.trace_root, receipt.trace_root);
 
         let wrong_weights =
             Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![4, 3, 2, 1]).unwrap();
@@ -882,6 +924,15 @@ mod tests {
         assert_eq!(receipt.trace_root, execution.trace_root);
         assert_eq!(receipt.tensor_work_units, 16);
         assert_eq!(receipt.receipt_id, receipt.recompute_receipt_id());
+        let opening = receipt.trace_opening(&execution, 0).unwrap();
+        assert!(opening.verify());
+        assert_eq!(opening.op_trace.output_roots[0], receipt.output_roots["c"]);
+        let mut wrong_receipt = receipt.clone();
+        wrong_receipt.trace_root = hash_bytes(b"test", &[b"wrong-trace-root"]);
+        assert_eq!(
+            wrong_receipt.trace_opening(&execution, 0),
+            Err(TvmError::InvalidReceipt("receipt trace root mismatch"))
+        );
         assert_eq!(
             job.exact_ir_execution(&graph, &BTreeMap::new()),
             Err(TvmError::InvalidReceipt("missing graph input tensor"))

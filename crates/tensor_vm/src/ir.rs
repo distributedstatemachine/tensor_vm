@@ -2,7 +2,7 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
-use crate::merkle::merkle_root;
+use crate::merkle::{MerkleProof, build_proof, merkle_root, verify_proof};
 use crate::tensor::{
     DType, Tensor, add_elem_for_dtype, divide_elem_for_dtype, multiply_elem_for_dtype,
     packed_int8_payload_len, rescale_signed_elem_half_even, signed_elem_to_i128,
@@ -168,12 +168,58 @@ pub struct IrOpTrace {
     pub output_roots: Vec<Hash>,
 }
 
+impl IrOpTrace {
+    pub fn leaf_hash(&self) -> Hash {
+        trace_op_leaf(self.op_id, &self.output_roots)
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrExecution {
     pub graph_id: GraphId,
     pub outputs: BTreeMap<String, Tensor>,
     pub op_traces: Vec<IrOpTrace>,
     pub trace_root: Hash,
+}
+
+impl IrExecution {
+    pub fn trace_leaves(&self) -> Vec<Hash> {
+        self.op_traces.iter().map(IrOpTrace::leaf_hash).collect()
+    }
+
+    pub fn trace_opening(&self, op_index: u64) -> Result<IrTraceOpening> {
+        let op_trace = self
+            .op_traces
+            .get(op_index as usize)
+            .ok_or(TvmError::InvalidChunk {
+                chunk_index: op_index,
+            })?
+            .clone();
+        let leaves = self.trace_leaves();
+        let proof = build_proof(&leaves, op_index)?;
+        Ok(IrTraceOpening {
+            trace_root: self.trace_root,
+            op_index,
+            op_trace,
+            proof,
+        })
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrTraceOpening {
+    pub trace_root: Hash,
+    pub op_index: u64,
+    pub op_trace: IrOpTrace,
+    pub proof: MerkleProof,
+}
+
+impl IrTraceOpening {
+    pub fn verify(&self) -> bool {
+        self.proof.leaf_index == self.op_index
+            && self.op_trace.op_id as u64 == self.op_index
+            && verify_proof(&self.trace_root, self.op_trace.leaf_hash(), &self.proof)
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -3859,6 +3905,23 @@ mod tests {
             .map(|trace| trace_op_leaf(trace.op_id, &trace.output_roots))
             .collect();
         assert_eq!(execution.trace_root, merkle_root(&trace_leaves));
+        assert_eq!(execution.trace_leaves(), trace_leaves);
+        let opening = execution.trace_opening(1).unwrap();
+        assert_eq!(opening.trace_root, execution.trace_root);
+        assert_eq!(opening.op_index, 1);
+        assert_eq!(opening.op_trace.op_id, 1);
+        assert_eq!(
+            opening.op_trace.output_roots[0],
+            expected_biased.commitment_root()
+        );
+        assert!(opening.verify());
+        let mut tampered = opening.clone();
+        tampered.op_trace.output_roots[0] = expected_row_sum.commitment_root();
+        assert!(!tampered.verify());
+        assert_eq!(
+            execution.trace_opening(99),
+            Err(TvmError::InvalidChunk { chunk_index: 99 })
+        );
         assert_eq!(
             execution.trace_root,
             graph

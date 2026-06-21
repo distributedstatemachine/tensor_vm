@@ -77,8 +77,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   validates bound tensors
   and field-scalar params, resolves input/op/param/const refs, resolves `const_blob` refs from
   content-addressed tensor artifacts keyed by the declared commitment URI, asserts blob shape/dtype/root on
-  load, returns named output tensors, records per-op output commitment roots, and derives a Merkle
-  `trace_root`; Tier-C/deferred ops and admitted registry ops
+  load, returns named output tensors, records per-op output commitment roots, derives a Merkle
+  `trace_root`, and serves verified per-op trace openings for receipt dispute evidence; Tier-C/deferred ops and admitted registry ops
   that do not yet have exact replay implementation fail closed. Registered canonical graph bodies can now
   be referenced by first-class `GraphExecution` jobs and receipts: command admission checks the registered
   graph body, input roots, params, job id, receipt digest, miner signature, and deadline; shared codec,
@@ -100,8 +100,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   bounded `TVQ8` byte layout length calculation, shared encode/decode validation for IR replay and
   conformance, and first-class `Uint8` tensor artifact construction/decode methods whose descriptors,
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
-  graph program and tensor artifacts is implemented locally; trace-chunk dispute availability and CUDA
-  generic graph execution remain open.
+  graph program and tensor artifacts is implemented locally; p2p trace-opening sampling, the full
+  interactive dispute game, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,

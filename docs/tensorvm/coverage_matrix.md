@@ -62,7 +62,8 @@ per-channel signed 64-bit scales, and row-major int8 payload bytes, with bounded
 shared encode/decode validation used by IR replay and conformance. The tensor layer now also exposes
 packed payload construction/decode as a first-class `Uint8` tensor artifact API, so those payloads carry
 normal descriptor, chunk, and Merkle-opening evidence for public tensor serving. Interpreter output includes named
-output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
+output tensors, per-op output commitment roots, a Merkle `trace_root`, and per-op trace openings verified
+against that root; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Local synthetic production now emits a deterministic graph-backed exact Tier-B job
 (`add` then `relu`), registers the graph body and input tensors, and miner/validator role helpers can
@@ -159,7 +160,7 @@ Focused evidence:
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
 Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding`,
-additional mixed-dtype conformance vectors, trace-chunk dispute availability, and CUDA conformance evidence
+additional mixed-dtype conformance vectors, p2p trace-opening sampling evidence, and CUDA conformance evidence
 when `cuda-kernels` is not compiled in this environment.
 Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared
 commitment URI, with shape/dtype/root checks during exact graph replay. Evidence:

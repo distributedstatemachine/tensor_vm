@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 119 complete - explicit receipt reward maturity state.
+- Active feature: Iteration 120 complete - trace opening availability for receipt disputes.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -28,15 +28,16 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   shared encode/decode validation used by IR replay and conformance. External graph job payloads with
   missing graph bodies now stay pending through the shared node payload path, runtime ingest fetches
   missing graph bodies by request-response before retry, and miner/validator role loops fetch missing graph
-  tensor artifacts, including `const_blob` tensors, before execution or attestation.
+  tensor artifacts, including `const_blob` tensors, before execution or attestation. Exact IR execution
+  now exposes verified per-op trace openings for receipt dispute evidence anchored by `trace_root`.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue Tier-C committee policy, deployed-run economics evidence, trace-chunk dispute
-  availability, CUDA graph evidence, or rerun Docker after the `/health` blocker clears.
+- Next action: continue p2p trace-opening sampling, Tier-C committee policy, deployed-run economics
+  evidence, CUDA graph evidence, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -50,7 +51,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, content-addressed `const_blob` artifact replay, pending external graph job payloads, automatic runtime program fetch, and miner/validator graph tensor fetch evidence | Continue exact Tier-B verifier coverage, trace-chunk/blob dispute availability, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, content-addressed `const_blob` artifact replay, pending external graph job payloads, automatic runtime program fetch, miner/validator graph tensor fetch evidence, and verified per-op trace openings | Continue exact Tier-B verifier coverage, p2p trace-opening/blob dispute sampling, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -58,6 +59,24 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 120: Trace Opening Availability
+
+Feature capability: expose Merkle openings for exact IR per-op trace commitments so graph and tensor
+receipts can serve dispute-ready trace evidence anchored by `trace_root`.
+Readiness requirements covered: `mvp_spec.md` trace-root availability, `upow.md` future interactive
+fraud-proof availability, and the coverage matrix gap for trace-chunk/blob dispute availability.
+Canonical owner: exact IR execution trace commitments and receipt replay helpers.
+Adapter callers: graph and tensor receipt paths use the same IR execution commitment layout.
+Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
+Out of scope: full interactive fraud game, durable erasure-coded DA, CUDA graph execution, and Docker
+`/health` rerun.
+
+Validation evidence: first/final `cargo test -p tensor_vm local_testnet --release`, focused
+`ir::tests::exact_interpreter_executes_hand_built_graph_and_commits_trace` and `jobs::tests`,
+`cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
+Coverage attempt remains blocked: `cargo tarpaulin --workspace --offline` reports no `tarpaulin` command.
 
 ### Iteration 119: Explicit Receipt Reward Maturity State
 
@@ -277,7 +296,3 @@ error: no such command: `tarpaulin`
   commits `493191c`, `8dbb654`, `c8a6f9e`, `32fb557`, and `7026c94`.
 - Iterations 59-64: exact `clamp`, field `div`, split/einsum, registry/conformance guard, and graph
   verifier coverage landed across commits including `85a2956`, `d659e14`, and `b6e0887`.
-- Iterations 41-58: Tensor IR, graph-backed jobs/receipts, exact replay, quantization, Tier-B coverage,
-  delayed proposer reward cleanup, and economic helper foundations landed in git history.
-- Iterations 30-34: delayed proposer, receipt, challenger, and credit reward-ledger foundations landed in
-  commit `5664acb` and related evidence commits.
