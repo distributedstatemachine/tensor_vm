@@ -933,7 +933,7 @@ fn binary_add_sub_tensor(
 }
 
 fn binary_mul_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
-    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
+    if lhs.dtype() != rhs.dtype() || (lhs.dtype() != DType::Fixed32 && lhs.scale() != rhs.scale()) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
@@ -942,6 +942,8 @@ fn binary_mul_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
     for index in 0..len {
         data.push(multiply_elem_for_dtype(
             lhs.dtype(),
+            lhs.scale(),
+            rhs.scale(),
             lhs.scale(),
             broadcast_value(lhs, &shape, index)?,
             broadcast_value(rhs, &shape, index)?,
@@ -2035,7 +2037,7 @@ fn infer_outputs(
         }
         "mul" => {
             let [lhs, rhs] = two_args(args)?;
-            same_dtype(lhs, rhs)?;
+            same_mul_dtype(lhs, rhs)?;
             ValueShape {
                 shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
                 dtype: lhs.dtype,
@@ -2532,6 +2534,13 @@ fn same_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
 }
 
 fn same_add_sub_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
+    if lhs.dtype != rhs.dtype || (lhs.dtype != DType::Fixed32 && lhs.scale != rhs.scale) {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    Ok(())
+}
+
+fn same_mul_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
     if lhs.dtype != rhs.dtype || (lhs.dtype != DType::Fixed32 && lhs.scale != rhs.scale) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
     }
@@ -4763,6 +4772,64 @@ mod tests {
                 DType::Fixed32,
                 2,
                 vec![9, 10, p - 9, p - 10, p - 12, 10],
+            )
+            .unwrap()
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_fixed32_mul_with_mixed_scales() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 1], DType::Fixed32, 0),
+                tensor_spec("rhs", vec![1, 3], DType::Fixed32, 1),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "mul".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("product", vec![2, 3], DType::Fixed32, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "product".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        graph.validate_for_consensus().unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec_with_scale(vec![2, 1], DType::Fixed32, 0, vec![3, p - 3])
+                            .unwrap(),
+                    ),
+                    (
+                        "rhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![1, 3],
+                            DType::Fixed32,
+                            1,
+                            vec![3, 2, p - 3],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["product"],
+            Tensor::from_vec_with_scale(
+                vec![2, 3],
+                DType::Fixed32,
+                0,
+                vec![4, 3, p - 4, p - 4, p - 3, 4]
             )
             .unwrap()
         );

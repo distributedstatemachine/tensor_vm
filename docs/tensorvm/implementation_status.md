@@ -54,8 +54,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   tensor ops: `matmul`, exact Tier-A matrix-contraction `einsum`, broadcast-aware `add`/`sub`/`mul`,
   exact field-only modular-inverse `div`, `scalar_mul`, `transpose`, explicit-dim
   `sum`/`reduce_sum`, `identity`, `neg`, signed-residue `abs`/`sign`/`relu`, mixed-scale fixed-point
-  `add`/`sub` with RHS-to-lhs/output half-even rescale, same-scale fixed-point `mul` with half-even
-  rescale, fixed-point scale-aware half-even `round`, `reshape`, `broadcast`,
+  `add`/`sub` with RHS-to-lhs/output half-even rescale, mixed-scale fixed-point `mul` with half-even
+  product rescale, fixed-point scale-aware half-even `round`, `reshape`, `broadcast`,
   structural `squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`,
   comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, field-order `clamp`, `mean`, scale-aware `cast`,
   `concat`, `stack`, `full`, and `arange`. Runtime `Tensor` values now carry
@@ -87,9 +87,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   and miner/validator role helpers can submit and attest the graph receipt from node-local program/tensor
   artifacts. Graph role bundles now serve and verify any required `const_blob` tensors through the same
   commitment-root artifact path, and validator remote-fetch planning includes blob roots from the
-  registered graph body. Mixed-scale fixed-point `mul`, fixed-point reciprocal division, matmul
-  accumulation/range policy, low-level packed tensor storage/chunking APIs, public/p2p artifact propagation
-  evidence for externally supplied arbitrary graph jobs, and CUDA generic graph execution remain open.
+  registered graph body. Fixed-point reciprocal division, matmul accumulation/range policy, low-level
+  packed tensor storage/chunking APIs, public/p2p artifact propagation evidence for externally supplied
+  arbitrary graph jobs, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
@@ -98,7 +98,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
   `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`),
   including per-input and expected output dtype/scale metadata for fixed-point `cast`/`round` rescale,
-  mixed-scale `add`/`sub` vectors, and same-scale `mul` vectors,
+  mixed-scale `add`/`sub` vectors, and mixed-scale `mul` vectors,
   multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
   field-only modular-inverse `div`, Tier-A matrix-contraction `einsum`, field-order comparison/selection/clamp
   vectors, row-major structural vectors, and byte-exact packed payload vectors, with a stable suite hash,

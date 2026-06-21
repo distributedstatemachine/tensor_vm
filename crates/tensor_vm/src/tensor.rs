@@ -263,12 +263,16 @@ impl Tensor {
 
     pub fn mul(&self, rhs: &Self) -> Result<Self> {
         self.check_same_shape(rhs)?;
-        self.check_same_encoding(rhs)?;
+        self.check_mul_encoding(rhs)?;
         let data = self
             .data
             .iter()
             .zip(&rhs.data)
-            .map(|(lhs, rhs)| multiply_elem_for_dtype(self.dtype, self.scale, *lhs, *rhs))
+            .map(|(lhs, rhs_elem)| {
+                multiply_elem_for_dtype(
+                    self.dtype, self.scale, rhs.scale, self.scale, *lhs, *rhs_elem,
+                )
+            })
             .collect::<Result<Vec<_>>>()?;
         Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
@@ -545,6 +549,16 @@ impl Tensor {
         }
         Ok(())
     }
+
+    fn check_mul_encoding(&self, rhs: &Self) -> Result<()> {
+        if self.dtype != rhs.dtype || (self.dtype != DType::Fixed32 && self.scale != rhs.scale) {
+            return Err(TvmError::InvalidTensorData {
+                expected: self.dtype.tag() as usize,
+                actual: rhs.dtype.tag() as usize,
+            });
+        }
+        Ok(())
+    }
 }
 
 pub fn random_field_vector(seed: &Hash, label: &[u8], len: usize) -> Vec<Elem> {
@@ -626,20 +640,27 @@ fn random_elem_for_dtype(rng: &mut OracleRng, dtype: DType) -> Elem {
 }
 
 pub fn rescale_signed_elem_half_even(value: Elem, from_scale: i64, to_scale: i64) -> Result<Elem> {
-    let signed = signed_elem_to_i128(value);
+    Ok(signed_i128_to_elem(rescale_signed_i128_half_even(
+        signed_elem_to_i128(value),
+        from_scale,
+        to_scale,
+    )?))
+}
+
+fn rescale_signed_i128_half_even(signed: i128, from_scale: i64, to_scale: i64) -> Result<i128> {
     let delta = to_scale
         .checked_sub(from_scale)
         .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
-    let rescaled = if delta >= 0 {
+    if delta >= 0 {
         let shift = u32::try_from(delta)
             .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
-        signed
+        Ok(signed
             .checked_mul(
                 1_i128
                     .checked_shl(shift)
                     .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
             )
-            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?)
     } else {
         let shift = u32::try_from(
             delta
@@ -647,34 +668,28 @@ pub fn rescale_signed_elem_half_even(value: Elem, from_scale: i64, to_scale: i64
                 .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
         )
         .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
-        round_div_pow2_half_even(signed, shift)?
-    };
-    Ok(signed_i128_to_elem(rescaled))
+        round_div_pow2_half_even(signed, shift)
+    }
 }
 
 pub fn fixed32_mul_same_scale_half_even(lhs: Elem, rhs: Elem, scale: i64) -> Result<Elem> {
+    fixed32_mul_rescale_half_even(lhs, rhs, scale, scale, scale)
+}
+
+pub fn fixed32_mul_rescale_half_even(
+    lhs: Elem,
+    rhs: Elem,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+) -> Result<Elem> {
     let product = signed_elem_to_i128(lhs)
         .checked_mul(signed_elem_to_i128(rhs))
         .ok_or(TvmError::InvalidReceipt("tensor fixed multiply overflow"))?;
-    let rescaled = if scale >= 0 {
-        let shift = u32::try_from(scale)
-            .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
-        round_div_pow2_half_even(product, shift)?
-    } else {
-        let shift = u32::try_from(
-            scale
-                .checked_neg()
-                .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
-        )
-        .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
-        product
-            .checked_mul(
-                1_i128
-                    .checked_shl(shift)
-                    .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
-            )
-            .ok_or(TvmError::InvalidReceipt("tensor fixed multiply overflow"))?
-    };
+    let product_scale = lhs_scale
+        .checked_add(rhs_scale)
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let rescaled = rescale_signed_i128_half_even(product, product_scale, output_scale)?;
     Ok(signed_i128_to_elem(rescaled))
 }
 
@@ -708,9 +723,16 @@ pub fn sub_elem_for_dtype(
     Ok(field::sub(lhs, rhs))
 }
 
-pub fn multiply_elem_for_dtype(dtype: DType, scale: i64, lhs: Elem, rhs: Elem) -> Result<Elem> {
+pub fn multiply_elem_for_dtype(
+    dtype: DType,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+    lhs: Elem,
+    rhs: Elem,
+) -> Result<Elem> {
     if dtype == DType::Fixed32 {
-        fixed32_mul_same_scale_half_even(lhs, rhs, scale)
+        fixed32_mul_rescale_half_even(lhs, rhs, lhs_scale, rhs_scale, output_scale)
     } else {
         Ok(field::mul(lhs, rhs))
     }
@@ -822,6 +844,37 @@ mod tests {
         assert_eq!(
             fixed32_mul_same_scale_half_even(5, p - 6, 2).unwrap(),
             p - 8
+        );
+    }
+
+    #[test]
+    fn fixed32_multiply_rescales_mixed_scales_to_lhs_scale_half_even() {
+        let p = field::MODULUS;
+        let lhs =
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![6, p - 7, 3, p - 3, 5])
+                .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 0, vec![2, p - 2, 1, p - 1, 0])
+                .unwrap();
+
+        assert_eq!(
+            lhs.mul(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![5], DType::Fixed32, 2, vec![12, 14, 3, 3, 0]).unwrap()
+        );
+
+        let lhs = Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 0, vec![2, 3, p - 3, p - 2])
+            .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 1, vec![3, 3, 3, 3]).unwrap();
+        assert_eq!(
+            lhs.mul(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 0, vec![3, 4, p - 4, p - 3])
+                .unwrap()
+        );
+        assert_eq!(fixed32_mul_rescale_half_even(3, 3, 0, 1, 0).unwrap(), 4);
+        assert_eq!(
+            fixed32_mul_rescale_half_even(p - 3, 3, 0, 1, 0).unwrap(),
+            p - 4
         );
     }
 

@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 110 complete - mixed-scale `Fixed32` add/sub semantics.
+- Active feature: Iteration 111 complete - mixed-scale `Fixed32` multiplication semantics.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -18,8 +18,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
   records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
   pending receipt reward claims inherit those redundant reward holds. External randomness beacon records
-  can now advance future receipt randomness through a rooted chain command. Same-scale `Fixed32`
-  multiplication now rescales the signed raw product back to the declared scale with round-half-to-even
+  can now advance future receipt randomness through a rooted chain command. `Fixed32`
+  multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy.
 - Current blockers:
@@ -28,8 +28,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue Tier-C committee policy, deployed-run economics evidence, or rerun Docker after
-  the `/health` blocker clears.
+- Next action: continue fixed-point reciprocal division or matmul accumulation/range policy, Tier-C
+  committee policy, deployed-run economics evidence, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -43,7 +43,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including same-scale fixed-point `mul` and mixed-scale fixed-point `add`/`sub`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue mixed-scale fixed-point `mul`, exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue fixed-point reciprocal division, matmul accumulation/range policy, exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -52,53 +52,68 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 110: Mixed-Scale Fixed32 Add/Sub Semantics
+### Iteration 111: Mixed-Scale Fixed32 Multiplication Semantics
 
-Feature capability: allow `Fixed32` `add` and `sub` with different input scales by rescaling the RHS into
-the lhs/declaration scale with canonical round-half-to-even semantics before field add/sub.
+Feature capability: allow `Fixed32` `mul` with different input scales by treating the signed product as
+scale `lhs_scale + rhs_scale`, then rescaling it into the lhs/output scale with canonical round-half-to-even
+semantics.
 Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline and §3.3 conformance
 evidence for exact Tier-B arithmetic.
 Files/modules likely touched: `tensor`, `ir`, `conformance`, fixed-point docs/status.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is a
+single-owner deterministic semantics change.
 Parallelizable implementation workstreams: none in this single-writer deterministic semantics change.
-Canonical owner: `tensor` owns fixed-point element rescale/arithmetic; `ir` permits the same policy for
-validated graph `add`/`sub`; conformance records vectors.
+Canonical owner: `tensor` owns fixed-point signed-product rescale/arithmetic; `ir` permits the same policy
+for validated graph `mul`; conformance records vectors.
 Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
-Old shortcut being removed: mixed-scale `Fixed32` `add`/`sub` failed dtype/scale checks and required an
-explicit pre-cast workaround.
-Regression test that proves the shortcut is gone: tensor/IR/conformance mixed-scale add/sub tests.
+Old shortcut being removed: mixed-scale `Fixed32` `mul` failed dtype/scale checks and required an explicit
+pre-cast workaround.
+Regression test that proves the shortcut is gone: tensor/IR/conformance mixed-scale mul tests.
 Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
 Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
 Structured evidence source: conformance vectors plus exact interpreter output roots.
 Finality source: unchanged block finality; affected receipts still pass through canonical verification.
 Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
-Narrow validation commands: mixed-scale tensor/IR/conformance tests.
+Narrow validation commands: mixed-scale mul tensor/IR/conformance tests.
 Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
 final Gate 0, tarpaulin attempt.
-Expected observable evidence: `Fixed32` add/sub outputs keep lhs scale and match RHS half-even rescale.
-Out of scope: mixed-scale `mul`, fixed-point reciprocal division, matmul accumulation/range, CUDA graph
-execution, public/Docker run.
-Split trigger: unexpected IR validation or conformance profile changes outside `add`/`sub`.
+Expected observable evidence: `Fixed32` mul outputs keep lhs scale and match product half-even rescale from
+combined input scale.
+Out of scope: fixed-point reciprocal division, matmul accumulation/range, CUDA graph execution,
+public/Docker run.
+Split trigger: unexpected IR validation or conformance profile changes outside `mul`.
 
 Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm fixed32_add_sub_rescale_rhs_to_lhs_scale_half_even --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_add_sub_with_mixed_scales --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused: `cargo test -p tensor_vm fixed32_multiply_rescales_mixed_scales_to_lhs_scale_half_even --quiet` passed.
+- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_mixed_scales --quiet` passed.
 - Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
+- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
 - Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
-- Non-gate mistake: `cargo test -p tensor_vm fixed32_add_sub exact_interpreter_executes_fixed32_add_sub cpu_reference_passes_all_vectors --quiet` failed because Cargo accepts one test filter.
+- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet` passed.
 - Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
 - Verifier tool: no `tensorvm-verifier` binary/script found in workspace or PATH.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 441 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 443 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `ce665a5` (`Implement mixed-scale fixed32 add sub`) pushed to `origin/main`.
 
 ## Recent Iterations
+
+### Iteration 110: Mixed-Scale Fixed32 Add/Sub Semantics
+
+Feature capability: allow `Fixed32` `add` and `sub` with different input scales by rescaling the RHS into
+the lhs/declaration scale with canonical round-half-to-even semantics before field add/sub.
+
+Validation evidence:
+- First/final Gate 0 passed.
+- Focused tensor, IR, and conformance tests passed.
+- `cargo fmt --all`, `cargo fmt --check --all`, `git diff --check`, `cargo test -p tensor_vm --quiet`,
+  `cargo clippy --workspace --all-targets -- -D warnings`, and `cargo test --workspace --release` passed.
+- `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
+- Feature commit: `ce665a5` (`Implement mixed-scale fixed32 add sub`) pushed to `origin/main`.
 
 ### Iteration 109: Fixed-Point Multiply Scale Semantics
 
@@ -178,42 +193,6 @@ Validation evidence:
 
 Earlier detailed iterations are summarized in the archive to keep this plan compact.
 
-### Iteration 104: Local Finalized-Beacon VRF Evidence
-
-Feature capability: replace placeholder randomness-construction labels with concrete local
-finalized-beacon round mapping and validator VRF-seed derivation evidence for receipt anchors.
-
-Canonical owner: `chain::validation` defines seed domains; `ChainState::randomness_binding_evidence`
-derives structured counts from state-rooted receipt anchors.
-Adapter callers: service status and explorer randomness evidence.
-Old shortcut being removed: status/explorer reported `not_configured_local_finalized_beacon` for drand
-round mapping and VRF construction even though local receipt anchors were already committed.
-Regression tests: `chain::tests::randomness_binding_evidence_reports_receipt_bound_finalized_beacon_policy`,
-`app::status::tests::service_status_exports_randomness_binding_evidence`, RPC explorer overview tests, and
-explorer JSON rendering tests.
-Behavior with local synthetic block production disabled: unchanged; the evidence is derived from admitted
-receipt anchors and registered validators, not synthetic production.
-Behavior for producer and non-producer roles: unchanged; both read the same chain-state evidence.
-Structured evidence source: `RANDOMNESS_DRAND_ROUND_MAPPING`, `RANDOMNESS_VRF_CONSTRUCTION`,
-`finalized_beacon_round_mapping_count`, and `validator_vrf_seed_count`.
-Out of scope: external drand service, public VRF attestations, and deployed commit/reveal lifecycle.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm randomness_binding_evidence --quiet` passed.
-- Focused: `cargo test -p tensor_vm service_status_exports_randomness_binding_evidence --quiet` passed.
-- Focused: `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet` passed.
-- Focused: `cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `cc80d84` (`Add local randomness construction evidence`) and evidence commit
-  `1bd9bc7` (`Record randomness evidence commit`) are pushed to `origin/main`.
-
 Older recent iterations are summarized in the archive to keep this plan compact.
 
 ## Decision Log
@@ -228,15 +207,16 @@ Older recent iterations are summarized in the archive to keep this plan compact.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 110 on June 21, 2026:
+Latest full validation is Iteration 111 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm fixed32_add_sub_rescale_rhs_to_lhs_scale_half_even --quiet
-cargo test -p tensor_vm exact_interpreter_executes_fixed32_add_sub_with_mixed_scales --quiet
-cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
+cargo test -p tensor_vm fixed32_multiply_rescales_mixed_scales_to_lhs_scale_half_even --quiet
+cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_mixed_scales --quiet
 cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet
+cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
 cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet
+cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet
 cargo fmt --all
 cargo fmt --check --all
 git diff --check
