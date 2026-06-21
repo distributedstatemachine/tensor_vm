@@ -5,14 +5,15 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 102 complete - submission-anchored retention openings.
+- Active feature: Iteration 103 complete - inclusion-started receipt reward delay.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
-  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement.
+  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
+  and settled receipt rewards explicitly await canonical blockspace inclusion before their maturity clock starts.
   Selected-receipt block openings now expose typed block-check transcript commitments and
   submission-anchored retention deadlines.
 - Current blockers:
@@ -39,44 +40,48 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 102: Submission-Anchored Retention Openings
+### Iteration 103: Inclusion-Started Receipt Reward Delay
 
-Feature capability: make selected-receipt opening retention evidence stable by anchoring
-`expires_at_block` to the receipt's submitted height plus the configured tensor-retention window.
+Feature capability: make settled receipt reward claims explicitly await canonical blockspace inclusion, then
+start their spendability delay from the inclusion block instead of carrying a normal-looking pre-inclusion
+claimable height.
 
-Canonical owner: `chain::blocks` selected-receipt opening construction.
-Adapter callers: block apply outcome views, block status/explorer evidence, and local checker block
-evidence.
-Old shortcut being removed: opening retention deadlines drifted with the parent height when a receipt was
-included after later fallback/useful blocks.
+Canonical owner: `chain::settlement` creates receipt reward escrow; `chain::blocks` starts the maturity
+clock when a block selects the receipt.
+Adapter callers: status/explorer pending reward views, block reward roots, reward release, local checker
+pending reward evidence.
+Old shortcut being removed: pre-inclusion receipt rewards used a real claimable height and relied on the
+release sweeper's included-receipt guard to prevent early spendability.
 Regression test that proves the shortcut is gone:
-`chain::tests::selected_receipt_opening_retention_deadline_is_submission_anchored`.
-Behavior with local synthetic block production disabled: unchanged; the deadline derives only from
-canonical receipt metadata and chain params.
-Behavior for producer and non-producer roles: producers and peers expose the same deadline from stored
-parent snapshots.
-Structured evidence source: `SelectedReceiptOpening::submitted_at_block`, `expires_at_block`, and
-`ChainParams::tensor_retention_window_blocks`.
-Finality source: unchanged; this fixes evidence for the retention/challenge window, not finality.
-Wire-size and codec boundary: no p2p wire or chain-state codec change.
+`chain::tests::produced_blocks_delay_receipt_rewards_from_inclusion_height`,
+`chain::tests::chain_settles_valid_tensorwork_and_rewards_participants`, and
+`chain::tests::chain_settles_valid_graph_execution_and_delays_rewards`.
+Behavior with local synthetic block production disabled: unchanged; any settlement path creates awaiting
+claims and any canonical inclusion starts maturity.
+Behavior for producer and non-producer roles: both recompute the same child reward root because inclusion
+delay is applied by block child-state transition.
+Structured evidence source: `RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT`,
+`PendingReceiptReward::claimable_at_height`, `included_receipts`, and reward-root tests.
+Finality source: unchanged; this is reward finality, not block finality.
+Wire-size and codec boundary: no new p2p payload or chain-state field; the existing `u64` claimable height
+uses a named consensus sentinel before inclusion.
 
 Implementation summary:
-- `selected_receipt_openings` now computes `expires_at_block` as
-  `receipt.submitted_at_block + tensor_retention_window_blocks`.
-- Added focused coverage that submits a receipt, advances the chain with fallback block production before
-  inclusion, and proves the opening deadline does not drift with the parent height.
+- Settlement now enqueues miner and validator receipt rewards with the explicit awaiting-inclusion sentinel.
+- Block child-state application converts the sentinel to `block_height + reward_maturity_delay_blocks`
+  when the receipt is selected, while preserving later audit/challenge holds with `max`.
+- Removed the test helper that manually rewrote pending receipt claim heights as an old workaround.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm selected_receipt_opening_retention_deadline_is_submission_anchored --quiet`
-  passed.
-- Focused: `cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet`
-  passed.
+- Focused: `cargo test -p tensor_vm rewards --quiet` passed.
+- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -84,9 +89,16 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `aa2e9f3` (`Anchor receipt retention openings`) is pushed with this evidence update.
+- Feature commit: pending.
 
 ## Recent Iterations
+
+### Iteration 102: Submission-Anchored Retention Openings
+
+Selected-receipt opening retention evidence now anchors `expires_at_block` to receipt submission height plus
+the configured tensor-retention window, so delayed inclusion cannot extend the reported
+verification/challenge availability deadline. Validation passed focused opening tests, full crate, clippy,
+workspace release, and first/final Gate 0. Commits `aa2e9f3` and `2936ec9` are pushed to `origin/main`.
 
 ### Iteration 101: Typed Block-Check Transcript Openings
 
@@ -94,51 +106,6 @@ Selected-receipt block openings now expose typed block-check transcript fields w
 Merkle-proven check leaf, and challenge admission verifies that transcript commitment before accepting a
 mismatch proof. Validation passed focused block apply/block-check tests, full crate, clippy, workspace
 release, and first/final Gate 0. Commits `8aef9bb` and `a7195bb` are pushed to `origin/main`.
-
-### Iteration 100: Delayed TensorWork Activation
-
-Feature capability: delay miner TensorWork activation until the corresponding delayed miner receipt
-reward is actually releasable, instead of compensating with a settlement-time reward curve.
-
-Canonical owner: `chain::settlement` and `chain::commands` reward release.
-Adapter callers: block transitions, status/explorer miner views, telemetry, and reward tests.
-Old shortcut being removed: receipt settlement immediately increased `settled_tensor_work`, even though the
-matching miner reward was still a delayed, challengeable pending claim.
-Regression test that proves the shortcut is gone:
-`chain::tests::miner_rewards_delay_tensorwork_activation_until_reward_release`.
-Behavior with local synthetic block production disabled: any settled receipt path uses the same settlement
-and delayed-release rules, regardless of job source.
-Behavior for producer and non-producer roles: all roles recompute pending receipt claims, pending
-TensorWork, and settled TensorWork from canonical chain state.
-Structured evidence source: miner `pending_tensor_work`, miner `settled_tensor_work`, pending receipt
-reward claims, and the focused settlement regression.
-Finality source: unchanged; miner work activates only after normal block inclusion and reward maturity.
-Wire-size and codec boundary: no new wire payload; no chain-state codec field changes.
-
-Implementation summary:
-- Settlement now records newly settled miner TWU as `pending_tensor_work` only; the miner reward allocation
-  returns to proportional receipt TWU.
-- `release_matured_receipt_rewards` moves pending TWU to `settled_tensor_work` only for non-voided miner
-  reward claims whose receipt has been included and matured.
-- Data-unavailable, invalid-output, and block-check challenge paths clear pending miner TWU when they void
-  the delayed receipt reward, so invalid work cannot activate later.
-- Telemetry still reports total observed TensorWork as settled plus pending while miner state exposes the
-  delayed activation boundary.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
-- Focused: `cargo test -p tensor_vm rewards --quiet` passed.
-- Focused: `cargo test -p tensor_vm telemetry --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 434 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `48be88f` (`Delay TensorWork activation until reward release`) is pushed to
-  `origin/main`.
 
 ### Iteration 97: Role-Owned Graph Execution Production
 
@@ -234,12 +201,15 @@ pushed to `origin/main`.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 102 on June 21, 2026:
+Latest full validation is Iteration 103 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm selected_receipt_opening_retention_deadline_is_submission_anchored --quiet
-cargo test -p tensor_vm block_apply_outcome_exposes_parent_child_and_check_openings --quiet
+cargo test -p tensor_vm rewards --quiet
+cargo test -p tensor_vm settlement --quiet
+cargo test -p tensor_vm invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards --quiet
+cargo test -p tensor_vm mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply --quiet
+cargo test -p tensor_vm validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

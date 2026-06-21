@@ -252,7 +252,7 @@ fn invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards() {
     chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
-    chain.set_position_for_testing(claimable_at_height + 1, 0);
+    chain.set_position_for_testing(claimable_at_height.saturating_add(1), 0);
     assert_eq!(
         chain.submit_attestation(ValidatorAttestation::new(
             validators[2],
@@ -337,10 +337,7 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         .expect("validator reward should be pending before audit assignment");
     assert_eq!(
         pending_validator_claim.claimable_at_height,
-        chain
-            .state()
-            .height()
-            .saturating_add(chain.params().reward_maturity_delay_blocks())
+        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
     );
     assert!(!pending_validator_claim.voided_by_challenge);
 
@@ -559,10 +556,7 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .expect("audited validator reward should be pending before assignment");
     assert_eq!(
         pending_validator_claim.claimable_at_height,
-        chain
-            .state()
-            .height()
-            .saturating_add(chain.params().reward_maturity_delay_blocks())
+        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
     );
     let starting_stake = chain.state().validators().get(&audited).unwrap().stake;
     let starting_treasury = chain.state().rewards().treasury();

@@ -1,4 +1,7 @@
-use super::{Chain, ChainEvent, ChainState, PendingReceiptReward, ReceiptRewardKind, ReceiptState};
+use super::{
+    Chain, ChainEvent, ChainState, PendingReceiptReward, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
+    ReceiptRewardKind, ReceiptState,
+};
 use crate::jobs::LinearTrainingStepReceipt;
 use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::VerificationResult;
@@ -54,7 +57,6 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         .iter()
         .map(|(receipt_id, _)| *receipt_id)
         .collect();
-    let claimable_at_height = receipt_reward_claimable_height(chain);
     for (receipt_id, receipt) in newly_settled {
         chain.state.settled_receipts.insert(receipt_id);
         let mut miner_claim = None;
@@ -76,7 +78,6 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 beneficiary,
                 reward,
                 ReceiptRewardKind::Miner,
-                claimable_at_height,
             );
         }
     }
@@ -99,7 +100,6 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 attestation.validator,
                 validator_reward,
                 ReceiptRewardKind::Validator,
-                claimable_at_height,
             );
         }
     }
@@ -179,13 +179,6 @@ pub(super) fn events(
     events
 }
 
-pub(super) fn receipt_reward_claimable_height(chain: &Chain) -> u64 {
-    chain
-        .state
-        .height
-        .saturating_add(chain.params.reward_maturity_delay_blocks())
-}
-
 pub(super) fn void_pending_miner_tensor_work(state: &mut ChainState, receipt_id: &Hash) {
     let Some(receipt) = state.receipts.get(receipt_id) else {
         return;
@@ -204,7 +197,6 @@ fn enqueue_pending_receipt_reward(
     beneficiary: Address,
     amount: u64,
     kind: ReceiptRewardKind,
-    claimable_at_height: u64,
 ) {
     if amount == 0 {
         return;
@@ -220,7 +212,7 @@ fn enqueue_pending_receipt_reward(
             beneficiary,
             amount,
             kind,
-            claimable_at_height,
+            claimable_at_height: RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
             voided_by_challenge: false,
         });
 }

@@ -20,18 +20,6 @@ impl Chain {
         self.state.data_unavailable_receipts.insert(receipt_id);
     }
 
-    pub(crate) fn set_pending_receipt_reward_claimable_for_testing(
-        &mut self,
-        receipt_id: Hash,
-        claimable_at_height: u64,
-    ) {
-        for reward in self.state.pending_receipt_rewards.values_mut() {
-            if reward.receipt_id == receipt_id {
-                reward.claimable_at_height = claimable_at_height;
-            }
-        }
-    }
-
     pub(crate) fn set_miner_settled_tensor_work_for_testing(
         &mut self,
         miner: Address,

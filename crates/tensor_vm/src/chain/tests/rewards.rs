@@ -68,7 +68,7 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
         .expect("settled receipt should enqueue a delayed reward");
     assert_eq!(
         pending_reward.claimable_at_height,
-        chain.state().height() + chain.params().reward_maturity_delay_blocks()
+        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     receipt.receipt_id
@@ -268,7 +268,7 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
         .values_mut()
         .next()
         .unwrap()
-        .claimable_at_height += 1;
+        .claimable_at_height = 0;
     assert_ne!(full_root, reward_root(&changed_receipt));
 
     let mut changed_credit = chain.state().clone();

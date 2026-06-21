@@ -215,6 +215,10 @@ continues finalizing blocks after restart.
 Reward-delay evidence note: `chain::tests::block_transition_releases_matured_receipt_rewards_without_manual_command`
 now proves included receipt rewards are released by canonical block child-state application on both producer
 and non-producer peers, rather than by an adapter-side/manual release workaround.
+`chain::tests::produced_blocks_delay_receipt_rewards_from_inclusion_height`,
+`chain::tests::chain_settles_valid_tensorwork_and_rewards_participants`, and
+`chain::tests::chain_settles_valid_graph_execution_and_delays_rewards` now also prove receipt reward claims
+explicitly await canonical blockspace inclusion before their reward-maturity clock starts.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul plus
   linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.

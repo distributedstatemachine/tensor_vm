@@ -133,7 +133,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `chain::roots` boundary
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims using
-  the explicit reward-settlement plus challenge-window maturity rule with the chain's minimum maturity floor,
+  an explicit awaiting-inclusion sentinel before canonical blockspace inclusion and the explicit
+  reward-settlement plus challenge-window maturity rule with the chain's minimum maturity floor after
+  inclusion,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through
   pending challenge reward claims using the same explicit reward maturity rule instead of the proposer
   throttle height, delayed generic/faucet credits through a state-rooted pending credit
@@ -144,7 +146,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
   Receipt, challenge, and generic credit reward claims are state-rooted and persisted. Receipt rewards
   release only after the receipt is included in canonical blockspace and the inclusion-based maturity
-  height has elapsed; challenge and generic credit claims release only after their own maturity heights.
+  height has elapsed; pre-inclusion receipt claims do not carry a normal claimable height, so the reward
+  delay is modeled directly instead of relying on a mature-but-unincluded release guard. Challenge and
+  generic credit claims release only after their own maturity heights.
   Challenge bounty spendability is separate from proposer penalty duration.
   Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the

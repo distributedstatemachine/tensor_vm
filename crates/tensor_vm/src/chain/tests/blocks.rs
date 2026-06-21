@@ -604,7 +604,7 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
         .claimable_at_height;
-    chain.set_pending_receipt_reward_claimable_for_testing(receipt.receipt_id, 0);
+    assert_eq!(initial_claimable, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert!(
@@ -639,7 +639,6 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
                 .saturating_mul(chain.params().epoch_length)
         )
     );
-    assert_eq!(inclusion_delayed_claimable, initial_claimable);
     assert!(inclusion_delayed_claimable > 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     chain.set_position_for_testing(inclusion_delayed_claimable, 0);

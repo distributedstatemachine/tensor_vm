@@ -12,6 +12,8 @@ use crate::verify::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
+pub const RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT: u64 = u64::MAX;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChainParams {
     pub block_time_seconds: u64,
