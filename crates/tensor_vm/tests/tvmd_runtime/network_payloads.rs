@@ -163,12 +163,14 @@ fn network_applied_receipt_and_attestation_make_validator_proposal_useful() {
     register_validator(&mut chain, attestation.validator);
     let mut server = test_rpc_server(chain);
 
-    apply_network_job_payload(
-        &mut server.gateway_mut().node.chain,
-        job.job_id(),
-        &encode_job_payload(&job),
-    )
-    .unwrap();
+    assert_eq!(
+        apply_network_job_payload(
+            &mut server.gateway_mut().node.chain,
+            job.job_id(),
+            &encode_job_payload(&job),
+        ),
+        NetworkPayloadApply::Applied
+    );
     assert_eq!(
         apply_network_receipt_payload(
             &mut server.gateway_mut().node.chain,
@@ -305,12 +307,14 @@ fn pending_network_payloads_retry_after_dependencies_arrive() {
     );
     pending.queue_attestation(attestation_id, encode_attestation_payload(&attestation));
 
-    apply_network_job_payload(
-        &mut server.gateway_mut().node.chain,
-        job_id,
-        &encode_job_payload(&job),
-    )
-    .unwrap();
+    assert_eq!(
+        apply_network_job_payload(
+            &mut server.gateway_mut().node.chain,
+            job_id,
+            &encode_job_payload(&job),
+        ),
+        NetworkPayloadApply::Applied
+    );
     let mut processor = ChainNetworkPayloadProcessor::new(&mut server.gateway_mut().node.chain);
     let retried = pending.retry_with(&mut processor);
 

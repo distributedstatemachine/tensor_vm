@@ -95,8 +95,6 @@ impl<'a> ChainNetworkPayloadProcessor<'a> {
 impl NetworkPayloadProcessor for ChainNetworkPayloadProcessor<'_> {
     fn apply_job(&mut self, job_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_job_payload(self.chain, job_id, payload)
-            .map(|_| NetworkPayloadApply::Applied)
-            .unwrap_or(NetworkPayloadApply::Invalid)
     }
 
     fn apply_block(
@@ -178,8 +176,6 @@ impl<C: NetworkEventContext + ?Sized> NetworkPayloadProcessor
 {
     fn apply_job(&mut self, job_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_job_payload(self.context.chain(), job_id, payload)
-            .map(|_| NetworkPayloadApply::Applied)
-            .unwrap_or(NetworkPayloadApply::Invalid)
     }
 
     fn apply_block(
@@ -319,7 +315,10 @@ mod tests {
         pending.queue_receipt(receipt_id, encode_receipt_payload(&receipt));
         pending.queue_attestation(attestation_id, encode_attestation_payload(&attestation));
 
-        apply_network_job_payload(&mut chain, job_id, &encode_job_payload(&job)).unwrap();
+        assert_eq!(
+            apply_network_job_payload(&mut chain, job_id, &encode_job_payload(&job)),
+            NetworkPayloadApply::Applied
+        );
         let mut processor = ChainNetworkPayloadProcessor::new(&mut chain);
         let ingested = pending.retry_with(&mut processor);
 

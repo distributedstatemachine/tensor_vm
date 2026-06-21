@@ -1,6 +1,6 @@
-use super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
+use super::{NetworkBlockPayloadApply, NetworkPayloadApply};
 use crate::{
-    chain::{BlockAdmission, Chain, ChainCommand, ChainEngine},
+    chain::{BlockAdmission, Chain, ChainCommand, ChainEngine, JobState},
     challenge::block_check_challenge_id,
     p2p::{
         decode_attestation_payload, decode_block_check_challenge_payload, decode_block_payload,
@@ -15,24 +15,31 @@ pub fn apply_network_job_payload(
     chain: &mut Chain,
     job_id: Hash,
     payload: &[u8],
-) -> std::result::Result<(), NetworkPayloadError> {
+) -> NetworkPayloadApply {
     if job_id == [0; 32] {
-        return Err(NetworkPayloadError::Invalid);
+        return NetworkPayloadApply::Invalid;
     }
-    let job = decode_job_payload(payload).map_err(|_| NetworkPayloadError::Invalid)?;
+    let Ok(job) = decode_job_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
     if job.job_id() != job_id {
-        return Err(NetworkPayloadError::Invalid);
+        return NetworkPayloadApply::Invalid;
     }
     if let Some(existing) = chain.state().jobs().get(&job_id) {
         if existing == &job {
-            return Ok(());
+            return NetworkPayloadApply::Applied;
         }
-        return Err(NetworkPayloadError::Invalid);
+        return NetworkPayloadApply::Invalid;
+    }
+    if let JobState::GraphExecution(graph_job) = &job
+        && chain.state().program_body(&graph_job.graph_id).is_none()
+    {
+        return NetworkPayloadApply::Pending;
     }
     chain
         .apply_command(ChainCommand::SubmitJob(job))
-        .map_err(|_| NetworkPayloadError::Invalid)?;
-    Ok(())
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
 pub fn apply_network_block_payload(
@@ -401,12 +408,12 @@ pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash
 
 #[cfg(test)]
 mod tests {
-    use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply, NetworkPayloadError};
+    use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply};
     use super::*;
     use crate::{
         chain::{
-            BlockProductionKind, BlockVote, ChainParams, JobState, ReceiptState, TensorBlock,
-            ValidatorAuditReport,
+            BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainParams, JobState,
+            ReceiptState, TensorBlock, ValidatorAuditReport,
         },
         challenge::{BlockCheckChallenge, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
@@ -415,7 +422,7 @@ mod tests {
             encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
             encode_validator_audit_report_payload,
         },
-        scheduler::JobScheduler,
+        scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
         types::{address, sign},
         verify::{
@@ -452,24 +459,24 @@ mod tests {
 
         assert_eq!(
             apply_network_job_payload(&mut chain, job_id, &payload),
-            Ok(())
+            NetworkPayloadApply::Applied
         );
         assert_eq!(chain.state().jobs().get(&job_id), Some(&job));
         assert_eq!(
             apply_network_job_payload(&mut chain, job_id, &payload),
-            Ok(())
+            NetworkPayloadApply::Applied
         );
         assert_eq!(
             apply_network_job_payload(&mut chain, [0; 32], &payload),
-            Err(NetworkPayloadError::Invalid)
+            NetworkPayloadApply::Invalid
         );
         assert_eq!(
             apply_network_job_payload(&mut chain, hash_bytes(b"test", &[b"wrong-job"]), &payload),
-            Err(NetworkPayloadError::Invalid)
+            NetworkPayloadApply::Invalid
         );
         assert_eq!(
             apply_network_job_payload(&mut chain, job_id, &[1, 2, 3]),
-            Err(NetworkPayloadError::Invalid)
+            NetworkPayloadApply::Invalid
         );
 
         let mut conflicting = job.clone();
@@ -484,8 +491,37 @@ mod tests {
         }
         assert_eq!(
             apply_network_job_payload(&mut chain, job_id, &encode_job_payload(&conflicting)),
-            Err(NetworkPayloadError::Invalid)
+            NetworkPayloadApply::Invalid
         );
+    }
+
+    #[test]
+    fn graph_job_payload_waits_for_registered_program_body() {
+        let seed = hash_bytes(b"test", &[b"graph-job-pending-program"]);
+        let mut chain = Chain::new(seed);
+        let mut source = SyntheticLocalJobSource::default();
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let job = JobState::GraphExecution(source.next_graph_job(&chain));
+        let job_id = job.job_id();
+        let payload = encode_job_payload(&job);
+
+        assert_eq!(
+            apply_network_job_payload(&mut chain, job_id, &payload),
+            NetworkPayloadApply::Pending
+        );
+        assert!(!chain.state().jobs().contains_key(&job_id));
+
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: graph.graph_id(),
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        assert_eq!(
+            apply_network_job_payload(&mut chain, job_id, &payload),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(chain.state().jobs().get(&job_id), Some(&job));
     }
 
     #[test]

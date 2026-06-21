@@ -399,12 +399,14 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
 mod tests {
     use super::super::Libp2pControlPlaneConfig;
     use super::super::wire::{
-        decode_tensor_payload, encode_block_payload, encode_block_vote_payload,
+        decode_tensor_payload, encode_block_payload, encode_block_vote_payload, encode_job_payload,
     };
     use super::{TensorVmLibp2pService, spawn_libp2p_service};
     use crate::api::P2pMessage;
-    use crate::chain::{BlockVote, TensorBlock};
+    use crate::chain::{BlockVote, Chain, ChainCommand, ChainEngine, JobState, TensorBlock};
     use crate::error::TvmError;
+    use crate::node::{NetworkPayloadApply, apply_network_job_payload};
+    use crate::scheduler::SyntheticLocalJobSource;
     use crate::tensor::{DType, Tensor};
     use crate::types::{Hash, address, hash_bytes};
     use std::time::{Duration, Instant};
@@ -561,6 +563,109 @@ mod tests {
                 bytes: Vec::new(),
             }
         );
+    }
+
+    #[test]
+    fn libp2p_service_propagates_external_graph_job_artifacts() {
+        let port = free_tcp_port();
+        let seed = hash_bytes(b"test", &[b"libp2p-external-graph-artifacts"]);
+        let source_chain = Chain::new(seed);
+        let mut job_source = SyntheticLocalJobSource::default();
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let program_hash = graph.graph_id();
+        let program_body = graph.canonical_json().into_bytes();
+        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+        let job = JobState::GraphExecution(job_source.next_graph_job(&source_chain));
+        let job_id = job.job_id();
+        let job_payload = encode_job_payload(&job);
+
+        let service_a = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-external-graph-a"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+        service_a.register_program(program_hash, program_body.clone());
+        for tensor in inputs.values() {
+            service_a.register_tensor(tensor.clone());
+        }
+        let bootstrap_address = format!("/ip4/127.0.0.1/tcp/{port}/p2p/{}", service_a.peer_id());
+        let service_b = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+            bootstrap_addresses: vec![bootstrap_address],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-external-graph-b"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+        wait_for_connected_services(&service_a, &service_b);
+
+        let mut receiver = crate::RpcNode::new(Chain::new(seed));
+        assert_eq!(
+            apply_network_job_payload(&mut receiver.chain, job_id, &job_payload),
+            NetworkPayloadApply::Pending
+        );
+        let observed_job = wait_for_observed_job_payload(
+            &service_a,
+            &service_b,
+            P2pMessage::NewJobPayload {
+                job_id,
+                payload: job_payload.clone(),
+            },
+        );
+        assert_eq!(observed_job, job_payload);
+
+        let response = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestProgram(program_hash),
+                Duration::from_secs(3),
+            )
+            .unwrap();
+        assert_eq!(
+            response,
+            P2pMessage::ProgramResponse {
+                program_hash,
+                bytes: program_body.clone(),
+            }
+        );
+        receiver
+            .chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: program_hash,
+                bytes: program_body,
+            })
+            .unwrap();
+
+        for expected in inputs.values() {
+            let commitment_root = expected.commitment_root();
+            let response = service_b
+                .request_response(
+                    service_a.peer_id(),
+                    P2pMessage::RequestTensorByCommitmentRoot { commitment_root },
+                    Duration::from_secs(5),
+                )
+                .unwrap();
+            let P2pMessage::TensorByCommitmentRootResponse {
+                commitment_root: response_root,
+                payload: Some(payload),
+            } = response
+            else {
+                panic!("expected tensor artifact response");
+            };
+            assert_eq!(response_root, commitment_root);
+            let tensor = decode_tensor_payload(&payload).unwrap();
+            assert_eq!(tensor, *expected);
+            receiver.insert_tensor(tensor);
+        }
+
+        assert_eq!(
+            apply_network_job_payload(&mut receiver.chain, job_id, &job_payload),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(receiver.chain.state().jobs().get(&job_id), Some(&job));
+        for tensor in inputs.values() {
+            assert!(receiver.contains_tensor_commitment_root(&tensor.commitment_root()));
+        }
     }
 
     #[test]
@@ -914,6 +1019,30 @@ mod tests {
         assert!(observer.observed_job_gossip_count() > 0);
         assert!(observer.observed_receipt_gossip_count() > 0);
         assert!(observer.observed_attestation_gossip_count() > 0);
+    }
+
+    fn wait_for_observed_job_payload(
+        publisher: &TensorVmLibp2pService,
+        observer: &TensorVmLibp2pService,
+        message: P2pMessage,
+    ) -> Vec<u8> {
+        let expected_job_id = match &message {
+            P2pMessage::NewJobPayload { job_id, .. } => *job_id,
+            _ => panic!("expected job payload message"),
+        };
+        let deadline = Instant::now() + Duration::from_secs(10);
+        while Instant::now() < deadline {
+            publisher.publish_gossip(message.clone()).unwrap();
+            for observed in observer.drain_observed_messages() {
+                if let P2pMessage::NewJobPayload { job_id, payload } = observed
+                    && job_id == expected_job_id
+                {
+                    return payload;
+                }
+            }
+            std::thread::sleep(Duration::from_millis(100));
+        }
+        panic!("timed out waiting for graph job payload gossip");
     }
 
     #[test]

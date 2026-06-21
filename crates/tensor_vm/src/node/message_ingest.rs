@@ -1,6 +1,6 @@
 use super::{
     NetworkBlockPayloadApply, NetworkEventContext, NetworkEventIngest, NetworkPayloadApply,
-    NetworkPayloadError, PendingNetworkPayloads,
+    PendingNetworkPayloads,
     payload_application::{
         apply_network_attestation_payload, apply_network_block_check_challenge_payload,
         apply_network_block_vote_payload, apply_network_job_payload,
@@ -181,11 +181,14 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                 ingested.jobs = ingested.jobs.saturating_add(1);
                 ingested.job_payloads = ingested.job_payloads.saturating_add(1);
                 match apply_network_job_payload(context.chain(), job_id, &payload) {
-                    Ok(()) => {
+                    NetworkPayloadApply::Applied => {
                         ingested.job_payloads_applied =
                             ingested.job_payloads_applied.saturating_add(1);
                     }
-                    Err(NetworkPayloadError::Invalid) => {
+                    NetworkPayloadApply::Pending => {
+                        pending_payloads.queue_job(job_id, payload);
+                    }
+                    NetworkPayloadApply::Invalid => {
                         ingested.invalid_events = ingested.invalid_events.saturating_add(1);
                     }
                 }
@@ -336,18 +339,18 @@ fn is_block_payload(message: &P2pMessage) -> bool {
 #[cfg(test)]
 mod tests {
     use super::super::{
-        NetworkBlockPayloadApply, NetworkEventContext, PendingNetworkPayloads,
-        attestation_announcement_hash,
+        ChainNetworkPayloadProcessor, NetworkBlockPayloadApply, NetworkEventContext,
+        PendingNetworkPayloads, attestation_announcement_hash,
     };
     use super::*;
     use crate::{
-        chain::{Chain, ChainParams, JobState, ValidatorAuditReport},
+        chain::{Chain, ChainCommand, ChainEngine, ChainParams, JobState, ValidatorAuditReport},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
         },
-        scheduler::JobScheduler,
+        scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
         types::{Hash, address, hash_bytes},
         verify::{
@@ -748,6 +751,53 @@ mod tests {
                 .and_then(|items| items.first()),
             Some(&attestation)
         );
+    }
+
+    #[test]
+    fn network_event_driver_queues_graph_job_until_program_body_arrives() {
+        let seed = hash_bytes(b"test", &[b"ingest-graph-job-pending-program"]);
+        let mut source = SyntheticLocalJobSource::default();
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let job = JobState::GraphExecution(source.next_graph_job(&Chain::new(seed)));
+        let job_id = job.job_id();
+        let mut context = TestNetworkEventContext {
+            chain: Chain::new(seed),
+            applied_payloads: Vec::new(),
+            applied_blocks: 0,
+        };
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewJobPayload {
+                job_id,
+                payload: encode_job_payload(&job),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.job_payloads, 1);
+        assert_eq!(ingested.job_payloads_applied, 0);
+        assert_eq!(ingested.invalid_events, 0);
+        assert_eq!(pending.pending_job_count(), 1);
+        assert!(!context.chain.state().jobs().contains_key(&job_id));
+
+        context
+            .chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: graph.graph_id(),
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        let mut processor = ChainNetworkPayloadProcessor::new(&mut context.chain);
+        let retried = pending.retry_with(&mut processor);
+
+        assert_eq!(retried.job_payloads_applied, 1);
+        assert_eq!(retried.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert_eq!(context.chain.state().jobs().get(&job_id), Some(&job));
     }
 
     #[test]
