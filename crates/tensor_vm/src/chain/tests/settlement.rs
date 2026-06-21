@@ -685,10 +685,8 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge
-                && reward
-                    .claimable_at_height()
-                    .expect("receipt reward should have inclusion-derived maturity")
-                    == reward_hold_until_height)
+                && reward.maturity
+                    == ReceiptRewardMaturity::AwaitingInclusionUntil(reward_hold_until_height))
     );
     assert_eq!(
         chain
@@ -850,10 +848,8 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge
-                && reward
-                    .claimable_at_height()
-                    .expect("receipt reward should have inclusion-derived maturity")
-                    == reward_hold_until_height)
+                && reward.maturity
+                    == ReceiptRewardMaturity::AwaitingInclusionUntil(reward_hold_until_height))
     );
     assert_eq!(
         chain
@@ -1035,10 +1031,10 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .any(|reward| reward.kind == ReceiptRewardKind::Validator)
     );
     assert!(delayed_claims.iter().all(|reward| {
-        reward
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity")
-            == redundant_reward_delay_until_height
+        reward.maturity
+            == ReceiptRewardMaturity::AwaitingInclusionUntil(redundant_reward_delay_until_height)
+            && reward.claimable_at_height().is_none()
+            && reward.awaiting_inclusion()
     }));
     drop(delayed_claims);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
@@ -1059,21 +1055,23 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
         .values()
         .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
         .collect::<Vec<_>>();
+    let composed_reward_delay_until_height =
+        redundant_reward_delay_until_height.max(inclusion_reward_delay_until_height);
     assert!(included_claims.iter().any(|reward| {
         reward.kind == ReceiptRewardKind::Miner
-            && reward.claimable_at_height() == Some(inclusion_reward_delay_until_height)
+            && reward.claimable_at_height() == Some(composed_reward_delay_until_height)
     }));
     assert!(included_claims.iter().any(|reward| {
         reward.kind == ReceiptRewardKind::Validator
             && reward.maturity
                 == ReceiptRewardMaturity::AwaitingValidatorVrfReveal(
-                    inclusion_reward_delay_until_height,
+                    composed_reward_delay_until_height,
                 )
     }));
-    chain.set_position_for_testing(inclusion_reward_delay_until_height.saturating_sub(1), 0);
+    chain.set_position_for_testing(composed_reward_delay_until_height.saturating_sub(1), 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
-    chain.set_position_for_testing(inclusion_reward_delay_until_height, 0);
+    chain.set_position_for_testing(composed_reward_delay_until_height, 0);
     let release_events = chain.release_matured_receipt_rewards().unwrap();
     assert!(release_events.iter().any(|event| matches!(
         event,

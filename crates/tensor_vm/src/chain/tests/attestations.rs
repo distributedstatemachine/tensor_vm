@@ -255,8 +255,13 @@ fn invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards() {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
-        .claimable_at_height()
-        .expect("voided receipt reward should have challenge-hold maturity");
+        .maturity;
+    let claimable_at_height = match claimable_at_height {
+        ReceiptRewardMaturity::AwaitingInclusionUntil(height) => height,
+        other => {
+            panic!("expected voided receipt reward to await inclusion until hold, got {other:?}")
+        }
+    };
 
     chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

@@ -1167,9 +1167,11 @@ fn apply_block_to_parent_state(
                 if reward.kind == ReceiptRewardKind::Validator
                     && !revealed_validators.contains(&reward.beneficiary)
                 {
-                    reward.delay_until_validator_vrf_reveal(receipt_reward_claimable_at_height);
+                    reward.include_with_validator_vrf_reveal_delay(
+                        receipt_reward_claimable_at_height,
+                    );
                 } else {
-                    reward.delay_until(receipt_reward_claimable_at_height);
+                    reward.include_with_delay(receipt_reward_claimable_at_height);
                 }
             }
         }

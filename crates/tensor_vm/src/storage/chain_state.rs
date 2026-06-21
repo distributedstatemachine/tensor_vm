@@ -1368,6 +1368,10 @@ fn encode_pending_receipt_rewards(
                 out.push(2);
                 write_u64(out, height);
             }
+            ReceiptRewardMaturity::AwaitingInclusionUntil(height) => {
+                out.push(3);
+                write_u64(out, height);
+            }
         }
         out.push(u8::from(reward.voided_by_challenge));
     }
@@ -1392,6 +1396,7 @@ fn decode_pending_receipt_rewards(
             0 => ReceiptRewardMaturity::AwaitingInclusion,
             1 => ReceiptRewardMaturity::ClaimableAt(reader.read_u64()?),
             2 => ReceiptRewardMaturity::AwaitingValidatorVrfReveal(reader.read_u64()?),
+            3 => ReceiptRewardMaturity::AwaitingInclusionUntil(reader.read_u64()?),
             _ => return Err(TvmError::Storage("invalid pending receipt reward maturity")),
         };
         let voided_by_challenge = match reader.read_u8()? {
@@ -1710,6 +1715,15 @@ mod tests {
             challenger: validator,
             amount: 33,
             claimable_at_height: 42,
+            voided_by_challenge: false,
+        });
+        chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+            claim_id: hash_bytes(b"test", &[b"durable-awaiting-inclusion-delay-claim"]),
+            receipt_id: hash_bytes(b"test", &[b"durable-awaiting-inclusion-delay-receipt"]),
+            beneficiary: miner,
+            amount: 41,
+            kind: ReceiptRewardKind::Miner,
+            maturity: ReceiptRewardMaturity::AwaitingInclusionUntil(43),
             voided_by_challenge: false,
         });
 

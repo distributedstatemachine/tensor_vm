@@ -204,11 +204,15 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
-            .all(|reward| reward.voided_by_challenge
-                && reward
-                    .claimable_at_height()
-                    .expect("receipt reward should have inclusion-derived maturity")
-                    == claimable_at_height)
+            .all(|reward| {
+                reward.voided_by_challenge
+                    && matches!(
+                        reward.maturity,
+                        ReceiptRewardMaturity::ClaimableAt(height)
+                            | ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height)
+                            if height == claimable_at_height
+                    )
+            })
     );
     assert_eq!(chain.state().rewards().balance(&challenger), 0);
     assert_eq!(chain.state().rewards().treasury(), 500);

@@ -96,6 +96,52 @@ fn extending_reward_delay_preserves_validator_vrf_reveal_hold() {
     assert!(reward.is_mature_at(11));
 }
 
+#[test]
+fn pre_inclusion_reward_delay_stays_awaiting_inclusion_until_block_inclusion() {
+    let claim_id = hash_bytes(b"test", &[b"pre-inclusion-delay-claim"]);
+    let receipt_id = hash_bytes(b"test", &[b"pre-inclusion-delay-receipt"]);
+    let beneficiary = address(b"pre-inclusion-delay-miner");
+    let mut reward = PendingReceiptReward {
+        claim_id,
+        receipt_id,
+        beneficiary,
+        amount: 25,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::AwaitingInclusion,
+        voided_by_challenge: false,
+    };
+
+    reward.delay_until(9);
+    assert_eq!(
+        reward.maturity,
+        ReceiptRewardMaturity::AwaitingInclusionUntil(9)
+    );
+    assert!(reward.awaiting_inclusion());
+    assert_eq!(reward.claimable_at_height(), None);
+    assert!(!reward.is_mature_at(9));
+
+    reward.include_with_delay(7);
+    assert_eq!(reward.maturity, ReceiptRewardMaturity::ClaimableAt(9));
+    assert!(reward.is_mature_at(9));
+
+    let mut validator_reward = PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"pre-inclusion-validator-delay-claim"]),
+        receipt_id,
+        beneficiary: address(b"pre-inclusion-delay-validator"),
+        amount: 10,
+        kind: ReceiptRewardKind::Validator,
+        maturity: ReceiptRewardMaturity::AwaitingInclusionUntil(11),
+        voided_by_challenge: false,
+    };
+    validator_reward.include_with_validator_vrf_reveal_delay(8);
+    assert_eq!(
+        validator_reward.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(11)
+    );
+    assert_eq!(validator_reward.claimable_at_height(), None);
+    assert!(!validator_reward.is_mature_at(11));
+}
+
 fn add_settled_receipt_for_blockspace(chain: &mut Chain, beacon: &Hash) -> Hash {
     let miner = address(b"reward-blockspace-miner");
     if !chain.state().miners().contains_key(&miner) {
@@ -422,6 +468,15 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
         .unwrap()
         .maturity = ReceiptRewardMaturity::ClaimableAt(0);
     assert_ne!(full_root, reward_root(&changed_receipt));
+
+    let mut changed_awaiting_inclusion_delay = chain.state().clone();
+    changed_awaiting_inclusion_delay
+        .pending_receipt_rewards
+        .values_mut()
+        .next()
+        .unwrap()
+        .maturity = ReceiptRewardMaturity::AwaitingInclusionUntil(19);
+    assert_ne!(full_root, reward_root(&changed_awaiting_inclusion_delay));
 
     let mut changed_credit = chain.state().clone();
     changed_credit

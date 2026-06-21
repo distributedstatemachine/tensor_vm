@@ -356,6 +356,7 @@ pub struct PendingReceiptReward {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReceiptRewardMaturity {
     AwaitingInclusion,
+    AwaitingInclusionUntil(u64),
     AwaitingValidatorVrfReveal(u64),
     ClaimableAt(u64),
 }
@@ -364,6 +365,7 @@ impl ReceiptRewardMaturity {
     pub fn claimable_at_height(self) -> Option<u64> {
         match self {
             Self::AwaitingInclusion => None,
+            Self::AwaitingInclusionUntil(_) => None,
             Self::AwaitingValidatorVrfReveal(_) => None,
             Self::ClaimableAt(height) => Some(height),
         }
@@ -373,9 +375,21 @@ impl ReceiptRewardMaturity {
         matches!(self, Self::ClaimableAt(claimable_at_height) if claimable_at_height <= height)
     }
 
+    pub fn hold_mature_at(self, height: u64) -> bool {
+        match self {
+            Self::AwaitingInclusion => false,
+            Self::AwaitingInclusionUntil(hold_height)
+            | Self::AwaitingValidatorVrfReveal(hold_height)
+            | Self::ClaimableAt(hold_height) => hold_height <= height,
+        }
+    }
+
     pub fn delayed_until(self, height: u64) -> Self {
         match self {
-            Self::AwaitingInclusion => Self::ClaimableAt(height),
+            Self::AwaitingInclusion => Self::AwaitingInclusionUntil(height),
+            Self::AwaitingInclusionUntil(current) => {
+                Self::AwaitingInclusionUntil(current.max(height))
+            }
             Self::AwaitingValidatorVrfReveal(current) => {
                 Self::AwaitingValidatorVrfReveal(current.max(height))
             }
@@ -386,6 +400,9 @@ impl ReceiptRewardMaturity {
     pub fn delayed_until_validator_vrf_reveal(self, height: u64) -> Self {
         match self {
             Self::AwaitingInclusion => Self::AwaitingValidatorVrfReveal(height),
+            Self::AwaitingInclusionUntil(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
             Self::AwaitingValidatorVrfReveal(current) => {
                 Self::AwaitingValidatorVrfReveal(current.max(height))
             }
@@ -399,11 +416,39 @@ impl ReceiptRewardMaturity {
             other => other,
         }
     }
+
+    pub fn included_with_delay(self, height: u64) -> Self {
+        match self {
+            Self::AwaitingInclusion => Self::ClaimableAt(height),
+            Self::AwaitingInclusionUntil(current) => Self::ClaimableAt(current.max(height)),
+            Self::AwaitingValidatorVrfReveal(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
+            Self::ClaimableAt(current) => Self::ClaimableAt(current.max(height)),
+        }
+    }
+
+    pub fn included_with_validator_vrf_reveal_delay(self, height: u64) -> Self {
+        match self {
+            Self::AwaitingInclusion => Self::AwaitingValidatorVrfReveal(height),
+            Self::AwaitingInclusionUntil(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
+            Self::AwaitingValidatorVrfReveal(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
+            Self::ClaimableAt(current) => Self::AwaitingValidatorVrfReveal(current.max(height)),
+        }
+    }
 }
 
 impl PendingReceiptReward {
     pub fn awaiting_inclusion(&self) -> bool {
-        matches!(self.maturity, ReceiptRewardMaturity::AwaitingInclusion)
+        matches!(
+            self.maturity,
+            ReceiptRewardMaturity::AwaitingInclusion
+                | ReceiptRewardMaturity::AwaitingInclusionUntil(_)
+        )
     }
 
     pub fn claimable_at_height(&self) -> Option<u64> {
@@ -414,12 +459,26 @@ impl PendingReceiptReward {
         self.maturity.is_mature_at(height)
     }
 
+    pub fn hold_mature_at(&self, height: u64) -> bool {
+        self.maturity.hold_mature_at(height)
+    }
+
     pub fn delay_until(&mut self, height: u64) {
         self.maturity = self.maturity.delayed_until(height);
     }
 
     pub fn delay_until_validator_vrf_reveal(&mut self, height: u64) {
         self.maturity = self.maturity.delayed_until_validator_vrf_reveal(height);
+    }
+
+    pub fn include_with_delay(&mut self, height: u64) {
+        self.maturity = self.maturity.included_with_delay(height);
+    }
+
+    pub fn include_with_validator_vrf_reveal_delay(&mut self, height: u64) {
+        self.maturity = self
+            .maturity
+            .included_with_validator_vrf_reveal_delay(height);
     }
 
     pub fn mark_validator_vrf_revealed(&mut self) {
@@ -1593,6 +1652,9 @@ impl ChainState {
             let (claimable_at_height, awaiting_inclusion, awaiting_validator_vrf_reveal) =
                 match reward.maturity {
                     ReceiptRewardMaturity::AwaitingInclusion => (None, true, false),
+                    ReceiptRewardMaturity::AwaitingInclusionUntil(height) => {
+                        (Some(height), true, false)
+                    }
                     ReceiptRewardMaturity::AwaitingValidatorVrfReveal(_) => (None, false, true),
                     ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false, false),
                 };

@@ -469,9 +469,12 @@ fn release_matured_receipt_rewards_with_policy(
         .pending_receipt_rewards
         .iter()
         .filter(|(_, reward)| {
-            reward.is_mature_at(state.height)
+            let prunable_without_credit =
+                receipt_reward_can_be_pruned_without_credit(state, reward);
+            (reward.is_mature_at(state.height)
+                || (prunable_without_credit && reward.hold_mature_at(state.height)))
                 && state.included_receipts.contains(&reward.receipt_id)
-                && (receipt_reward_can_be_pruned_without_credit(state, reward)
+                && (prunable_without_credit
                     || validator_receipt_reward_has_vrf_reveal(state, reward))
                 && (prune_voided || !reward.voided_by_challenge)
                 && !(hold_unresolved_validator_audits

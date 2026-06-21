@@ -93,13 +93,15 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 ));
                 continue;
             }
-            let reward_delay_until_height = chain
+            let reward_maturity = chain
                 .state
                 .redundant_settlement_delays
                 .get(receipt_id)
-                .map(|record| ReceiptRewardMaturity::ClaimableAt(record.reward_delay_until_height))
+                .map(|record| {
+                    ReceiptRewardMaturity::AwaitingInclusionUntil(record.reward_delay_until_height)
+                })
                 .unwrap_or(ReceiptRewardMaturity::AwaitingInclusion);
-            newly_settled.push((*receipt_id, receipt.clone(), reward_delay_until_height));
+            newly_settled.push((*receipt_id, receipt.clone(), reward_maturity));
         }
     }
 
@@ -308,6 +310,7 @@ pub(super) fn events(
         if !pending_rewards_before.contains_key(claim_id) {
             let (claimable_at_height, awaiting_inclusion) = match reward.maturity {
                 ReceiptRewardMaturity::AwaitingInclusion => (None, true),
+                ReceiptRewardMaturity::AwaitingInclusionUntil(height) => (Some(height), true),
                 ReceiptRewardMaturity::AwaitingValidatorVrfReveal(_) => (None, false),
                 ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false),
             };
