@@ -1,4 +1,5 @@
 use super::*;
+use std::collections::BTreeMap;
 use tensor_vm::app::{
     ValidatorRemoteTensorResponse, fetch_validator_role_missing_tensors,
     submit_validator_role_attestation, submit_validator_role_audit_report,
@@ -532,4 +533,140 @@ fn validator_role_fetches_remote_tensors_before_attesting() {
         node.chain.state().attestations()[&receipt_id][0].result,
         VerificationResult::Valid
     );
+}
+
+#[test]
+fn validator_role_fetches_remote_graph_const_blobs_before_attesting() {
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let miner = address(b"validator-remote-graph-miner");
+    let validator = address(b"validator-remote-graph-validator");
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"validator-remote-graph"]));
+    register_miner(&mut chain, miner);
+    register_validator(&mut chain, validator);
+    let (graph, input, blob, job) = graph_job_with_const_blob(&chain);
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: job.graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::GraphExecution(job.clone()),
+        ))
+        .unwrap();
+    let const_blobs = BTreeMap::from([(hex(&blob.commitment_root()), blob.clone())]);
+    let bundle = CpuReferenceMinerRole::new(miner)
+        .execute_graph_job(
+            &job,
+            &graph,
+            &BTreeMap::from([("x".to_owned(), input.clone())]),
+            &const_blobs,
+            chain.state().height(),
+            1,
+        )
+        .unwrap();
+    let receipt_id = bundle.receipt_id();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(bundle.receipt.clone()))
+        .unwrap();
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let provider_port = free_tcp_port();
+    let provider = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{provider_port}")],
+        identity_seed: Some(hash_bytes(b"test", &[b"validator-remote-graph-provider"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    provider.register_tensor(input.clone());
+    provider.register_tensor(blob.clone());
+    for tensor in bundle.served_tensors() {
+        provider.register_tensor(tensor);
+    }
+    let requester = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+        bootstrap_addresses: vec![format!(
+            "/ip4/127.0.0.1/tcp/{provider_port}/p2p/{}",
+            provider.peer_id()
+        )],
+        identity_seed: Some(hash_bytes(b"test", &[b"validator-remote-graph-requester"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    wait_for_connected_role_services(&provider, &requester);
+
+    assert!(
+        submit_validator_role_attestation(&mut node, validator, receipt_id)
+            .unwrap()
+            .is_none()
+    );
+    let report = fetch_validator_role_missing_tensors(&mut node, &requester, receipt_id).unwrap();
+    assert_eq!(report.successes, 3);
+    assert_eq!(report.tensors_inserted, 3);
+
+    let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id)
+        .unwrap()
+        .expect("remote graph tensors and const_blob should allow attestation");
+    assert_eq!(attestation.attestations_submitted, 1);
+}
+
+fn graph_job_with_const_blob(
+    chain: &Chain,
+) -> (
+    tensor_vm::TensorGraph,
+    Tensor,
+    Tensor,
+    tensor_vm::jobs::GraphJob,
+) {
+    let input = Tensor::from_vec(vec![2], tensor_vm::DType::FieldElement, vec![5, 6]).unwrap();
+    let blob = Tensor::from_vec(vec![2], tensor_vm::DType::FieldElement, vec![1, 2]).unwrap();
+    let blob_uri = hex(&blob.commitment_root());
+    let graph = tensor_vm::TensorGraph {
+        ir_version: 1,
+        inputs: vec![tensor_vm::TensorSpec::field("x", vec![2])],
+        params: Vec::new(),
+        ops: vec![tensor_vm::OpNode {
+            id: 0,
+            op: "add".to_owned(),
+            args: vec![
+                tensor_vm::IrRef::Input {
+                    name: "x".to_owned(),
+                },
+                tensor_vm::IrRef::ConstBlob {
+                    uri: blob_uri,
+                    shape: vec![2],
+                    dtype: tensor_vm::DType::FieldElement,
+                },
+            ],
+            kwargs: BTreeMap::new(),
+            out: vec![tensor_vm::TensorSpec::field("y", vec![2])],
+        }],
+        outputs: vec![tensor_vm::GraphOutput {
+            name: "y".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_consensus().unwrap();
+    let job = tensor_vm::jobs::GraphJob::new(
+        chain.state().epoch(),
+        graph_id,
+        BTreeMap::from([("x".to_owned(), input.commitment_root())]),
+        BTreeMap::new(),
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().receipt_submission_window),
+        1,
+        2,
+    );
+    (graph, input, blob, job)
 }

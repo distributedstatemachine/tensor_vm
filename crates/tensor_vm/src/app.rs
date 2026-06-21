@@ -63,8 +63,10 @@ pub use status::{hex_hash_list, service_status};
 pub(crate) use tvmd_dispatch::execute_tvmd_command;
 pub use tvmd_dispatch::run;
 pub use validator_fetch::{
-    ValidatorRemoteTensorFetchReport, ValidatorRemoteTensorResponse,
-    fetch_validator_role_missing_tensors, validator_remote_tensor_response,
+    ValidatorRemoteProgramResponse, ValidatorRemoteTensorFetchReport,
+    ValidatorRemoteTensorResponse, fetch_graph_program_body_if_missing,
+    fetch_miner_role_missing_graph_artifacts, fetch_validator_role_missing_tensors,
+    validator_remote_program_response, validator_remote_tensor_response,
 };
 pub use validator_role::{
     ValidatorRoleAttestationSubmission, ValidatorRoleAuditObservation,

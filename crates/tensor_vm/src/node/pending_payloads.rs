@@ -36,6 +36,13 @@ impl PendingNetworkPayloads {
         self.jobs.len()
     }
 
+    pub fn pending_job_payloads(&self) -> Vec<(Hash, Vec<u8>)> {
+        self.jobs
+            .iter()
+            .map(|(job_id, payload)| (*job_id, payload.clone()))
+            .collect()
+    }
+
     pub fn pending_block_count(&self) -> usize {
         self.blocks.len()
     }

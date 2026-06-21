@@ -10,7 +10,7 @@ use crate::{
 
 use super::{
     ServiceRuntimeConfig, chain_announcement_checkpoint, publish_new_chain_announcements,
-    runtime_role_wallet_registration,
+    runtime_role_wallet_registration, validator_fetch::fetch_miner_role_missing_graph_artifacts,
 };
 
 #[derive(Clone, Debug, Default, Eq, PartialEq)]
@@ -192,6 +192,19 @@ pub fn tick_miner_role_work_once(
         status_changed = true;
     }
     if let Some(job_id) = job_to_submit {
+        let fetch_report = fetch_miner_role_missing_graph_artifacts(
+            &mut server.gateway_mut().node,
+            p2p_service,
+            job_id,
+        )?;
+        if fetch_report.has_activity() {
+            if fetch_report.programs_registered > 0 {
+                store
+                    .persist_chain(&server.gateway().node.chain)
+                    .map_err(|error| format!("failed to persist fetched graph program: {error}"))?;
+            }
+            status_changed = true;
+        }
         let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
         if let Some(submission) =
             submit_miner_role_receipt(&mut server.gateway_mut().node, miner, job_id)?

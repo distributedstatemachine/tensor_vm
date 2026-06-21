@@ -26,6 +26,60 @@ fn chain_with_network_job(
     chain
 }
 
+#[test]
+fn network_ingest_fetches_pending_graph_job_program_before_retry() {
+    let seed = hash_bytes(b"test", &[b"network-pending-graph-program-fetch"]);
+    let source_chain = Chain::new(seed);
+    let mut source = tensor_vm::SyntheticLocalJobSource::default();
+    let job = tensor_vm::JobState::GraphExecution(source.next_graph_job(&source_chain));
+    let job_id = job.job_id();
+    let graph = tensor_vm::SyntheticLocalJobSource::graph_execution_graph();
+    let program_body = graph.canonical_json().into_bytes();
+    let graph_id = graph.graph_id();
+    let mut server = test_rpc_server(Chain::new(seed));
+    let mut pending = PendingNetworkPayloads::default();
+    let provider_port = free_tcp_port();
+    let provider = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{provider_port}")],
+        identity_seed: Some(hash_bytes(b"test", &[b"network-graph-program-provider"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    provider.register_program(graph_id, program_body.clone());
+    let requester = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+        bootstrap_addresses: vec![format!(
+            "/ip4/127.0.0.1/tcp/{provider_port}/p2p/{}",
+            provider.peer_id()
+        )],
+        identity_seed: Some(hash_bytes(b"test", &[b"network-graph-program-requester"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    wait_for_connected_role_services(&provider, &requester);
+    pending.queue_job(job_id, encode_job_payload(&job));
+
+    let ingested =
+        tensor_vm::app::ingest_network_events(&mut server, &requester, false, &mut pending)
+            .unwrap();
+
+    assert_eq!(ingested.job_payloads_applied, 1);
+    assert_eq!(
+        server.gateway().node.chain.state().program_body(&graph_id),
+        Some(program_body.as_slice())
+    );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .jobs()
+            .contains_key(&job_id)
+    );
+    assert_eq!(pending.pending_job_count(), 0);
+}
+
 fn chain_with_network_receipt(
     job: tensor_vm::JobState,
     receipt: ReceiptState,

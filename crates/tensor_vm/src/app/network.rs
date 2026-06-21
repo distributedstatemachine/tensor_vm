@@ -2,8 +2,9 @@ use crate::{
     Chain, ChainCommand, ChainEngine, ChainProfile, DeterministicBlockCheckChallenge, JobState,
     NetworkEventIngest, PendingNetworkPayloads, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
-    encode_attestation_payload, encode_block_payload, encode_block_vote_payload,
-    encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
+    decode_job_payload, encode_attestation_payload, encode_block_payload,
+    encode_block_vote_payload, encode_job_payload, encode_receipt_payload,
+    encode_validator_audit_report_payload,
     localnet::produce_synthetic_cpu_work_with_profile,
     node::{
         NetworkBlockPayloadApply, NetworkEventContext, apply_network_block_payload,
@@ -15,6 +16,8 @@ use crate::{
 };
 use std::collections::BTreeSet;
 
+use super::validator_fetch::fetch_graph_program_body_if_missing;
+
 pub fn ingest_network_events(
     server: &mut RpcHttpServer,
     p2p_service: &TensorVmLibp2pService,
@@ -23,7 +26,14 @@ pub fn ingest_network_events(
 ) -> std::result::Result<NetworkEventIngest, String> {
     let messages = p2p_service.drain_observed_messages();
     let mut context = RuntimeNetworkEventContext { server };
-    ingest_network_messages(&mut context, messages, local_producer, pending_payloads)
+    let mut ingested =
+        ingest_network_messages(&mut context, messages, local_producer, pending_payloads)?;
+    if fetch_pending_graph_job_programs(&mut context, p2p_service, pending_payloads)? {
+        let retry =
+            ingest_network_messages(&mut context, Vec::new(), local_producer, pending_payloads)?;
+        ingested.accumulate(retry);
+    }
+    Ok(ingested)
 }
 
 struct RuntimeNetworkEventContext<'a> {
@@ -48,6 +58,40 @@ impl NetworkEventContext for RuntimeNetworkEventContext<'_> {
             payload,
         )
     }
+}
+
+fn fetch_pending_graph_job_programs(
+    context: &mut RuntimeNetworkEventContext<'_>,
+    p2p_service: &TensorVmLibp2pService,
+    pending_payloads: &PendingNetworkPayloads,
+) -> std::result::Result<bool, String> {
+    let mut fetched = false;
+    for (job_id, payload) in pending_payloads.pending_job_payloads() {
+        let Ok(JobState::GraphExecution(job)) = decode_job_payload(&payload) else {
+            continue;
+        };
+        if job.job_id != job_id
+            || context
+                .server
+                .gateway()
+                .node
+                .chain
+                .state()
+                .program_body(&job.graph_id)
+                .is_some()
+        {
+            continue;
+        }
+        let report = fetch_graph_program_body_if_missing(
+            &mut context.server.gateway_mut().node,
+            p2p_service,
+            job.graph_id,
+        )?;
+        if report.programs_registered > 0 {
+            fetched = true;
+        }
+    }
+    Ok(fetched)
 }
 
 pub fn produce_and_publish_synthetic_round(

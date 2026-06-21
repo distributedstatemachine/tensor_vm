@@ -50,11 +50,12 @@ pub fn tick_validator_role_work_once(
             p2p_service,
             receipt_id,
         )?;
-        if fetch_report.attempts > 0
-            || fetch_report.successes > 0
-            || fetch_report.failures > 0
-            || fetch_report.tensors_inserted > 0
-        {
+        if fetch_report.has_activity() {
+            if fetch_report.programs_registered > 0 {
+                store
+                    .persist_chain(&server.gateway().node.chain)
+                    .map_err(|error| format!("failed to persist fetched graph program: {error}"))?;
+            }
             runtime_state.record_validator_remote_tensor_fetch(
                 fetch_report.attempts,
                 fetch_report.successes,

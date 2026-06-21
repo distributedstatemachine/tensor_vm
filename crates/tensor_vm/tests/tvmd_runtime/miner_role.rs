@@ -1,6 +1,8 @@
 use super::*;
+use std::collections::BTreeMap;
 use tensor_vm::app::{
-    MinerRoleWorkObservation, miner_role_work_observation, submit_miner_role_receipt,
+    MinerRoleWorkObservation, fetch_miner_role_missing_graph_artifacts,
+    miner_role_work_observation, submit_miner_role_receipt,
 };
 
 #[test]
@@ -171,4 +173,116 @@ fn miner_role_receipt_submission_skips_duplicate_unregistered_and_unassigned_wor
     );
     assert_eq!(node.chain.state().receipts().len(), 1);
     assert_tensor_count(&node, 3);
+}
+
+#[test]
+fn miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution() {
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        ..ChainParams::default()
+    };
+    let miner = address(b"miner-remote-graph-artifact");
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"miner-remote-graph"]));
+    register_miner(&mut chain, miner);
+    let (graph, input, blob, job) = graph_job_with_const_blob(&chain);
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: job.graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::GraphExecution(job.clone()),
+        ))
+        .unwrap();
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let provider_port = free_tcp_port();
+    let provider = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{provider_port}")],
+        identity_seed: Some(hash_bytes(b"test", &[b"miner-remote-graph-provider"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    provider.register_tensor(input.clone());
+    provider.register_tensor(blob.clone());
+    let requester = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+        bootstrap_addresses: vec![format!(
+            "/ip4/127.0.0.1/tcp/{provider_port}/p2p/{}",
+            provider.peer_id()
+        )],
+        identity_seed: Some(hash_bytes(b"test", &[b"miner-remote-graph-requester"])),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    wait_for_connected_role_services(&provider, &requester);
+
+    assert!(submit_miner_role_receipt(&mut node, miner, job.job_id).is_err());
+    let report =
+        fetch_miner_role_missing_graph_artifacts(&mut node, &requester, job.job_id).unwrap();
+    assert_eq!(report.successes, 2);
+    assert_eq!(report.tensors_inserted, 2);
+
+    let submission = submit_miner_role_receipt(&mut node, miner, job.job_id)
+        .unwrap()
+        .expect("fetched graph artifacts should let miner submit a receipt");
+    assert_eq!(submission.receipts_submitted, 1);
+    assert!(matches!(
+        node.chain.state().receipts().values().next(),
+        Some(ReceiptState::GraphExecution(_))
+    ));
+}
+
+fn graph_job_with_const_blob(
+    chain: &Chain,
+) -> (
+    tensor_vm::TensorGraph,
+    Tensor,
+    Tensor,
+    tensor_vm::jobs::GraphJob,
+) {
+    let input = Tensor::from_vec(vec![2], tensor_vm::DType::FieldElement, vec![5, 6]).unwrap();
+    let blob = Tensor::from_vec(vec![2], tensor_vm::DType::FieldElement, vec![1, 2]).unwrap();
+    let blob_uri = hex(&blob.commitment_root());
+    let graph = tensor_vm::TensorGraph {
+        ir_version: 1,
+        inputs: vec![tensor_vm::TensorSpec::field("x", vec![2])],
+        params: Vec::new(),
+        ops: vec![tensor_vm::OpNode {
+            id: 0,
+            op: "add".to_owned(),
+            args: vec![
+                tensor_vm::IrRef::Input {
+                    name: "x".to_owned(),
+                },
+                tensor_vm::IrRef::ConstBlob {
+                    uri: blob_uri,
+                    shape: vec![2],
+                    dtype: tensor_vm::DType::FieldElement,
+                },
+            ],
+            kwargs: BTreeMap::new(),
+            out: vec![tensor_vm::TensorSpec::field("y", vec![2])],
+        }],
+        outputs: vec![tensor_vm::GraphOutput {
+            name: "y".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_consensus().unwrap();
+    let job = tensor_vm::jobs::GraphJob::new(
+        chain.state().epoch(),
+        graph_id,
+        BTreeMap::from([("x".to_owned(), input.commitment_root())]),
+        BTreeMap::new(),
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().receipt_submission_window),
+        1,
+        2,
+    );
+    (graph, input, blob, job)
 }
