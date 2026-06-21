@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 105 complete locally - redundant settlement delay records.
+- Active feature: Iteration 105 complete - redundant settlement delay records.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -23,9 +23,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 105 evidence, then continue full verifier-transcript disputes,
-  Tier-C redundancy policy, external randomness deployment, deployed-run economics evidence, or rerun
-  Docker after the `/health` blocker clears.
+- Next action: continue full verifier-transcript disputes, Tier-C redundancy policy, external randomness
+  deployment, deployed-run economics evidence, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -80,7 +79,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit pending.
+- Feature commit: `fe67f65` (`Record redundant settlement delays`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
