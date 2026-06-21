@@ -1,12 +1,13 @@
-use super::{KeyValueReportWriter, local_cpu_seed_beacon};
+use super::{KeyValueReportWriter, local_cpu_seed_beacon, runtime_config::runtime_chain_profile};
 use crate::{
     JobScheduler, NodeStore,
     hash::hex,
-    testnet::{LocalTestnet, PublicTestnetCriteria, TestnetConfig},
+    testnet::{LocalTestnet, PublicTestnetCriteria},
 };
 
 pub fn seed_local_testnet(data_dir: &str) -> std::result::Result<String, String> {
-    let mut testnet = LocalTestnet::new(TestnetConfig::default(), local_cpu_seed_beacon());
+    let profile = runtime_chain_profile()?;
+    let mut testnet = LocalTestnet::from_profile(&profile, local_cpu_seed_beacon());
     let scheduler = JobScheduler::with_small_shape((8, 8, 8));
     testnet.run_matmul_round(&scheduler);
     let matmul_settled_receipts = testnet.chain.state().settled_receipts().len();

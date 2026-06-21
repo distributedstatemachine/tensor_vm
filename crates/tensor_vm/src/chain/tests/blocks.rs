@@ -1171,6 +1171,54 @@ fn uvpow_non_retarget_heights_reuse_parent_target() {
 }
 
 #[test]
+fn proposer_cadence_cooldown_is_chain_visible_and_state_rooted() {
+    let beacon = hash_bytes(b"test", &[b"proposer-cadence-beacon"]);
+    let params = ChainParams {
+        proposer_cooldown_blocks: 3,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let validator_a = address(b"cadence-validator-a");
+    let validator_b = address(b"cadence-validator-b");
+    chain.register_validator(validator_a, 10_000).unwrap();
+    chain.register_validator(validator_b, 10_000).unwrap();
+
+    add_settled_test_receipt(&mut chain, &beacon, b"cadence-first");
+    let first = chain.produce_block(validator_a, 1_000).unwrap();
+    assert!(first.production_kind.requires_pow());
+    assert_eq!(
+        chain
+            .state()
+            .proposer_cadence_last_proposed()
+            .get(&validator_a),
+        Some(&first.height)
+    );
+    assert!(!chain.proposer_cadence_ready(validator_a));
+    assert_eq!(chain.proposer_cadence_remaining_blocks(validator_a), 2);
+
+    add_settled_test_receipt(&mut chain, &beacon, b"cadence-second");
+    assert_eq!(
+        chain.produce_block(validator_a, 1_006),
+        Err(TvmError::InvalidReceipt("proposer cadence cooldown"))
+    );
+
+    let before_other_proposer = chain.state_root();
+    let second = chain.produce_block(validator_b, 1_006).unwrap();
+    assert!(second.production_kind.requires_pow());
+    assert_ne!(chain.state_root(), before_other_proposer);
+    assert_eq!(
+        chain
+            .state()
+            .proposer_cadence_last_proposed()
+            .get(&validator_b),
+        Some(&second.height)
+    );
+
+    chain.set_position_for_testing(first.height.saturating_add(3), 0);
+    assert!(chain.proposer_cadence_ready(validator_a));
+}
+
+#[test]
 fn block_roots_commit_to_canonical_receipts_checks_attestations_and_state_values() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);

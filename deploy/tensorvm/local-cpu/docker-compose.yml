@@ -229,7 +229,6 @@ services:
       TENSORVM_P2P_LISTEN: /ip4/0.0.0.0/tcp/4001
       TENSORVM_RPC_LISTEN: 0.0.0.0:8545
       TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER: "true"
-      TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS: "20"
     volumes:
       - validator-01-data:/var/lib/tensorvm
 
@@ -247,6 +246,7 @@ services:
       TENSORVM_NODE_MULTIADDR: /dns4/validator-02/tcp/4001
       TENSORVM_P2P_LISTEN: /ip4/0.0.0.0/tcp/4001
       TENSORVM_RPC_LISTEN: 0.0.0.0:8545
+      TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER: "true"
     volumes:
       - validator-02-data:/var/lib/tensorvm
 

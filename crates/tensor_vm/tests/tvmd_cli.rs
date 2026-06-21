@@ -986,6 +986,12 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
             stdout_value(&status, "role_local_block_proposer_delay_satisfied"),
             "true"
         );
+        assert_eq!(stdout_u64(&status, "role_proposer_cooldown_blocks"), 0);
+        assert_eq!(stdout_value(&status, "role_proposer_cadence_ready"), "true");
+        assert_eq!(
+            stdout_u64(&status, "role_proposer_cadence_remaining_blocks"),
+            0
+        );
         assert_eq!(stdout_u64(&status, "role_served_requests"), 1);
         assert_eq!(stdout_u64(&status, "role_network_applied_blocks"), 0);
         assert_eq!(stdout_u64(&status, "role_network_events_ingested"), 0);

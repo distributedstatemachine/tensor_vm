@@ -367,6 +367,7 @@ read_service_status() {
   service="$1"
   attempt=0
   while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
+    debug "status probe service=$service attempt=$attempt"
     if output=$(timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" tvmd node status --data-dir /var/lib/tensorvm 2>/dev/null < /dev/null); then
       printf '%s\n' "$output" | tr -d '\r'
       return 0
@@ -382,6 +383,7 @@ read_service_block() {
   height="$2"
   attempt=0
   while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
+    debug "block probe service=$service height=$height attempt=$attempt"
     if output=$(timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" tvmd node block --data-dir /var/lib/tensorvm --height "$height" 2>/dev/null < /dev/null); then
       printf '%s\n' "$output" | tr -d '\r'
       return 0
@@ -431,6 +433,7 @@ for service in $EXPECTED_SERVICES; do
   READY_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER=$(status_value local_cpu_synthetic_job_producer "$READY_REPORT")
   READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER=$(status_value local_cpu_validator_block_proposer "$READY_REPORT")
   READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS=$(status_value local_cpu_validator_block_proposer_delay_blocks "$READY_REPORT")
+  READY_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS=$(status_value local_cpu_proposer_cooldown_blocks "$READY_REPORT")
   [ -n "$READY_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER" ] \
     || fail "$service readiness file does not report local CPU synthetic job producer mode"
   [ -n "$READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER" ] \
@@ -439,6 +442,12 @@ for service in $EXPECTED_SERVICES; do
     || fail "$service readiness file does not report local CPU validator block proposer delay"
   is_u64 "$READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS" \
     || fail "$service readiness file reports a non-numeric local CPU validator block proposer delay"
+  [ -n "$READY_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS" ] \
+    || fail "$service readiness file does not report local CPU proposer cooldown"
+  is_u64 "$READY_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS" \
+    || fail "$service readiness file reports a non-numeric local CPU proposer cooldown"
+  [ "$READY_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] \
+    || fail "$service readiness file reports proposer cooldown disabled"
   [ "$(status_value chain_profile "$READY_REPORT")" = "local_cpu" ] \
     || fail "$service readiness file does not report the local CPU chain profile"
   READY_P2P_PEER_ID=$(status_value p2p_peer_id "$READY_REPORT")
@@ -847,6 +856,7 @@ LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
 LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
 LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
+LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
 LIVE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=0
@@ -872,6 +882,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
   LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
   LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
+  LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
   LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT=0
   LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED=0
   LIVE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=0
@@ -955,6 +966,9 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_LOCAL_BLOCK_PROPOSER=$(status_value role_local_block_proposer "$STATUS")
     SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS=$(status_value role_local_block_proposer_delay_blocks "$STATUS")
     SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED=$(status_value role_local_block_proposer_delay_satisfied "$STATUS")
+    SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS=$(status_value role_proposer_cooldown_blocks "$STATUS")
+    SERVICE_ROLE_PROPOSER_CADENCE_READY=$(status_value role_proposer_cadence_ready "$STATUS")
+    SERVICE_ROLE_PROPOSER_CADENCE_REMAINING_BLOCKS=$(status_value role_proposer_cadence_remaining_blocks "$STATUS")
     SERVICE_ROLE_PRODUCED_BLOCKS=$(status_value role_produced_blocks "$STATUS")
     SERVICE_ROLE_NETWORK_APPLIED_BLOCKS=$(status_value role_network_applied_blocks "$STATUS")
     SERVICE_ROLE_NETWORK_EVENTS=$(status_value role_network_events_ingested "$STATUS")
@@ -1054,6 +1068,10 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] || [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ] || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "false" ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+    [ "$SERVICE_ROLE_PROPOSER_CADENCE_READY" = "true" ] || [ "$SERVICE_ROLE_PROPOSER_CADENCE_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_PROPOSER_CADENCE_REMAINING_BLOCKS" || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_PRODUCED_BLOCKS" ] || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
@@ -1183,10 +1201,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         fi
         if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ]; then
           LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=$((LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT + 1))
-          if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -gt 0 ]; then
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
-            LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=$((LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT + 1))
-          fi
+          LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=$((LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT + 1))
         fi
         if [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ]; then
           LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT=$((LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT + 1))
@@ -1239,6 +1254,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1259,14 +1275,16 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
+          [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        fi
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1281,10 +1299,11 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "false" ] || { STATUS_MISMATCH=true; continue; }
         case "$service" in
-          validator-01)
+          validator-01|validator-02)
             [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
             [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
+            [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
             [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
             [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
             [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1302,14 +1321,16 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
           [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         fi
-        [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
+          [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        fi
         [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1330,30 +1351,38 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
       fi
     fi
     if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] \
-      && [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -gt 0 ]; then
+      && [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ]; then
       SERVICE_DELAYED_BLOCK_PROPOSER=true
     fi
-    if [ "$SERVICE_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-      || [ "$SERVICE_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ] \
-      || [ "$SERVICE_LATEST_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-      || [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] \
-      || [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] \
-      || [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] \
-      || [ "$SERVICE_FIRST_LIVE_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-      || [ "$SERVICE_REGISTERED_MINER_COUNT" -ne "$EXPECTED_MINER_COUNT" ] \
+    if [ "$SERVICE_REGISTERED_MINER_COUNT" -ne "$EXPECTED_MINER_COUNT" ] \
       || [ "$SERVICE_REGISTERED_VALIDATOR_COUNT" -ne "$EXPECTED_VALIDATOR_COUNT" ] \
       || [ "$SERVICE_JOB_COUNT" -le "$EXPECTED_SEED_HEIGHT" ] \
       || [ "$SERVICE_RECEIPT_COUNT" -le "$EXPECTED_SETTLED_RECEIPTS" ] \
       || [ "$SERVICE_ATTESTATION_COUNT" -le "$SEED_ATTESTATION_COUNT" ] \
-      || [ "$SERVICE_ROLE_LATEST_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
       || [ "$SERVICE_ROLE_P2P_CONNECTED_PEERS" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_VOTES" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_JOBS" -le 0 ] \
       || [ "$SERVICE_ROLE_P2P_OBSERVED_RECEIPTS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_ATTESTATIONS" -le 0 ] \
-      || [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" = "$ZERO_HASH" ]; then
+      || [ "$SERVICE_ROLE_P2P_OBSERVED_ATTESTATIONS" -le 0 ]; then
       STATUS_MISMATCH=true
       continue
+    fi
+    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
+      if [ "$SERVICE_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
+        || [ "$SERVICE_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ] \
+        || [ "$SERVICE_LATEST_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
+        || [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] \
+        || [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] \
+        || [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] \
+        || [ "$SERVICE_FIRST_LIVE_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
+        || [ "$SERVICE_ROLE_LATEST_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
+        || [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" = "$ZERO_HASH" ]; then
+        STATUS_MISMATCH=true
+        continue
+      fi
+    else
+      [ "$SERVICE_STATE_ROOT" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_BLOCK_LOG_ROOT" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
     fi
     if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ] \
       && [ "$SERVICE_FINALIZED_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ]; then
@@ -1390,55 +1419,46 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     fi
     CONVERGED_OPERATOR_COUNT=$((CONVERGED_OPERATOR_COUNT + 1))
   done
-  if [ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_SERVICE_COUNT" ] && [ "$STATUS_MISMATCH" = "false" ]; then
+  COMPETING_PROPOSER_COUNT=$(local_cpu_count_words $COMPETING_PROPOSER_SERVICES)
+  EXPECTED_CONVERGED_OPERATOR_COUNT=$((EXPECTED_SERVICE_COUNT - COMPETING_PROPOSER_COUNT))
+  if [ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_CONVERGED_OPERATOR_COUNT" ]; then
     COMMON_HEAD_MISMATCH=false
     TARGET_HEAD_MISMATCH=false
     ALL_OPERATOR_COMMON_HEAD_HEIGHT="$ALL_OPERATOR_MIN_HEIGHT"
     ALL_OPERATOR_COMMON_HEAD_HASH=""
-    for service in $EXPECTED_SERVICES; do
-      word_list_contains "$COMPETING_PROPOSER_SERVICES" "$service" && continue
-      if BLOCK_RAW=$(read_service_block "$service" "$ALL_OPERATOR_COMMON_HEAD_HEIGHT"); then
-        BLOCK_STATUS="$BLOCK_RAW"
-      else
-        COMMON_HEAD_MISMATCH=true
-        continue
-      fi
-      SERVICE_COMMON_BLOCK_HASH=$(status_value block_hash "$BLOCK_STATUS")
-      SERVICE_COMMON_BLOCK_FINALIZED=$(status_value finalized "$BLOCK_STATUS")
-      [ -n "$SERVICE_COMMON_BLOCK_HASH" ] || { COMMON_HEAD_MISMATCH=true; continue; }
-      [ "$SERVICE_COMMON_BLOCK_FINALIZED" = "true" ] || { COMMON_HEAD_MISMATCH=true; continue; }
-      if [ -z "$ALL_OPERATOR_COMMON_HEAD_HASH" ]; then
-        ALL_OPERATOR_COMMON_HEAD_HASH="$SERVICE_COMMON_BLOCK_HASH"
-      elif [ "$SERVICE_COMMON_BLOCK_HASH" != "$ALL_OPERATOR_COMMON_HEAD_HASH" ]; then
-        COMMON_HEAD_MISMATCH=true
-        continue
-      fi
-    done
-    for service in $EXPECTED_SERVICES; do
-      word_list_contains "$COMPETING_PROPOSER_SERVICES" "$service" && continue
-      if BLOCK_RAW=$(read_service_block "$service" "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT"); then
-        BLOCK_STATUS="$BLOCK_RAW"
-      else
-        TARGET_HEAD_MISMATCH=true
-        continue
-      fi
-      SERVICE_TARGET_BLOCK_HASH=$(status_value block_hash "$BLOCK_STATUS")
-      SERVICE_TARGET_STATE_ROOT=$(status_value state_root "$BLOCK_STATUS")
-      SERVICE_TARGET_BLOCK_FINALIZED=$(status_value finalized "$BLOCK_STATUS")
-      [ "$SERVICE_TARGET_BLOCK_HASH" = "$ALL_OPERATOR_NETWORK_HEAD_HASH" ] || { TARGET_HEAD_MISMATCH=true; continue; }
-      [ "$SERVICE_TARGET_STATE_ROOT" = "$ALL_OPERATOR_NETWORK_STATE_ROOT" ] || { TARGET_HEAD_MISMATCH=true; continue; }
-      [ "$SERVICE_TARGET_BLOCK_FINALIZED" = "true" ] || { TARGET_HEAD_MISMATCH=true; continue; }
-    done
+    BLOCK_STATUS=""
+    if BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$ALL_OPERATOR_COMMON_HEAD_HEIGHT"); then
+      BLOCK_STATUS="$BLOCK_RAW"
+    else
+      COMMON_HEAD_MISMATCH=true
+    fi
+    SERVICE_COMMON_BLOCK_HASH=$(status_value block_hash "$BLOCK_STATUS")
+    SERVICE_COMMON_BLOCK_FINALIZED=$(status_value finalized "$BLOCK_STATUS")
+    [ -n "$SERVICE_COMMON_BLOCK_HASH" ] || COMMON_HEAD_MISMATCH=true
+    [ "$SERVICE_COMMON_BLOCK_FINALIZED" = "true" ] || COMMON_HEAD_MISMATCH=true
+    ALL_OPERATOR_COMMON_HEAD_HASH="$SERVICE_COMMON_BLOCK_HASH"
+    BLOCK_STATUS=""
+    if BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT"); then
+      BLOCK_STATUS="$BLOCK_RAW"
+    else
+      TARGET_HEAD_MISMATCH=true
+    fi
+    SERVICE_TARGET_BLOCK_HASH=$(status_value block_hash "$BLOCK_STATUS")
+    SERVICE_TARGET_STATE_ROOT=$(status_value state_root "$BLOCK_STATUS")
+    SERVICE_TARGET_BLOCK_FINALIZED=$(status_value finalized "$BLOCK_STATUS")
+    [ "$SERVICE_TARGET_BLOCK_HASH" = "$ALL_OPERATOR_NETWORK_HEAD_HASH" ] || TARGET_HEAD_MISMATCH=true
+    [ "$SERVICE_TARGET_STATE_ROOT" = "$ALL_OPERATOR_NETWORK_STATE_ROOT" ] || TARGET_HEAD_MISMATCH=true
+    [ "$SERVICE_TARGET_BLOCK_FINALIZED" = "true" ] || TARGET_HEAD_MISMATCH=true
     if [ "$COMMON_HEAD_MISMATCH" = "false" ] && [ "$TARGET_HEAD_MISMATCH" = "false" ]; then
       break
     fi
   fi
-  debug "operator convergence attempt=$attempt converged=$CONVERGED_OPERATOR_COUNT expected=$EXPECTED_SERVICE_COUNT status_mismatch=$STATUS_MISMATCH competing_proposers=${COMPETING_PROPOSER_SERVICES:-none} common_head=${ALL_OPERATOR_COMMON_HEAD_HASH:-none} target_head=${ALL_OPERATOR_TARGET_HEAD_HASH:-none}"
+  debug "operator convergence attempt=$attempt converged=$CONVERGED_OPERATOR_COUNT expected=$EXPECTED_CONVERGED_OPERATOR_COUNT status_mismatch=$STATUS_MISMATCH competing_proposers=${COMPETING_PROPOSER_SERVICES:-none} common_head=${ALL_OPERATOR_COMMON_HEAD_HASH:-none} target_head=${ALL_OPERATOR_TARGET_HEAD_HASH:-none}"
   attempt=$((attempt + 1))
   sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
 done
 
-[ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators satisfied local CPU role, gossip, and delayed proposer evidence"
+[ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_CONVERGED_OPERATOR_COUNT" ] || fail "not all passive operators satisfied local CPU role, gossip, and delayed proposer evidence"
 [ -n "$ALL_OPERATOR_MIN_HEIGHT" ] || fail "operator convergence height was not observed"
 [ "$ALL_OPERATOR_MIN_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "not all operators advanced past seeded height $EXPECTED_SEED_HEIGHT"
 [ -n "$ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH" ] || fail "operator live block hash convergence was not observed"
@@ -1461,7 +1481,7 @@ done
 [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
 [ "$LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT" -eq 1 ] || fail "expected exactly one local synthetic job producer"
 [ "$LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -ge 2 ] || fail "fewer than two validator role block proposers were enabled"
-[ "$LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -gt 0 ] || fail "no delayed validator role block proposer was enabled"
+[ "$LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -gt 1 ] || fail "no chain-cadence validator role block proposer competition was enabled"
 [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT" -ge 2 ] || fail "fewer than two validator roles proposed useful blocks"
 [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
 [ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
@@ -1548,6 +1568,7 @@ live_role_validator_attestations_submitted=${LIVE_ROLE_VALIDATOR_ATTESTATIONS_SU
 live_local_synthetic_job_producers=${LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT}
 live_role_validator_block_proposer_operators=${LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT}
 live_role_delayed_validator_block_proposer_operators=${LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT}
+live_role_chain_cadence_validator_block_proposer_operators=${LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT}
 live_role_validator_useful_block_proposer_operators=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT}
 live_competing_validator_block_proposers=${COMPETING_PROPOSER_SERVICES}
 live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED}

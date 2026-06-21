@@ -382,6 +382,25 @@ impl Chain {
         proposer::for_next_epoch(&self.state, beacon)
     }
 
+    pub fn proposer_cadence_ready(&self, proposer: Address) -> bool {
+        blocks::proposer_cadence_ready(&self.state, self.params.proposer_cooldown_blocks, proposer)
+    }
+
+    pub fn proposer_cadence_remaining_blocks(&self, proposer: Address) -> u64 {
+        blocks::proposer_cadence_remaining_blocks(
+            &self.state,
+            self.params.proposer_cooldown_blocks,
+            proposer,
+        )
+    }
+
+    pub fn proposer_challenge_throttle_ready(&self, proposer: Address) -> bool {
+        self.state
+            .proposer_penalty_until
+            .get(&proposer)
+            .is_none_or(|penalty_until| self.state.height >= *penalty_until)
+    }
+
     pub fn produce_block(&mut self, proposer: Address, timestamp: u64) -> Result<TensorBlock> {
         blocks::produce(self, proposer, timestamp)
     }

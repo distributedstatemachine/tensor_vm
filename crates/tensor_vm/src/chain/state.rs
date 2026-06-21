@@ -45,6 +45,7 @@ pub struct ChainParams {
     pub difficulty_target_block_time_seconds: u64,
     pub difficulty_retarget_epoch_length: u64,
     pub difficulty_retarget_max_ratio: u64,
+    pub proposer_cooldown_blocks: u64,
     pub pow_timeout_blocks: u64,
     pub freivalds: FreivaldsParams,
 }
@@ -81,6 +82,7 @@ impl Default for ChainParams {
             difficulty_target_block_time_seconds: 6,
             difficulty_retarget_epoch_length: 100,
             difficulty_retarget_max_ratio: 4,
+            proposer_cooldown_blocks: 0,
             pow_timeout_blocks: 2,
             freivalds: FreivaldsParams::default(),
         }
@@ -1206,6 +1208,7 @@ pub struct ChainState {
     pub(in crate::chain) block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
     pub(in crate::chain) challenged_receipts: BTreeSet<Hash>,
     pub(in crate::chain) proposer_penalty_until: BTreeMap<Address, u64>,
+    pub(in crate::chain) proposer_cadence_last_proposed: BTreeMap<Address, u64>,
     pub(in crate::chain) pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub(in crate::chain) pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub(in crate::chain) pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
@@ -1247,6 +1250,7 @@ pub(crate) struct ChainStateParts {
     pub block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
     pub challenged_receipts: BTreeSet<Hash>,
     pub proposer_penalty_until: BTreeMap<Address, u64>,
+    pub proposer_cadence_last_proposed: BTreeMap<Address, u64>,
     pub pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
     pub pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
@@ -1289,6 +1293,7 @@ impl ChainState {
             block_check_challenges: parts.block_check_challenges,
             challenged_receipts: parts.challenged_receipts,
             proposer_penalty_until: parts.proposer_penalty_until,
+            proposer_cadence_last_proposed: parts.proposer_cadence_last_proposed,
             pending_proposer_rewards: parts.pending_proposer_rewards,
             pending_receipt_rewards: parts.pending_receipt_rewards,
             pending_challenge_rewards: parts.pending_challenge_rewards,
@@ -1492,6 +1497,10 @@ impl ChainState {
 
     pub fn proposer_penalty_until(&self) -> &BTreeMap<Address, u64> {
         &self.proposer_penalty_until
+    }
+
+    pub fn proposer_cadence_last_proposed(&self) -> &BTreeMap<Address, u64> {
+        &self.proposer_cadence_last_proposed
     }
 
     pub fn pending_proposer_rewards(&self) -> &BTreeMap<u64, PendingProposerReward> {

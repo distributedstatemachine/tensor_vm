@@ -26,7 +26,7 @@ Every operator container initializes a durable node store, starts with a stable 
 distinct data volume, derives a stable libp2p identity seed from that operator ID, runs the mandatory
 libp2p readiness path, and then execs its role command: all miners run `tvmd miner run`, all validators
 run `tvmd validator run`, `validator-00` carries the single local timed synthetic job producer flag, and
-`validator-00` plus delayed `validator-01` carry validator block-proposer flags.
+three validators carry validator block-proposer flags under a shared chain-visible proposer cooldown.
 Miner containers also run the CPU miner readiness command with `--device cpu`; validators run the validator
 readiness command. Every operator seeds the same deterministic local CPU chain and keeps producing live
 synthetic CPU jobs from that shared base, while `miner-00` exposes the host-facing gateway routes.
@@ -43,7 +43,7 @@ receipts, live tensor descriptor/row/chunk/opening fetches, and reward growth fr
 also runs `tvmd node status` in every operator container and
 fails unless all 15 node stores advance past the seed, report role-specific status and the expected
 role-runtime command, expose live role-loop counters, the single local synthetic job producer flag,
-delayed multi-validator proposer counters, non-producer
+chain-cadence multi-validator proposer counters, non-producer
 network-applied block counters, decoded network-event ingestion counters, decoded job, receipt, and
 attestation payload application through the chain engine, positive network-applied external randomness
 beacon counters, real libp2p connected-peer counts, observed job,

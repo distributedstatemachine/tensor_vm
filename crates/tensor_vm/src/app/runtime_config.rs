@@ -49,9 +49,13 @@ impl RuntimeRole {
     }
 }
 
-fn runtime_chain_profile() -> std::result::Result<ChainProfile, String> {
+pub(super) fn runtime_chain_profile() -> std::result::Result<ChainProfile, String> {
     let label = std::env::var("TENSORVM_CHAIN_PROFILE").unwrap_or_else(|_| "local_cpu".to_owned());
-    chain_profile_from_label(&label)
+    let mut profile = chain_profile_from_label(&label)?;
+    if matches!(profile.network, crate::profile::ChainNetwork::Local) {
+        profile.chain_params.proposer_cooldown_blocks = runtime_local_proposer_cooldown_blocks();
+    }
+    Ok(profile)
 }
 
 pub fn chain_profile_from_label(label: &str) -> std::result::Result<ChainProfile, String> {
@@ -183,6 +187,13 @@ fn runtime_local_validator_block_proposer() -> bool {
 
 fn runtime_local_validator_block_proposer_delay_blocks() -> u64 {
     std::env::var("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
+}
+
+fn runtime_local_proposer_cooldown_blocks() -> u64 {
+    std::env::var("TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS")
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0)

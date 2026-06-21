@@ -158,6 +158,7 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.difficulty_target_block_time_seconds);
     write_u64(out, params.difficulty_retarget_epoch_length);
     write_u64(out, params.difficulty_retarget_max_ratio);
+    write_u64(out, params.proposer_cooldown_blocks);
     write_u64(out, params.pow_timeout_blocks);
     encode_freivalds_params(out, &params.freivalds);
 }
@@ -193,6 +194,7 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         difficulty_target_block_time_seconds: reader.read_u64()?,
         difficulty_retarget_epoch_length: reader.read_u64()?,
         difficulty_retarget_max_ratio: reader.read_u64()?,
+        proposer_cooldown_blocks: reader.read_u64()?,
         pow_timeout_blocks: reader.read_u64()?,
         freivalds: decode_freivalds_params(reader)?,
     })
@@ -250,6 +252,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_block_check_challenges(out, state.block_check_challenges());
     encode_hash_set(out, state.challenged_receipts());
     encode_u64_by_hash_map(out, state.proposer_penalty_until());
+    encode_u64_by_hash_map(out, state.proposer_cadence_last_proposed());
     encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
     encode_pending_receipt_rewards(out, state.pending_receipt_rewards());
     encode_pending_challenge_rewards(out, state.pending_challenge_rewards());
@@ -304,6 +307,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         block_check_challenges: decode_block_check_challenges(reader)?,
         challenged_receipts: decode_hash_set(reader)?,
         proposer_penalty_until: decode_u64_by_hash_map(reader)?,
+        proposer_cadence_last_proposed: decode_u64_by_hash_map(reader)?,
         pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
         pending_receipt_rewards: decode_pending_receipt_rewards(reader)?,
         pending_challenge_rewards: decode_pending_challenge_rewards(reader)?,

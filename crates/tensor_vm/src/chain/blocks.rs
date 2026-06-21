@@ -70,6 +70,11 @@ fn produce_inner(
     {
         return Err(TvmError::InvalidReceipt("proposer is challenge-throttled"));
     }
+    validate_proposer_cadence(
+        &chain.state,
+        chain.params.proposer_cooldown_blocks,
+        proposer,
+    )?;
 
     let parent_hash = chain
         .blocks
@@ -733,6 +738,11 @@ pub(super) fn validate(chain: &Chain, block: &TensorBlock, strict_state_root: bo
     if block.difficulty_target != expected_difficulty_target(chain, block.height) {
         return Err(TvmError::InvalidReceipt("block difficulty target mismatch"));
     }
+    validate_proposer_cadence(
+        &parent_state_for_validation(chain, block),
+        chain.params.proposer_cooldown_blocks,
+        block.proposer,
+    )?;
     if block.production_kind.requires_pow() && !block.pow_valid() {
         return Err(TvmError::InvalidReceipt(
             "invalid useful-verification proof",
@@ -835,6 +845,40 @@ fn validate_fallback_proposer(parent_state: &ChainState, block: &TensorBlock) ->
         ));
     }
     Ok(())
+}
+
+pub(super) fn proposer_cadence_ready(
+    state: &ChainState,
+    cooldown_blocks: u64,
+    proposer: Address,
+) -> bool {
+    proposer_cadence_remaining_blocks(state, cooldown_blocks, proposer) == 0
+}
+
+pub(super) fn proposer_cadence_remaining_blocks(
+    state: &ChainState,
+    cooldown_blocks: u64,
+    proposer: Address,
+) -> u64 {
+    if cooldown_blocks == 0 {
+        return 0;
+    }
+    let Some(last_height) = state.proposer_cadence_last_proposed.get(&proposer) else {
+        return 0;
+    };
+    let next_allowed = last_height.saturating_add(cooldown_blocks);
+    next_allowed.saturating_sub(state.height)
+}
+
+fn validate_proposer_cadence(
+    state: &ChainState,
+    cooldown_blocks: u64,
+    proposer: Address,
+) -> Result<()> {
+    if proposer_cadence_ready(state, cooldown_blocks, proposer) {
+        return Ok(());
+    }
+    Err(TvmError::InvalidReceipt("proposer cadence cooldown"))
 }
 
 pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockApplyOutcome> {
@@ -1186,6 +1230,11 @@ fn apply_block_to_parent_state(
                 voided_by_challenge: false,
             },
         );
+    }
+    if reward_context.proposer != [0; 32] {
+        child_state
+            .proposer_cadence_last_proposed
+            .insert(reward_context.proposer, block_height);
     }
     child_state
 }

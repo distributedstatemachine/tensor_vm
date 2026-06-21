@@ -163,7 +163,21 @@ pub fn tick_validator_role_work_once(
     let local_block_proposer_delay_satisfied = config
         .node
         .local_block_proposer_delay_satisfied(server.gateway().node.chain.state().height());
-    if config.node.local_block_proposer() && local_block_proposer_delay_satisfied {
+    let proposer_cadence_ready = server
+        .gateway()
+        .node
+        .chain
+        .proposer_cadence_ready(validator);
+    let proposer_challenge_throttle_ready = server
+        .gateway()
+        .node
+        .chain
+        .proposer_challenge_throttle_ready(validator);
+    if config.node.local_block_proposer()
+        && local_block_proposer_delay_satisfied
+        && proposer_cadence_ready
+        && proposer_challenge_throttle_ready
+    {
         let parent_state_root_before = server.gateway().node.chain.state_root();
         server
             .gateway_mut()

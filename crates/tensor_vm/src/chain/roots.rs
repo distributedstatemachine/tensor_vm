@@ -90,6 +90,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
         &state.challenged_receipts,
     ));
     parts.extend_from_slice(&proposer_penalty_root(&state.proposer_penalty_until));
+    parts.extend_from_slice(&proposer_cadence_root(
+        &state.proposer_cadence_last_proposed,
+    ));
     parts.extend_from_slice(&pending_proposer_reward_root(
         &state.pending_proposer_rewards,
     ));
@@ -317,6 +320,15 @@ pub(super) fn proposer_penalty_root(penalties: &BTreeMap<Address, u64>) -> Hash 
         encoded.extend_from_slice(&penalty_until_height.to_le_bytes());
     }
     hash_bytes(b"tensor-vm-proposer-penalty-root-v1", &[&encoded])
+}
+
+pub(super) fn proposer_cadence_root(last_proposed: &BTreeMap<Address, u64>) -> Hash {
+    let mut encoded = Vec::new();
+    for (proposer, block_height) in last_proposed {
+        encoded.extend_from_slice(proposer);
+        encoded.extend_from_slice(&block_height.to_le_bytes());
+    }
+    hash_bytes(b"tensor-vm-proposer-cadence-root-v1", &[&encoded])
 }
 
 pub(super) fn pending_proposer_reward_root(rewards: &BTreeMap<u64, PendingProposerReward>) -> Hash {
