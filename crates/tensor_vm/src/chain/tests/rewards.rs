@@ -71,6 +71,31 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
     receipt.receipt_id
 }
 
+#[test]
+fn extending_reward_delay_preserves_validator_vrf_reveal_hold() {
+    let mut reward = PendingReceiptReward {
+        claim_id: hash_bytes(b"test", &[b"preserve-vrf-delay-claim"]),
+        receipt_id: hash_bytes(b"test", &[b"preserve-vrf-delay-receipt"]),
+        beneficiary: address(b"preserve-vrf-delay-validator"),
+        amount: 25,
+        kind: ReceiptRewardKind::Validator,
+        maturity: ReceiptRewardMaturity::AwaitingValidatorVrfReveal(7),
+        voided_by_challenge: false,
+    };
+
+    reward.delay_until(11);
+    assert_eq!(
+        reward.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(11)
+    );
+    assert!(!reward.is_mature_at(11));
+    assert_eq!(reward.claimable_at_height(), None);
+
+    reward.mark_validator_vrf_revealed();
+    assert_eq!(reward.maturity, ReceiptRewardMaturity::ClaimableAt(11));
+    assert!(reward.is_mature_at(11));
+}
+
 fn add_settled_receipt_for_blockspace(chain: &mut Chain, beacon: &Hash) -> Hash {
     let miner = address(b"reward-blockspace-miner");
     if !chain.state().miners().contains_key(&miner) {

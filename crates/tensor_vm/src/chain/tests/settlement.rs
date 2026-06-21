@@ -1053,17 +1053,23 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     let inclusion_reward_delay_until_height = block
         .height
         .saturating_add(chain.params().reward_maturity_delay_blocks());
-    assert!(
-        chain
-            .state()
-            .pending_receipt_rewards()
-            .values()
-            .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
-            .all(|reward| reward
-                .claimable_at_height()
-                .expect("receipt reward should have inclusion-derived maturity")
-                == inclusion_reward_delay_until_height)
-    );
+    let included_claims = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
+        .collect::<Vec<_>>();
+    assert!(included_claims.iter().any(|reward| {
+        reward.kind == ReceiptRewardKind::Miner
+            && reward.claimable_at_height() == Some(inclusion_reward_delay_until_height)
+    }));
+    assert!(included_claims.iter().any(|reward| {
+        reward.kind == ReceiptRewardKind::Validator
+            && reward.maturity
+                == ReceiptRewardMaturity::AwaitingValidatorVrfReveal(
+                    inclusion_reward_delay_until_height,
+                )
+    }));
     chain.set_position_for_testing(inclusion_reward_delay_until_height.saturating_sub(1), 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);

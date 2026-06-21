@@ -376,7 +376,9 @@ impl ReceiptRewardMaturity {
     pub fn delayed_until(self, height: u64) -> Self {
         match self {
             Self::AwaitingInclusion => Self::ClaimableAt(height),
-            Self::AwaitingValidatorVrfReveal(current) => Self::ClaimableAt(current.max(height)),
+            Self::AwaitingValidatorVrfReveal(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
             Self::ClaimableAt(current) => Self::ClaimableAt(current.max(height)),
         }
     }

@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 138 complete - explicit validator VRF reward-hold maturity.
+- Active feature: Iteration 139 complete - validator VRF reward holds preserve later reward delays.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -19,6 +19,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   `AwaitingValidatorVrfReveal` maturity state in chain state, reward roots, storage, service status, and
   explorer JSON until `SubmitValidatorVrfReveal` converts the same pending claim back to its original
   claimable height.
+  Later challenge, audit, or redundant-settlement reward delays now extend that same reveal-held
+  maturity height instead of converting it to a plain claimable reward.
   Reward maturity now makes state-rooted pending claims claimable, but spendable credit is owned by
   `ClaimReward` instead of automatic block-transition release.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
@@ -52,14 +54,15 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: run the full local CPU Docker checker with the new validator reveal gates, then continue
-  public/CUDA deployment runs, production drand/VRF verification, and full interactive transcript disputes.
+- Next action: debug the full local CPU Docker checker's live LinearTrainingStep model-count convergence
+  after the new validator reveal gates, then continue public/CUDA deployment runs, production drand/VRF
+  verification, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 138 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 139; post-edit rerun also passed | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -75,6 +78,34 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 139: Preserve Validator Reveal Holds Through Later Reward Delays
+
+Feature capability: additional receipt reward delays extend a validator reveal-held reward without
+unlocking it into a plain `ClaimableAt` maturity.
+Readiness requirements covered: `upow.md` §12 reward-finality delay, `mvp_spec.md` §20.3 receipt reward
+maturity, and the shortcut ban against compensating for reward policy at release/checker time.
+Canonical owner: `ReceiptRewardMaturity::delayed_until`, `PendingReceiptReward`, block inclusion,
+challenge/audit delay callers, reward release, and reward roots.
+Old shortcut removed: a reward already held as `AwaitingValidatorVrfReveal(height)` is no longer converted
+to `ClaimableAt(max(height, later_delay))` when a later fraud-window or redundant-settlement delay applies.
+It remains `AwaitingValidatorVrfReveal(max(height, later_delay))` until the accepted reveal converts it.
+Regression evidence: `extending_reward_delay_preserves_validator_vrf_reveal_hold` covers the state
+transition directly, and the redundant-settlement test now separately asserts miner inclusion-delay
+maturity and validator reveal-held maturity.
+Docker evidence: the release image built and all 15 local CPU services became healthy, but
+`check-local-testnet.sh` failed before this code change because canonical `model_count` remained 1 while a
+minority validator view had already observed 2. The full Docker proof remains the next local evidence item.
+
+Validation:
+
+```bash
+cargo test -p tensor_vm local_testnet --release
+cargo test -p tensor_vm extending_reward_delay_preserves_validator_vrf_reveal_hold -- --nocapture
+cargo test -p tensor_vm validator_receipt_reward_waits_for_vrf_reveal_after_maturity -- --nocapture
+cargo test -p tensor_vm rewards -- --nocapture
+cargo test -p tensor_vm settlement -- --nocapture
+```
 
 ### Iteration 138: Explicit Validator Reveal Reward Hold
 
