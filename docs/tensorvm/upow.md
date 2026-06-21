@@ -645,10 +645,11 @@ This section is non-normative guidance on how the spec components partition into
   output scale, and
   canonical `int8`/`uint8`/`bool` dtype tags are implemented; exact
   per-channel int8 quantize/dequantize scale selection and saturation are conformance covered;
-  byte-packed quantization has a conformance-covered tensor-owned flat `uint8` payload API; fixed-point reciprocal
-  division is implemented for `Fixed32` `div`; `Fixed32` `matmul` now accumulates signed raw products in
-  fixed order and rescales once into the lhs/output scale; broader packed tensor chunking/public artifact
-  APIs remain open.
+  byte-packed quantization has a conformance-covered tensor-owned flat `uint8` payload API; packed payloads
+  can now be constructed and decoded as first-class `Uint8` tensor artifacts with normal descriptor,
+  chunk, and Merkle-opening evidence; fixed-point reciprocal division is implemented for `Fixed32` `div`;
+  `Fixed32` `matmul` now accumulates signed raw products in fixed order and rescales once into the
+  lhs/output scale.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 115 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 116 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 115 coverage could not
-be regenerated. Iterations 78 through 115 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 116 coverage could not
+be regenerated. Iterations 78 through 116 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -172,6 +172,9 @@ unchanged CPU conformance profile behavior.
 Iteration 115 removes the remaining direct spendable reward-credit test helper. Focused chain and
 telemetry tests cover generic rewards entering pending credit claims, failing claim attempts before
 maturity, mature release through the chain command, and only then spendable reward accounting.
+Iteration 116 adds first-class packed int8 tensor artifact APIs. Focused tensor, IR, and conformance tests
+cover construction of packed `TVQ8` payloads as `Uint8` tensors, descriptor/chunk/opening verification,
+decode validation, exact replay, and unchanged conformance vectors.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

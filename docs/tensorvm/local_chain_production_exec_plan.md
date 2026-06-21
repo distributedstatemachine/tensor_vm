@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 115 complete - delayed reward path cleanup.
+- Active feature: Iteration 116 complete - packed int8 tensor artifact API.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -32,8 +32,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue Tier-C committee policy, deployed-run economics evidence, broader packed tensor
-  chunking/public-artifact APIs, or rerun Docker after the `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, public/p2p artifact
+  propagation for externally supplied arbitrary graph jobs, CUDA graph evidence, or rerun Docker after the
+  `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -56,42 +57,44 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 115: Delayed Reward Path Cleanup
+### Iteration 116: Packed Int8 Tensor Artifact API
 
-Feature capability: remove remaining test-side direct reward-credit bypasses and make affected claim,
-engine, and telemetry coverage exercise the shared pending credit reward ledger before spendable reward
-claims.
-Readiness requirements covered: `upow.md` economics/slashing invariant and MVP delayed reward evidence:
-generic rewards must be pending, mature, released, and only then claimable rather than adapter/test code
-crediting spendable rewards directly.
-Files/modules likely touched: chain test helpers, command/transaction/telemetry tests, local-chain docs.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is
-a small shared-chain cleanup.
-Parallelizable implementation workstreams: none in this single-owner test-path change.
-Canonical owner: shared chain command/release logic owns delayed reward creation and spendability.
-Adapter callers: tests and telemetry setup use `ChainCommand::CreditReward` plus mature release instead of
-directly mutating `RewardState`.
-Old shortcut being removed: `credit_reward_for_testing` directly credited spendable reward balances.
-Regression test that proves the shortcut is gone: transaction and engine claim tests now fail before
-maturity, release through `ReleaseMaturedCreditRewards`, and only then claim spendable rewards.
-Behavior with local synthetic block production disabled: unchanged; reward delay is chain-owned.
-Behavior for producer and non-producer roles: unchanged; both observe the same pending/released reward
-state.
-Structured evidence source: pending credit reward events, released reward events, claim reward events, and
-telemetry computed from released rewards.
-Finality source: unchanged block finality; this cleanup touches generic reward command tests only.
-Wire-size and codec boundary: no wire/storage format change.
-Narrow validation commands: command, transaction, and telemetry reward tests.
+Feature capability: expose byte-packed `TVQ8` int8 quantization payloads as first-class `Uint8` tensor
+artifacts with tensor-owned constructor/decode methods and descriptor/chunk/opening evidence.
+Readiness requirements covered: `upow.md` §3.1/§4.8 canonical dtype/layout, §5 tensor commitments and
+openings, §9 verification data availability for tensor chunks, and the documented packed tensor
+public-artifact API gap.
+Files/modules likely touched: `tensor`, `ir`, `conformance`, Tensor IR/conformance docs/status.
+Parallel subagents to run: not used; available subagent tool forbids spawning unless the user explicitly
+requests delegation.
+Parallelizable implementation workstreams: none in this single-owner tensor/IR/conformance change.
+Canonical owner: `tensor` owns packed artifact construction, decode validation, descriptor, chunk, and
+opening behavior.
+Adapter callers: IR exact replay and conformance vector execution construct/decode packed payload tensors
+through `Tensor` methods.
+Old shortcut being removed: callers manually wrapped encoded bytes as a flat `Uint8` tensor and manually
+checked dtype/scale/rank before free-function decode.
+Regression test that proves the shortcut is gone: a packed tensor artifact test verifies descriptor chunks
+and openings, round-trips decode, and rejects non-artifact tensors.
+Behavior with local synthetic block production disabled: unchanged; this is pure tensor artifact/exact
+replay behavior.
+Behavior for producer and non-producer roles: unchanged; every role sees the same tensor root/openings.
+Structured evidence source: tensor descriptor/opening tests plus existing IR and conformance packed tests.
+Finality source: unchanged block finality; affected receipts still pass through canonical verification.
+Wire-size and codec boundary: preserves the existing `TVQ8` bytes and normal tensor chunking semantics.
+Narrow validation commands: packed tensor artifact test, packed IR replay test, conformance vector/profile
+tests.
 Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
 final Gate 0, tarpaulin attempt.
-Expected observable evidence: no remaining test helper mutates spendable reward balances directly.
-Out of scope: public/Docker run, additional fraud paths, packed tensor APIs.
-Split trigger: any production reward semantic change outside generic credit command/release behavior.
+Expected observable evidence: packed payloads are constructed as `Uint8` tensors, descriptor/opening proofs
+verify over chunked tensor bytes, and malformed/non-artifact tensors reject before decode.
+Out of scope: CUDA graph execution, Docker/public run, Tier-C committee/fraud games.
+Split trigger: any wire-format or storage codec migration requirement.
 
 Validation evidence:
-- First Gate 0 passed before edits; command, transaction, generic credit, and telemetry tests passed; format,
-  diff, full `tensor_vm`, clippy, release workspace, and final Gate 0 passed; tarpaulin is still blocked.
-  Feature commit: `1c65b80` (`Use delayed credit rewards in tests`) pushed to `origin/main`.
+- First Gate 0 passed before edits; focused packed tensor artifact, packed IR replay, verifier, and
+  conformance/profile tests passed; format, diff, full `tensor_vm`, clippy, release workspace, and final
+  Gate 0 passed. Tarpaulin remains blocked by missing `cargo-tarpaulin`.
 
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
@@ -148,62 +151,19 @@ Validation evidence:
 
 ## Recent Iterations
 
+### Iteration 115: Delayed Reward Path Cleanup
+
+Removed the remaining direct spendable reward-credit test helper. Command, transaction, generic credit,
+and telemetry tests now create pending credit rewards, prove pre-maturity claims are blocked, release
+through `ReleaseMaturedCreditRewards`, and only then claim/use spendable rewards. Focused/broad validation
+passed; tarpaulin remained blocked. Feature commit: `1c65b80` (`Use delayed credit rewards in tests`)
+pushed to `origin/main`; evidence commit `59b1cf2` pushed.
+
 ### Iteration 113: Fixed-Point Matmul Accumulation/Range Policy
 
 Feature capability: make `Fixed32` `matmul` accumulate signed raw products in fixed ascending order with a
 widened integer accumulator, then rescale once from product scale into the lhs/output scale with canonical
-round-half-to-even semantics.
-Validation evidence: first/final Gate 0, focused tensor/IR/conformance tests, formatting, full
-`tensor_vm`, clippy, and release workspace passed; tarpaulin remained blocked by missing `cargo-tarpaulin`.
-Feature commit: `506b020` (`Implement fixed-point matmul rescale`) pushed to `origin/main`.
-
-### Iteration 112: Fixed-Point Reciprocal Division Semantics
-
-Feature capability: allow `Fixed32` `div` by nonzero `Fixed32` tensors using signed integer reciprocal
-division, scaling the quotient into the lhs/output scale with canonical round-half-to-even semantics.
-Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline and §3.3 conformance
-evidence for exact Tier-B arithmetic.
-Files/modules likely touched: `tensor`, `ir`, `conformance`, fixed-point docs/status.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is a
-single-owner deterministic semantics change.
-Parallelizable implementation workstreams: none in this single-writer deterministic semantics change.
-Canonical owner: `tensor` owns fixed-point signed reciprocal division; `ir` permits the same policy for
-validated graph `div`; conformance records vectors.
-Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
-Old shortcut being removed: `Fixed32` `div` failed dtype/scale checks and required field-only modular
-inverse or explicit workaround semantics.
-Regression test that proves the shortcut is gone: tensor/IR/conformance fixed-point division tests.
-Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
-Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
-Structured evidence source: conformance vectors plus exact interpreter output roots.
-Finality source: unchanged block finality; affected receipts still pass through canonical verification.
-Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
-Narrow validation commands: fixed-point div tensor/IR/conformance tests.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Expected observable evidence: `Fixed32` div outputs keep lhs scale, reject zero divisors, and match signed
-half-even quotient rescale for same-scale and mixed-scale operands.
-Out of scope: matmul accumulation/range, CUDA graph execution, public/Docker run.
-Split trigger: unexpected IR validation or conformance profile changes outside `div`.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused: `cargo test -p tensor_vm fixed32_division_rescales_to_lhs_scale_half_even --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_div_with_scale_rescale --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_field_div --quiet` passed.
-- Focused: `cargo test -p tensor_vm graph_validation_rejects_unsupported_div_dtype --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet` passed.
-- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
-- Verifier tool: no standalone `tensorvm-verifier` binary found; verifier code remains in workspace modules.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 445 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
+round-half-to-even semantics. Validation passed; tarpaulin remained blocked. Feature commit: `506b020`.
 
 ### Iteration 111: Mixed-Scale Fixed32 Multiplication Semantics
 

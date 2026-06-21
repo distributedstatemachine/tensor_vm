@@ -127,6 +127,26 @@ impl Tensor {
         })
     }
 
+    pub fn from_packed_int8_payload(
+        shape: Vec<usize>,
+        axis: usize,
+        output_scale: i64,
+        scales: &[Elem],
+        quantized: &[Elem],
+    ) -> Result<Self> {
+        let payload = encode_packed_int8_payload(&shape, axis, output_scale, scales, quantized)?;
+        Self::from_vec(vec![payload.len()], DType::Uint8, payload)
+    }
+
+    pub fn packed_int8_payload(&self) -> Result<PackedInt8Payload> {
+        if self.dtype != DType::Uint8 || self.scale != 0 || self.shape.len() != 1 {
+            return Err(TvmError::InvalidReceipt(
+                "packed int8 tensor artifact mismatch",
+            ));
+        }
+        decode_packed_int8_payload(&self.data)
+    }
+
     pub fn random(seed: &Hash, shape: Vec<usize>, dtype: DType) -> Result<Self> {
         let shape_bytes = encode_shape(&shape);
         let dtype_bytes = [dtype.tag()];
@@ -1252,6 +1272,50 @@ mod tests {
         assert_eq!(
             encode_packed_int8_payload(&shape, 2, 0, &scales, &quantized),
             Err(TvmError::InvalidReceipt("packed int8 axis mismatch"))
+        );
+    }
+
+    #[test]
+    fn packed_int8_tensor_artifact_exposes_descriptor_chunks_and_openings() {
+        let p = field::MODULUS;
+        let shape = vec![2, 3];
+        let scales = vec![1, 2, 2];
+        let quantized = vec![0, 32, 64, p - 64, p - 64, 64];
+        let artifact =
+            Tensor::from_packed_int8_payload(shape.clone(), 1, 0, &scales, &quantized).unwrap();
+
+        assert_eq!(artifact.dtype(), DType::Uint8);
+        assert_eq!(artifact.scale(), 0);
+        assert_eq!(artifact.shape(), &[artifact.len()]);
+
+        let decoded = artifact.packed_int8_payload().unwrap();
+        assert_eq!(decoded.shape, shape);
+        assert_eq!(decoded.axis, 1);
+        assert_eq!(decoded.output_scale, 0);
+        assert_eq!(decoded.scales, scales);
+        assert_eq!(decoded.quantized, quantized);
+
+        let descriptor = artifact.descriptor_with_chunk_size(16);
+        assert_eq!(descriptor.dtype, DType::Uint8);
+        assert_eq!(descriptor.scale, 0);
+        assert_eq!(descriptor.shape, vec![artifact.len()]);
+        assert!(descriptor.commitment.leaf_count > 1);
+        for chunk_index in 0..descriptor.commitment.leaf_count {
+            let opening = artifact.opening(chunk_index, 16).unwrap();
+            assert!(opening.verify(&descriptor));
+        }
+
+        let wrong_dtype = Tensor::from_vec(
+            vec![artifact.len()],
+            DType::Int64,
+            artifact.as_slice().to_vec(),
+        )
+        .unwrap();
+        assert_eq!(
+            wrong_dtype.packed_int8_payload(),
+            Err(TvmError::InvalidReceipt(
+                "packed int8 tensor artifact mismatch"
+            ))
         );
     }
 

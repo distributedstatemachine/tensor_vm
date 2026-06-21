@@ -5,8 +5,8 @@ use crate::field::{self, Elem, MODULUS};
 use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::jobs::{LinearTrainingStepJob, MatmulJob};
 use crate::tensor::{
-    DType, Tensor, decode_packed_int8_payload, divide_elem_for_dtype, encode_packed_int8_payload,
-    rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
+    DType, Tensor, divide_elem_for_dtype, rescale_signed_elem_half_even, signed_elem_to_i128,
+    signed_i128_to_elem,
 };
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
@@ -1289,14 +1289,13 @@ fn quantize_pack_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
         .iter()
         .map(|value| signed_i128_to_elem(*value))
         .collect::<Vec<_>>();
-    let packed = encode_packed_int8_payload(
-        tensor.shape(),
+    Tensor::from_packed_int8_payload(
+        tensor.shape().to_vec(),
         axis,
         tensor.scale(),
         &scale_elems,
         quantized.as_slice(),
-    )?;
-    Tensor::from_vec(vec![packed.len()], DType::Uint8, packed)
+    )
 }
 
 fn unpack_dequantize_tensor(
@@ -1305,12 +1304,7 @@ fn unpack_dequantize_tensor(
     output_scale: i64,
     expected_shape: &[usize],
 ) -> Result<Tensor> {
-    if tensor.dtype() != DType::Uint8 || tensor.scale() != 0 || tensor.shape().len() != 1 {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed dequantize",
-        ));
-    }
-    let decoded = decode_packed_int8_payload(tensor.as_slice())?;
+    let decoded = tensor.packed_int8_payload()?;
     if decoded.shape != expected_shape
         || decoded.axis != axis
         || decoded.output_scale != output_scale

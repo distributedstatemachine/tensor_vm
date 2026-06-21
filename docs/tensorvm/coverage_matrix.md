@@ -59,7 +59,9 @@ rank-1 scale tensor and rejects ambiguous inferred channel dimensions. Byte-pack
 `quantize_pack_int8`/`unpack_dequantize_int8` are also admitted with a tensor-owned canonical flat `uint8`
 payload API containing `TVQ8` magic/version bytes, rank, quantization axis, output scale, original shape,
 per-channel signed 64-bit scales, and row-major int8 payload bytes, with bounded length calculation and
-shared encode/decode validation used by IR replay and conformance. Interpreter output includes named
+shared encode/decode validation used by IR replay and conformance. The tensor layer now also exposes
+packed payload construction/decode as a first-class `Uint8` tensor artifact API, so those payloads carry
+normal descriptor, chunk, and Merkle-opening evidence for public tensor serving. Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Local synthetic production now emits a deterministic graph-backed exact Tier-B job
@@ -90,6 +92,7 @@ evidence: `ir::tests::matmul_graph_has_stable_canonical_json_and_graph_id`,
 `ir::tests::quantization_vocabulary_admits_exact_quantization_ops`,
 `ir::tests::exact_interpreter_executes_per_channel_int8_quantize_dequantize`,
 `ir::tests::exact_interpreter_executes_packed_int8_quantize_dequantize`,
+`tensor::tests::packed_int8_tensor_artifact_exposes_descriptor_chunks_and_openings`,
 `tensor::tests::narrow_integer_tensors_enforce_canonical_ranges_and_commit_dtype`,
 `tensor::tests::random_narrow_integer_tensors_are_canonical`,
 `tensor::tests::fixed32_add_sub_rescale_rhs_to_lhs_scale_half_even`,
@@ -142,8 +145,8 @@ Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: broader packed tensor chunking/public-artifact APIs,
-index-consistency proofs for `gather`/`scatter`/`embedding`, additional mixed-dtype conformance vectors,
+Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding`,
+additional mixed-dtype conformance vectors,
 public/p2p artifact propagation evidence for externally supplied arbitrary graph jobs, and CUDA
 conformance evidence when `cuda-kernels` is not compiled in this environment.
 Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared

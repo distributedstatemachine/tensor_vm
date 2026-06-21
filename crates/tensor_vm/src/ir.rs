@@ -4,9 +4,9 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
 use crate::tensor::{
-    DType, Tensor, add_elem_for_dtype, decode_packed_int8_payload, divide_elem_for_dtype,
-    encode_packed_int8_payload, multiply_elem_for_dtype, packed_int8_payload_len,
-    rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem, sub_elem_for_dtype,
+    DType, Tensor, add_elem_for_dtype, divide_elem_for_dtype, multiply_elem_for_dtype,
+    packed_int8_payload_len, rescale_signed_elem_half_even, signed_elem_to_i128,
+    signed_i128_to_elem, sub_elem_for_dtype,
 };
 use crate::types::{Hash, hash_bytes, parse_hash_hex};
 use serde_json::Value as JsonValue;
@@ -1285,28 +1285,22 @@ fn quantize_pack_int8(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Re
     let dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
         "tensor ir quantize requires explicit dim",
     ))?;
-    let packed = encode_packed_int8_payload(
-        quantized.shape(),
+    Tensor::from_packed_int8_payload(
+        quantized.shape().to_vec(),
         dim,
         scale.scale(),
         scale.as_slice(),
         quantized.as_slice(),
-    )?;
-    Tensor::from_vec(vec![packed.len()], DType::Uint8, packed)
+    )
 }
 
 fn unpack_dequantize_int8(tensor: &Tensor, kwargs: &BTreeMap<String, IrValue>) -> Result<Tensor> {
-    if tensor.dtype() != DType::Uint8 || tensor.scale() != 0 || tensor.shape().len() != 1 {
-        return Err(TvmError::InvalidReceipt(
-            "tensor ir packed quantize dtype mismatch",
-        ));
-    }
     let expected_shape = concrete_shape_kwarg(kwargs, "shape")?;
     let expected_dim = optional_usize_kwarg(kwargs, "dim")?.ok_or(TvmError::InvalidReceipt(
         "tensor ir packed quantize dim mismatch",
     ))?;
     let expected_scale = integer_kwarg(kwargs, "scale_dim")?;
-    let decoded = decode_packed_int8_payload(tensor.as_slice())?;
+    let decoded = tensor.packed_int8_payload()?;
     if decoded.shape != expected_shape
         || decoded.axis != expected_dim
         || decoded.output_scale != expected_scale

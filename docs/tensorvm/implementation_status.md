@@ -90,9 +90,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   artifacts. Graph role bundles now serve and verify any required `const_blob` tensors through the same
   commitment-root artifact path, and validator remote-fetch planning includes blob roots from the
   registered graph body. Tensor-owned packed int8 payload APIs now provide bounded `TVQ8` byte layout
-  length calculation plus shared encode/decode validation for IR replay and conformance. Broader packed
-  tensor chunking/public-artifact APIs, public/p2p artifact propagation evidence for externally supplied
-  arbitrary graph jobs, and CUDA generic graph execution remain open.
+  length calculation, shared encode/decode validation for IR replay and conformance, and first-class
+  `Uint8` tensor artifact construction/decode methods whose descriptors, chunks, and Merkle openings use
+  the normal public tensor artifact path. Public/p2p artifact propagation evidence for externally supplied
+  arbitrary graph jobs and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
