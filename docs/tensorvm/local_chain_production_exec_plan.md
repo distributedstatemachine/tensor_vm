@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 106 complete locally - external randomness beacon records.
+- Active feature: Iteration 106 complete - external randomness beacon records.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -24,8 +24,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: commit and push Iteration 106 evidence, then continue Tier-C committee policy,
-  deployed-run economics evidence, or rerun Docker after the `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, or rerun Docker after
+  the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -81,7 +81,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit pending.
+- Feature commit: `c6f390e` (`Record external randomness beacons`) is pushed to `origin/main`.
 
 ### Iteration 105: Redundant Settlement Delay Records
 
