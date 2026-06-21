@@ -1364,6 +1364,10 @@ fn encode_pending_receipt_rewards(
                 out.push(1);
                 write_u64(out, height);
             }
+            ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height) => {
+                out.push(2);
+                write_u64(out, height);
+            }
         }
         out.push(u8::from(reward.voided_by_challenge));
     }
@@ -1387,6 +1391,7 @@ fn decode_pending_receipt_rewards(
         let maturity = match reader.read_u8()? {
             0 => ReceiptRewardMaturity::AwaitingInclusion,
             1 => ReceiptRewardMaturity::ClaimableAt(reader.read_u64()?),
+            2 => ReceiptRewardMaturity::AwaitingValidatorVrfReveal(reader.read_u64()?),
             _ => return Err(TvmError::Storage("invalid pending receipt reward maturity")),
         };
         let voided_by_challenge = match reader.read_u8()? {

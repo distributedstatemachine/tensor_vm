@@ -175,6 +175,7 @@ pub(super) fn explorer_pending_rewards(chain: &Chain, limit: usize) -> Vec<Explo
             amount: claim.amount,
             claimable_at_height: claim.claimable_at_height,
             awaiting_inclusion: claim.awaiting_inclusion,
+            awaiting_validator_vrf_reveal: claim.awaiting_validator_vrf_reveal,
             voided_by_challenge: claim.voided_by_challenge,
         })
         .collect()
@@ -435,6 +436,7 @@ mod tests {
             amount: 1,
             claimable_at_height: Some(claim_height),
             awaiting_inclusion: false,
+            awaiting_validator_vrf_reveal: false,
             voided_by_challenge: false,
         }
     }

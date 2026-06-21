@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 137 in progress - validator VRF reveal records and delayed validator reward release.
+- Active feature: Iteration 138 complete - explicit validator VRF reward-hold maturity.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -15,6 +15,10 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before claim.
+  Validator receipt rewards included before their validator reveal exists now carry an explicit
+  `AwaitingValidatorVrfReveal` maturity state in chain state, reward roots, storage, service status, and
+  explorer JSON until `SubmitValidatorVrfReveal` converts the same pending claim back to its original
+  claimable height.
   Reward maturity now makes state-rooted pending claims claimable, but spendable credit is owned by
   `ClaimReward` instead of automatic block-transition release.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
@@ -55,7 +59,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 138 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -67,10 +71,59 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; bounded p2p messages relay beacon and validator reveal records through node ingest; status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, role applied counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add public drand verification, production validator VRF signatures, and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, claim-owned spendability, validator receipt reward release gated by accepted reveal records, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, explicit `AwaitingValidatorVrfReveal` validator receipt maturity, claim-owned spendability, validator receipt reward release gated by accepted reveal records, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 138: Explicit Validator Reveal Reward Hold
+
+Feature capability: validator receipt rewards are delayed by a canonical pending-claim maturity state while
+the matching validator VRF reveal is absent, instead of looking height-claimable and being filtered only at
+release time.
+Readiness requirements covered: `upow.md` §10 commit/reveal evidence, `upow.md` §12 reward-finality delay,
+`mvp_spec.md` §20.3 receipt reward maturity, and the shortcut ban against adapter/checker-only reward
+policy.
+Canonical owner: `ReceiptRewardMaturity`, `PendingReceiptReward`, block child-state inclusion transition,
+`SubmitValidatorVrfReveal`, reward roots, and storage codec.
+Adapter callers: `ClaimReward`, release helpers, status, explorer JSON, p2p/node reveal ingest, and
+validator-role reveal submission all observe or call the chain-owned state.
+Old shortcut removed: a validator receipt reward no longer appears as normally claimable by height while
+the reveal is missing; it is rooted as `AwaitingValidatorVrfReveal(height)` until reveal submission.
+Regression test that proves the shortcut is gone:
+`validator_receipt_reward_waits_for_vrf_reveal_after_maturity` now asserts the explicit reveal-wait
+maturity and the beneficiary `ClaimReward` path.
+Behavior with local synthetic block production disabled: inbound reveal payloads still apply through
+`SubmitValidatorVrfReveal`; the reward hold is state-owned and independent of producer scheduling.
+Behavior for producer and non-producer roles: producers and non-producers persist the same pending reward
+root; a reveal accepted on either path unlocks the same pending claim.
+Structured evidence source: pending reward claim views now expose `awaiting_validator_vrf_reveal`,
+service status includes the reveal-wait slot in receipt-claim tuples, and explorer JSON emits
+`awaiting_validator_vrf_reveal`.
+Finality source: unchanged signed validator block votes and finality threshold; reveal maturity gates
+reward spendability only.
+Wire-size and codec boundary: no new p2p message; the existing bounded validator reveal payload unlocks the
+chain-owned pending claim.
+Out of scope: public drand signature verification, production validator VRF signatures, public/CUDA
+evidence, Docker checker rerun, and interactive trace disputes.
+
+Validation:
+
+```bash
+cargo test -p tensor_vm local_testnet --release
+cargo check -p tensor_vm
+cargo test -p tensor_vm validator_receipt_reward_waits_for_vrf_reveal_after_maturity -- --nocapture
+cargo test -p tensor_vm reward -- --nocapture
+cargo test -p tensor_vm service_status_exports_pending_reward_claim_maturity_details -- --nocapture
+cargo test -p tensor_vm_explorer pending_reward -- --nocapture
+cargo test -p tensor_vm explorer_json_and_shell_include_live_websocket_contract -- --nocapture
+cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering -- --nocapture
+cargo test -p tensor_vm reward_root_commits_to_all_pending_reward_ledgers -- --nocapture
+cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration -- --nocapture
+cargo test -p tensor_vm_explorer -- --nocapture
+cargo fmt --check --all
+git diff --check
+```
 
 ### Iteration 137: Validator VRF Reveal Records
 

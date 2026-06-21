@@ -308,6 +308,7 @@ pub(super) fn events(
         if !pending_rewards_before.contains_key(claim_id) {
             let (claimable_at_height, awaiting_inclusion) = match reward.maturity {
                 ReceiptRewardMaturity::AwaitingInclusion => (None, true),
+                ReceiptRewardMaturity::AwaitingValidatorVrfReveal(_) => (None, false),
                 ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false),
             };
             events.push(ChainEvent::ReceiptRewardPending {

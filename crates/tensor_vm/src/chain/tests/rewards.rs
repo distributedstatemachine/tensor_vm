@@ -225,15 +225,29 @@ fn validator_receipt_reward_waits_for_vrf_reveal_after_maturity() {
     chain.settle_epoch(1_000, 500);
     chain.produce_block(validator, 1_000).unwrap();
 
-    let claimable_at_height = chain
+    let validator_reward = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == validator)
-        .unwrap()
-        .claimable_at_height()
         .unwrap();
+    let claimable_at_height = match validator_reward.maturity {
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height) => height,
+        other => panic!("expected reveal-delayed validator reward, got {other:?}"),
+    };
     chain.set_position_for_testing(claimable_at_height, 0);
+    assert!(chain.state().pending_reward_claims().iter().any(|claim| {
+        claim.ledger == RewardClaimLedger::ReceiptValidator
+            && claim.subject_id == RewardClaimKey::Hash(receipt_id)
+            && claim.beneficiary == validator
+            && claim.claimable_at_height == Some(claimable_at_height)
+            && !claim.awaiting_inclusion
+            && claim.awaiting_validator_vrf_reveal
+    }));
+    assert_eq!(
+        chain.apply_command(ChainCommand::ClaimReward(validator)),
+        Err(TvmError::InvalidReceipt("no reward to claim"))
+    );
     let events = chain.release_matured_receipt_rewards().unwrap();
     assert!(events.iter().all(|event| !matches!(
         event,
@@ -252,13 +266,33 @@ fn validator_receipt_reward_waits_for_vrf_reveal_after_maturity() {
     chain
         .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
         .unwrap();
-    let release_events = chain.release_matured_receipt_rewards().unwrap();
-    assert!(release_events.iter().any(|event| matches!(
+    assert_eq!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .values()
+            .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == validator)
+            .unwrap()
+            .maturity,
+        ReceiptRewardMaturity::ClaimableAt(claimable_at_height)
+    );
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(validator))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
         event,
         ChainEvent::ReceiptRewardReleased { beneficiary, amount, .. }
             if *beneficiary == validator && *amount == 500
     )));
-    assert_eq!(chain.state().rewards().balance(&validator), 500);
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: validator,
+        amount: 500,
+    }));
+    assert_eq!(chain.state().rewards().balance(&validator), 0);
+    assert_eq!(
+        chain.state().accounts().get(&validator).unwrap().balance,
+        500
+    );
 }
 
 #[test]

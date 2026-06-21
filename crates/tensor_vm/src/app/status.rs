@@ -538,7 +538,7 @@ fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
         .take(limit)
         .map(|claim| {
             format!(
-                "{}:{}:{}:{}:{}:{}:{}:{}",
+                "{}:{}:{}:{}:{}:{}:{}:{}:{}",
                 claim_key_label(claim.claim_id),
                 claim_key_label(claim.subject_id),
                 claim.ledger.receipt_kind_label().unwrap_or("unknown"),
@@ -546,6 +546,7 @@ fn pending_receipt_reward_claims(chain: &Chain, limit: usize) -> String {
                 claim.amount,
                 claimable_height_label(claim.claimable_at_height),
                 claim.awaiting_inclusion,
+                claim.awaiting_validator_vrf_reveal,
                 claim.voided_by_challenge
             )
         })
@@ -707,7 +708,7 @@ mod tests {
             fields
                 .value("pending_receipt_reward_claims")
                 .unwrap()
-                .contains(":awaiting_inclusion:true:false")
+                .contains(":awaiting_inclusion:true:false:false")
         );
         assert!(
             fields

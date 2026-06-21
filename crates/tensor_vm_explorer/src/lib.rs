@@ -75,6 +75,7 @@ pub struct ExplorerPendingReward {
     pub amount: u64,
     pub claimable_at_height: Option<u64>,
     pub awaiting_inclusion: bool,
+    pub awaiting_validator_vrf_reveal: bool,
     pub voided_by_challenge: bool,
 }
 
@@ -85,7 +86,7 @@ impl ExplorerPendingReward {
             .map(|height| height.to_string())
             .unwrap_or_else(|| "null".to_owned());
         format!(
-            "{{\"ledger\":\"{}\",\"claim_id\":\"{}\",\"subject_id\":\"{}\",\"beneficiary\":\"{}\",\"amount\":{},\"claimable_at_height\":{},\"awaiting_inclusion\":{},\"voided_by_challenge\":{}}}",
+            "{{\"ledger\":\"{}\",\"claim_id\":\"{}\",\"subject_id\":\"{}\",\"beneficiary\":\"{}\",\"amount\":{},\"claimable_at_height\":{},\"awaiting_inclusion\":{},\"awaiting_validator_vrf_reveal\":{},\"voided_by_challenge\":{}}}",
             escape_json(&self.ledger),
             escape_json(&self.claim_id),
             escape_json(&self.subject_id),
@@ -93,6 +94,7 @@ impl ExplorerPendingReward {
             self.amount,
             claimable_at_height,
             self.awaiting_inclusion,
+            self.awaiting_validator_vrf_reveal,
             self.voided_by_challenge
         )
     }
@@ -867,10 +869,16 @@ mod tests {
             amount: 7,
             claimable_at_height: Some(11),
             awaiting_inclusion: false,
+            awaiting_validator_vrf_reveal: false,
             voided_by_challenge: false,
         };
         assert!(pending.to_json().contains("\"claimable_at_height\":11"));
         assert!(pending.to_json().contains("\"awaiting_inclusion\":false"));
+        assert!(
+            pending
+                .to_json()
+                .contains("\"awaiting_validator_vrf_reveal\":false")
+        );
         assert!(pending.to_json().contains("\"voided_by_challenge\":false"));
         let awaiting = ExplorerPendingReward {
             claimable_at_height: None,

@@ -380,6 +380,10 @@ pub(super) fn pending_receipt_reward_root(rewards: &BTreeMap<Hash, PendingReceip
                 encoded.push(1);
                 encoded.extend_from_slice(&height.to_le_bytes());
             }
+            super::ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height) => {
+                encoded.push(2);
+                encoded.extend_from_slice(&height.to_le_bytes());
+            }
         }
         encoded.push(u8::from(reward.voided_by_challenge));
     }

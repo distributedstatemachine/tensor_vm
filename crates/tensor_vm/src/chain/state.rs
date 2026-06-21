@@ -356,6 +356,7 @@ pub struct PendingReceiptReward {
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum ReceiptRewardMaturity {
     AwaitingInclusion,
+    AwaitingValidatorVrfReveal(u64),
     ClaimableAt(u64),
 }
 
@@ -363,6 +364,7 @@ impl ReceiptRewardMaturity {
     pub fn claimable_at_height(self) -> Option<u64> {
         match self {
             Self::AwaitingInclusion => None,
+            Self::AwaitingValidatorVrfReveal(_) => None,
             Self::ClaimableAt(height) => Some(height),
         }
     }
@@ -374,7 +376,25 @@ impl ReceiptRewardMaturity {
     pub fn delayed_until(self, height: u64) -> Self {
         match self {
             Self::AwaitingInclusion => Self::ClaimableAt(height),
+            Self::AwaitingValidatorVrfReveal(current) => Self::ClaimableAt(current.max(height)),
             Self::ClaimableAt(current) => Self::ClaimableAt(current.max(height)),
+        }
+    }
+
+    pub fn delayed_until_validator_vrf_reveal(self, height: u64) -> Self {
+        match self {
+            Self::AwaitingInclusion => Self::AwaitingValidatorVrfReveal(height),
+            Self::AwaitingValidatorVrfReveal(current) => {
+                Self::AwaitingValidatorVrfReveal(current.max(height))
+            }
+            Self::ClaimableAt(current) => Self::AwaitingValidatorVrfReveal(current.max(height)),
+        }
+    }
+
+    pub fn reveal_available(self) -> Self {
+        match self {
+            Self::AwaitingValidatorVrfReveal(height) => Self::ClaimableAt(height),
+            other => other,
         }
     }
 }
@@ -394,6 +414,14 @@ impl PendingReceiptReward {
 
     pub fn delay_until(&mut self, height: u64) {
         self.maturity = self.maturity.delayed_until(height);
+    }
+
+    pub fn delay_until_validator_vrf_reveal(&mut self, height: u64) {
+        self.maturity = self.maturity.delayed_until_validator_vrf_reveal(height);
+    }
+
+    pub fn mark_validator_vrf_revealed(&mut self) {
+        self.maturity = self.maturity.reveal_available();
     }
 }
 
@@ -462,6 +490,7 @@ pub struct RewardClaimView {
     pub amount: u64,
     pub claimable_at_height: Option<u64>,
     pub awaiting_inclusion: bool,
+    pub awaiting_validator_vrf_reveal: bool,
     pub voided_by_challenge: bool,
 }
 
@@ -1554,13 +1583,20 @@ impl ChainState {
                 amount: reward.amount,
                 claimable_at_height: Some(reward.claimable_at_height),
                 awaiting_inclusion: false,
+                awaiting_validator_vrf_reveal: false,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
         for (claim_id, reward) in &self.pending_receipt_rewards {
-            let (claimable_at_height, awaiting_inclusion) = match reward.maturity {
-                ReceiptRewardMaturity::AwaitingInclusion => (None, true),
-                ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false),
+            let (claimable_at_height, awaiting_inclusion, awaiting_validator_vrf_reveal) =
+                match reward.maturity {
+                    ReceiptRewardMaturity::AwaitingInclusion => (None, true, false),
+                    ReceiptRewardMaturity::AwaitingValidatorVrfReveal(_) => (None, false, true),
+                    ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false, false),
+                };
+            let claimable_at_height = match reward.maturity {
+                ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height) => Some(height),
+                _ => claimable_at_height,
             };
             claims.push(RewardClaimView {
                 ledger: match reward.kind {
@@ -1574,6 +1610,7 @@ impl ChainState {
                 amount: reward.amount,
                 claimable_at_height,
                 awaiting_inclusion,
+                awaiting_validator_vrf_reveal,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
@@ -1587,6 +1624,7 @@ impl ChainState {
                 amount: reward.amount,
                 claimable_at_height: Some(reward.claimable_at_height),
                 awaiting_inclusion: false,
+                awaiting_validator_vrf_reveal: false,
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
@@ -1600,6 +1638,7 @@ impl ChainState {
                 amount: reward.amount,
                 claimable_at_height: Some(reward.claimable_at_height),
                 awaiting_inclusion: false,
+                awaiting_validator_vrf_reveal: false,
                 voided_by_challenge: false,
             });
         }

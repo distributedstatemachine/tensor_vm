@@ -1185,9 +1185,21 @@ fn apply_block_to_parent_state(
         block_height.saturating_add(reward_context.reward_maturity_delay_blocks(epoch_length));
     for receipt_id in selected_receipts {
         child_state.included_receipts.insert(*receipt_id);
+        let revealed_validators = child_state
+            .validator_vrf_reveals
+            .values()
+            .filter(|reveal| reveal.receipt_id == *receipt_id)
+            .map(|reveal| reveal.validator)
+            .collect::<BTreeSet<_>>();
         for reward in child_state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == *receipt_id {
-                reward.delay_until(receipt_reward_claimable_at_height);
+                if reward.kind == ReceiptRewardKind::Validator
+                    && !revealed_validators.contains(&reward.beneficiary)
+                {
+                    reward.delay_until_validator_vrf_reveal(receipt_reward_claimable_at_height);
+                } else {
+                    reward.delay_until(receipt_reward_claimable_at_height);
+                }
             }
         }
     }

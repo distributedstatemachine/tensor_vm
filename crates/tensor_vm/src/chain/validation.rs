@@ -155,6 +155,14 @@ pub fn submit_validator_vrf_reveal(
         .state
         .validator_vrf_reveals
         .insert(reveal.reveal_id, reveal.clone());
+    for reward in chain.state.pending_receipt_rewards.values_mut() {
+        if reward.receipt_id == reveal.receipt_id
+            && reward.beneficiary == reveal.validator
+            && reward.kind == ReceiptRewardKind::Validator
+        {
+            reward.mark_validator_vrf_revealed();
+        }
+    }
     Ok(reveal)
 }
 

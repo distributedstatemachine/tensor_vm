@@ -614,6 +614,7 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
             && reward["beneficiary"].as_str() == Some(hex(&awaiting_miner).as_str())
             && reward["claimable_at_height"].is_null()
             && reward["awaiting_inclusion"].as_bool() == Some(true)
+            && reward["awaiting_validator_vrf_reveal"].as_bool() == Some(false)
             && reward["voided_by_challenge"].as_bool() == Some(false)
     }));
 
