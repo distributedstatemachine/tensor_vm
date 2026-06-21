@@ -1,5 +1,5 @@
-use super::Chain;
 use super::state::{BlockCheckChallengeRecord, PendingChallengeReward, TensorBlock};
+use super::{Chain, settlement};
 use crate::challenge::{BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome};
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -300,6 +300,7 @@ fn apply_block_check_resolution(
     }
     chain.state.challenged_receipts.insert(record.receipt_id);
     chain.state.settled_receipts.remove(&record.receipt_id);
+    settlement::void_pending_miner_tensor_work(&mut chain.state, &record.receipt_id);
     for reward in chain.state.pending_receipt_rewards.values_mut() {
         if reward.receipt_id == record.receipt_id {
             reward.voided_by_challenge = true;

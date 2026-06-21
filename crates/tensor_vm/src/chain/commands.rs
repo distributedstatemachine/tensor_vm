@@ -1,6 +1,7 @@
 use super::{
     BlockAdmission, Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, ChainState,
-    PendingCreditReward, ReceiptState, TensorBlock, accounts, challenges, receipts, settlement,
+    PendingCreditReward, ReceiptRewardKind, ReceiptState, TensorBlock, accounts, challenges,
+    receipts, settlement,
 };
 use crate::challenge::ChallengeOutcome;
 use crate::error::{Result, TvmError};
@@ -396,13 +397,23 @@ fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
                 reward.receipt_id,
                 reward.beneficiary,
                 reward.amount,
+                reward.kind,
                 reward.voided_by_challenge,
             )
         })
         .collect::<Vec<_>>();
-    for (claim_id, receipt_id, beneficiary, amount, voided_by_challenge) in matured {
+    for (claim_id, receipt_id, beneficiary, amount, kind, voided_by_challenge) in matured {
         state.pending_receipt_rewards.remove(&claim_id);
-        if voided_by_challenge || state.data_unavailable_receipts.contains(&receipt_id) {
+        let unavailable = state.data_unavailable_receipts.contains(&receipt_id);
+        if kind == ReceiptRewardKind::Miner {
+            release_pending_miner_tensor_work(
+                state,
+                receipt_id,
+                beneficiary,
+                !voided_by_challenge && !unavailable,
+            );
+        }
+        if voided_by_challenge || unavailable {
             continue;
         }
         state.rewards.credit(beneficiary, amount);
@@ -418,6 +429,28 @@ fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
         });
     }
     events
+}
+
+fn release_pending_miner_tensor_work(
+    state: &mut ChainState,
+    receipt_id: Hash,
+    miner_address: Address,
+    activate: bool,
+) {
+    let Some(receipt) = state.receipts.get(&receipt_id) else {
+        return;
+    };
+    if receipt.miner() != miner_address {
+        return;
+    }
+    let work = receipt.tensor_work_units();
+    let Some(miner) = state.miners.get_mut(&miner_address) else {
+        return;
+    };
+    miner.pending_tensor_work = miner.pending_tensor_work.saturating_sub(work);
+    if activate {
+        miner.settled_tensor_work = miner.settled_tensor_work.saturating_add(work);
+    }
 }
 
 fn release_matured_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> {

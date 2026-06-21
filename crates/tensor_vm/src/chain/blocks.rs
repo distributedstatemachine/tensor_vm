@@ -8,6 +8,7 @@ use super::{
     BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState,
     DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptRewardKind, ReceiptState,
     SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment, ValidatorAuditSlashRecord,
+    settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -1328,6 +1329,7 @@ fn apply_data_unavailability_slashes(
         let actual_slash = miner.stake.min(slash_amount);
         miner.stake = miner.stake.saturating_sub(actual_slash);
         child_state.rewards.credit_treasury(actual_slash);
+        settlement::void_pending_miner_tensor_work(child_state, &receipt_id);
         child_state.data_unavailability_slashes.insert(
             receipt_id,
             DataUnavailabilitySlashRecord {

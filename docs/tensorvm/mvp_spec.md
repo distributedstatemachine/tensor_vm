@@ -1409,21 +1409,23 @@ Each valid receipt contributes TensorWork Units.
 score_miner(epoch E) = sum(settled_valid_receipt.tensor_work_units from epoch E)
 ```
 
-Miner reward weight applies a deterministic anti-monopoly curve in the local reference. Raw TensorWork
-continues to drive blockspace accounting and telemetry; reward allocation first aggregates work per miner,
-then applies square-root diminishing returns before splitting each miner's allocation across its receipts:
+Miner reward weight is proportional to verified receipt TensorWork. Raw TensorWork drives blockspace
+accounting and telemetry, but miner `settled_tensor_work` is not activated at receipt settlement time.
+Newly settled receipt work is recorded as pending TensorWork until the corresponding miner receipt reward
+claim survives inclusion, challenge windows, and maturity:
 
 ```text
-adjusted_score_miner(epoch E) = sqrt(score_miner(epoch E))
 reward_weight_miner(epoch E) =
-  adjusted_score_miner(epoch E) / sum(adjusted_score_miner(epoch E))
+  score_miner(epoch E) / sum(score_miner(epoch E))
 ```
 
 Receipt-derived miner and validator rewards are first recorded as pending claims. A pending receipt reward
 claim is not spendable until the receipt has been included in blockspace and at least
-`reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. A valid
-block-check challenge before maturity voids the affected miner and validator receipt claims; matured voided
-claims are pruned without crediting spendable reward balances.
+`reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. Miner
+TensorWork activates only when the non-voided miner receipt claim is released. A valid block-check,
+invalid-output, or data-unavailability challenge before maturity voids the affected miner and validator
+receipt claims and clears pending miner TensorWork; matured voided claims are pruned without crediting
+spendable reward balances.
 
 TensorWork does not affect block proposer selection. Validators produce blocks by proving useful verification
 of the canonical settled-receipt set.
@@ -1716,14 +1718,14 @@ Recommended MVP split:
 
 ### 25.3 Miner Rewards
 
-The local reference uses the chain-owned square-root TensorWork curve from §20.3:
+The local reference allocates the miner reward pool by raw verified receipt TensorWork from §20.3:
 
 ```text
-miner_reward = sqrt(miner_valid_tensorwork) / sum(sqrt(valid_tensorwork_by_miner)) * miner_reward_pool
+miner_reward = miner_valid_tensorwork / sum(valid_tensorwork_by_miner) * miner_reward_pool
 ```
 
-Each miner's resulting allocation is split across that miner's settled receipts by raw receipt TWU, so
-receipt-level claims remain traceable while miner-level concentration is damped.
+Each receipt-level miner claim remains traceable and delayed. The miner's pending TensorWork becomes
+settled TensorWork only when that delayed claim is released.
 
 ### 25.4 Validator Rewards
 

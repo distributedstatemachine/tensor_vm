@@ -120,13 +120,21 @@ impl TelemetrySnapshot {
             .state()
             .miners()
             .values()
-            .map(|miner| miner.settled_tensor_work)
+            .map(|miner| {
+                miner
+                    .settled_tensor_work
+                    .saturating_add(miner.pending_tensor_work)
+            })
             .sum();
         let max_miner_work = chain
             .state()
             .miners()
             .values()
-            .map(|miner| miner.settled_tensor_work)
+            .map(|miner| {
+                miner
+                    .settled_tensor_work
+                    .saturating_add(miner.pending_tensor_work)
+            })
             .max()
             .unwrap_or(0);
         let epochs_seen = chain.state().epoch().saturating_add(1);

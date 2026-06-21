@@ -1,4 +1,4 @@
-use super::{Chain, ChainEvent, PendingReceiptReward, ReceiptRewardKind, ReceiptState};
+use super::{Chain, ChainEvent, ChainState, PendingReceiptReward, ReceiptRewardKind, ReceiptState};
 use crate::jobs::LinearTrainingStepReceipt;
 use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::VerificationResult;
@@ -58,14 +58,14 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
     for (receipt_id, receipt) in newly_settled {
         chain.state.settled_receipts.insert(receipt_id);
         let mut miner_claim = None;
+        let miner_reward = miner_rewards.get(&receipt_id).copied();
         if let Some(miner) = chain.state.miners.get_mut(&receipt.miner()) {
-            miner.pending_tensor_work = miner
-                .pending_tensor_work
-                .saturating_add(receipt.tensor_work_units());
-            miner.settled_tensor_work = miner
-                .settled_tensor_work
-                .saturating_add(receipt.tensor_work_units());
-            if let Some(reward) = miner_rewards.get(&receipt_id).copied() {
+            if miner_reward.is_some() {
+                miner.pending_tensor_work = miner
+                    .pending_tensor_work
+                    .saturating_add(receipt.tensor_work_units());
+            }
+            if let Some(reward) = miner_reward {
                 miner_claim = Some((miner.address, reward));
             }
         }
@@ -109,77 +109,11 @@ fn miner_reward_allocations(
     newly_settled: &[(Hash, ReceiptState)],
     miner_reward_pool: u64,
 ) -> BTreeMap<Hash, u64> {
-    let mut receipts_by_miner: BTreeMap<Address, Vec<(Hash, u64)>> = BTreeMap::new();
-    for (receipt_id, receipt) in newly_settled {
-        let work = receipt.tensor_work_units();
-        if work == 0 {
-            continue;
-        }
-        receipts_by_miner
-            .entry(receipt.miner())
-            .or_default()
-            .push((*receipt_id, work));
-    }
-    let miner_work = receipts_by_miner
+    let receipt_scores = newly_settled
         .iter()
-        .map(|(miner, receipts)| {
-            let work = receipts
-                .iter()
-                .fold(0_u64, |acc, (_, work)| acc.saturating_add(*work));
-            (*miner, work)
-        })
+        .map(|(receipt_id, receipt)| (*receipt_id, receipt.tensor_work_units()))
         .collect::<Vec<_>>();
-    let adjusted_scores = miner_work
-        .iter()
-        .map(|(miner, work)| (*miner, diminishing_tensorwork_score(*work)))
-        .collect::<Vec<_>>();
-    let total_adjusted: u64 = adjusted_scores
-        .iter()
-        .fold(0_u64, |acc, (_, score)| acc.saturating_add(*score));
-    if total_adjusted == 0 || miner_reward_pool == 0 {
-        return BTreeMap::new();
-    }
-
-    let miner_pools = allocate_by_scores(miner_reward_pool, &adjusted_scores);
-    let mut receipt_rewards = BTreeMap::new();
-    for (miner, miner_pool) in miner_pools {
-        let Some(receipts) = receipts_by_miner.get(&miner) else {
-            continue;
-        };
-        let receipt_scores = receipts
-            .iter()
-            .map(|(receipt_id, work)| (*receipt_id, *work))
-            .collect::<Vec<_>>();
-        for (receipt_id, amount) in allocate_by_scores(miner_pool, &receipt_scores) {
-            receipt_rewards.insert(receipt_id, amount);
-        }
-    }
-    receipt_rewards
-}
-
-fn diminishing_tensorwork_score(work: u64) -> u64 {
-    if work == 0 {
-        0
-    } else {
-        integer_sqrt(work).max(1)
-    }
-}
-
-fn integer_sqrt(value: u64) -> u64 {
-    if value < 2 {
-        return value;
-    }
-    let mut low = 1_u64;
-    let mut high = 1_u64 << 32;
-    while low + 1 < high {
-        let mid = low + ((high - low) / 2);
-        if (mid as u128) * (mid as u128) <= value as u128 {
-            low = mid;
-        } else {
-            high = mid;
-        }
-    }
-    low
+    allocate_by_scores(miner_reward_pool, &receipt_scores)
 }
 
 fn allocate_by_scores<K>(pool: u64, scores: &[(K, u64)]) -> BTreeMap<K, u64>
@@ -250,6 +184,18 @@ pub(super) fn receipt_reward_claimable_height(chain: &Chain) -> u64 {
         .state
         .height
         .saturating_add(chain.params.reward_maturity_delay_blocks())
+}
+
+pub(super) fn void_pending_miner_tensor_work(state: &mut ChainState, receipt_id: &Hash) {
+    let Some(receipt) = state.receipts.get(receipt_id) else {
+        return;
+    };
+    let miner_address = receipt.miner();
+    let work = receipt.tensor_work_units();
+    let Some(miner) = state.miners.get_mut(&miner_address) else {
+        return;
+    };
+    miner.pending_tensor_work = miner.pending_tensor_work.saturating_sub(work);
 }
 
 fn enqueue_pending_receipt_reward(

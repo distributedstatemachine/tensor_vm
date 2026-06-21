@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 20, 2026 from the workspace root during Iteration 98 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 100 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -126,10 +126,10 @@ validator role submission from registered graph bodies and node-local tensors.
 Iteration 98 added content-addressed Tensor IR `const_blob` execution. Focused IR, graph-job, and role
 tests cover blob URI/root/shape/dtype checks, graph receipt replay with blob artifacts, role bundle
 serving, validator replay, and missing-blob rejection.
-Iteration 99 added the chain-owned TensorWork anti-monopoly reward curve. Focused settlement coverage
-checks that miner rewards are allocated by square-root-adjusted per-miner TensorWork before delayed
-pending receipt claims are created, reducing a dominant miner's reward share while preserving the miner
-reward pool through deterministic integer remainder handling.
+Iteration 100 replaced the TensorWork reward-curve workaround with delayed TensorWork activation. Focused
+settlement coverage checks that newly settled miner work remains pending until the matching non-voided
+miner receipt reward is released, and that unavailable or invalid receipts clear pending work before it can
+become settled.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

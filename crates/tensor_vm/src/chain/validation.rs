@@ -1,7 +1,7 @@
 use super::{
     BlockVote, Chain, InvalidOutputSlashRecord, ReceiptRewardKind, ValidatorAuditAppeal,
     ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, blocks,
+    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, blocks, settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
@@ -86,6 +86,7 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
         if let Some(miner) = chain.state.miners.get_mut(&receipt_miner) {
             miner.reputation -= 1;
         }
+        settlement::void_pending_miner_tensor_work(&mut chain.state, &attestation.receipt_id);
         for reward in chain.state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == attestation.receipt_id {
                 reward.voided_by_challenge = true;
@@ -102,6 +103,7 @@ pub fn submit_attestation(chain: &mut Chain, attestation: ValidatorAttestation) 
         if let Some(miner) = chain.state.miners.get_mut(&receipt_miner) {
             miner.reputation -= 1;
         }
+        settlement::void_pending_miner_tensor_work(&mut chain.state, &attestation.receipt_id);
         apply_invalid_output_slash(
             chain,
             attestation.receipt_id,

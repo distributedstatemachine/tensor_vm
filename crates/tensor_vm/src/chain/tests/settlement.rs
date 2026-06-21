@@ -61,6 +61,15 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
             .get(&miner)
             .unwrap()
             .settled_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
         receipt.tensor_work_units
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
@@ -133,6 +142,24 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         } if *beneficiary == miner
     )));
     assert_eq!(chain.state().rewards().balance(&miner), 1_000);
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .settled_tensor_work,
+        receipt.tensor_work_units
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        0
+    );
     let validator_reward = chain.state().rewards().balance(&validators[0]);
     assert!(validator_reward > 0);
     chain.settle_epoch(1_000, 500);
@@ -222,6 +249,15 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
             .get(&miner)
             .unwrap()
             .settled_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
         receipt.tensor_work_units
     );
     let claimable_at_height = chain
@@ -254,11 +290,29 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
     chain.release_matured_receipt_rewards().unwrap();
 
     assert_eq!(chain.state().rewards().balance(&miner), 1_000);
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .settled_tensor_work,
+        receipt.tensor_work_units
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        0
+    );
 }
 
 #[test]
-fn miner_rewards_use_diminishing_tensorwork_curve_per_miner() {
-    let beacon = hash_bytes(b"test", &[b"reward-concentration-curve"]);
+fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
+    let beacon = hash_bytes(b"test", &[b"reward-tensorwork-delay"]);
     let params = ChainParams {
         agreement_quorum: 1,
         freivalds: FreivaldsParams {
@@ -353,14 +407,72 @@ fn miner_rewards_use_diminishing_tensorwork_curve_per_miner() {
         .find(|reward| reward.receipt_id == minority_receipt.receipt_id)
         .unwrap()
         .amount;
-    let raw_dominant_reward = 1_100_u64 * 10_000 / 10_100;
-    let raw_minority_reward = 1_100_u64 * 100 / 10_100;
+    let dominant_claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == dominant_receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height;
 
     assert_eq!(dominant_reward + minority_reward, 1_100);
-    assert_eq!(dominant_reward, 1_000);
-    assert_eq!(minority_reward, 100);
-    assert!(dominant_reward < raw_dominant_reward);
-    assert!(minority_reward > raw_minority_reward);
+    assert_eq!(dominant_reward, 1_089);
+    assert_eq!(minority_reward, 11);
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&dominant)
+            .unwrap()
+            .settled_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&minority)
+            .unwrap()
+            .settled_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&dominant)
+            .unwrap()
+            .pending_tensor_work,
+        10_000
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&minority)
+            .unwrap()
+            .pending_tensor_work,
+        100
+    );
+
+    let block = chain.produce_block(validator, 1_000).unwrap();
+    assert_eq!(
+        dominant_claimable_at_height.max(
+            block
+                .height
+                .saturating_add(chain.params().reward_maturity_delay_blocks())
+        ),
+        block
+            .height
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    chain.set_position_for_testing(
+        block
+            .height
+            .saturating_add(chain.params().reward_maturity_delay_blocks()),
+        0,
+    );
+    chain.release_matured_receipt_rewards().unwrap();
     assert_eq!(
         chain
             .state()
@@ -378,6 +490,24 @@ fn miner_rewards_use_diminishing_tensorwork_curve_per_miner() {
             .unwrap()
             .settled_tensor_work,
         100
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&dominant)
+            .unwrap()
+            .pending_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&minority)
+            .unwrap()
+            .pending_tensor_work,
+        0
     );
 }
 
@@ -521,6 +651,15 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .any(|reward| reward.receipt_id == receipt.receipt_id && !reward.voided_by_challenge)
     );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        receipt.tensor_work_units
+    );
 
     chain
         .submit_attestation(ValidatorAttestation::new(
@@ -544,6 +683,24 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge)
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .settled_tensor_work,
+        0
     );
     chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
@@ -637,6 +794,15 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .any(|reward| reward.receipt_id == receipt.receipt_id && !reward.voided_by_challenge)
     );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        receipt.tensor_work_units
+    );
 
     chain
         .submit_attestation(ValidatorAttestation::new(
@@ -672,6 +838,24 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge)
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .pending_tensor_work,
+        0
+    );
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&miner)
+            .unwrap()
+            .settled_tensor_work,
+        0
     );
     chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

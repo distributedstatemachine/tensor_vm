@@ -5,15 +5,14 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 99 complete - TensorWork anti-monopoly reward curve.
+- Active feature: Iteration 100 in progress - delayed TensorWork activation.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
   unfinalized side-branch deep reorg, graph-backed synthetic jobs, and delayed challenge rewards are
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
-  registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner reward
-  settlement now applies a chain-owned square-root TensorWork curve per miner before delayed pending receipt
-  claims are created.
+  registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
+  TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -27,7 +26,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 20, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; checker expects live counters | Rerun full Docker checker after `/health` blocker clears |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -38,44 +37,46 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain and block-hash-ban evidence | Add external drand/VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, late invalid-output reward voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, TensorWork reward concentration curve, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-### Iteration 99: TensorWork Anti-Monopoly Reward Curve
+### Iteration 100: Delayed TensorWork Activation
 
-Feature capability: damp miner reward concentration by allocating the miner reward pool with a
-chain-owned square-root TensorWork curve.
+Feature capability: delay miner TensorWork activation until the corresponding delayed miner receipt
+reward is actually releasable, instead of compensating with a settlement-time reward curve.
 
-Canonical owner: `chain::settlement`.
-Adapter callers: block transitions, status/explorer pending claim views, telemetry, and reward tests.
-Old shortcut being removed: raw proportional miner receipt rewards paid `pool * receipt_twu / total_twu`
-without a chain-owned diminishing-return curve.
+Canonical owner: `chain::settlement` and `chain::commands` reward release.
+Adapter callers: block transitions, status/explorer miner views, telemetry, and reward tests.
+Old shortcut being removed: receipt settlement immediately increased `settled_tensor_work`, even though the
+matching miner reward was still a delayed, challengeable pending claim.
 Regression test that proves the shortcut is gone:
-`chain::tests::miner_rewards_use_diminishing_tensorwork_curve_per_miner`.
+`chain::tests::miner_rewards_delay_tensorwork_activation_until_reward_release`.
 Behavior with local synthetic block production disabled: any settled receipt path uses the same settlement
-allocation, regardless of job source.
-Behavior for producer and non-producer roles: all roles recompute pending receipt claims from canonical
-chain state and settlement rules.
-Structured evidence source: pending receipt reward claims, raw miner settled TensorWork, and the focused
-settlement regression.
-Finality source: unchanged; rewards remain delayed pending claims until normal block inclusion and maturity.
+and delayed-release rules, regardless of job source.
+Behavior for producer and non-producer roles: all roles recompute pending receipt claims, pending
+TensorWork, and settled TensorWork from canonical chain state.
+Structured evidence source: miner `pending_tensor_work`, miner `settled_tensor_work`, pending receipt
+reward claims, and the focused settlement regression.
+Finality source: unchanged; miner work activates only after normal block inclusion and reward maturity.
 Wire-size and codec boundary: no new wire payload; no chain-state codec field changes.
 
 Implementation summary:
-- Settlement aggregates newly settled raw TWU per miner, scores each miner with integer square root, and
-  allocates the miner pool by adjusted scores with deterministic remainder handling.
-- Each miner's allocation is split back across that miner's receipts by raw receipt TWU, preserving
-  receipt-level reward claims while damping miner-level concentration.
-- `upow.md`, `mvp_spec.md`, coverage, implementation status, and Tarpaulin notes now describe the local
-  curve and keep deployed concentration measurements open.
+- Settlement now records newly settled miner TWU as `pending_tensor_work` only; the miner reward allocation
+  returns to proportional receipt TWU.
+- `release_matured_receipt_rewards` moves pending TWU to `settled_tensor_work` only for non-voided miner
+  reward claims whose receipt has been included and matured.
+- Data-unavailable, invalid-output, and block-check challenge paths clear pending miner TWU when they void
+  the delayed receipt reward, so invalid work cannot activate later.
+- Telemetry still reports total observed TensorWork as settled plus pending while miner state exposes the
+  delayed activation boundary.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm miner_rewards_use_diminishing_tensorwork_curve_per_miner --quiet`
-  passed.
-- Focused settlement suite: `cargo test -p tensor_vm settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
+- Focused: `cargo test -p tensor_vm rewards --quiet` passed.
+- Focused: `cargo test -p tensor_vm telemetry --quiet` passed.
 - Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
 - TensorVM crate: `cargo test -p tensor_vm --quiet` passed 434 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
@@ -83,8 +84,6 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
-- Feature commit: `0020c61` (`Dampen TensorWork reward concentration`) is pushed to `origin/main`.
-- Evidence commit: `334610d` (`Record TensorWork concentration evidence`) is pushed to `origin/main`.
 
 ## Recent Iterations
 
@@ -219,13 +218,13 @@ audit/storage/reward tests, full crate, clippy, workspace release, and first/fin
 
 ## Validation Evidence
 
-Latest full validation is Iteration 98 on June 20, 2026:
+Latest full validation is Iteration 100 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm const_blob --quiet
-cargo test -p tensor_vm graph_jobs --quiet
-cargo test -p tensor_vm role --quiet
+cargo test -p tensor_vm settlement --quiet
+cargo test -p tensor_vm rewards --quiet
+cargo test -p tensor_vm telemetry --quiet
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet

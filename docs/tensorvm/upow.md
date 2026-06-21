@@ -657,10 +657,11 @@ This section is non-normative guidance on how the spec components partition into
   pass/fail invariants. Reward maturity includes an explicit fraud-window hold before spendability;
   status/explorer now expose structured detection-probability evidence for implemented verifier and fraud
   mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
-- [~] Reward concentration / anti-monopoly curve for TensorWork: the local reference now uses a
-  chain-owned square-root TensorWork reward curve per miner before delayed pending receipt claims are
-  created, while telemetry/study reporting still tracks raw concentration. Deployed-run concentration
-  measurements and governance tuning remain open.
+- [~] Reward concentration / TensorWork activation delay: the local reference now keeps newly settled miner
+  TensorWork pending until the matching delayed miner receipt reward survives inclusion, challenge windows,
+  and maturity. Invalid-output, data-unavailability, and block-check challenge paths clear pending work
+  before it can activate, while telemetry/study reporting still tracks raw concentration. Deployed-run
+  concentration measurements and governance tuning remain open.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [~] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with
   `const_blob` inputs. Exact graph execution now loads `const_blob` tensors by content URI from local

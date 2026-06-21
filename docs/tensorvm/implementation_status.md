@@ -189,10 +189,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
 - MVP v0 penalty handling for data-unavailable receipts and mismatched attestations
 - Registered-validator proposer selection through the internal `chain::proposer` boundary. Miner
   TensorWork no longer selects block proposers; TensorWork remains reward, telemetry, and blockspace input.
-- Chain-owned miner reward concentration damping: settlement aggregates newly settled TensorWork per
-  miner, allocates the miner reward pool by a deterministic square-root TensorWork curve, and then splits
-  each miner's allocation across that miner's receipts by raw receipt TWU before delayed pending claims are
-  created.
+- Chain-owned delayed miner TensorWork activation: settlement records newly settled receipt TWU as pending
+  miner TensorWork, allocates miner rewards proportionally by raw receipt TWU, and activates settled
+  TensorWork only when the matching non-voided miner receipt reward is released after inclusion and
+  maturity; invalid-output, data-unavailability, and block-check paths clear pending work when rewards are
+  voided.
 - Chain parameters, chain state, block/vote, job/receipt, account, miner, validator, reward, model, and
   transaction domain types through the internal `chain::state` boundary
 - Genesis chain construction through the internal `chain::genesis` boundary
