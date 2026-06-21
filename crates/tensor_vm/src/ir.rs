@@ -2028,7 +2028,7 @@ fn infer_outputs(
             if lhs.shape.len() != 2 || rhs.shape.len() != 2 || lhs.shape[1] != rhs.shape[0] {
                 return Err(TvmError::InvalidReceipt("tensor ir matmul shape mismatch"));
             }
-            same_dtype(lhs, rhs)?;
+            same_matmul_dtype(lhs, rhs)?;
             ValueShape {
                 shape: vec![lhs.shape[0], rhs.shape[1]],
                 dtype: lhs.dtype,
@@ -2551,6 +2551,18 @@ fn same_add_sub_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
 fn same_mul_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
     if lhs.dtype != rhs.dtype || (lhs.dtype != DType::Fixed32 && lhs.scale != rhs.scale) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    Ok(())
+}
+
+fn same_matmul_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
+    let valid = match lhs.dtype {
+        DType::FieldElement => rhs.dtype == DType::FieldElement && lhs.scale == 0 && rhs.scale == 0,
+        DType::Fixed32 => rhs.dtype == DType::Fixed32,
+        _ => false,
+    };
+    if !valid {
+        return Err(TvmError::InvalidReceipt("tensor ir matmul dtype mismatch"));
     }
     Ok(())
 }
@@ -4108,6 +4120,93 @@ mod tests {
                 field_params: BTreeMap::new(),
             }),
             Err(TvmError::InvalidReceipt("tensor ir const_blob mismatch"))
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_fixed32_matmul_with_mixed_scales() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::Fixed32, 0),
+                tensor_spec("rhs", vec![2, 2], DType::Fixed32, 1),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "matmul".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("product", vec![2, 2], DType::Fixed32, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "product".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        graph.validate_for_consensus().unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![2, 2],
+                            DType::Fixed32,
+                            0,
+                            vec![1, 1, 3, p - 3],
+                        )
+                        .unwrap(),
+                    ),
+                    (
+                        "rhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![2, 2],
+                            DType::Fixed32,
+                            1,
+                            vec![1, 2, 0, 4],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["product"],
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 0, vec![0, 3, 2, p - 3])
+                .unwrap()
+        );
+    }
+
+    #[test]
+    fn graph_validation_rejects_unsupported_matmul_dtype() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::Int32, 0),
+                tensor_spec("rhs", vec![2, 2], DType::Int32, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "matmul".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("product", vec![2, 2], DType::Int32, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "product".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+
+        assert_eq!(
+            graph.validate_for_consensus(),
+            Err(TvmError::InvalidReceipt("tensor ir matmul dtype mismatch"))
         );
     }
 

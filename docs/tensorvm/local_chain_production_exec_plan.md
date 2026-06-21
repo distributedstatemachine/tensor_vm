@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 112 complete - fixed-point reciprocal division semantics.
+- Active feature: Iteration 113 complete - fixed-point matmul accumulation/range policy.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -22,15 +22,16 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
-  returns to the lhs/output scale with the same half-even policy and rejects zero divisors.
+  returns to the lhs/output scale with the same half-even policy and rejects zero divisors. `Fixed32`
+  matmul now accumulates signed raw products in fixed order and rescales once into the lhs/output scale.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue matmul accumulation/range policy, Tier-C committee policy, deployed-run economics
-  evidence, or rerun Docker after the `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, low-level packed tensor
+  storage APIs, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -44,7 +45,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul` and `Fixed32` `div`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue matmul accumulation/range policy, exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, and `Fixed32` `matmul`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, low-level packed tensor APIs, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -52,6 +53,57 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 113: Fixed-Point Matmul Accumulation/Range Policy
+
+Feature capability: make `Fixed32` `matmul` accumulate signed raw products in fixed ascending order with a
+widened integer accumulator, then rescale once from product scale into the lhs/output scale with canonical
+round-half-to-even semantics.
+Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline, fixed ascending
+reduction order, and §3.3 conformance evidence for exact Tier-A arithmetic.
+Files/modules likely touched: `tensor`, `ir`, `conformance`, fixed-point docs/status.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is a
+single-owner deterministic semantics change.
+Parallelizable implementation workstreams: none in this single-writer deterministic semantics change.
+Canonical owner: `tensor` owns fixed-point matmul accumulation and rescale semantics; `ir` and conformance
+call that canonical implementation.
+Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
+Old shortcut being removed: `Fixed32` `matmul` used raw field modular multiplication and required identical
+scale metadata, leaving product scale and signed accumulation unspecified.
+Regression test that proves the shortcut is gone: tensor/IR/conformance fixed-point matmul tests with
+negative values, mixed scales, and half-even final rescale.
+Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
+Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
+Structured evidence source: conformance vectors plus exact interpreter output roots.
+Finality source: unchanged block finality; affected receipts still pass through canonical verification.
+Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
+Narrow validation commands: fixed-point matmul tensor/IR/conformance tests.
+Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
+final Gate 0, tarpaulin attempt.
+Expected observable evidence: `Fixed32` matmul outputs keep lhs scale, support mixed input scales, use a
+single final half-even rescale after signed product accumulation, and reject unsupported matmul dtypes.
+Out of scope: CUDA generic graph execution, public/Docker run, low-level packed tensor storage APIs.
+Split trigger: unexpected verifier/runtime behavior outside tensor/IR/conformance exact replay.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused: `cargo test -p tensor_vm fixed32_matmul_accumulates_then_rescales_to_lhs_scale_half_even --quiet` passed.
+- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_matmul_with_mixed_scales --quiet` passed.
+- Focused: `cargo test -p tensor_vm graph_validation_rejects_unsupported_matmul_dtype --quiet` passed.
+- Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
+- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
+- Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
+- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet` passed.
+- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
+- Verifier tool: no standalone `tensorvm-verifier` binary found; verifier code remains in workspace modules.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 448 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
+
+## Recent Iterations
 
 ### Iteration 112: Fixed-Point Reciprocal Division Semantics
 
@@ -101,8 +153,6 @@ Validation evidence:
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
 
-## Recent Iterations
-
 ### Iteration 111: Mixed-Scale Fixed32 Multiplication Semantics
 
 Feature capability: allow `Fixed32` `mul` with different input scales by treating the signed product as
@@ -130,85 +180,7 @@ Validation evidence:
 - `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
 - Feature commit: `ce665a5` (`Implement mixed-scale fixed32 add sub`) pushed to `origin/main`.
 
-### Iteration 109: Fixed-Point Multiply Scale Semantics
-
-Feature capability: make same-scale `Fixed32` multiplication rescale its signed raw product back to the
-declared output scale with round-half-to-even semantics instead of preserving scale metadata over raw field
-multiplication.
-Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline and MVP AC #1/#10
-deterministic output roots.
-Files/modules likely touched: `tensor`, `ir`, `conformance`, verifier/docs tests.
-Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
-Parallelizable implementation workstreams: none in this single-writer semantic change.
-Canonical owner: `tensor` owns fixed-point element arithmetic; `ir` calls that helper for broadcasted
-`mul`; conformance records the vector.
-Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
-Old shortcut being removed: `Fixed32` `mul` kept the input scale while multiplying raw field elements
-without canonical rescale.
-Regression test that proves the shortcut is gone: fixed-point tensor/IR/conformance multiply tests.
-Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
-Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
-Structured evidence source: conformance vector plus exact interpreter output roots.
-Finality source: unchanged block finality; affected receipts still pass through canonical verification.
-Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
-Narrow validation commands: fixed-point tensor/IR/conformance tests.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Out of scope: fixed-point division/reciprocal, mixed-scale binary ops, CUDA graph execution, public run.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Resumed Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026.
-- Focused: `cargo test -p tensor_vm fixed32_multiply_rescales_to_input_scale_half_even --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_scale_rescale --quiet` passed.
-- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
-- Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all`, `cargo fmt --all`, and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 439 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `9bcf389` (`Implement fixed-point multiply rescale`) pushed to `origin/main`.
-- Evidence commit: `f708c4b` (`Record fixed-point multiply evidence`) pushed to `origin/main`.
-
-### Iteration 108: Redundant Delayed Reward Claims
-
-Feature capability: carry redundant settlement delay heights into the normal pending receipt reward ledger
-once delayed work finally settles.
-Canonical owner: `chain::settlement` creates receipt reward claims; `ChainState::pending_receipt_rewards`
-owns rooted claim maturity.
-Adapter callers: unchanged; status/RPC/storage read the same rooted pending reward map.
-Old shortcut being removed: redundant reward delay existed only as a delay record or omitted claim before
-settlement.
-Regression test that proves the shortcut is gone: `chain::tests::redundant_agreement_quorum_is_required_before_settlement`.
-Behavior with local synthetic block production disabled: unchanged; claims are created by shared settlement.
-Behavior for producer and non-producer roles: unchanged; inclusion later applies the same max maturity rule.
-Structured evidence source: `RedundantSettlementDelayRecord.reward_delay_until_height` and
-`PendingReceiptReward.claimable_at_height`.
-Finality source: canonical block inclusion still starts the ordinary receipt maturity clock.
-Wire-size and codec boundary: no wire or storage codec shape change; existing claim field carries the hold.
-Validation target: focused settlement test, format/diff, crate/workspace tests, clippy, final Gate 0,
-tarpaulin attempt.
-Out of scope: public Tier-C committee evidence, live drand/VRF, Docker rerun, interactive fraud proofs.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm redundant_agreement_quorum_is_required_before_settlement --quiet` passed.
-- Focused: `cargo test -p tensor_vm conflicting_linear_training_roots_do_not_settle --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 437 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-
 Earlier detailed iterations are summarized in the archive to keep this plan compact.
-
-Older recent iterations are summarized in the archive to keep this plan compact.
 
 ## Decision Log
 
@@ -222,12 +194,13 @@ Older recent iterations are summarized in the archive to keep this plan compact.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 111 on June 21, 2026:
+Latest full validation is Iteration 113 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm fixed32_multiply_rescales_mixed_scales_to_lhs_scale_half_even --quiet
-cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_mixed_scales --quiet
+cargo test -p tensor_vm fixed32_matmul_accumulates_then_rescales_to_lhs_scale_half_even --quiet
+cargo test -p tensor_vm exact_interpreter_executes_fixed32_matmul_with_mixed_scales --quiet
+cargo test -p tensor_vm graph_validation_rejects_unsupported_matmul_dtype --quiet
 cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet
 cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
 cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet

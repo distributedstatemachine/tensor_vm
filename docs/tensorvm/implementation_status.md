@@ -56,6 +56,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `sum`/`reduce_sum`, `identity`, `neg`, signed-residue `abs`/`sign`/`relu`, mixed-scale fixed-point
   `add`/`sub` with RHS-to-lhs/output half-even rescale, mixed-scale fixed-point `mul` with half-even
   product rescale, fixed-point reciprocal `div` with lhs/output scale half-even quotient rescale,
+  `Fixed32` `matmul` with signed fixed-order product accumulation and one final lhs/output scale rescale,
   fixed-point scale-aware half-even `round`, `reshape`, `broadcast`,
   structural `squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`,
   comparisons `gt`/`lt`/`ge`/`le`/`eq`, `where`, field-order `clamp`, `mean`, scale-aware `cast`,
@@ -88,8 +89,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   and miner/validator role helpers can submit and attest the graph receipt from node-local program/tensor
   artifacts. Graph role bundles now serve and verify any required `const_blob` tensors through the same
   commitment-root artifact path, and validator remote-fetch planning includes blob roots from the
-  registered graph body. Matmul accumulation/range policy, low-level packed tensor storage/chunking APIs,
-  public/p2p artifact propagation evidence for externally supplied
+  registered graph body. Low-level packed tensor storage/chunking APIs, public/p2p artifact propagation evidence for externally supplied
   arbitrary graph jobs, and CUDA generic graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
@@ -99,7 +99,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
   `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`),
   including per-input and expected output dtype/scale metadata for fixed-point `cast`/`round` rescale,
-  mixed-scale `add`/`sub` vectors, mixed-scale `mul` vectors, and `Fixed32` reciprocal `div` vectors,
+  mixed-scale `add`/`sub` vectors, mixed-scale `mul` vectors, `Fixed32` reciprocal `div` vectors, and
+  `Fixed32` `matmul` accumulation/rescale vectors,
   multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
   field modular-inverse and `Fixed32` reciprocal `div`, Tier-A matrix-contraction `einsum`, field-order comparison/selection/clamp
   vectors, row-major structural vectors, and byte-exact packed payload vectors, with a stable suite hash,

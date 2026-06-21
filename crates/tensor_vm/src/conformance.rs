@@ -658,6 +658,20 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[20, 0, 100, p - 12],
             &[2, 2],
         ),
+        scaled_vector(
+            "fixed32-matmul-mixed-scale-accumulate-half-even-v1",
+            "matmul",
+            "A",
+            &[&[2, 2], &[2, 2]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[0, 1],
+            &[],
+            &[&[1, 1, 3, p - 3], &[1, 2, 0, 4]],
+            DType::Fixed32,
+            0,
+            &[0, 3, 2, p - 3],
+            &[2, 2],
+        ),
         vector(
             "field-einsum-matrix-contraction-v1",
             "einsum",
@@ -1972,6 +1986,12 @@ mod tests {
         }));
         assert!(vectors.iter().any(|vector| {
             vector.id == "fixed32-div-mixed-scale-half-even-rounding-v1"
+                && vector.input_scales == vec![0, 1]
+                && vector.expected_dtype == DType::Fixed32
+                && vector.expected_scale == 0
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-matmul-mixed-scale-accumulate-half-even-v1"
                 && vector.input_scales == vec![0, 1]
                 && vector.expected_dtype == DType::Fixed32
                 && vector.expected_scale == 0

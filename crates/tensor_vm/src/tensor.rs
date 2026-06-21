@@ -328,18 +328,16 @@ impl Tensor {
             });
         }
         let cols = rhs.shape[1];
-        self.check_same_encoding(rhs)?;
+        self.check_matmul_encoding(rhs)?;
         let rhs_t = rhs.transpose()?;
         let mut data = vec![0; rows * cols];
         for row in 0..rows {
             let lhs_row = &self.data[row * inner..(row + 1) * inner];
             for col in 0..cols {
                 let rhs_row = &rhs_t.data[col * inner..(col + 1) * inner];
-                let mut acc = 0_u128;
-                for k in 0..inner {
-                    acc += lhs_row[k] as u128 * rhs_row[k] as u128;
-                }
-                data[row * cols + col] = field::reduce_u128(acc);
+                data[row * cols + col] = matmul_dot_for_dtype(
+                    self.dtype, self.scale, rhs.scale, self.scale, lhs_row, rhs_row,
+                )?;
             }
         }
         Self::from_vec_with_scale(vec![rows, cols], self.dtype, self.scale, data)
@@ -568,6 +566,23 @@ impl Tensor {
 
     fn check_mul_encoding(&self, rhs: &Self) -> Result<()> {
         if self.dtype != rhs.dtype || (self.dtype != DType::Fixed32 && self.scale != rhs.scale) {
+            return Err(TvmError::InvalidTensorData {
+                expected: self.dtype.tag() as usize,
+                actual: rhs.dtype.tag() as usize,
+            });
+        }
+        Ok(())
+    }
+
+    fn check_matmul_encoding(&self, rhs: &Self) -> Result<()> {
+        let valid = match self.dtype {
+            DType::FieldElement => {
+                rhs.dtype == DType::FieldElement && self.scale == 0 && rhs.scale == 0
+            }
+            DType::Fixed32 => rhs.dtype == DType::Fixed32,
+            _ => false,
+        };
+        if !valid {
             return Err(TvmError::InvalidTensorData {
                 expected: self.dtype.tag() as usize,
                 actual: rhs.dtype.tag() as usize,
@@ -838,6 +853,55 @@ pub fn divide_elem_for_dtype(
         }
         _ => Err(TvmError::InvalidReceipt("tensor div dtype mismatch")),
     }
+}
+
+fn matmul_dot_for_dtype(
+    dtype: DType,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+    lhs: &[Elem],
+    rhs: &[Elem],
+) -> Result<Elem> {
+    match dtype {
+        DType::FieldElement => {
+            let mut acc = 0;
+            for (lhs, rhs) in lhs.iter().zip(rhs) {
+                acc = field::add(acc, field::mul(*lhs, *rhs));
+            }
+            Ok(acc)
+        }
+        DType::Fixed32 => {
+            fixed32_matmul_dot_rescale_half_even(lhs, rhs, lhs_scale, rhs_scale, output_scale)
+        }
+        _ => Err(TvmError::InvalidReceipt("tensor matmul dtype mismatch")),
+    }
+}
+
+fn fixed32_matmul_dot_rescale_half_even(
+    lhs: &[Elem],
+    rhs: &[Elem],
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+) -> Result<Elem> {
+    let product_scale = lhs_scale
+        .checked_add(rhs_scale)
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let mut acc = 0_i128;
+    for (lhs, rhs) in lhs.iter().zip(rhs) {
+        let product = signed_elem_to_i128(*lhs)
+            .checked_mul(signed_elem_to_i128(*rhs))
+            .ok_or(TvmError::InvalidReceipt("tensor fixed matmul overflow"))?;
+        acc = acc
+            .checked_add(product)
+            .ok_or(TvmError::InvalidReceipt("tensor fixed matmul overflow"))?;
+    }
+    Ok(signed_i128_to_elem(rescale_signed_i128_half_even(
+        acc,
+        product_scale,
+        output_scale,
+    )?))
 }
 
 fn round_div_pow2_half_even(value: i128, shift: u32) -> Result<i128> {
@@ -1182,6 +1246,28 @@ mod tests {
         assert_eq!(
             a.mul(&a).unwrap(),
             Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 4, 9, 16, 25, 36]).unwrap()
+        );
+    }
+
+    #[test]
+    fn fixed32_matmul_accumulates_then_rescales_to_lhs_scale_half_even() {
+        let p = field::MODULUS;
+        let lhs = Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 0, vec![1, 1, 3, p - 3])
+            .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 1, vec![1, 2, 0, 4]).unwrap();
+
+        assert_eq!(
+            lhs.matmul(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 0, vec![0, 3, 2, p - 3])
+                .unwrap()
+        );
+
+        let lhs = Tensor::from_vec_with_scale(vec![1, 2], DType::Fixed32, 2, vec![3, 3]).unwrap();
+        let rhs = Tensor::from_vec_with_scale(vec![2, 1], DType::Fixed32, 2, vec![2, 4]).unwrap();
+        assert_eq!(
+            lhs.matmul(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![1, 1], DType::Fixed32, 2, vec![4]).unwrap()
         );
     }
 
