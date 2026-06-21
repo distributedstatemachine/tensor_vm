@@ -987,7 +987,8 @@ spaghetti around.
 - Iteration 405 moved settlement orphan-attestation setup onto the crate-test-only `Chain`
   helper and switched adjacent settlement assertions to immutable state accessors.
 - Iteration 406 moved command and transaction reward-claim test setup off direct reward-state
-  mutation by adding a crate-test-only `Chain::credit_reward_for_testing` helper.
+  mutation; the later delayed reward cleanup removed the interim helper and routes those tests through
+  pending credit rewards plus mature release.
 - Iteration 407 made the miner `--device` CLI flag a typed clap argument so invalid backend
   names are rejected at parse time instead of passing through as loose strings.
 - Iteration 408 moved account, challenge, model-command, and reward test assertions onto

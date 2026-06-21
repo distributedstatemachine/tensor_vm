@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 114 complete - tensor-owned packed int8 payload API.
+- Active feature: Iteration 115 complete - delayed reward path cleanup.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -55,6 +55,43 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 115: Delayed Reward Path Cleanup
+
+Feature capability: remove remaining test-side direct reward-credit bypasses and make affected claim,
+engine, and telemetry coverage exercise the shared pending credit reward ledger before spendable reward
+claims.
+Readiness requirements covered: `upow.md` economics/slashing invariant and MVP delayed reward evidence:
+generic rewards must be pending, mature, released, and only then claimable rather than adapter/test code
+crediting spendable rewards directly.
+Files/modules likely touched: chain test helpers, command/transaction/telemetry tests, local-chain docs.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is
+a small shared-chain cleanup.
+Parallelizable implementation workstreams: none in this single-owner test-path change.
+Canonical owner: shared chain command/release logic owns delayed reward creation and spendability.
+Adapter callers: tests and telemetry setup use `ChainCommand::CreditReward` plus mature release instead of
+directly mutating `RewardState`.
+Old shortcut being removed: `credit_reward_for_testing` directly credited spendable reward balances.
+Regression test that proves the shortcut is gone: transaction and engine claim tests now fail before
+maturity, release through `ReleaseMaturedCreditRewards`, and only then claim spendable rewards.
+Behavior with local synthetic block production disabled: unchanged; reward delay is chain-owned.
+Behavior for producer and non-producer roles: unchanged; both observe the same pending/released reward
+state.
+Structured evidence source: pending credit reward events, released reward events, claim reward events, and
+telemetry computed from released rewards.
+Finality source: unchanged block finality; this cleanup touches generic reward command tests only.
+Wire-size and codec boundary: no wire/storage format change.
+Narrow validation commands: command, transaction, and telemetry reward tests.
+Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
+final Gate 0, tarpaulin attempt.
+Expected observable evidence: no remaining test helper mutates spendable reward balances directly.
+Out of scope: public/Docker run, additional fraud paths, packed tensor APIs.
+Split trigger: any production reward semantic change outside generic credit command/release behavior.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused/broad: command, transaction, generic credit, and telemetry delayed reward tests passed; format,
+  diff, full `tensor_vm`, clippy, release workspace, and final Gate 0 passed; tarpaulin is still blocked.
 
 ### Iteration 114: Tensor-Owned Packed Int8 Payload API
 

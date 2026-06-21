@@ -56,18 +56,14 @@ fn chain_engine_applies_profile_neutral_commands() {
         }]
     );
     assert_eq!(chain.state().accounts().get(&receiver).unwrap().balance, 12);
-    chain.credit_reward_for_testing(miner, 7);
+    let miner_claimable_at_height = pending_credit_reward(&mut chain, miner, 7);
     assert_eq!(
-        chain
-            .apply_command(ChainCommand::ClaimReward(miner))
-            .unwrap(),
-        vec![ChainEvent::RewardClaimed {
-            address: miner,
-            amount: 7,
-        }]
+        chain.apply_command(ChainCommand::ClaimReward(miner)),
+        Err(TvmError::InvalidReceipt("no reward to claim"))
     );
+    assert!(miner_claimable_at_height > chain.state().height());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
-    assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 45);
+    assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 38);
     let credit_events = chain
         .apply_command(ChainCommand::CreditReward {
             address: receiver,
@@ -86,7 +82,7 @@ fn chain_engine_applies_profile_neutral_commands() {
     assert_eq!(beneficiary, receiver);
     assert_eq!(amount, 9);
     assert_eq!(chain.state().rewards().balance(&receiver), 0);
-    assert_eq!(chain.state().pending_credit_rewards().len(), 1);
+    assert_eq!(chain.state().pending_credit_rewards().len(), 2);
     assert_eq!(
         chain.apply_command(ChainCommand::ClaimReward(receiver)),
         Err(TvmError::InvalidReceipt("no reward to claim"))
@@ -304,6 +300,23 @@ fn chain_engine_applies_profile_neutral_commands() {
     );
     assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 97);
     assert_eq!(chain.state().rewards().treasury(), 3);
+}
+
+fn pending_credit_reward(chain: &mut Chain, beneficiary: Address, amount: u64) -> u64 {
+    let events = chain
+        .apply_command(ChainCommand::CreditReward {
+            address: beneficiary,
+            amount,
+        })
+        .unwrap();
+    let ChainEvent::CreditRewardPending {
+        claimable_at_height,
+        ..
+    } = events[0]
+    else {
+        panic!("credit reward should create a pending claim");
+    };
+    claimable_at_height
 }
 
 #[test]

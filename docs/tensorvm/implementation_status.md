@@ -156,6 +156,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   height has elapsed; pre-inclusion receipt claims do not carry a normal claimable height, so the reward
   delay is modeled directly instead of relying on a mature-but-unincluded release guard. Challenge and
   generic credit claims release only after their own maturity heights.
+  Command, transaction, and telemetry coverage now exercise generic rewards through the pending credit
+  ledger and mature-release command instead of a direct spendable reward-credit test helper.
   Challenge bounty spendability is separate from proposer penalty duration.
   Normal block transitions first apply the current block's receipt-inclusion
   delays and slash/audit voiding, then sweep still-matured reward claims into spendable balances through the

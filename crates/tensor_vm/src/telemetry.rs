@@ -404,13 +404,13 @@ fn estimated_cost_to_attack_one_epoch(chain: &Chain) -> u64 {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::chain::{Chain, ChainParams, JobState};
+    use crate::chain::{Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, JobState};
     use crate::jobs::{
         LinearTrainingStepJob, LinearTrainingStepReceipt, LinearTrainingStepSpec, PrimitiveType,
         TensorOpReceipt,
     };
     use crate::tensor::{DType, Tensor};
-    use crate::types::{address, hash_bytes};
+    use crate::types::{Address, address, hash_bytes};
     use crate::verify::{AttestationStatement, ValidatorAttestation};
 
     fn snapshot_json(snapshot: &TelemetrySnapshot) -> serde_json::Value {
@@ -572,8 +572,8 @@ mod tests {
                 },
             ))
             .unwrap();
-        chain.credit_reward_for_testing(miner, 64);
-        chain.credit_reward_for_testing(validator, 8);
+        release_credit_reward_for_test(&mut chain, miner, 64);
+        release_credit_reward_for_test(&mut chain, validator, 8);
         chain
             .set_miner_settled_tensor_work_for_testing(miner, 64)
             .unwrap();
@@ -586,6 +586,24 @@ mod tests {
         assert_eq!(snapshot.miner_reward_per_twu, 1.0);
         assert_eq!(snapshot.validator_reward_per_attestation, 0.0);
         assert_eq!(snapshot.estimated_cost_to_attack_one_epoch, 6_667);
+    }
+
+    fn release_credit_reward_for_test(chain: &mut Chain, address: Address, amount: u64) {
+        let events = chain
+            .apply_command(ChainCommand::CreditReward { address, amount })
+            .unwrap();
+        let ChainEvent::CreditRewardPending {
+            claimable_at_height,
+            ..
+        } = events[0]
+        else {
+            panic!("credit reward should create a pending claim");
+        };
+        chain.set_position_for_testing(claimable_at_height, 0);
+        let release_events = chain
+            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+            .unwrap();
+        assert!(release_events.contains(&ChainEvent::RewardCredited { address, amount }));
     }
 
     #[test]

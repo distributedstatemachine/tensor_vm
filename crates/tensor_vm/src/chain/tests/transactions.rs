@@ -44,7 +44,33 @@ fn chain_applies_register_transfer_and_claim_reward_transactions() {
         125
     );
 
-    chain.credit_reward_for_testing(miner, 42);
+    let events = chain
+        .apply_command(ChainCommand::CreditReward {
+            address: miner,
+            amount: 42,
+        })
+        .unwrap();
+    let ChainEvent::CreditRewardPending {
+        claimable_at_height,
+        ..
+    } = events[0]
+    else {
+        panic!("credit reward should create a pending claim");
+    };
+    assert_eq!(
+        chain.apply_transaction(None, Transaction::ClaimReward(miner)),
+        Err(TvmError::InvalidReceipt("no reward to claim"))
+    );
+    chain.set_position_for_testing(claimable_at_height, 0);
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+            .unwrap()
+            .contains(&ChainEvent::RewardCredited {
+                address: miner,
+                amount: 42,
+            })
+    );
     assert_eq!(
         chain
             .apply_transaction(None, Transaction::ClaimReward(miner))
