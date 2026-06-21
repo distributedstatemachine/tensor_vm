@@ -84,6 +84,7 @@ Validation evidence:
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
+- Feature commit: `aa2e9f3` (`Anchor receipt retention openings`) is pushed with this evidence update.
 
 ## Recent Iterations
 
