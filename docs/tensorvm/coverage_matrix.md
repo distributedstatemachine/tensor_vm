@@ -255,7 +255,9 @@ explicitly await canonical blockspace inclusion before their reward-maturity clo
 `rpc::tests::routes::explorer_overview_exports_validator_audit_economic_calibration`, and
 `tensor_vm_explorer::tests::explorer_json_and_shell_include_live_websocket_contract` now prove pending
 reward views expose awaiting-inclusion receipt rewards explicitly, with no synthetic far-future claim
-height workaround.
+height workaround. `chain::tests::commands::chain_engine_applies_profile_neutral_commands` now also proves
+new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` and
+`awaiting_inclusion=true` for newly pending miner and validator receipt rewards.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul plus
   linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.

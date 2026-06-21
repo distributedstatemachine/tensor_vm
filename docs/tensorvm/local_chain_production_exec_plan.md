@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 125 complete - explicit pending reward maturity views.
+- Active feature: Iteration 126 complete - receipt reward pending events expose delay state.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -14,6 +14,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
+  Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
+  awaiting-inclusion rewards into a synthetic claim height.
   Block-check, invalid-output, and data-unavailability evidence now delays voided receipt claims to a
   state-rooted challenge hold height before they can be swept without credit.
   Selected-receipt block openings now expose typed block-check transcript commitments and
@@ -62,6 +64,29 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 126: Receipt Reward Pending Event Delay State
+
+Feature capability: make `ReceiptRewardPending` events carry explicit delayed maturity state.
+Readiness requirements covered: reward settlement events must reflect chain-owned reward delay and must not
+make downstream callers infer awaiting-inclusion from `u64::MAX`.
+Canonical owner: `ReceiptRewardMaturity` remains the chain state source of truth; settlement event emission
+only renders that state.
+Old shortcut being removed: pending settlement events no longer report awaiting-inclusion receipt rewards as
+a synthetic far-future claim height.
+Regression test that proves the shortcut is gone: command settlement events assert `claimable_at_height:
+None` and `awaiting_inclusion: true` for newly pending miner and validator receipt rewards.
+Structured evidence source: `ChainEvent::ReceiptRewardPending` plus focused command tests.
+Files/modules touched: `chain::engine`, `chain::settlement`, command tests, and status docs.
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused test passed: `cargo test -p tensor_vm chain::tests::commands --quiet`.
+- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
+  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
 
 ### Iteration 125: Explicit Pending Reward Maturity Views
 

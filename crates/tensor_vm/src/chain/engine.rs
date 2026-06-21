@@ -218,7 +218,8 @@ pub enum ChainEvent {
         receipt_id: Hash,
         beneficiary: Address,
         amount: u64,
-        claimable_at_height: u64,
+        claimable_at_height: Option<u64>,
+        awaiting_inclusion: bool,
     },
     ReceiptRewardReleased {
         claim_id: Hash,

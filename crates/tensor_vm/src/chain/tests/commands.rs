@@ -152,6 +152,8 @@ fn chain_engine_applies_profile_neutral_commands() {
             receipt_id,
             beneficiary,
             amount: 1_000,
+            claimable_at_height: None,
+            awaiting_inclusion: true,
             ..
         } if *receipt_id == receipt.receipt_id && *beneficiary == miner
     )));
@@ -161,6 +163,8 @@ fn chain_engine_applies_profile_neutral_commands() {
             receipt_id,
             beneficiary,
             amount: 500,
+            claimable_at_height: None,
+            awaiting_inclusion: true,
             ..
         } if *receipt_id == receipt.receipt_id && *beneficiary == validator
     )));

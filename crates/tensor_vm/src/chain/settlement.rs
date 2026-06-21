@@ -306,12 +306,17 @@ pub(super) fn events(
     }
     for (claim_id, reward) in &chain.state.pending_receipt_rewards {
         if !pending_rewards_before.contains_key(claim_id) {
+            let (claimable_at_height, awaiting_inclusion) = match reward.maturity {
+                ReceiptRewardMaturity::AwaitingInclusion => (None, true),
+                ReceiptRewardMaturity::ClaimableAt(height) => (Some(height), false),
+            };
             events.push(ChainEvent::ReceiptRewardPending {
                 claim_id: *claim_id,
                 receipt_id: reward.receipt_id,
                 beneficiary: reward.beneficiary,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height(),
+                claimable_at_height,
+                awaiting_inclusion,
             });
         }
     }

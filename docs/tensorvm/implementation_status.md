@@ -206,7 +206,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   subject IDs, optional related IDs such as challenged receipt IDs, beneficiaries, amounts, optional
   concrete claimable heights, explicit awaiting-inclusion status, and voided status. Service status and explorer
   overview consume that chain view for bounded pending reward claim samples, so local checkers can prove
-  reward delay from structured state instead of adapter-rebuilt count-only or sentinel-height workarounds. The local CPU
+  reward delay from structured state instead of adapter-rebuilt count-only or sentinel-height workarounds.
+  Settlement `ReceiptRewardPending` events now expose the same explicit awaiting-inclusion state with
+  `claimable_at_height=None`, so event consumers also receive real delay state instead of a synthetic
+  far-future height. The local CPU
   checker now fails unless live explorer overview evidence includes non-voided pending receipt and
   proposer reward claims whose
   `claimable_at_height` is greater than the observed live height, plus positive pending challenge reward
