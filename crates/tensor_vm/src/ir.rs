@@ -4,7 +4,8 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
 use crate::tensor::{
-    DType, Tensor, rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
+    DType, Tensor, multiply_elem_for_dtype, rescale_signed_elem_half_even, signed_elem_to_i128,
+    signed_i128_to_elem,
 };
 use crate::types::{Hash, hash_bytes, parse_hash_hex};
 use serde_json::Value as JsonValue;
@@ -590,7 +591,7 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
         "mul" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            binary_elementwise_tensor(lhs, rhs, field::mul)?
+            binary_mul_tensor(lhs, rhs)?
         }
         "div" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
@@ -924,6 +925,24 @@ fn binary_elementwise_tensor(
             broadcast_value(lhs, &shape, index)?,
             broadcast_value(rhs, &shape, index)?,
         ));
+    }
+    Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
+}
+
+fn binary_mul_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+    if lhs.dtype() != rhs.dtype() || lhs.scale() != rhs.scale() {
+        return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
+    let len = checked_usize_product(&shape)?;
+    let mut data = Vec::with_capacity(len);
+    for index in 0..len {
+        data.push(multiply_elem_for_dtype(
+            lhs.dtype(),
+            lhs.scale(),
+            broadcast_value(lhs, &shape, index)?,
+            broadcast_value(rhs, &shape, index)?,
+        )?);
     }
     Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
@@ -4669,6 +4688,64 @@ mod tests {
             Err(TvmError::InvalidReceipt(
                 "tensor ir execution input mismatch"
             ))
+        );
+    }
+
+    #[test]
+    fn exact_interpreter_executes_fixed32_mul_with_scale_rescale() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 1], DType::Fixed32, 2),
+                tensor_spec("rhs", vec![1, 3], DType::Fixed32, 2),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "mul".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("product", vec![2, 3], DType::Fixed32, 2)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "product".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        graph.validate_for_consensus().unwrap();
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec_with_scale(vec![2, 1], DType::Fixed32, 2, vec![6, p - 7])
+                            .unwrap(),
+                    ),
+                    (
+                        "rhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![1, 3],
+                            DType::Fixed32,
+                            2,
+                            vec![6, 7, p - 6],
+                        )
+                        .unwrap(),
+                    ),
+                ]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["product"],
+            Tensor::from_vec_with_scale(
+                vec![2, 3],
+                DType::Fixed32,
+                2,
+                vec![9, 10, p - 9, p - 10, p - 12, 10],
+            )
+            .unwrap()
         );
     }
 

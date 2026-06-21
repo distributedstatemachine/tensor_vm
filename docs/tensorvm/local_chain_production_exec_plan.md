@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 108 complete - redundant delayed reward claims.
+- Active feature: Iteration 109 complete - fixed-point multiply scale semantics.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -18,7 +18,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
   records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
   pending receipt reward claims inherit those redundant reward holds. External randomness beacon records
-  can now advance future receipt randomness through a rooted chain command.
+  can now advance future receipt randomness through a rooted chain command. Same-scale `Fixed32`
+  multiplication now rescales the signed raw product back to the declared scale with round-half-to-even
+  semantics in tensor, exact IR replay, and conformance vectors.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
@@ -40,7 +42,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including same-scale fixed-point `mul`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue mixed-scale fixed-point policy, exact Tier-B verifier coverage, dispute-time blob availability, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -48,6 +50,48 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 109: Fixed-Point Multiply Scale Semantics
+
+Feature capability: make same-scale `Fixed32` multiplication rescale its signed raw product back to the
+declared output scale with round-half-to-even semantics instead of preserving scale metadata over raw field
+multiplication.
+Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline and MVP AC #1/#10
+deterministic output roots.
+Files/modules likely touched: `tensor`, `ir`, `conformance`, verifier/docs tests.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
+Parallelizable implementation workstreams: none in this single-writer semantic change.
+Canonical owner: `tensor` owns fixed-point element arithmetic; `ir` calls that helper for broadcasted
+`mul`; conformance records the vector.
+Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
+Old shortcut being removed: `Fixed32` `mul` kept the input scale while multiplying raw field elements
+without canonical rescale.
+Regression test that proves the shortcut is gone: fixed-point tensor/IR/conformance multiply tests.
+Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
+Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
+Structured evidence source: conformance vector plus exact interpreter output roots.
+Finality source: unchanged block finality; affected receipts still pass through canonical verification.
+Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
+Narrow validation commands: fixed-point tensor/IR/conformance tests.
+Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
+final Gate 0, tarpaulin attempt.
+Out of scope: fixed-point division/reciprocal, mixed-scale binary ops, CUDA graph execution, public run.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
+- Resumed Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026.
+- Focused: `cargo test -p tensor_vm fixed32_multiply_rescales_to_input_scale_half_even --quiet` passed.
+- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_scale_rescale --quiet` passed.
+- Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
+- Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
+- Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
+- Formatting/whitespace: `cargo fmt --check --all`, `cargo fmt --all`, and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 439 library tests plus integration tests.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
+  tarpaulin`.
 
 ### Iteration 108: Redundant Delayed Reward Claims
 
@@ -81,108 +125,7 @@ Validation evidence:
 - Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
   tarpaulin`.
 
-### Iteration 107: Redundant Reward Delay Records
-
-Feature capability: make redundant disagreement hold reward maturity explicitly in the rooted delay record,
-not only by omission from settlement.
-Readiness requirements covered: `upow.md` §8.1 delayed settlement and §12 delayed receipt rewards.
-Files/modules likely touched: `chain::{state,settlement,roots}`, storage chain-state codec, settlement/
-storage/docs tests.
-Parallel subagents to run: not used; current subagent tool requires explicit user delegation for spawning.
-Parallelizable implementation workstreams: none in this single-writer iteration.
-Tests/checkers/docs to add or update: redundant settlement tests, chain-state roundtrip, coverage/status/
-exec-plan/tarpaulin docs.
-Narrow validation commands: settlement delay tests and chain-state roundtrip test.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Expected observable evidence: `RedundantSettlementDelayRecord.reward_delay_until_height` rooted,
-persisted, and proving delayed rewards are held during redundant disagreement.
-Out of scope: live Tier-C committee client, public operator independence evidence, Docker rerun, and
-interactive fraud proofs.
-Split trigger: if public/operator identity evidence or runtime networking changes are needed, split that
-into a later adapter/deployment iteration.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm redundant_agreement_quorum_is_required_before_settlement --quiet` passed.
-- Focused: `cargo test -p tensor_vm conflicting_linear_training_roots_do_not_settle --quiet` passed.
-- Focused: `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 437 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-
-### Iteration 106: External Randomness Beacon Records
-
-Feature capability: accept an externally observed randomness beacon round through the shared chain command
-boundary, state-root and persist the record, and expose evidence that future receipt randomness can be
-derived from an external beacon input instead of only local finalized-chain labels.
-Readiness requirements covered: `upow.md` §10 and MVP AC #6 external beacon construction surface.
-Files/modules likely touched: `chain::{state,validation,commands,engine,roots}`, storage chain-state
-codec, status/RPC explorer evidence, chain/storage/docs tests.
-Parallel subagents to run: not used; current subagent tool requires explicit user delegation for spawning.
-Parallelizable implementation workstreams: none in this single-writer iteration.
-Tests/checkers/docs to add or update: focused randomness/status/RPC/storage tests plus coverage/status/
-exec-plan/tarpaulin docs.
-Narrow validation commands: randomness-focused chain tests, status/RPC randomness tests, chain-state
-roundtrip test.
-Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
-final Gate 0, tarpaulin attempt.
-Expected observable evidence: `ExternalRandomnessBeaconRecord`, rooted/persisted beacon records, command
-event, evidence counts/latest round in service status and explorer JSON.
-Out of scope: live drand network client, public VRF attestations, deployed commit-reveal run, and
-interactive fraud proofs.
-Split trigger: if wiring live networking or public deployment is required, split that into a later
-adapter/deployment iteration.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: randomness, status, RPC, explorer JSON, and chain-state roundtrip tests passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 437 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `c6f390e` (`Record external randomness beacons`) is pushed to `origin/main`.
-
-### Iteration 105: Redundant Settlement Delay Records
-
-Feature capability: record quorum-backed receipts that cannot settle because redundant agreement is missing
-or conflicting quorum receipts exist, instead of representing delayed settlement only by omission from the
-settled set.
-
-Canonical owner: `chain::settlement` records delay evidence; `ChainState` owns persisted/rooted records.
-Adapter callers: watcher/status/docs can inspect `redundant_settlement_delays`; storage snapshots preserve
-the record.
-Old shortcut being removed: redundant disagreement/fewer-than-quorum settlement delay was implicit in a
-skipped settlement pass.
-Regression tests: `chain::tests::redundant_agreement_quorum_is_required_before_settlement`,
-`chain::tests::conflicting_linear_training_roots_do_not_settle`, and
-`storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering`.
-Behavior with local synthetic block production disabled: unchanged; records are created by settlement from
-chain state and valid attestations.
-Behavior for producer and non-producer roles: unchanged; the record is in canonical chain state and roots.
-Structured evidence source: `RedundantSettlementDelayRecord`, `redundant_settlement_delay_root`, and
-`ChainState::redundant_settlement_delays`.
-Out of scope: interactive fraud proofs, external Tier-C committee evidence, and Docker/public-run proof.
-
-Validation evidence:
-- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits.
-- Focused: `cargo test -p tensor_vm settlement --quiet` passed.
-- Focused: `cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet` passed.
-- Formatting/whitespace: `cargo fmt --check --all` and `git diff --check` passed.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 435 library tests plus integration tests.
-- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- Release workspace: `cargo test --workspace --release` passed.
-- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
-- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by `error: no such command:
-  tarpaulin`.
-- Feature commit: `fe67f65` (`Record redundant settlement delays`) is pushed to `origin/main`.
+Earlier detailed iterations are summarized in the archive to keep this plan compact.
 
 ## Recent Iterations
 
@@ -236,16 +179,16 @@ Older recent iterations are summarized in the archive to keep this plan compact.
 
 ## Validation Evidence
 
-Latest full validation is Iteration 106 on June 21, 2026:
+Latest full validation is Iteration 109 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm external_randomness --quiet
-cargo test -p tensor_vm randomness_binding_evidence --quiet
-cargo test -p tensor_vm service_status_exports_randomness_binding_evidence --quiet
-cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --quiet
-cargo test -p tensor_vm chain_state_store_roundtrips_full_chain_and_detects_tampering --quiet
-cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract --quiet
+cargo test -p tensor_vm fixed32_multiply_rescales_to_input_scale_half_even --quiet
+cargo test -p tensor_vm exact_interpreter_executes_fixed32_mul_with_scale_rescale --quiet
+cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
+cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet
+cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet
+cargo fmt --all
 cargo fmt --check --all
 git diff --check
 cargo test -p tensor_vm --quiet
