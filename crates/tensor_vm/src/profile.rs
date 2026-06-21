@@ -132,7 +132,9 @@ pub struct NodeConfig {
     pub network: NetworkConfig,
     pub storage: StorageConfig,
     pub block_interval: Option<Duration>,
-    pub local_producer: bool,
+    pub local_synthetic_job_producer: bool,
+    pub local_validator_block_proposer: bool,
+    pub local_validator_block_proposer_delay_blocks: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -198,7 +200,9 @@ impl NodeConfig {
             network: NetworkConfig::default(),
             storage: StorageConfig::new(data_dir),
             block_interval: None,
-            local_producer: false,
+            local_synthetic_job_producer: false,
+            local_validator_block_proposer: false,
+            local_validator_block_proposer_delay_blocks: 0,
         }
     }
 
@@ -225,8 +229,18 @@ impl NodeConfig {
         self
     }
 
-    pub fn with_local_producer(mut self, enabled: bool) -> Self {
-        self.local_producer = enabled;
+    pub fn with_local_synthetic_job_producer(mut self, enabled: bool) -> Self {
+        self.local_synthetic_job_producer = enabled;
+        self
+    }
+
+    pub fn with_local_validator_block_proposer(mut self, enabled: bool) -> Self {
+        self.local_validator_block_proposer = enabled;
+        self
+    }
+
+    pub fn with_local_validator_block_proposer_delay_blocks(mut self, blocks: u64) -> Self {
+        self.local_validator_block_proposer_delay_blocks = blocks;
         self
     }
 
@@ -242,11 +256,17 @@ impl NodeConfig {
     }
 
     pub fn local_block_proposer(&self) -> bool {
-        self.local_producer && self.can_produce_local_blocks()
+        self.local_validator_block_proposer && self.can_produce_local_blocks()
+    }
+
+    pub fn local_block_proposer_delay_satisfied(&self, height: u64) -> bool {
+        height >= self.local_validator_block_proposer_delay_blocks
     }
 
     pub fn local_synthetic_producer(&self) -> bool {
-        self.local_block_proposer() && self.synthetic_block_interval().is_some()
+        self.local_synthetic_job_producer
+            && matches!(self.role, NodeRole::Validator)
+            && self.synthetic_block_interval().is_some()
     }
 }
 
@@ -308,7 +328,9 @@ mod tests {
         assert_eq!(config.storage.data_dir, PathBuf::from("local/miner-00"));
         assert_eq!(config.network, NetworkConfig::default());
         assert_eq!(config.block_interval, None);
-        assert!(!config.local_producer);
+        assert!(!config.local_synthetic_job_producer);
+        assert!(!config.local_validator_block_proposer);
+        assert_eq!(config.local_validator_block_proposer_delay_blocks, 0);
         assert_eq!(chain.params(), &profile.chain_params);
         assert!(!profile.public_evidence_required);
         assert!(!profile.requires_public_services());
@@ -331,35 +353,47 @@ mod tests {
         )
         .with_storage(StorageConfig::new("local/proposer-store"))
         .with_block_interval(Some(interval))
-        .with_local_producer(true);
+        .with_local_synthetic_job_producer(true)
+        .with_local_validator_block_proposer(true)
+        .with_local_validator_block_proposer_delay_blocks(20);
         let local_gateway = NodeConfig::new(
             ChainProfile::local_cpu(),
             NodeRole::Gateway,
             "local/gateway",
         )
         .with_block_interval(Some(interval))
-        .with_local_producer(true);
+        .with_local_synthetic_job_producer(true)
+        .with_local_validator_block_proposer(true);
         let local_miner =
             NodeConfig::new(ChainProfile::local_cpu(), NodeRole::Miner, "local/miner")
                 .with_block_interval(Some(interval))
-                .with_local_producer(true);
+                .with_local_synthetic_job_producer(true)
+                .with_local_validator_block_proposer(true);
         let local_proposer = NodeConfig::new(
             ChainProfile::local_cpu(),
             NodeRole::Proposer,
             "local/proposer",
         )
         .with_block_interval(Some(interval))
-        .with_local_producer(true);
+        .with_local_synthetic_job_producer(true)
+        .with_local_validator_block_proposer(true);
         let public_validator = NodeConfig::new(
             ChainProfile::public_testnet(),
             NodeRole::Validator,
             "testnet/validator",
         )
         .with_block_interval(Some(interval))
-        .with_local_producer(true);
+        .with_local_synthetic_job_producer(true)
+        .with_local_validator_block_proposer(true);
 
         assert_eq!(local_validator.synthetic_block_interval(), Some(interval));
         assert!(local_validator.local_block_proposer());
+        assert_eq!(
+            local_validator.local_validator_block_proposer_delay_blocks,
+            20
+        );
+        assert!(!local_validator.local_block_proposer_delay_satisfied(19));
+        assert!(local_validator.local_block_proposer_delay_satisfied(20));
         assert!(local_validator.local_synthetic_producer());
         assert_eq!(
             local_validator.data_dir(),
@@ -382,6 +416,22 @@ mod tests {
         assert!(public_validator.local_block_proposer());
         assert!(!public_validator.local_synthetic_producer());
         assert!(ChainProfile::from_label("staging").is_none());
+    }
+
+    #[test]
+    fn validator_block_proposer_can_be_enabled_without_synthetic_job_publication() {
+        let interval = Duration::from_millis(1000);
+        let validator = NodeConfig::new(
+            ChainProfile::local_cpu(),
+            NodeRole::Validator,
+            "local/validator",
+        )
+        .with_block_interval(Some(interval))
+        .with_local_validator_block_proposer(true);
+
+        assert!(validator.can_produce_local_blocks());
+        assert!(validator.local_block_proposer());
+        assert!(!validator.local_synthetic_producer());
     }
 
     #[test]

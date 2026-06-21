@@ -376,7 +376,8 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
             "4",
         ])
         .env("TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS", "25")
-        .env("TENSORVM_LOCAL_CPU_ROLE_PRODUCER", "true")
+        .env("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER", "true")
+        .env("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER", "true")
         .current_dir(workspace_root())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -436,6 +437,12 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     assert_eq!(stdout_value(&stdout, "chain_profile"), "local_cpu");
     assert_eq!(stdout_value(&stdout, "role_can_produce_blocks"), "false");
     assert_eq!(stdout_value(&stdout, "local_producer"), "false");
+    assert_eq!(stdout_value(&stdout, "local_block_proposer"), "false");
+    assert_eq!(stdout_u64(&stdout, "local_block_proposer_delay_blocks"), 0);
+    assert_eq!(
+        stdout_value(&stdout, "local_block_proposer_delay_satisfied"),
+        "true"
+    );
     assert_eq!(stdout_u64(&stdout, "served_requests"), 4);
     assert_eq!(stdout_value(&stdout, "produced_blocks"), "0");
 
@@ -448,6 +455,15 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
     assert_eq!(stdout_value(&status, "role_chain_profile"), "local_cpu");
     assert_eq!(stdout_value(&status, "role_can_produce_blocks"), "false");
     assert_eq!(stdout_value(&status, "role_local_producer"), "false");
+    assert_eq!(stdout_value(&status, "role_local_block_proposer"), "false");
+    assert_eq!(
+        stdout_u64(&status, "role_local_block_proposer_delay_blocks"),
+        0
+    );
+    assert_eq!(
+        stdout_value(&status, "role_local_block_proposer_delay_satisfied"),
+        "true"
+    );
     assert_eq!(stdout_value(&status, "role_produced_blocks"), "0");
     assert_eq!(stdout_value(&status, "registered_miner_count"), "10");
     assert_eq!(stdout_value(&status, "registered_validator_count"), "5");
@@ -592,7 +608,7 @@ fn local_testnet_service_gateway_does_not_produce_local_blocks() {
 }
 
 #[test]
-fn validator_run_with_local_producer_publishes_jobs_without_empty_fallback_blocks() {
+fn validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallback_blocks() {
     let data_dir = unique_test_dir("validator-local-producer");
     let data_dir_text = data_dir.to_string_lossy().into_owned();
 
@@ -621,7 +637,8 @@ fn validator_run_with_local_producer_publishes_jobs_without_empty_fallback_block
             "3",
         ])
         .env("TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS", "25")
-        .env("TENSORVM_LOCAL_CPU_ROLE_PRODUCER", "true")
+        .env("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER", "true")
+        .env("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER", "true")
         .current_dir(workspace_root())
         .stdout(Stdio::piped())
         .stderr(Stdio::piped())
@@ -672,6 +689,12 @@ fn validator_run_with_local_producer_publishes_jobs_without_empty_fallback_block
     );
     assert_eq!(stdout_value(&stdout, "role_wallet_registered"), "true");
     assert_eq!(stdout_value(&stdout, "local_producer"), "true");
+    assert_eq!(stdout_value(&stdout, "local_block_proposer"), "true");
+    assert_eq!(stdout_u64(&stdout, "local_block_proposer_delay_blocks"), 0);
+    assert_eq!(
+        stdout_value(&stdout, "local_block_proposer_delay_satisfied"),
+        "true"
+    );
     assert_eq!(stdout_u64(&stdout, "produced_blocks"), 0);
 
     let status = run_tvmd(&["node", "status", "--data-dir", &data_dir_text]);
@@ -682,6 +705,15 @@ fn validator_run_with_local_producer_publishes_jobs_without_empty_fallback_block
         "validator"
     );
     assert_eq!(stdout_value(&status, "role_local_producer"), "true");
+    assert_eq!(stdout_value(&status, "role_local_block_proposer"), "true");
+    assert_eq!(
+        stdout_u64(&status, "role_local_block_proposer_delay_blocks"),
+        0
+    );
+    assert_eq!(
+        stdout_value(&status, "role_local_block_proposer_delay_satisfied"),
+        "true"
+    );
     assert_eq!(stdout_u64(&status, "role_produced_blocks"), 0);
     assert_eq!(stdout_u64(&status, "height"), initial_height);
     assert!(stdout_u64(&status, "job_count") > 2);
@@ -823,6 +855,12 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert_eq!(stdout_u64(&stdout, "validator_receipts_proposed"), 0);
         assert_eq!(stdout_u64(&stdout, "validator_block_votes_submitted"), 0);
         assert_eq!(stdout_value(&stdout, "local_producer"), "false");
+        assert_eq!(stdout_value(&stdout, "local_block_proposer"), "false");
+        assert_eq!(stdout_u64(&stdout, "local_block_proposer_delay_blocks"), 0);
+        assert_eq!(
+            stdout_value(&stdout, "local_block_proposer_delay_satisfied"),
+            "true"
+        );
         assert_eq!(stdout_value(&stdout, "p2p_runtime"), "libp2p");
         assert_eq!(stdout_u64(&stdout, "p2p_connected_peers"), 0);
         assert_eq!(stdout_u64(&stdout, "p2p_observed_block_gossip_count"), 0);
@@ -931,6 +969,15 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
             0
         );
         assert_eq!(stdout_value(&status, "role_local_producer"), "false");
+        assert_eq!(stdout_value(&status, "role_local_block_proposer"), "false");
+        assert_eq!(
+            stdout_u64(&status, "role_local_block_proposer_delay_blocks"),
+            0
+        );
+        assert_eq!(
+            stdout_value(&status, "role_local_block_proposer_delay_satisfied"),
+            "true"
+        );
         assert_eq!(stdout_u64(&status, "role_served_requests"), 1);
         assert_eq!(stdout_u64(&status, "role_network_applied_blocks"), 0);
         assert_eq!(stdout_u64(&status, "role_network_events_ingested"), 0);

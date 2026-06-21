@@ -160,7 +160,10 @@ pub fn tick_validator_role_work_once(
         runtime_state.record_validator_block_vote_submission(submission.block_votes_submitted);
         status_changed = true;
     }
-    if config.node.local_block_proposer() {
+    let local_block_proposer_delay_satisfied = config
+        .node
+        .local_block_proposer_delay_satisfied(server.gateway().node.chain.state().height());
+    if config.node.local_block_proposer() && local_block_proposer_delay_satisfied {
         let parent_state_root_before = server.gateway().node.chain.state_root();
         server
             .gateway_mut()

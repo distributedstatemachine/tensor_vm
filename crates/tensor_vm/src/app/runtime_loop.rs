@@ -15,7 +15,9 @@ pub struct RoleRuntimeLoop {
     store: NodeStore,
     server: RpcHttpServer,
     p2p_service: TensorVmLibp2pService,
-    local_producer: bool,
+    local_synthetic_job_producer: bool,
+    local_block_proposer: bool,
+    local_block_proposer_delay_blocks: u64,
     local_production: LocalProductionSchedule,
     runtime_state: NodeRuntimeState,
     p2p_metadata: RuntimeP2pMetadata,
@@ -36,13 +38,18 @@ impl RoleRuntimeLoop {
             p2p_metadata,
         } = start_runtime_services(&config)?;
         let local_production = LocalProductionSchedule::new(config.node.synthetic_block_interval());
-        let local_producer = config.node.local_synthetic_producer();
+        let local_synthetic_job_producer = config.node.local_synthetic_producer();
+        let local_block_proposer = config.node.local_block_proposer();
+        let local_block_proposer_delay_blocks =
+            config.node.local_validator_block_proposer_delay_blocks;
         Ok(Self {
             config,
             store,
             server,
             p2p_service,
-            local_producer,
+            local_synthetic_job_producer,
+            local_block_proposer,
+            local_block_proposer_delay_blocks,
             local_production,
             runtime_state: NodeRuntimeState::default(),
             p2p_metadata,
@@ -85,7 +92,7 @@ impl RoleRuntimeLoop {
             &self.store,
             &mut self.server,
             &self.p2p_service,
-            self.local_producer,
+            self.local_synthetic_job_producer,
             &mut self.runtime_state,
         )? {
             self.write_status()?;
@@ -142,7 +149,7 @@ impl RoleRuntimeLoop {
             .local_production
             .produce_if_due(LocalProductionContext {
                 profile: &self.config.node.profile,
-                local_producer: self.local_producer,
+                local_producer: self.local_synthetic_job_producer,
                 validator: self.config.role_wallet_address,
                 store: &self.store,
                 server: &mut self.server,
@@ -164,7 +171,12 @@ impl RoleRuntimeLoop {
             &self.runtime_state,
             &self.server,
             &self.p2p_service,
-            self.local_producer,
+            self.local_synthetic_job_producer,
+            self.local_block_proposer,
+            self.local_block_proposer_delay_blocks,
+            self.config.node.local_block_proposer_delay_satisfied(
+                self.server.gateway().node.chain.state().height(),
+            ),
             self.config.role,
             self.config.role_wallet_address,
         )

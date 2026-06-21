@@ -330,16 +330,47 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         "1000"
     );
     assert_eq!(
-        compose_env_value(producer_validator, "TENSORVM_LOCAL_CPU_ROLE_PRODUCER"),
+        compose_env_value(
+            producer_validator,
+            "TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER"
+        ),
         "true"
     );
-    for service in validators.iter().skip(1) {
+    assert_eq!(
+        compose_env_value(
+            producer_validator,
+            "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER"
+        ),
+        "true"
+    );
+    let competitor_validator = compose_service_section(&compose, "validator-01");
+    assert_eq!(
+        compose_env_value(
+            competitor_validator,
+            "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER"
+        ),
+        "true"
+    );
+    assert_eq!(
+        compose_env_value(
+            competitor_validator,
+            "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS"
+        ),
+        "20"
+    );
+    for service in validators.iter().skip(2) {
         let section = compose_service_section(&compose, service);
         assert!(
-            section
-                .lines()
-                .all(|line| !line.trim().starts_with("TENSORVM_LOCAL_CPU_ROLE_PRODUCER:")),
-            "only validator-00 should enable local production"
+            section.lines().all(|line| !line
+                .trim()
+                .starts_with("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER:")),
+            "only validator-00 should enable synthetic job publication"
+        );
+        assert!(
+            section.lines().all(|line| !line
+                .trim()
+                .starts_with("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER:")),
+            "only validator-00 and validator-01 should enable validator block proposal"
         );
     }
 
@@ -372,8 +403,19 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         1000
     );
     assert_eq!(
-        env_file_value(&env_file, "TENSORVM_LOCAL_CPU_ROLE_PRODUCER"),
+        env_file_value(&env_file, "TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER"),
         "false"
+    );
+    assert_eq!(
+        env_file_value(&env_file, "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER"),
+        "false"
+    );
+    assert_eq!(
+        env_file_u64(
+            &env_file,
+            "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS"
+        ),
+        0
     );
     assert_eq!(
         env_file_value(&env_file, "TENSORVM_RANDOMNESS_BEACON_MODE"),
@@ -448,7 +490,9 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         &entrypoint,
         &[
             r#"RUNTIME_COMMAND="${TENSORVM_ROLE_RUNTIME_COMMAND:-${ROLE}_run}""#,
-            r#"LOCAL_CPU_ROLE_PRODUCER="${TENSORVM_LOCAL_CPU_ROLE_PRODUCER:-false}""#,
+            r#"LOCAL_CPU_SYNTHETIC_JOB_PRODUCER="${TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER:-false}""#,
+            r#"LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER="${TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER:-false}""#,
+            r#"LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS="${TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS:-0}""#,
             r#"tvmd node init --data-dir "$DATA_DIR" > "$INIT_OUT""#,
             r#"tvmd node peer add --data-dir "$DATA_DIR" --peer-id "$BOOTSTRAP_PEER_ID" --address "$BOOTSTRAP_ADDRESS" > "$DATA_DIR/service-peer-add.out""#,
             r#"tvmd miner register --stake "$MINER_STAKE" > "$DATA_DIR/role-register.out""#,
@@ -458,7 +502,9 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"tvmd localnet seed --data-dir "$DATA_DIR" > "$DATA_DIR/local-testnet-seed.out""#,
             r#"tvmd node check --p2p-listen "$P2P_LISTEN" --data-dir "$DATA_DIR" --identity-seed "$IDENTITY_SEED" > "$DATA_DIR/service-readiness.out""#,
             r#"echo "runtime_command=$RUNTIME_COMMAND""#,
-            r#"echo "local_cpu_role_producer=$LOCAL_CPU_ROLE_PRODUCER""#,
+            r#"echo "local_cpu_synthetic_job_producer=$LOCAL_CPU_SYNTHETIC_JOB_PRODUCER""#,
+            r#"echo "local_cpu_validator_block_proposer=$LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER""#,
+            r#"echo "local_cpu_validator_block_proposer_delay_blocks=$LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS""#,
             r#"echo "public_evidence_full_spec=false""#,
             r#"echo "independently_checkable=false""#,
             r#"exec tvmd proposer run --wallet "$WALLET" --node "$NODE_MULTIADDR" --listen "$RPC_LISTEN" --p2p-listen "$P2P_LISTEN" --data-dir "$DATA_DIR" --identity-seed "$IDENTITY_SEED" --auth-token "$AUTH_TOKEN" --max-requests 0"#,
@@ -547,8 +593,13 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "$(status_value libp2p_ready "$READY_REPORT")" = "true" ] || fail "$service is missing libp2p readiness""#,
             r#"[ "$(status_value p2p_identity_seeded "$READY_REPORT")" = "true" ] || fail "$service is missing stable libp2p identity readiness""#,
             r#"[ "$(status_value p2p_identity_seed "$READY_REPORT")" = "$operator_id" ] || fail "$service libp2p identity seed does not match its operator ID""#,
-            r#"READY_LOCAL_CPU_ROLE_PRODUCER=$(status_value local_cpu_role_producer "$READY_REPORT")"#,
-            r#"[ -n "$READY_LOCAL_CPU_ROLE_PRODUCER" ] || fail "$service readiness file does not report local CPU producer mode""#,
+            r#"READY_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER=$(status_value local_cpu_synthetic_job_producer "$READY_REPORT")"#,
+            r#"READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER=$(status_value local_cpu_validator_block_proposer "$READY_REPORT")"#,
+            r#"READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS=$(status_value local_cpu_validator_block_proposer_delay_blocks "$READY_REPORT")"#,
+            r#"[ -n "$READY_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER" ] || fail "$service readiness file does not report local CPU synthetic job producer mode""#,
+            r#"[ -n "$READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER" ] || fail "$service readiness file does not report local CPU validator block proposer mode""#,
+            r#"[ -n "$READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS" ] || fail "$service readiness file does not report local CPU validator block proposer delay""#,
+            r#"is_u64 "$READY_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS" || fail "$service readiness file reports a non-numeric local CPU validator block proposer delay""#,
             r#"[ "$(status_value chain_profile "$READY_REPORT")" = "local_cpu" ] || fail "$service readiness file does not report the local CPU chain profile""#,
             r#"READY_P2P_PEER_ID=$(status_value p2p_peer_id "$READY_REPORT")"#,
             r#"[ -n "$READY_P2P_PEER_ID" ] || fail "$service readiness file does not report a libp2p peer ID""#,
@@ -670,7 +721,6 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 r#"|| [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] "#,
                 r#"|| [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] "#,
                 r#"|| [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] "#,
-                r#"|| [ "$SERVICE_FINALIZED_BLOCK_COUNT" -le 2 ] "#,
                 r#"|| [ "$SERVICE_FIRST_LIVE_BLOCK_HEIGHT" -le 2 ] "#,
                 r#"|| [ "$SERVICE_REGISTERED_MINER_COUNT" -ne 10 ] "#,
                 r#"|| [ "$SERVICE_REGISTERED_VALIDATOR_COUNT" -ne 5 ] "#,
@@ -697,7 +747,9 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"compose exec -T "$service" grep -q "libp2p_ready=true" /var/lib/tensorvm/local-cpu-ready || fail "$service is missing libp2p readiness""#,
             r#"compose exec -T "$service" grep -q "p2p_identity_seeded=true" /var/lib/tensorvm/local-cpu-ready || fail "$service is missing stable libp2p identity readiness""#,
             r#"compose exec -T "$service" grep -q "p2p_identity_seed=$operator_id" /var/lib/tensorvm/local-cpu-ready || fail "$service libp2p identity seed does not match its operator ID""#,
-            r#"compose exec -T "$service" grep -q "^local_cpu_role_producer=" /var/lib/tensorvm/local-cpu-ready || fail "$service readiness file does not report local CPU producer mode""#,
+            r#"compose exec -T "$service" grep -q "^local_cpu_synthetic_job_producer=" /var/lib/tensorvm/local-cpu-ready || fail "$service readiness file does not report local CPU synthetic job producer mode""#,
+            r#"compose exec -T "$service" grep -q "^local_cpu_validator_block_proposer=" /var/lib/tensorvm/local-cpu-ready || fail "$service readiness file does not report local CPU validator block proposer mode""#,
+            r#"compose exec -T "$service" grep -q "^local_cpu_validator_block_proposer_delay_blocks=" /var/lib/tensorvm/local-cpu-ready || fail "$service readiness file does not report local CPU validator block proposer delay""#,
             r#"compose exec -T "$service" grep -q "^chain_profile=local_cpu" /var/lib/tensorvm/local-cpu-ready || fail "$service readiness file does not report the local CPU chain profile""#,
             r#"compose exec -T "$service" grep "^p2p_peer_id=" /var/lib/tensorvm/local-cpu-ready >> "$TMP_DIR/p2p_peer_ids""#,
             r#"compose exec -T "$service" grep -q "role=miner" /var/lib/tensorvm/local-cpu-ready || fail "$service is not marked as a miner""#,
@@ -751,6 +803,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"text_contains "$EXPLORER_PAGE" 'data-ui="ratzilla-tui"' || fail "standalone explorer page is not the default Ratzilla-style TUI""#,
             r#"text_contains "$EXPLORER_PAGE" "new WebSocket" || fail "standalone explorer page does not poll TensorVM over websocket""#,
             r#"LIVE_SETTLED_RECEIPT_COUNT=$(json_summary_number settled_receipt_count "$LIVE_OVERVIEW")"#,
+            r#"LIVE_FINALIZED_BLOCK_COUNT=$(json_summary_number finalized_block_count "$LIVE_OVERVIEW")"#,
             r#"LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_summary_number pending_receipt_reward_count "$LIVE_OVERVIEW")"#,
             r#"LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_summary_number pending_proposer_reward_count "$LIVE_OVERVIEW")"#,
             r#"LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_summary_number pending_challenge_reward_count "$LIVE_OVERVIEW")"#,
@@ -764,6 +817,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"LIVE_RECEIPTS=$(curl -fsS --max-time "$EXPECTED_HTTP_TIMEOUT_SECONDS" -H "Authorization: Bearer ${AUTH_TOKEN}" "http://127.0.0.1:${RPC_PORT}/explorer/receipts/latest/${EXPECTED_LIVE_RECEIPT_QUERY_LIMIT}")"#,
             r#"[ "${LIVE_HEIGHT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "gateway chain head did not advance past seeded height $EXPECTED_SEED_HEIGHT""#,
             r#"[ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway chain block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks""#,
+            r#"[ "${LIVE_FINALIZED_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] || fail "gateway finalized block count did not advance past seeded $EXPECTED_SEED_BLOCKS blocks""#,
             r#"[ "${LIVE_JOB_COUNT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "protocol did not generate synthetic jobs after seed""#,
             r#"[ "${LIVE_MODEL_COUNT:-0}" -gt 1 ] || fail "protocol did not settle a live LinearTrainingStep after seed""#,
             r#"[ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] || fail "live synthetic jobs did not add validator attestations""#,
@@ -963,6 +1017,18 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             ),
             ("SERVICE_ROLE_LOCAL_PRODUCER", "role_local_producer"),
             (
+                "SERVICE_ROLE_LOCAL_BLOCK_PROPOSER",
+                "role_local_block_proposer",
+            ),
+            (
+                "SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS",
+                "role_local_block_proposer_delay_blocks",
+            ),
+            (
+                "SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED",
+                "role_local_block_proposer_delay_satisfied",
+            ),
+            (
                 "SERVICE_ROLE_NETWORK_APPLIED_BLOCKS",
                 "role_network_applied_blocks",
             ),
@@ -1069,6 +1135,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         &[
             r#"TARGET_STATUS_RAW=$(read_service_status "$EXPECTED_NETWORK_OBSERVER_SERVICE") || fail "could not read $EXPECTED_NETWORK_OBSERVER_SERVICE network-observed service status""#,
             r#"CANDIDATE_NETWORK_HEAD_HEIGHT=$(status_value role_p2p_latest_observed_block_payload_height "$TARGET_STATUS")"#,
+            r#"CANDIDATE_FINALIZED_BLOCK_COUNT=$(status_value finalized_block_count "$TARGET_STATUS")"#,
             r#"if STATUS_RAW=$(read_service_status "$service"); then"#,
             concat!(
                 r#"if [ "$SERVICE_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] "#,
@@ -1077,7 +1144,6 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 r#"|| [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] "#,
                 r#"|| [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] "#,
                 r#"|| [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] "#,
-                r#"|| [ "$SERVICE_FINALIZED_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ] "#,
                 r#"|| [ "$SERVICE_FIRST_LIVE_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] "#,
                 r#"|| [ "$SERVICE_REGISTERED_MINER_COUNT" -ne "$EXPECTED_MINER_COUNT" ] "#,
                 r#"|| [ "$SERVICE_REGISTERED_VALIDATOR_COUNT" -ne "$EXPECTED_VALIDATOR_COUNT" ] "#,
@@ -1093,12 +1159,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 r#"|| [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" = "$ZERO_HASH" ]; then"#
             ),
             r#"if [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "true" ]; then"#,
-            r#"[ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }"#,
-            r#"[ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }"#,
-            r#"[ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -eq 0 ] || { STATUS_MISMATCH=true; continue; }"#,
-            r#"[ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" = "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }"#,
-            r#"[ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -eq 0 ] || { STATUS_MISMATCH=true; continue; }"#,
-            r#"[ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" = "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }"#,
+            r#"LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT=$((LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT + 1))"#,
             r#"[ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
             r#"[ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
             r#"[ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }"#,
@@ -1123,11 +1184,18 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"live_role_miner_tensors_inserted=${LIVE_ROLE_MINER_TENSORS_INSERTED}"#,
             r#"live_role_validator_attestation_operators=${LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT}"#,
             r#"live_role_validator_attestations_submitted=${LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED}"#,
+            r#"live_local_synthetic_job_producers=${LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT}"#,
+            r#"live_role_validator_block_proposer_operators=${LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT}"#,
+            r#"live_role_delayed_validator_block_proposer_operators=${LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT}"#,
+            r#"live_role_validator_useful_block_proposer_operators=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT}"#,
+            r#"live_competing_validator_block_proposers=${COMPETING_PROPOSER_SERVICES}"#,
+            r#"live_role_validator_fallback_blocks_proposed=${LIVE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED}"#,
             r#"live_role_network_block_check_challenges=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES}"#,
             r#"live_role_network_block_check_challenges_applied=${LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED}"#,
             r#"live_role_owned_miner_receipts=true"#,
             r#"live_role_owned_validator_attestations=true"#,
-            r#"single_local_producer=true"#,
+            r#"single_local_synthetic_job_producer=true"#,
+            r#"multi_validator_proposer_competition=true"#,
             r#"local_proposer_runtime=false"#,
             r#"local_validator_producer=true"#,
         ],
@@ -1173,10 +1241,13 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
         &[
             r#"if output=$(timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" tvmd node status --data-dir /var/lib/tensorvm 2>/dev/null < /dev/null); then"#,
             r#"if output=$(timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" tvmd node block --data-dir /var/lib/tensorvm --height "$height" 2>/dev/null < /dev/null); then"#,
-            r#"BLOCK_SCAN_START=$((LIVE_HEIGHT - EXPECTED_BLOCK_SCAN_DEPTH))"#,
+            r#"BLOCK_SCAN_END=$((LIVE_FINALIZED_BLOCK_COUNT - 1))"#,
+            r#"[ "$BLOCK_SCAN_END" -le "$LIVE_HEIGHT" ] || BLOCK_SCAN_END="$LIVE_HEIGHT""#,
+            r#"BLOCK_SCAN_START=$((BLOCK_SCAN_END - EXPECTED_BLOCK_SCAN_DEPTH))"#,
             r#"while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do"#,
             r#"while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do"#,
             r#"sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS""#,
+            r#"word_list_contains "$COMPETING_PROPOSER_SERVICES" "$service" && continue"#,
             r#"if BLOCK_RAW=$(read_service_block "$EXPECTED_BOOTSTRAP_SERVICE" "$BLOCK_SCAN_HEIGHT"); then"#,
             r#"if [ "$BLOCK_FINALIZED" = "true" ] && [ "$BLOCK_VALIDATION" = "useful_verification_pow" ] && [ "$BLOCK_POW_VALID" = "true" ] && [ -n "$BLOCK_NONCE" ] && [ -n "$BLOCK_DIFFICULTY_TARGET" ] && [ -n "$BLOCK_POW_HASH" ]; then"#,
             r#"USEFUL_POW_BLOCK_EVIDENCE=true"#,
@@ -1202,10 +1273,11 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"[ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance""#,
             r#"[ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
             r#"[ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }"#,
+            r#"if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then"#,
             r#"live_role_validator_useful_blocks_proposed=${LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED}"#,
+            r#"live_role_validator_fallback_blocks_proposed=${LIVE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED}"#,
             r#"live_role_validator_proposed_receipts=${LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS}"#,
-            r#"NETWORK_TARGET_HEIGHT="$CANDIDATE_NETWORK_HEAD_HEIGHT""#,
-            r#"NETWORK_TARGET_HEIGHT=$((NETWORK_TARGET_HEIGHT - EXPECTED_BLOCK_SCAN_DEPTH))"#,
+            r#"NETWORK_TARGET_HEIGHT=$((CANDIDATE_FINALIZED_BLOCK_COUNT - 1))"#,
             r#"if NETWORK_BLOCK_RAW=$(read_service_block "$EXPECTED_NETWORK_OBSERVER_SERVICE" "$NETWORK_TARGET_HEIGHT"); then"#,
             r#"ALL_OPERATOR_NETWORK_HEAD_HEIGHT="$NETWORK_BLOCK_HEIGHT""#,
             r#"ALL_OPERATOR_NETWORK_HEAD_HASH="$NETWORK_BLOCK_HASH""#,
@@ -1215,6 +1287,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"ALL_OPERATOR_TARGET_STATE_ROOT="$ALL_OPERATOR_NETWORK_STATE_ROOT""#,
             r#"if BLOCK_RAW=$(read_service_block "$service" "$ALL_OPERATOR_COMMON_HEAD_HEIGHT"); then"#,
             r#"if BLOCK_RAW=$(read_service_block "$service" "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT"); then"#,
+            r#"[ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators satisfied local CPU role, gossip, and delayed proposer evidence""#,
             r#"all_operator_common_head_height=${ALL_OPERATOR_COMMON_HEAD_HEIGHT}"#,
             r#"all_operator_common_head_hash=${ALL_OPERATOR_COMMON_HEAD_HASH}"#,
             r#"all_operator_common_head_convergence=true"#,
@@ -1240,7 +1313,7 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"validator_proposer_evidence=${VALIDATOR_PROPOSER_EVIDENCE}"#,
             r#"tensorwork_proposer_selection_removed=true"#,
             r#"finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}"#,
-            r#"live_validator_proposer_networking=false"#,
+            r#"live_validator_proposer_networking=true"#,
             r#"live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)"#,
             r#"live_validator_block_vote_networking=true"#,
             r#"all_non_producer_network_applied_blocks=true"#,

@@ -103,9 +103,10 @@ The local bundle is useful and should remain the first operational target:
   a non-producer's latest finalized p2p-observed head from the block-payload gossip set, then fails unless
   every operator catches up to that same finalized block hash and state root, with a nonempty block-log root reported from
   every node store.
-- Compose now marks only `validator-00` as the local timed producer. Miners are never local block
-  producers, and other counted operators keep the same seeded chain base but only advance live blocks after
-  a p2p block payload is decoded and verified against the shared chain path.
+- Compose now marks only `validator-00` as the local timed synthetic job producer. Miners are never local
+  block producers. `validator-00` and delayed `validator-01` are configured as validator block proposers,
+  while other counted operators keep the same seeded chain base and advance live blocks only after a p2p
+  block payload is decoded and verified against the shared chain path.
 - `check-restart-continuity.sh` captures pre/post peer IDs, heights, block counts, state roots, block-log
   roots, and finalized common heads around actual Compose restarts, and fails unless restarted services
   keep identity, advance durable state, preserve the pre-restart finalized common head and state root, and
@@ -116,7 +117,8 @@ The local bundle is useful and should remain the first operational target:
 - `tvmd node init` validates the complete node store on restart and repairs torn snapshot/block-log
   state from `chain.state` before readiness is allowed.
 - Compose now execs role-specific runtime commands for counted operators: all miners run `tvmd miner run`,
-  all validators run `tvmd validator run`, `validator-00` carries the single local producer flag,
+  all validators run `tvmd validator run`, `validator-00` carries the single local synthetic job producer flag,
+  `validator-00` and delayed `validator-01` carry validator block-proposer flags,
   `tvmd node status` reports `runtime_command`, and the checker fails unless all 15 operators report the
   role command expected for their Compose service.
 - Counted role runtimes now derive a chain address from their configured wallet label, persist
@@ -305,15 +307,15 @@ transcript disputes.
 
 ## Highest-Priority Gaps
 
-### 1. Local Production Still Needs Public/Multi-Proposer Evidence
+### 1. Local Production Still Needs Public Evidence
 
-Current live production now runs inside `validator-00`'s validator runtime. Deterministic local job
-publication remains a local producer duty, but receipt execution, attestation, settlement preparation,
+Current live production now runs inside validator runtimes. Deterministic local job publication remains a
+single `validator-00` synthetic-producer duty, but receipt execution, attestation, settlement preparation,
 block proposal, and finality voting run through role-owned ticks and shared chain commands. Finality votes
-come from explicit validator role block-vote submissions. The latest full local CPU Docker gate proves the
-single configured local proposer path with delayed proposer and challenge rewards. Multi-validator
-proposer competition beyond the single configured local producer, public deployment evidence, and CUDA
-evidence remain open.
+come from explicit validator role block-vote submissions. The latest full local CPU Docker gate proves two
+validator block proposers, one runtime-delayed proposer, delayed proposer and challenge rewards, and
+passive-observer finalized-head convergence. Public deployment evidence, CUDA evidence, and a
+chain-visible proposer cadence replacing the runtime-local delay remain open.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
 
@@ -705,7 +707,8 @@ Status: partially complete. The document exists and the checker gates live post-
 jobs, model-count advancement, attestation-count growth, pending receipt-reward growth, receipts, and settled
 receipts, per-receipt validator-attestation details, live tensor descriptor/row/chunk/opening fetches, all
 15 operator node stores reporting role status, live chain counters, finalized live TensorOp and
-LinearTrainingStep block-view evidence, the single local producer, network
+  LinearTrainingStep block-view evidence, the single local synthetic job producer, delayed multi-validator
+  proposer participation, network
 applied block progress on every non-producer, accepted job, receipt, attestation, and live diagnostic block-check-challenge payload application
 through the shared chain engine on every non-producer, validator-owned block-vote submission,
 non-producer block-vote ingestion/application, pending receipt/attestation/block-vote/block-check-challenge retry for out-of-order
@@ -713,8 +716,9 @@ p2p payloads, the same first live finalized block hash, the same finalized commo
 finalized local-head checkpoint/state root that was also observed through p2p block gossip via
 `tvmd node block`, plus named post-seed TensorOp and LinearTrainingStep receipt evidence, real libp2p
 connected-peer counts, job/receipt/attestation/block/block-vote gossip observations from every role runtime,
-positive timed-validator useful block proposal and selected-receipt counters, positive pending proposer
-reward count for useful proposals, positive pending challenge reward claims for the diagnostic challenge
+positive validator useful block proposal and selected-receipt counters from at least two proposer-enabled
+validators, positive pending proposer reward count for useful proposals, positive delayed proposer reward
+claims, positive pending challenge reward claims for the diagnostic challenge
 path, and nonempty block-log roots from every node store. The
 restart-continuity script also captures
 pre/post peer IDs, heights, block counts, state roots, block-log roots, and finalized common heads for
@@ -752,7 +756,8 @@ smaller chain modules and the existing test module.
 
 Status: started. `tvmd miner run`, `tvmd validator run`, and `tvmd proposer run` are long-running
 role-specific command surfaces. Compose uses `tvmd miner run` for all counted miners and
-`tvmd validator run` for all validators, with `validator-00` carrying the single local timed producer flag;
+`tvmd validator run` for all validators, with `validator-00` carrying the single local timed synthetic job
+producer flag and `validator-01` carrying a delayed validator block-proposer flag;
 the local checker verifies those runtime commands through ready files and `tvmd node status`. The status path also
 exposes live role-loop counters, local-producer mode, network-applied block counters, real libp2p
 connected-peer counts, job/receipt/attestation/block/block-payload/block-vote gossip observations, and target-head block-payload gossip
@@ -770,16 +775,18 @@ before submitting attestations, validators submit explicit block votes for local
 and the local validator producer assembles useful proposals from the validator-owned role tick after seeing
 settled, artifact-ready, attested receipts. Runtime role policy now prevents service, miner, and legacy
 proposer roles from becoming local block producers even if they inherit local block-interval configuration;
-validators require the explicit producer flag for proposal, while the interval and local synthetic job
+validators require the explicit block-proposer flag for proposal, while the interval and local synthetic job
 source only control deterministic local job publication.
 
 ### Phase 4: Make Compose Participants Actually Participate
 
 - `miner-*` containers run miner role loops.
 - `validator-*` containers run validator role loops.
-- `validator-00` runs the single local producer duty: the scheduler publishes jobs, while miner,
-  validator, and validator-proposer role ticks handle receipts, attestations, settlement, and useful block
-  proposals.
+- `validator-00` runs the single local synthetic job producer duty: the scheduler publishes jobs, while
+  miner, validator, and validator-proposer role ticks handle receipts, attestations, settlement, and useful
+  block proposals.
+- `validator-00` and delayed `validator-01` both run validator block-proposer duties; the local checker
+  treats their competing branches separately from the passive finalized-head convergence proof.
 - The checker requires all operators to converge on the same finalized head.
 
 ### Phase 5: Shared Profiles
@@ -851,9 +858,10 @@ local evidence remains explicitly non-public
 
 Keep this incremental:
 
-1. Broaden delayed proposer/challenge reward evidence from the local CPU proof into public/CUDA deployment
+1. Broaden delayed multi-proposer and delayed proposer/challenge reward evidence from the local CPU proof into public/CUDA deployment
    runs.
-2. Add multi-validator proposer competition evidence beyond the single configured local producer.
+2. Replace the runtime-local delayed proposer participation gate with chain-visible proposer cadence or
+   eligibility if protocol-level delayed proposer scheduling becomes required.
 3. Continue full interactive transcript dispute work over the trace-opening path.
 
 This sequence keeps the local chain usable at every step while moving it toward the same base runtime that

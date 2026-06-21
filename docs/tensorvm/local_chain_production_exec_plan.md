@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 133 complete locally - claim-owned delayed reward release.
+- Active feature: Iteration 134 complete locally - delayed multi-validator proposer competition evidence.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -45,8 +45,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: broaden public/CUDA deployment runs, public drand/VRF proofing, multi-validator proposer
-  competition, and full interactive transcript disputes.
+- Next action: preserve the local delayed multi-proposer proof while broadening the same evidence into
+  public/CUDA deployment runs and full interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -57,7 +57,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Role-owned validator proposer tick | Docker-proven locally | `live_role_validator_useful_blocks_proposed=46`, delayed proposer rewards, current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Continue public/CUDA evidence |
+| Role-owned validator proposer tick | Docker-proven locally | Latest local CPU Docker proof reports `live_role_validator_block_proposer_operators=2`, `live_role_delayed_validator_block_proposer_operators=1`, `live_role_validator_useful_blocks_proposed=404`, `live_delayed_proposer_reward_claims=1`, competing proposers `validator-00 validator-01`, finalized passive-observer convergence at height 22, current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg, Docker proof | Remaining: full interactive transcript disputes |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
@@ -68,6 +68,61 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 134: Multi-Validator Proposer Competition Evidence
+
+Feature capability: prove multiple validator role processes can independently run the useful UVPoW proposer
+tick from network-visible settled state while a single local synthetic job source remains responsible for
+job publication.
+Readiness requirements covered: `upow.md` §2 process boundaries, §11 validator-owned UVPoW proposal,
+local readiness multi-proposer gap, and the shortcut ban against hidden `tvmd` proposer orchestration.
+Files/modules likely touched: `profile.rs`, runtime config/status, validator role/runtime tests, local CPU
+Compose/checker/static tests, readiness/status docs, and this plan.
+Parallel subagents run: readiness mapper, proposer code explorer, and proposer test-coverage explorer.
+Parallelizable implementation workstreams: parent owns code/tests/checker because the config split crosses
+shared runtime status and deployment evidence; subagents stayed read-only.
+Tests/checkers/docs to add or update: config split tests, validator runtime proposer-without-synthetic
+regressions, Compose/checker assertions for at least two useful proposer validators, and readiness docs.
+Narrow validation commands: Gate 0 already passed first; focused profile/runtime/local-compose tests.
+Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
+compose config, Docker build/up/check/down if static gates pass, and tarpaulin attempt if available.
+Implementation result: local synthetic job publication is now controlled separately from validator block
+proposal permission. `validator-00` publishes synthetic jobs and proposes immediately; `validator-01`
+proposes after `TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS=20`; other validators attest and
+vote without proposing. The delay is a runtime-local participation gate, while proposer, receipt, and
+challenge rewards remain protocol-delayed pending claims.
+Expected observable evidence: local checker reports multiple validator operators with positive useful block
+proposal counters, at least one delayed block proposer, delayed proposer reward claims, finalized passive
+observer convergence, one synthetic job publisher, and no `proposer_run` runtime counted.
+Out of scope: public 7-day run, CUDA miner evidence, public drand/VRF security proof, and full interactive
+fraud-proof disputes.
+Split trigger: Docker consensus instability, fork-choice regression, or broad runtime status schema churn.
+
+Canonical owner: `Chain`/`ChainEngine` useful block admission, UVPoW validation, fork choice, and finality.
+Adapter callers: validator role runtime may submit/publish candidate blocks through existing chain and p2p
+payload paths; deployment/checker only configures and observes.
+Old shortcut being removed: `TENSORVM_LOCAL_CPU_ROLE_PRODUCER` as the single flag for both synthetic job
+publication and validator block-proposer permission, plus checker assumptions that non-`validator-00`
+validators must propose zero blocks.
+Regression test that proves the shortcut is gone: a validator with block-proposer enabled and no synthetic
+job interval can propose useful blocks from existing settled state, and local checker requires at least two
+validator useful proposers.
+Behavior with local synthetic block production disabled: inbound/applied jobs, receipts, attestations, and
+settled state can still feed validator proposals; no synthetic job publication is needed by proposer peers.
+Behavior for producer and non-producer roles: one local job publisher may create jobs; multiple validator
+roles can propose useful blocks and still ingest competing block payloads; miners never propose blocks.
+Structured evidence source: typed runtime status fields, checker aggregate proposer operator counts,
+block-payload ingestion/application counters, and chain block status.
+Finality source: unchanged signed validator block votes and chain finality threshold; proposal competition
+does not synthesize votes.
+Wire-size and codec boundary: no new wire payloads; existing bounded block-payload and block-vote codecs
+carry the competing proposals.
+
+Validation evidence captured June 21, 2026:
+- First executable Gate 0 command after resume: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused checks passed: `cargo fmt --check --all`, `cargo test -p tensor_vm linear_job_payload_registers_synthetic_model_before_submit -- --nocapture`, `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime validator_proposer_delays_reward_without_waiting_for_validation_backlog -- --nocapture`, `cargo test -p tensor_vm --test tvmd_runtime validator_proposer_tick_runs_without_synthetic_producer_gate -- --nocapture`, `cargo test -p tensor_vm --test tvmd_cli validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallback_blocks -- --nocapture`, `sh -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh deploy/tensorvm/local-cpu/scripts/entrypoint.sh`, and `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet`.
+- Docker gate passed after rebuilding `tensorvm-local-cpu:latest`, `docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up -d --wait`, and `deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`. Key output: `live_local_synthetic_job_producers=1`, `live_role_validator_block_proposer_operators=2`, `live_role_delayed_validator_block_proposer_operators=1`, `live_role_validator_useful_block_proposer_operators=2`, `live_competing_validator_block_proposers=validator-00 validator-01`, `live_role_validator_useful_blocks_proposed=404`, `live_role_validator_fallback_blocks_proposed=33`, `live_role_validator_proposed_receipts=818`, `live_pending_proposer_rewards=99`, `live_delayed_proposer_reward_claims=1`, `all_operator_common_head_height=22`, and `all_operator_target_head_convergence=true`.
+- `which tensorvm-verifier` and `which verifier` returned no verifier binary on PATH.
 
 ### Iteration 133: Claim-Owned Delayed Reward Release
 

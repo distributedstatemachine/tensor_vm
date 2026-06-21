@@ -7,6 +7,7 @@ use crate::{
         decode_block_payload_with_selected_receipts, decode_block_vote_payload, decode_job_payload,
         decode_receipt_payload, decode_validator_audit_report_payload,
     },
+    scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
     verify::ValidatorAttestation,
 };
@@ -35,6 +36,22 @@ pub fn apply_network_job_payload(
         && chain.state().program_body(&graph_job.graph_id).is_none()
     {
         return NetworkPayloadApply::Pending;
+    }
+    if let JobState::LinearTrainingStep(linear_job) = &job
+        && !chain
+            .state()
+            .model_states()
+            .contains_key(&linear_job.model_id)
+        && chain
+            .apply_command(ChainCommand::RegisterModel {
+                model_id: linear_job.model_id,
+                architecture_hash: SyntheticLocalJobSource::linear_training_architecture_hash(),
+                weight_root: linear_job.weight_root_before,
+                config_hash: SyntheticLocalJobSource::linear_training_config_hash(),
+            })
+            .is_err()
+    {
+        return NetworkPayloadApply::Invalid;
     }
     chain
         .apply_command(ChainCommand::SubmitJob(job))
@@ -567,6 +584,38 @@ mod tests {
             NetworkPayloadApply::Applied
         );
         assert_eq!(chain.state().jobs().get(&job_id), Some(&job));
+    }
+
+    #[test]
+    fn linear_job_payload_registers_synthetic_model_before_submit() {
+        let seed = hash_bytes(b"test", &[b"linear-job-registers-model"]);
+        let mut chain = Chain::new(seed);
+        let mut source = SyntheticLocalJobSource::default();
+        let job = JobState::LinearTrainingStep(source.next_linear_training_job(&chain));
+        let JobState::LinearTrainingStep(linear_job) = &job else {
+            unreachable!("test job must be linear")
+        };
+        let model_id = linear_job.model_id;
+        let weight_root_before = linear_job.weight_root_before;
+        let job_id = job.job_id();
+        let payload = encode_job_payload(&job);
+
+        assert!(!chain.state().model_states().contains_key(&model_id));
+        assert_eq!(
+            apply_network_job_payload(&mut chain, job_id, &payload),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(chain.state().jobs().get(&job_id), Some(&job));
+        let model = chain
+            .state()
+            .model_states()
+            .get(&model_id)
+            .expect("linear job payload must register the synthetic model");
+        assert_eq!(model.weight_root, weight_root_before);
+        assert_eq!(
+            apply_network_job_payload(&mut chain, job_id, &payload),
+            NetworkPayloadApply::Applied
+        );
     }
 
     #[test]

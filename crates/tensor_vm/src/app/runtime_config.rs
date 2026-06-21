@@ -80,7 +80,11 @@ pub fn runtime_node_config(
                     .with_max_requests(max_requests),
             )
             .with_block_interval(runtime_block_interval())
-            .with_local_producer(runtime_local_block_producer()),
+            .with_local_synthetic_job_producer(runtime_local_synthetic_job_producer())
+            .with_local_validator_block_proposer(runtime_local_validator_block_proposer())
+            .with_local_validator_block_proposer_delay_blocks(
+                runtime_local_validator_block_proposer_delay_blocks(),
+            ),
     )
 }
 
@@ -162,9 +166,24 @@ fn runtime_block_interval() -> Option<Duration> {
         .map(Duration::from_millis)
 }
 
-fn runtime_local_block_producer() -> bool {
-    match std::env::var("TENSORVM_LOCAL_CPU_ROLE_PRODUCER") {
+fn runtime_bool_env(name: &str) -> bool {
+    match std::env::var(name) {
         Ok(value) => matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"),
         Err(_) => false,
     }
+}
+
+fn runtime_local_synthetic_job_producer() -> bool {
+    runtime_bool_env("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER")
+}
+
+fn runtime_local_validator_block_proposer() -> bool {
+    runtime_bool_env("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER")
+}
+
+fn runtime_local_validator_block_proposer_delay_blocks() -> u64 {
+    std::env::var("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS")
+        .ok()
+        .and_then(|value| value.parse::<u64>().ok())
+        .unwrap_or(0)
 }

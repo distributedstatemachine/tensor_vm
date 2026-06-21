@@ -84,6 +84,13 @@ fn role_loop_configs_bind_expected_runtime_roles_and_wallets() {
             matches!(role, RuntimeRole::Validator)
         );
         assert!(!service_config.node.local_synthetic_producer());
+        assert!(!service_config.node.local_block_proposer());
+        assert_eq!(
+            service_config
+                .node
+                .local_validator_block_proposer_delay_blocks,
+            0
+        );
         assert_eq!(
             service_config.role_wallet_address,
             Some(address(wallet.as_bytes()))
@@ -420,7 +427,8 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             data_dir.clone(),
         )
         .with_block_interval(Some(Duration::from_millis(1)))
-        .with_local_producer(true),
+        .with_local_synthetic_job_producer(true)
+        .with_local_validator_block_proposer(true),
         randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     let mut runtime_state = NodeRuntimeState::default();
@@ -637,7 +645,7 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
             RuntimeRole::Validator.node_role(),
             data_dir.clone(),
         )
-        .with_local_producer(true),
+        .with_local_validator_block_proposer(true),
         randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
     assert!(config.node.local_block_proposer());
@@ -788,6 +796,40 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
     let data_dir = unique_temp_data_dir("delayed-proposer-backlog");
     let store = NodeStore::open(data_dir.clone());
     store.persist_chain(&server.gateway().node.chain).unwrap();
+    let delayed_config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(validator),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_local_validator_block_proposer(true)
+        .with_local_validator_block_proposer_delay_blocks(1),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
+    };
+    let mut runtime_state = NodeRuntimeState::default();
+
+    let changed = tick_validator_role_work_once(
+        &delayed_config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+
+    assert!(changed);
+    assert!(
+        !delayed_config
+            .node
+            .local_block_proposer_delay_satisfied(server.gateway().node.chain.state().height())
+    );
+    assert_eq!(runtime_state.validator_blocks_proposed(), 0);
+    assert_eq!(runtime_state.produced_blocks(), 0);
+    assert_eq!(server.gateway().node.chain.blocks().len(), 0);
+
     let config = ServiceRuntimeConfig {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
@@ -797,10 +839,9 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
             RuntimeRole::Validator.node_role(),
             data_dir.clone(),
         )
-        .with_local_producer(true),
+        .with_local_validator_block_proposer(true),
         randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
     };
-    let mut runtime_state = NodeRuntimeState::default();
 
     let changed = tick_validator_role_work_once(
         &config,

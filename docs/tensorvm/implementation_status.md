@@ -19,10 +19,11 @@ heads remain stable. Valid known-parent side branches are retained in chain-owne
 parent and child state snapshots, survive chain-state persistence, and do not mutate canonical head state
 unless the current-head replacement rule applies; strictly longer unfinalized branches now automatically
 reorganize canonical head state while finalized canonical blocks remain protected. The latest local CPU
-Docker proof covers live validator proposer/block-assembly networking, delayed proposer rewards, and
-diagnostic challenge reward evidence for the single configured local proposer. Remaining consensus/evidence
-gaps are full interactive verifier-transcript challenge semantics, multi-validator proposer competition,
-public deployment evidence, and CUDA miner evidence. Deterministic
+Docker proof covers live validator proposer/block-assembly networking, two validator block proposers with
+one runtime-delayed proposer, delayed proposer rewards, diagnostic challenge reward evidence, and passive
+observer finalized-head convergence. Remaining consensus/evidence gaps are full interactive
+verifier-transcript challenge semantics, public deployment evidence, CUDA miner evidence, and replacing the
+runtime-local proposer delay with chain-visible proposer cadence if required. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
 propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).
@@ -632,13 +633,15 @@ preflight, public evidence, or deployment-gated work can count:
   `all_operator_live_block_convergence=true` plus `all_operator_common_head_convergence=true`, proving
   every durable node store advanced past the shared seed, reports the same first live finalized block
   hash, can return the same finalized common-head block hash at the bounded convergence height, and can
-  catch up to validator-00's finalized local-head checkpoint after that head appears in p2p block gossip with
-  matching finalized block hash and state root via
-  `all_operator_network_head_convergence=true`, plus p2p observation of that same network head hash,
+  catch up to a passive observer finalized block-payload checkpoint after that target appears in p2p
+  payload gossip with matching finalized block hash and state root via
+  `all_operator_network_head_convergence=true`, plus p2p payload observation of that same network head hash,
   `all_operator_block_log_roots_observed=true`, `all_operator_role_status=true`,
   `all_operator_role_runtime_commands=true`, `all_operator_chain_profiles=true`,
   `all_operator_role_production_policy=true`, `all_operator_role_runtime_counters=true`,
-  `single_local_producer=true`, `local_validator_producer=true`,
+  `single_local_synthetic_job_producer=true`, `multi_validator_proposer_competition=true`,
+  `live_role_validator_block_proposer_operators=2`,
+  `live_role_delayed_validator_block_proposer_operators=1`,
   `all_non_producer_network_applied_blocks=true`,
   `all_non_producer_network_block_payload_ingestion=true`,
   `all_non_producer_network_block_payload_application=true`,

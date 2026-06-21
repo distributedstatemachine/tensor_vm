@@ -192,7 +192,16 @@ pub fn format_role_runtime_report(
         "validator_block_votes_submitted",
         snapshot.validator_block_votes_submitted,
     );
-    report.field("local_producer", snapshot.local_producer);
+    report.field("local_producer", snapshot.local_synthetic_job_producer);
+    report.field("local_block_proposer", snapshot.local_block_proposer);
+    report.field(
+        "local_block_proposer_delay_blocks",
+        snapshot.local_block_proposer_delay_blocks,
+    );
+    report.field(
+        "local_block_proposer_delay_satisfied",
+        snapshot.local_block_proposer_delay_satisfied,
+    );
     report.field("listen", &network.rpc_listen);
     report.field("p2p_listen", &network.p2p_listen);
     report.field("p2p_runtime", "libp2p");
@@ -522,7 +531,16 @@ pub fn write_role_runtime_status(
         "role_validator_block_votes_submitted",
         snapshot.validator_block_votes_submitted,
     );
-    report.field("role_local_producer", snapshot.local_producer);
+    report.field("role_local_producer", snapshot.local_synthetic_job_producer);
+    report.field("role_local_block_proposer", snapshot.local_block_proposer);
+    report.field(
+        "role_local_block_proposer_delay_blocks",
+        snapshot.local_block_proposer_delay_blocks,
+    );
+    report.field(
+        "role_local_block_proposer_delay_satisfied",
+        snapshot.local_block_proposer_delay_satisfied,
+    );
     report.field("role_served_requests", snapshot.served_requests);
     report.field("role_produced_blocks", snapshot.produced_blocks);
     report.field(
