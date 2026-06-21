@@ -381,12 +381,13 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > mixed-scale `mul`, `Fixed32` reciprocal `div`, and `Fixed32` `matmul` use canonical round-half-even
 > rescale, and exact per-channel int8
 > quantize/dequantize replay is conformance covered.
-> Byte-packed int8 quantization now uses a canonical flat `uint8` payload with explicit magic/version,
-> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Field `div` is
+> Byte-packed int8 quantization now uses a tensor-owned canonical flat `uint8` payload API with explicit
+> magic/version, shape, axis, scale metadata, per-channel raw scales, row-major int8 bytes, bounded length
+> calculation, and shared encode/decode validation for IR replay and conformance. Field `div` is
 > admitted as exact modular-inverse replay, and `Fixed32` `div` is admitted as signed reciprocal
 > division that returns to the lhs/output scale with round-half-even semantics.
-> Remaining fixed-point arithmetic policy for low-level packed tensor storage/chunking APIs and full verifier coverage for every
-> exact Tier-B op remains TODO.
+> Remaining packed tensor chunking/public-artifact APIs and full verifier coverage for every exact Tier-B
+> op remains TODO.
 
 ---
 
@@ -644,9 +645,10 @@ This section is non-normative guidance on how the spec components partition into
   output scale, and
   canonical `int8`/`uint8`/`bool` dtype tags are implemented; exact
   per-channel int8 quantize/dequantize scale selection and saturation are conformance covered;
-  byte-packed quantization has a conformance-covered flat `uint8` payload layout; fixed-point reciprocal
+  byte-packed quantization has a conformance-covered tensor-owned flat `uint8` payload API; fixed-point reciprocal
   division is implemented for `Fixed32` `div`; `Fixed32` `matmul` now accumulates signed raw products in
-  fixed order and rescales once into the lhs/output scale; low-level packed tensor storage APIs remain open.
+  fixed order and rescales once into the lhs/output scale; broader packed tensor chunking/public artifact
+  APIs remain open.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,

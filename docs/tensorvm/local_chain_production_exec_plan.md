@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 113 complete - fixed-point matmul accumulation/range policy.
+- Active feature: Iteration 114 complete - tensor-owned packed int8 payload API.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -24,14 +24,16 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
   returns to the lhs/output scale with the same half-even policy and rejects zero divisors. `Fixed32`
   matmul now accumulates signed raw products in fixed order and rescales once into the lhs/output scale.
+  Packed int8 quantization now has a tensor-owned `TVQ8` payload API for bounded length calculation and
+  shared encode/decode validation used by IR replay and conformance.
 - Current blockers:
   - `docs/tensorvm/codex_5_5_local_chain_workflow.md` is referenced by `goal.md` but is missing.
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Full Docker runtime verification remains unresolved from the prior recorded run: gateway `/health`
     timed out with `curl: (28) Operation timed out after 15002 milliseconds with 0 bytes received`.
-- Next action: continue Tier-C committee policy, deployed-run economics evidence, low-level packed tensor
-  storage APIs, or rerun Docker after the `/health` blocker clears.
+- Next action: continue Tier-C committee policy, deployed-run economics evidence, broader packed tensor
+  chunking/public-artifact APIs, or rerun Docker after the `/health` blocker clears.
 
 ## Readiness Matrix
 
@@ -45,7 +47,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Implemented in Rust runtime; Docker proof pending | `validator_proposer_tick_runs_without_synthetic_producer_gate`; useful proposal counters; delayed proposer rewards; current-head useful competitor replacement, side-branch storage, and automatic unfinalized deep reorg | Rerun Docker and continue live proposer evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg | Remaining: full interactive transcript disputes and fresh Docker proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, and `Fixed32` `matmul`, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, low-level packed tensor APIs, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface including mixed-scale fixed-point `add`/`sub`/`mul`, `Fixed32` `div`, `Fixed32` `matmul`, tensor-owned packed int8 payload APIs, role-owned local graph execution, and content-addressed `const_blob` artifact replay | Continue exact Tier-B verifier coverage, dispute-time blob availability, broader packed tensor chunking/public-artifact APIs, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
@@ -54,49 +56,52 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-### Iteration 113: Fixed-Point Matmul Accumulation/Range Policy
+### Iteration 114: Tensor-Owned Packed Int8 Payload API
 
-Feature capability: make `Fixed32` `matmul` accumulate signed raw products in fixed ascending order with a
-widened integer accumulator, then rescale once from product scale into the lhs/output scale with canonical
-round-half-to-even semantics.
-Readiness requirements covered: `upow.md` §3.1/§4.8 fixed-point scale discipline, fixed ascending
-reduction order, and §3.3 conformance evidence for exact Tier-A arithmetic.
-Files/modules likely touched: `tensor`, `ir`, `conformance`, fixed-point docs/status.
+Feature capability: move the canonical `TVQ8` packed int8 payload layout into the tensor layer, expose
+bounded encode/decode/length APIs, and make IR plus conformance call that single owner instead of
+duplicating ad hoc codecs.
+Readiness requirements covered: `upow.md` §3.1/§4.8 canonical dtype/layout and exact quantization packing,
+`upow.md` §3.3 conformance evidence, and the documented low-level packed tensor storage API gap.
+Files/modules likely touched: `tensor`, `ir`, `conformance`, Tensor IR/conformance docs/status.
 Parallel subagents to run: not used; available subagent tool requires explicit user delegation and this is a
-single-owner deterministic semantics change.
-Parallelizable implementation workstreams: none in this single-writer deterministic semantics change.
-Canonical owner: `tensor` owns fixed-point matmul accumulation and rescale semantics; `ir` and conformance
-call that canonical implementation.
-Adapter callers: runtime/verifier/roles consume the same tensor and IR APIs.
-Old shortcut being removed: `Fixed32` `matmul` used raw field modular multiplication and required identical
-scale metadata, leaving product scale and signed accumulation unspecified.
-Regression test that proves the shortcut is gone: tensor/IR/conformance fixed-point matmul tests with
-negative values, mixed scales, and half-even final rescale.
-Behavior with local synthetic block production disabled: unchanged; this is pure deterministic execution.
-Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical roots.
-Structured evidence source: conformance vectors plus exact interpreter output roots.
+single-owner codec refactor.
+Parallelizable implementation workstreams: none in this single-writer tensor/IR/conformance change.
+Canonical owner: `tensor` owns packed int8 payload validation, length calculation, byte encoding, and byte
+decoding.
+Adapter callers: `ir` exact replay and conformance vector execution call tensor-owned APIs.
+Old shortcut being removed: the `TVQ8` byte layout was duplicated privately in IR and conformance helpers
+instead of being a low-level tensor storage API.
+Regression test that proves the shortcut is gone: tensor payload roundtrip/rejection tests plus existing
+IR packed quantize/dequantize and conformance vector gates.
+Behavior with local synthetic block production disabled: unchanged; this is pure tensor storage/exact
+replay behavior.
+Behavior for producer and non-producer roles: unchanged; receipts replay to the same canonical packed
+payload roots on every role.
+Structured evidence source: tensor API tests, byte-exact IR output, conformance vector hash/profile.
 Finality source: unchanged block finality; affected receipts still pass through canonical verification.
-Wire-size and codec boundary: no wire/storage shape change; only deterministic value semantics.
-Narrow validation commands: fixed-point matmul tensor/IR/conformance tests.
+Wire-size and codec boundary: preserves the existing `TVQ8` byte layout and `Uint8` tensor payload shape,
+but centralizes bounds checks before allocation.
+Narrow validation commands: tensor packed API test, packed IR replay test, conformance vector/profile tests.
 Broad validation commands before commit: format, diff check, full `tensor_vm`, clippy, release workspace,
 final Gate 0, tarpaulin attempt.
-Expected observable evidence: `Fixed32` matmul outputs keep lhs scale, support mixed input scales, use a
-single final half-even rescale after signed product accumulation, and reject unsupported matmul dtypes.
-Out of scope: CUDA generic graph execution, public/Docker run, low-level packed tensor storage APIs.
-Split trigger: unexpected verifier/runtime behavior outside tensor/IR/conformance exact replay.
+Expected observable evidence: `quantize_pack_int8` emits the same bytes, malformed packed payloads reject
+through the tensor API, and conformance uses the shared owner.
+Out of scope: CUDA graph execution, public/Docker run, Tier-C committee/fraud games.
+Split trigger: any wire-format change or storage codec migration requirement.
 
 Validation evidence:
 - First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
-- Focused: `cargo test -p tensor_vm fixed32_matmul_accumulates_then_rescales_to_lhs_scale_half_even --quiet` passed.
-- Focused: `cargo test -p tensor_vm exact_interpreter_executes_fixed32_matmul_with_mixed_scales --quiet` passed.
-- Focused: `cargo test -p tensor_vm graph_validation_rejects_unsupported_matmul_dtype --quiet` passed.
+- Focused: `cargo test -p tensor_vm packed_int8_payload_roundtrips_and_rejects_bad_layout --quiet` passed.
+- Focused: `cargo test -p tensor_vm exact_interpreter_executes_packed_int8_quantize_dequantize --quiet` passed.
+- Focused: `cargo test -p tensor_vm graph_verifier_accepts_packed_quantize_dequantize_receipt --quiet` passed.
 - Focused: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet` passed.
 - Focused: `cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet` passed.
 - Focused: `cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet` passed.
 - Focused: `cargo test -p tensor_vm cpu_reference_passes_all_admitted_ops --quiet` passed.
 - Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
 - Verifier tool: no standalone `tensorvm-verifier` binary found; verifier code remains in workspace modules.
-- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 448 library tests plus integration tests.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 449 library tests plus integration tests.
 - Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
 - Release workspace: `cargo test --workspace --release` passed.
 - Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
@@ -104,6 +109,15 @@ Validation evidence:
   tarpaulin`.
 
 ## Recent Iterations
+
+### Iteration 113: Fixed-Point Matmul Accumulation/Range Policy
+
+Feature capability: make `Fixed32` `matmul` accumulate signed raw products in fixed ascending order with a
+widened integer accumulator, then rescale once from product scale into the lhs/output scale with canonical
+round-half-to-even semantics.
+Validation evidence: first/final Gate 0, focused tensor/IR/conformance tests, formatting, full
+`tensor_vm`, clippy, and release workspace passed; tarpaulin remained blocked by missing `cargo-tarpaulin`.
+Feature commit: `506b020` (`Implement fixed-point matmul rescale`) pushed to `origin/main`.
 
 ### Iteration 112: Fixed-Point Reciprocal Division Semantics
 
@@ -194,13 +208,13 @@ Earlier detailed iterations are summarized in the archive to keep this plan comp
 
 ## Validation Evidence
 
-Latest full validation is Iteration 113 on June 21, 2026:
+Latest full validation is Iteration 114 on June 21, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm fixed32_matmul_accumulates_then_rescales_to_lhs_scale_half_even --quiet
-cargo test -p tensor_vm exact_interpreter_executes_fixed32_matmul_with_mixed_scales --quiet
-cargo test -p tensor_vm graph_validation_rejects_unsupported_matmul_dtype --quiet
+cargo test -p tensor_vm packed_int8_payload_roundtrips_and_rejects_bad_layout --quiet
+cargo test -p tensor_vm exact_interpreter_executes_packed_int8_quantize_dequantize --quiet
+cargo test -p tensor_vm graph_verifier_accepts_packed_quantize_dequantize_receipt --quiet
 cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --quiet
 cargo test -p tensor_vm cpu_reference_passes_all_vectors --quiet
 cargo test -p tensor_vm conformance_vectors_cover_every_consensus_admitted_op --quiet

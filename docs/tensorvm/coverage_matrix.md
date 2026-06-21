@@ -56,9 +56,10 @@ shared codecs, p2p tensor payloads, and canonical IR JSON. The frozen registry n
 `quantize_int8_per_channel` and `dequantize_int8_per_channel` execution: quantize uses deterministic
 per-channel integer scales, round-half-even division, and int8 clamping, while dequantize multiplies by a
 rank-1 scale tensor and rejects ambiguous inferred channel dimensions. Byte-packed
-`quantize_pack_int8`/`unpack_dequantize_int8` are also admitted with a canonical flat `uint8` payload
-layout containing `TVQ8` magic/version bytes, rank, quantization axis, output scale, original shape,
-per-channel signed 64-bit scales, and row-major int8 payload bytes. Interpreter output includes named
+`quantize_pack_int8`/`unpack_dequantize_int8` are also admitted with a tensor-owned canonical flat `uint8`
+payload API containing `TVQ8` magic/version bytes, rank, quantization axis, output scale, original shape,
+per-channel signed 64-bit scales, and row-major int8 payload bytes, with bounded length calculation and
+shared encode/decode validation used by IR replay and conformance. Interpreter output includes named
 output tensors, per-op output commitment roots, and a Merkle `trace_root`; deferred Tier-C ops and
 admitted registry ops without implemented exact replay return explicit execution errors instead of being
 silently accepted. Local synthetic production now emits a deterministic graph-backed exact Tier-B job
@@ -141,10 +142,10 @@ Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: low-level packed tensor storage/chunking APIs, index-consistency proofs for
-`gather`/`scatter`/`embedding`, additional mixed-dtype conformance vectors, public/p2p artifact propagation
-evidence for externally supplied arbitrary graph jobs, and CUDA conformance evidence when `cuda-kernels` is
-not compiled in this environment.
+Remaining Tensor IR/conformance gaps: broader packed tensor chunking/public-artifact APIs,
+index-consistency proofs for `gather`/`scatter`/`embedding`, additional mixed-dtype conformance vectors,
+public/p2p artifact propagation evidence for externally supplied arbitrary graph jobs, and CUDA
+conformance evidence when `cuda-kernels` is not compiled in this environment.
 Content-addressed `const_blob` refs now resolve through local tensor artifacts keyed by the declared
 commitment URI, with shape/dtype/root checks during exact graph replay. Evidence:
 `ir::tests::exact_interpreter_executes_const_blob_by_content_uri`,

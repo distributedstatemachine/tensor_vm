@@ -5,8 +5,8 @@ use crate::field::{self, Elem, MODULUS};
 use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::jobs::{LinearTrainingStepJob, MatmulJob};
 use crate::tensor::{
-    DType, Tensor, divide_elem_for_dtype, rescale_signed_elem_half_even, signed_elem_to_i128,
-    signed_i128_to_elem,
+    DType, Tensor, decode_packed_int8_payload, divide_elem_for_dtype, encode_packed_int8_payload,
+    rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
 };
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
@@ -1282,25 +1282,21 @@ fn dequantize_channel_dim(shape: &[usize], scale_len: usize) -> Result<usize> {
     Ok(dim)
 }
 
-const PACKED_INT8_MAGIC: &[u8; 4] = b"TVQ8";
-const PACKED_INT8_VERSION: u8 = 1;
-const PACKED_INT8_HEADER_LEN: usize = 16;
-
 fn quantize_pack_tensor(tensor: &Tensor, axis: usize) -> Result<Tensor> {
     let scales = quantize_scales(tensor, axis)?;
     let quantized = quantize_tensor(tensor, axis, &scales)?;
-    let packed = encode_packed_int8(
+    let scale_elems = scales
+        .iter()
+        .map(|value| signed_i128_to_elem(*value))
+        .collect::<Vec<_>>();
+    let packed = encode_packed_int8_payload(
         tensor.shape(),
         axis,
         tensor.scale(),
-        &scales,
+        &scale_elems,
         quantized.as_slice(),
     )?;
-    Tensor::from_vec(
-        vec![packed.len()],
-        DType::Uint8,
-        packed.into_iter().map(Elem::from).collect(),
-    )
+    Tensor::from_vec(vec![packed.len()], DType::Uint8, packed)
 }
 
 fn unpack_dequantize_tensor(
@@ -1314,15 +1310,7 @@ fn unpack_dequantize_tensor(
             "invalid conformance packed dequantize",
         ));
     }
-    let bytes = tensor
-        .as_slice()
-        .iter()
-        .map(|value| {
-            u8::try_from(*value)
-                .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed dequantize"))
-        })
-        .collect::<Result<Vec<_>>>()?;
-    let decoded = decode_packed_int8(&bytes)?;
+    let decoded = decode_packed_int8_payload(tensor.as_slice())?;
     if decoded.shape != expected_shape
         || decoded.axis != axis
         || decoded.output_scale != output_scale
@@ -1336,148 +1324,9 @@ fn unpack_dequantize_tensor(
         vec![decoded.scales.len()],
         DType::Fixed32,
         decoded.output_scale,
-        decoded
-            .scales
-            .iter()
-            .map(|value| signed_i128_to_elem(*value))
-            .collect(),
+        decoded.scales,
     )?;
     dequantize_tensor(&q, &scale)
-}
-
-struct PackedInt8Payload {
-    shape: Vec<usize>,
-    axis: usize,
-    output_scale: i64,
-    scales: Vec<i128>,
-    quantized: Vec<Elem>,
-}
-
-fn packed_int8_len(shape: &[usize], axis: usize) -> Result<usize> {
-    if axis >= shape.len() {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed quantize",
-        ));
-    }
-    let elements = shape.iter().try_fold(1usize, |product, dim| {
-        product.checked_mul(*dim).ok_or(TvmError::InvalidReceipt(
-            "invalid conformance packed quantize",
-        ))
-    })?;
-    PACKED_INT8_HEADER_LEN
-        .checked_add(shape.len().checked_mul(8).ok_or(TvmError::InvalidReceipt(
-            "invalid conformance packed quantize",
-        ))?)
-        .and_then(|len| len.checked_add(shape[axis].checked_mul(8)?))
-        .and_then(|len| len.checked_add(elements))
-        .ok_or(TvmError::InvalidReceipt(
-            "invalid conformance packed quantize",
-        ))
-}
-
-fn encode_packed_int8(
-    shape: &[usize],
-    axis: usize,
-    output_scale: i64,
-    scales: &[i128],
-    quantized: &[Elem],
-) -> Result<Vec<u8>> {
-    if axis >= shape.len() || scales.len() != shape[axis] {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed quantize",
-        ));
-    }
-    let rank = u8::try_from(shape.len())
-        .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed quantize"))?;
-    let axis_byte = u8::try_from(axis)
-        .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed quantize"))?;
-    let mut out = Vec::with_capacity(packed_int8_len(shape, axis)?);
-    out.extend_from_slice(PACKED_INT8_MAGIC);
-    out.push(PACKED_INT8_VERSION);
-    out.push(rank);
-    out.push(axis_byte);
-    out.push(0);
-    out.extend_from_slice(&output_scale.to_le_bytes());
-    for dim in shape {
-        out.extend_from_slice(&(*dim as u64).to_le_bytes());
-    }
-    for scale in scales {
-        let raw = i64::try_from(*scale)
-            .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed quantize"))?;
-        out.extend_from_slice(&raw.to_le_bytes());
-    }
-    for value in quantized {
-        let raw = i8::try_from(signed_elem_to_i128(*value))
-            .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed quantize"))?;
-        out.push(raw as u8);
-    }
-    Ok(out)
-}
-
-fn decode_packed_int8(bytes: &[u8]) -> Result<PackedInt8Payload> {
-    if bytes.len() < PACKED_INT8_HEADER_LEN
-        || &bytes[0..4] != PACKED_INT8_MAGIC
-        || bytes[4] != PACKED_INT8_VERSION
-        || bytes[7] != 0
-    {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed dequantize",
-        ));
-    }
-    let rank = bytes[5] as usize;
-    let axis = bytes[6] as usize;
-    if rank == 0 || axis >= rank {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed dequantize",
-        ));
-    }
-    let output_scale = i64::from_le_bytes(read_packed_i64(bytes, 8)?);
-    let mut offset = PACKED_INT8_HEADER_LEN;
-    let mut shape = Vec::with_capacity(rank);
-    for _ in 0..rank {
-        shape.push(
-            usize::try_from(u64::from_le_bytes(read_packed_i64(bytes, offset)?))
-                .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed dequantize"))?,
-        );
-        offset += 8;
-    }
-    if bytes.len() != packed_int8_len(&shape, axis)? {
-        return Err(TvmError::InvalidReceipt(
-            "invalid conformance packed dequantize",
-        ));
-    }
-    let mut scales = Vec::with_capacity(shape[axis]);
-    for _ in 0..shape[axis] {
-        let raw = i64::from_le_bytes(read_packed_i64(bytes, offset)?);
-        offset += 8;
-        if raw <= 0 {
-            return Err(TvmError::InvalidReceipt(
-                "invalid conformance packed dequantize",
-            ));
-        }
-        scales.push(raw as i128);
-    }
-    let quantized = bytes[offset..]
-        .iter()
-        .map(|byte| signed_i128_to_elem(i8::from_le_bytes([*byte]) as i128))
-        .collect();
-    Ok(PackedInt8Payload {
-        shape,
-        axis,
-        output_scale,
-        scales,
-        quantized,
-    })
-}
-
-fn read_packed_i64(bytes: &[u8], offset: usize) -> Result<[u8; 8]> {
-    bytes
-        .get(offset..offset + 8)
-        .ok_or(TvmError::InvalidReceipt(
-            "invalid conformance packed dequantize",
-        ))?
-        .try_into()
-        .map_err(|_| TvmError::InvalidReceipt("invalid conformance packed dequantize"))
 }
 
 fn div_round_half_even_i128(value: i128, divisor: i128) -> Result<i128> {

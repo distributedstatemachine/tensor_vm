@@ -642,6 +642,170 @@ pub fn signed_i128_to_elem(value: i128) -> Elem {
     value.rem_euclid(modulus) as Elem
 }
 
+pub const PACKED_INT8_MAGIC: &[u8; 4] = b"TVQ8";
+pub const PACKED_INT8_VERSION: u8 = 1;
+pub const PACKED_INT8_HEADER_LEN: usize = 16;
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PackedInt8Payload {
+    pub shape: Vec<usize>,
+    pub axis: usize,
+    pub output_scale: i64,
+    pub scales: Vec<Elem>,
+    pub quantized: Vec<Elem>,
+}
+
+pub fn packed_int8_payload_len(shape: &[usize], axis: usize) -> Result<usize> {
+    if axis >= shape.len() {
+        return Err(TvmError::InvalidReceipt("packed int8 axis mismatch"));
+    }
+    let elements = checked_len(shape)?;
+    PACKED_INT8_HEADER_LEN
+        .checked_add(
+            shape
+                .len()
+                .checked_mul(8)
+                .ok_or(TvmError::InvalidReceipt("packed int8 shape overflow"))?,
+        )
+        .and_then(|len| len.checked_add(shape[axis].checked_mul(8)?))
+        .and_then(|len| len.checked_add(elements))
+        .ok_or(TvmError::InvalidReceipt("packed int8 shape overflow"))
+}
+
+pub fn encode_packed_int8_payload(
+    shape: &[usize],
+    axis: usize,
+    output_scale: i64,
+    scales: &[Elem],
+    quantized: &[Elem],
+) -> Result<Vec<Elem>> {
+    validate_packed_int8_parts(shape, axis, scales, quantized)?;
+    let rank = u8::try_from(shape.len())
+        .map_err(|_| TvmError::InvalidReceipt("packed int8 rank overflow"))?;
+    let axis_byte =
+        u8::try_from(axis).map_err(|_| TvmError::InvalidReceipt("packed int8 axis overflow"))?;
+    let mut out = Vec::with_capacity(packed_int8_payload_len(shape, axis)?);
+    out.extend_from_slice(PACKED_INT8_MAGIC);
+    out.push(PACKED_INT8_VERSION);
+    out.push(rank);
+    out.push(axis_byte);
+    out.push(0);
+    out.extend_from_slice(&output_scale.to_le_bytes());
+    for dim in shape {
+        let dim = u64::try_from(*dim)
+            .map_err(|_| TvmError::InvalidReceipt("packed int8 shape overflow"))?;
+        out.extend_from_slice(&dim.to_le_bytes());
+    }
+    for scale in scales {
+        let raw = i64::try_from(signed_elem_to_i128(*scale))
+            .map_err(|_| TvmError::InvalidReceipt("packed int8 scale mismatch"))?;
+        if raw <= 0 {
+            return Err(TvmError::InvalidReceipt("packed int8 scale mismatch"));
+        }
+        out.extend_from_slice(&raw.to_le_bytes());
+    }
+    for value in quantized {
+        let raw = i8::try_from(signed_elem_to_i128(*value))
+            .map_err(|_| TvmError::InvalidReceipt("packed int8 value mismatch"))?;
+        out.push(raw as u8);
+    }
+    Ok(out.into_iter().map(Elem::from).collect())
+}
+
+pub fn decode_packed_int8_payload(payload: &[Elem]) -> Result<PackedInt8Payload> {
+    let bytes = payload
+        .iter()
+        .map(|value| {
+            u8::try_from(field::normalize(*value))
+                .map_err(|_| TvmError::InvalidReceipt("packed int8 byte out of range"))
+        })
+        .collect::<Result<Vec<_>>>()?;
+    decode_packed_int8_bytes(&bytes)
+}
+
+fn validate_packed_int8_parts(
+    shape: &[usize],
+    axis: usize,
+    scales: &[Elem],
+    quantized: &[Elem],
+) -> Result<()> {
+    if axis >= shape.len() {
+        return Err(TvmError::InvalidReceipt("packed int8 axis mismatch"));
+    }
+    if scales.len() != shape[axis] || quantized.len() != checked_len(shape)? {
+        return Err(TvmError::InvalidReceipt("packed int8 metadata mismatch"));
+    }
+    for scale in scales {
+        let raw = i64::try_from(signed_elem_to_i128(*scale))
+            .map_err(|_| TvmError::InvalidReceipt("packed int8 scale mismatch"))?;
+        if raw <= 0 {
+            return Err(TvmError::InvalidReceipt("packed int8 scale mismatch"));
+        }
+    }
+    for value in quantized {
+        i8::try_from(signed_elem_to_i128(*value))
+            .map_err(|_| TvmError::InvalidReceipt("packed int8 value mismatch"))?;
+    }
+    Ok(())
+}
+
+fn decode_packed_int8_bytes(bytes: &[u8]) -> Result<PackedInt8Payload> {
+    if bytes.len() < PACKED_INT8_HEADER_LEN
+        || &bytes[0..4] != PACKED_INT8_MAGIC
+        || bytes[4] != PACKED_INT8_VERSION
+        || bytes[7] != 0
+    {
+        return Err(TvmError::InvalidReceipt("packed int8 header mismatch"));
+    }
+    let rank = bytes[5] as usize;
+    let axis = bytes[6] as usize;
+    if rank == 0 || axis >= rank {
+        return Err(TvmError::InvalidReceipt("packed int8 metadata mismatch"));
+    }
+    let output_scale = i64::from_le_bytes(read_packed_i64(bytes, 8)?);
+    let mut offset = PACKED_INT8_HEADER_LEN;
+    let mut shape = Vec::with_capacity(rank);
+    for _ in 0..rank {
+        let dim = u64::from_le_bytes(read_packed_i64(bytes, offset)?);
+        offset += 8;
+        shape.push(
+            usize::try_from(dim)
+                .map_err(|_| TvmError::InvalidReceipt("packed int8 shape overflow"))?,
+        );
+    }
+    if bytes.len() != packed_int8_payload_len(&shape, axis)? {
+        return Err(TvmError::InvalidReceipt("packed int8 length mismatch"));
+    }
+    let mut scales = Vec::with_capacity(shape[axis]);
+    for _ in 0..shape[axis] {
+        let raw = i64::from_le_bytes(read_packed_i64(bytes, offset)?);
+        offset += 8;
+        if raw <= 0 {
+            return Err(TvmError::InvalidReceipt("packed int8 scale mismatch"));
+        }
+        scales.push(signed_i128_to_elem(raw as i128));
+    }
+    let quantized = bytes[offset..]
+        .iter()
+        .map(|byte| signed_i128_to_elem(i8::from_le_bytes([*byte]) as i128))
+        .collect();
+    Ok(PackedInt8Payload {
+        shape,
+        axis,
+        output_scale,
+        scales,
+        quantized,
+    })
+}
+
+fn read_packed_i64(bytes: &[u8], offset: usize) -> Result<[u8; 8]> {
+    bytes
+        .get(offset..offset + 8)
+        .ok_or(TvmError::InvalidReceipt("packed int8 length mismatch"))?
+        .try_into()
+        .map_err(|_| TvmError::InvalidReceipt("packed int8 length mismatch"))
+}
+
 fn validate_dtype_values(dtype: DType, data: &[Elem]) -> Result<()> {
     match dtype {
         DType::Int8 => {
@@ -1036,6 +1200,58 @@ mod tests {
                 .as_slice()
                 .iter()
                 .all(|value| matches!(field::normalize(*value), 0 | 1))
+        );
+    }
+
+    #[test]
+    fn packed_int8_payload_roundtrips_and_rejects_bad_layout() {
+        let p = field::MODULUS;
+        let shape = vec![2, 3];
+        let scales = vec![1, 2, 2];
+        let quantized = vec![0, 32, 64, p - 64, p - 64, 64];
+        let encoded = encode_packed_int8_payload(&shape, 1, 0, &scales, &quantized).unwrap();
+        let expected_bytes = vec![
+            84, 86, 81, 56, 1, 2, 1, 0, 0, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 3, 0, 0, 0,
+            0, 0, 0, 0, 1, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 2, 0, 0, 0, 0, 0, 0, 0, 0,
+            32, 64, 192, 192, 64,
+        ];
+        assert_eq!(
+            encoded,
+            expected_bytes
+                .iter()
+                .map(|value| *value as Elem)
+                .collect::<Vec<_>>()
+        );
+        assert_eq!(packed_int8_payload_len(&shape, 1).unwrap(), encoded.len());
+
+        let decoded = decode_packed_int8_payload(&encoded).unwrap();
+        assert_eq!(decoded.shape, shape);
+        assert_eq!(decoded.axis, 1);
+        assert_eq!(decoded.output_scale, 0);
+        assert_eq!(decoded.scales, scales);
+        assert_eq!(decoded.quantized, quantized);
+
+        let mut bad_magic = encoded.clone();
+        bad_magic[0] = 0;
+        assert_eq!(
+            decode_packed_int8_payload(&bad_magic),
+            Err(TvmError::InvalidReceipt("packed int8 header mismatch"))
+        );
+        let mut bad_len = encoded.clone();
+        bad_len.pop();
+        assert_eq!(
+            decode_packed_int8_payload(&bad_len),
+            Err(TvmError::InvalidReceipt("packed int8 length mismatch"))
+        );
+        let mut bad_byte = encoded.clone();
+        bad_byte[0] = 256;
+        assert_eq!(
+            decode_packed_int8_payload(&bad_byte),
+            Err(TvmError::InvalidReceipt("packed int8 byte out of range"))
+        );
+        assert_eq!(
+            encode_packed_int8_payload(&shape, 2, 0, &scales, &quantized),
+            Err(TvmError::InvalidReceipt("packed int8 axis mismatch"))
         );
     }
 
