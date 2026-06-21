@@ -80,6 +80,7 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         .find(|reward| reward.beneficiary == miner)
         .unwrap();
     assert!(pending_claim.awaiting_inclusion());
+    assert_eq!(pending_claim.claimable_at_height(), None);
     assert_eq!(
         chain
             .state()
@@ -121,7 +122,8 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         .values()
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height();
+        .claimable_at_height()
+        .expect("receipt reward should have inclusion-derived maturity");
     assert_eq!(
         claimable_at_height,
         block
@@ -275,7 +277,8 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
         .values()
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height();
+        .claimable_at_height()
+        .expect("receipt reward should have inclusion-derived maturity");
     assert_eq!(
         inclusion_claimable_at_height,
         block
@@ -463,7 +466,8 @@ fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
             .values()
             .find(|reward| reward.receipt_id == dominant_receipt.receipt_id)
             .unwrap()
-            .claimable_at_height(),
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
         block
             .height
             .saturating_add(chain.params().reward_maturity_delay_blocks())
@@ -675,7 +679,10 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge
-                && reward.claimable_at_height() == reward_hold_until_height)
+                && reward
+                    .claimable_at_height()
+                    .expect("receipt reward should have inclusion-derived maturity")
+                    == reward_hold_until_height)
     );
     assert_eq!(
         chain
@@ -837,7 +844,10 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge
-                && reward.claimable_at_height() == reward_hold_until_height)
+                && reward
+                    .claimable_at_height()
+                    .expect("receipt reward should have inclusion-derived maturity")
+                    == reward_hold_until_height)
     );
     assert_eq!(
         chain
@@ -1018,11 +1028,12 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .iter()
             .any(|reward| reward.kind == ReceiptRewardKind::Validator)
     );
-    assert!(
-        delayed_claims
-            .iter()
-            .all(|reward| reward.claimable_at_height() == redundant_reward_delay_until_height)
-    );
+    assert!(delayed_claims.iter().all(|reward| {
+        reward
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity")
+            == redundant_reward_delay_until_height
+    }));
     drop(delayed_claims);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
@@ -1042,7 +1053,10 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipts[0].receipt_id)
-            .all(|reward| reward.claimable_at_height() == inclusion_reward_delay_until_height)
+            .all(|reward| reward
+                .claimable_at_height()
+                .expect("receipt reward should have inclusion-derived maturity")
+                == inclusion_reward_delay_until_height)
     );
     chain.set_position_for_testing(inclusion_reward_delay_until_height.saturating_sub(1), 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

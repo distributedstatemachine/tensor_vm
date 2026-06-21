@@ -193,13 +193,14 @@ fn invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards() {
     chain.settle_epoch(1_000, 500);
     let starting_root = chain.state_root();
     let starting_treasury = chain.state().rewards().treasury();
-    let claimable_at_height = chain
+    let pending_reward = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
-        .unwrap()
-        .claimable_at_height();
+        .unwrap();
+    assert!(pending_reward.awaiting_inclusion());
+    assert_eq!(pending_reward.claimable_at_height(), None);
 
     let invalid_attestation = ValidatorAttestation::new(
         validators[2],
@@ -248,6 +249,14 @@ fn invalid_output_attestation_slashes_receipt_miner_once_and_voids_rewards() {
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
             .all(|reward| reward.voided_by_challenge)
     );
+    let claimable_at_height = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .unwrap()
+        .claimable_at_height()
+        .expect("voided receipt reward should have challenge-hold maturity");
 
     chain.set_position_for_testing(claimable_at_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
@@ -369,7 +378,12 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
                 && reward.kind == ReceiptRewardKind::Validator
         })
         .expect("validator reward should remain pending through audit deadline");
-    assert_eq!(delayed_validator_claim.claimable_at_height(), 1);
+    assert_eq!(
+        delayed_validator_claim
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
+        1
+    );
     assert!(!delayed_validator_claim.voided_by_challenge);
     assert!(chain.state().validator_audit_slashes().is_empty());
 
@@ -410,7 +424,9 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         .expect("slashed validator reward should remain pending through appeal deadline");
     assert!(voided_validator_claim.voided_by_challenge);
     assert_eq!(
-        voided_validator_claim.claimable_at_height(),
+        voided_validator_claim
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
         slash
             .slashed_at_height
             .saturating_add(chain.params().validator_audit_window_blocks.max(1))
@@ -588,7 +604,12 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
                 && reward.kind == ReceiptRewardKind::Validator
         })
         .expect("audited validator reward should be delayed by assignment");
-    assert_eq!(delayed_validator_claim.claimable_at_height(), 3);
+    assert_eq!(
+        delayed_validator_claim
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
+        3
+    );
     assert!(!delayed_validator_claim.voided_by_challenge);
 
     let report = ValidatorAuditReport::new(
@@ -746,12 +767,16 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .expect("contradicted validator reward should stay pending until release");
     assert!(voided_validator_claim.voided_by_challenge);
     assert_eq!(
-        voided_validator_claim.claimable_at_height(),
+        voided_validator_claim
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
         slash
             .slashed_at_height
             .saturating_add(chain.params().validator_audit_window_blocks.max(1))
     );
-    let claimable_at_height = voided_validator_claim.claimable_at_height();
+    let claimable_at_height = voided_validator_claim
+        .claimable_at_height()
+        .expect("receipt reward should have inclusion-derived maturity");
     let mut upheld_chain = chain.clone();
     let upheld_events = upheld_chain
         .resolve_validator_audit_appeal(audit_id, ValidatorAuditAppealResolution::UpholdSlash)
@@ -847,7 +872,9 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .expect("reversed appeal should keep the delayed validator reward claim pending");
     assert!(!reinstated_validator_claim.voided_by_challenge);
     assert_eq!(
-        reinstated_validator_claim.claimable_at_height(),
+        reinstated_validator_claim
+            .claimable_at_height()
+            .expect("receipt reward should have inclusion-derived maturity"),
         claimable_at_height
     );
     assert_eq!(chain.state().rewards().balance(&audited), 0);

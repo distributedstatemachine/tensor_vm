@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 127 complete - Codex 5.5 local-chain workflow doc.
+- Active feature: Iteration 128 complete - receipt reward delay API cleanup.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -15,7 +15,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
   and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
   Newly emitted receipt-reward pending events now carry that maturity state directly instead of flattening
-  awaiting-inclusion rewards into a synthetic claim height.
+  awaiting-inclusion rewards into a synthetic claim height, and the internal receipt reward claim-height
+  API now returns no height for awaiting-inclusion claims instead of a sentinel workaround.
   Block-check, invalid-output, and data-unavailability evidence now delays voided receipt claims to a
   state-rooted challenge hold height before they can be swept without credit.
   Selected-receipt block openings now expose typed block-check transcript commitments and
@@ -63,6 +64,37 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 128: Receipt Reward Delay API Cleanup
+
+Feature capability: make awaiting-inclusion receipt rewards genuinely heightless in the internal API.
+Readiness requirements covered: `mvp_spec.md` delayed receipt reward finality and reward-rooted pending
+claim state without synthetic claim-height workarounds.
+Files/modules touched: `chain::state`, focused receipt reward tests, and storage durability assertions.
+Parallel subagents to run: not used; available subagent tool requires explicit user delegation.
+Tests/checkers/docs to add or update: focused pending/reward tests and this execution plan.
+Narrow validation commands: `cargo test -p tensor_vm pending_reward_claim --quiet`,
+`cargo test -p tensor_vm receipt_rewards --quiet`.
+Broad validation commands before commit: fmt, diff check, tensor_vm tests, clippy, workspace release tests,
+tarpaulin attempt, final Gate 0.
+Expected observable evidence: awaiting-inclusion receipt rewards expose `None` for claim height until block
+inclusion assigns a real maturity height.
+Out of scope: reward storage format, Docker rerun, public deployment evidence, and CUDA evidence.
+Split trigger: production callers require a wider reward-claim serialization migration.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused tests passed: `cargo test -p tensor_vm pending_reward_claim --quiet`,
+  `cargo test -p tensor_vm receipt_rewards --quiet`.
+- Broader checks passed: `cargo fmt --check --all`, `git diff --check`,
+  `cargo test -p tensor_vm --quiet`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+  `cargo test --workspace --release`.
+- Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
+  `error: no such command: tarpaulin`.
+- Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+- Commit/push evidence: pending.
+
+## Recent Iterations
 
 ### Iteration 127: Codex 5.5 Local Chain Workflow Doc
 

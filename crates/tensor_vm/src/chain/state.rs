@@ -358,10 +358,10 @@ pub enum ReceiptRewardMaturity {
 }
 
 impl ReceiptRewardMaturity {
-    pub fn claimable_at_height(self) -> u64 {
+    pub fn claimable_at_height(self) -> Option<u64> {
         match self {
-            Self::AwaitingInclusion => RECEIPT_REWARD_AWAITING_INCLUSION_SORT_HEIGHT,
-            Self::ClaimableAt(height) => height,
+            Self::AwaitingInclusion => None,
+            Self::ClaimableAt(height) => Some(height),
         }
     }
 
@@ -382,7 +382,7 @@ impl PendingReceiptReward {
         matches!(self.maturity, ReceiptRewardMaturity::AwaitingInclusion)
     }
 
-    pub fn claimable_at_height(&self) -> u64 {
+    pub fn claimable_at_height(&self) -> Option<u64> {
         self.maturity.claimable_at_height()
     }
 

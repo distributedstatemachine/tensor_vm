@@ -778,7 +778,8 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
         .values()
         .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height();
+        .claimable_at_height()
+        .expect("receipt reward should have inclusion-derived maturity");
     assert_eq!(
         claimable_at_height,
         block0

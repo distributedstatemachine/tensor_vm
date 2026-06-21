@@ -1962,7 +1962,10 @@ mod tests {
                 .any(|reward| reward.amount == 1_000
                     && reward.kind == ReceiptRewardKind::Miner
                     && reward.claim_id != [0; 32]
-                    && reward.claimable_at_height() > chain.state().height()
+                    && reward
+                        .claimable_at_height()
+                        .expect("receipt reward should have inclusion-derived maturity")
+                        > chain.state().height()
                     && !reward.voided_by_challenge)
         );
         assert!(

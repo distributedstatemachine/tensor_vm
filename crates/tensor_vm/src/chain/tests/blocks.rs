@@ -627,7 +627,8 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
-        .claimable_at_height();
+        .claimable_at_height()
+        .expect("receipt reward should have inclusion-derived maturity");
     assert_eq!(
         inclusion_delayed_claimable,
         block.height.saturating_add(
