@@ -87,6 +87,7 @@ Validation evidence:
 - Coverage regeneration remains blocked because `cargo tarpaulin --workspace --offline` reports
   `error: no such command: tarpaulin`.
 - Final Gate 0 passed: `cargo test -p tensor_vm local_testnet --release`.
+- Commit/push evidence: committed as `2c5cb68` and pushed to `origin/main`.
 
 ### Iteration 125: Explicit Pending Reward Maturity Views
 
