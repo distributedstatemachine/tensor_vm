@@ -6,9 +6,9 @@ use super::roots::{
 use super::{
     BlockAdmission, BlockApplyOutcome, BlockInvalidReason, BlockParentSnapshot, BlockspaceCaps,
     BlockspaceSelection, Chain, ChainCommand, ChainEngine, ChainState,
-    DataUnavailabilitySlashRecord, PendingProposerReward, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
-    ReceiptRewardKind, ReceiptState, SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment,
-    ValidatorAuditSlashRecord, settlement,
+    DataUnavailabilitySlashRecord, PendingProposerReward, ReceiptRewardKind, ReceiptState,
+    SelectedReceiptOpening, TensorBlock, ValidatorAuditAssignment, ValidatorAuditSlashRecord,
+    settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -1075,14 +1075,7 @@ fn apply_block_to_parent_state(
         child_state.included_receipts.insert(*receipt_id);
         for reward in child_state.pending_receipt_rewards.values_mut() {
             if reward.receipt_id == *receipt_id {
-                reward.claimable_at_height =
-                    if reward.claimable_at_height == RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT {
-                        receipt_reward_claimable_at_height
-                    } else {
-                        reward
-                            .claimable_at_height
-                            .max(receipt_reward_claimable_at_height)
-                    };
+                reward.delay_until(receipt_reward_claimable_at_height);
             }
         }
     }
@@ -1269,7 +1262,7 @@ fn delay_validator_audit_reward(
             && reward.beneficiary == *validator
             && reward.kind == ReceiptRewardKind::Validator
         {
-            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
+            reward.delay_until(claimable_at_height);
         }
     }
 }
@@ -1285,7 +1278,7 @@ fn void_validator_audit_reward(
             && reward.beneficiary == *validator
             && reward.kind == ReceiptRewardKind::Validator
         {
-            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
+            reward.delay_until(claimable_at_height);
             reward.voided_by_challenge = true;
         }
     }

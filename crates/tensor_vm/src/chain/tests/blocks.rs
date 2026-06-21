@@ -597,14 +597,13 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .unwrap();
 
     chain.settle_epoch(1_000, 500);
-    let initial_claimable = chain
+    let initial_claim = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
-        .unwrap()
-        .claimable_at_height;
-    assert_eq!(initial_claimable, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT);
+        .unwrap();
+    assert!(initial_claim.awaiting_inclusion());
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert!(
@@ -628,7 +627,7 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert_eq!(
         inclusion_delayed_claimable,
         block.height.saturating_add(

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 21, 2026 from the workspace root during Iteration 118 with:
+Latest attempted run: June 21, 2026 from the workspace root during Iteration 119 with:
 
 ```bash
 cargo tarpaulin --workspace --offline
@@ -15,8 +15,8 @@ help: view all installed commands with `cargo --list`
 help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 118 coverage could not
-be regenerated. Iterations 78 through 118 rechecked the same command and hit the same missing-binary
+This environment does not currently have `cargo-tarpaulin` installed, so Iteration 119 coverage could not
+be regenerated. Iterations 78 through 119 rechecked the same command and hit the same missing-binary
 blocker. The most recent completed coverage report below remains the prior May 23, 2026 run.
 
 Generated on May 23, 2026 from the workspace root with:
@@ -139,7 +139,7 @@ block apply coverage checks that delayed inclusion after fallback production doe
 tensor retention deadline.
 Iteration 103 made settled receipt rewards explicitly await canonical blockspace inclusion before their
 reward maturity clock starts. Focused settlement, reward, block, and audit tests cover the
-awaiting-inclusion sentinel, inclusion-derived claimable heights, reward-root sensitivity, and continued
+awaiting-inclusion maturity state, inclusion-derived claimable heights, reward-root sensitivity, and continued
 voiding/slashing behavior.
 Iteration 104 adds local finalized-beacon randomness construction evidence. Focused randomness, status,
 RPC, and explorer tests cover non-placeholder local finalized-beacon round mapping, local validator VRF
@@ -183,6 +183,10 @@ Iteration 118 adds automatic external graph artifact fetching at the runtime rol
 runtime tests cover pending graph job payloads fetching missing program bodies before retry, miner roles
 fetching graph input plus `const_blob` tensors before execution, and validator roles fetching graph input,
 output, and `const_blob` tensors before attestation.
+Iteration 119 replaces the receipt reward awaiting-inclusion height sentinel with an explicit
+`ReceiptRewardMaturity` state committed by reward roots and chain-state storage. Focused reward,
+settlement, attestation, and storage tests cover awaiting-inclusion claims, inclusion-derived delayed
+heights, mature release, audit delay/voiding, and roundtrip persistence.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

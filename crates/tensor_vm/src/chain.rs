@@ -36,13 +36,13 @@ pub use state::{
     Chain, ChainParams, ChainState, DataUnavailabilitySlashRecord, DetectionProbabilityEvidence,
     DetectionProbabilityEvidenceSummary, ExternalRandomnessBeaconRecord, HardwareClass,
     InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
-    PendingCreditReward, PendingProposerReward, PendingReceiptReward,
-    RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT, RandomnessBindingEvidence, ReceiptRandomnessAnchor,
-    ReceiptRewardKind, ReceiptState, RedundantSettlementDelayRecord, RewardAllocation,
-    RewardClaimKey, RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening,
-    TensorBlock, Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditEconomicCalibration,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    PendingCreditReward, PendingProposerReward, PendingReceiptReward, RandomnessBindingEvidence,
+    ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptRewardMaturity, ReceiptState,
+    RedundantSettlementDelayRecord, RewardAllocation, RewardClaimKey, RewardClaimLedger,
+    RewardClaimView, RewardState, SelectedReceiptOpening, TensorBlock, Transaction,
+    ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditEconomicCalibration, ValidatorAuditReport,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 pub use validation::{

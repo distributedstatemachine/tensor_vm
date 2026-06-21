@@ -3,9 +3,9 @@ use crate::chain::{
     ChainStateParts, DataUnavailabilitySlashRecord, ExternalRandomnessBeaconRecord, HardwareClass,
     InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
     PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
-    ReceiptRewardKind, ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
-    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ReceiptRewardKind, ReceiptRewardMaturity, ReceiptState, RedundantSettlementDelayRecord,
+    RewardState, TensorBlock, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
 };
 use crate::codec::{
     self as payload_codec, primitive_type_from_tag, primitive_type_tag,
@@ -1290,7 +1290,13 @@ fn encode_pending_receipt_rewards(
         write_hash(out, &reward.beneficiary);
         write_u64(out, reward.amount);
         out.push(reward.kind.tag());
-        write_u64(out, reward.claimable_at_height);
+        match reward.maturity {
+            ReceiptRewardMaturity::AwaitingInclusion => out.push(0),
+            ReceiptRewardMaturity::ClaimableAt(height) => {
+                out.push(1);
+                write_u64(out, height);
+            }
+        }
         out.push(u8::from(reward.voided_by_challenge));
     }
 }
@@ -1310,7 +1316,11 @@ fn decode_pending_receipt_rewards(
             2 => ReceiptRewardKind::Validator,
             _ => return Err(TvmError::Storage("invalid pending receipt reward kind")),
         };
-        let claimable_at_height = reader.read_u64()?;
+        let maturity = match reader.read_u8()? {
+            0 => ReceiptRewardMaturity::AwaitingInclusion,
+            1 => ReceiptRewardMaturity::ClaimableAt(reader.read_u64()?),
+            _ => return Err(TvmError::Storage("invalid pending receipt reward maturity")),
+        };
         let voided_by_challenge = match reader.read_u8()? {
             0 => false,
             1 => true,
@@ -1324,7 +1334,7 @@ fn decode_pending_receipt_rewards(
                 beneficiary,
                 amount,
                 kind,
-                claimable_at_height,
+                maturity,
                 voided_by_challenge,
             },
         );
@@ -1947,7 +1957,7 @@ mod tests {
                 .any(|reward| reward.amount == 1_000
                     && reward.kind == ReceiptRewardKind::Miner
                     && reward.claim_id != [0; 32]
-                    && reward.claimable_at_height > chain.state().height()
+                    && reward.claimable_at_height() > chain.state().height()
                     && !reward.voided_by_challenge)
         );
         assert!(

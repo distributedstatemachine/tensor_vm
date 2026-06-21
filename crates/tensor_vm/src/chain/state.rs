@@ -12,7 +12,7 @@ use crate::verify::{
 };
 use std::collections::{BTreeMap, BTreeSet};
 
-pub const RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT: u64 = u64::MAX;
+pub const RECEIPT_REWARD_AWAITING_INCLUSION_SORT_HEIGHT: u64 = u64::MAX;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ChainParams {
@@ -346,8 +346,52 @@ pub struct PendingReceiptReward {
     pub beneficiary: Address,
     pub amount: u64,
     pub kind: ReceiptRewardKind,
-    pub claimable_at_height: u64,
+    pub maturity: ReceiptRewardMaturity,
     pub voided_by_challenge: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum ReceiptRewardMaturity {
+    AwaitingInclusion,
+    ClaimableAt(u64),
+}
+
+impl ReceiptRewardMaturity {
+    pub fn claimable_at_height(self) -> u64 {
+        match self {
+            Self::AwaitingInclusion => RECEIPT_REWARD_AWAITING_INCLUSION_SORT_HEIGHT,
+            Self::ClaimableAt(height) => height,
+        }
+    }
+
+    pub fn is_mature_at(self, height: u64) -> bool {
+        matches!(self, Self::ClaimableAt(claimable_at_height) if claimable_at_height <= height)
+    }
+
+    pub fn delayed_until(self, height: u64) -> Self {
+        match self {
+            Self::AwaitingInclusion => Self::ClaimableAt(height),
+            Self::ClaimableAt(current) => Self::ClaimableAt(current.max(height)),
+        }
+    }
+}
+
+impl PendingReceiptReward {
+    pub fn awaiting_inclusion(&self) -> bool {
+        matches!(self.maturity, ReceiptRewardMaturity::AwaitingInclusion)
+    }
+
+    pub fn claimable_at_height(&self) -> u64 {
+        self.maturity.claimable_at_height()
+    }
+
+    pub fn is_mature_at(&self, height: u64) -> bool {
+        self.maturity.is_mature_at(height)
+    }
+
+    pub fn delay_until(&mut self, height: u64) {
+        self.maturity = self.maturity.delayed_until(height);
+    }
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1489,7 +1533,7 @@ impl ChainState {
                 related_id: None,
                 beneficiary: reward.beneficiary,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height,
+                claimable_at_height: reward.claimable_at_height(),
                 voided_by_challenge: reward.voided_by_challenge,
             });
         }
@@ -1543,7 +1587,7 @@ impl ChainState {
             .collect::<Vec<_>>();
         let reward_from_fraud = at_risk_validator_rewards
             .iter()
-            .filter(|reward| reward.claimable_at_height <= self.height)
+            .filter(|reward| reward.is_mature_at(self.height))
             .map(|reward| reward.amount)
             .max()
             .unwrap_or_default();
@@ -1600,7 +1644,7 @@ impl ChainState {
             params.data_unavailability_miner_slash_amount,
             at_risk_miner_rewards
                 .iter()
-                .filter(|reward| reward.claimable_at_height <= self.height)
+                .filter(|reward| reward.is_mature_at(self.height))
                 .map(|reward| reward.amount)
                 .max()
                 .unwrap_or_default(),
@@ -1613,7 +1657,7 @@ impl ChainState {
             params.invalid_output_miner_slash_amount,
             at_risk_miner_rewards
                 .iter()
-                .filter(|reward| reward.claimable_at_height <= self.height)
+                .filter(|reward| reward.is_mature_at(self.height))
                 .map(|reward| reward.amount)
                 .max()
                 .unwrap_or_default(),

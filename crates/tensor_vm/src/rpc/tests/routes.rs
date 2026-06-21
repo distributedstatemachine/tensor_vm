@@ -519,7 +519,7 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         beneficiary: address(b"rpc-audit-validator"),
         amount: 60,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 10,
+        maturity: ReceiptRewardMaturity::ClaimableAt(10),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -528,7 +528,7 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         beneficiary: address(b"rpc-fraud-path-miner"),
         amount: 9,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 10,
+        maturity: ReceiptRewardMaturity::ClaimableAt(10),
         voided_by_challenge: false,
     });
     chain

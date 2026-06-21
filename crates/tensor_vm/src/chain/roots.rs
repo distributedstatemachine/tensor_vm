@@ -340,7 +340,13 @@ pub(super) fn pending_receipt_reward_root(rewards: &BTreeMap<Hash, PendingReceip
         encoded.extend_from_slice(&reward.beneficiary);
         encoded.extend_from_slice(&reward.amount.to_le_bytes());
         encoded.push(reward.kind.tag());
-        encoded.extend_from_slice(&reward.claimable_at_height.to_le_bytes());
+        match reward.maturity {
+            super::ReceiptRewardMaturity::AwaitingInclusion => encoded.push(0),
+            super::ReceiptRewardMaturity::ClaimableAt(height) => {
+                encoded.push(1);
+                encoded.extend_from_slice(&height.to_le_bytes());
+            }
+        }
         encoded.push(u8::from(reward.voided_by_challenge));
     }
     hash_bytes(b"tensor-vm-pending-receipt-reward-root-v1", &[&encoded])

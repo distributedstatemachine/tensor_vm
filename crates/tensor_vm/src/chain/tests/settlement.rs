@@ -73,17 +73,13 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         receipt.tensor_work_units
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
-    let claimable_at_height = chain
+    let pending_claim = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.beneficiary == miner)
-        .unwrap()
-        .claimable_at_height;
-    assert_eq!(
-        claimable_at_height,
-        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
-    );
+        .unwrap();
+    assert!(pending_claim.awaiting_inclusion());
     assert_eq!(
         chain
             .state()
@@ -125,7 +121,7 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
         .values()
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert_eq!(
         claimable_at_height,
         block
@@ -262,17 +258,13 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
             .pending_tensor_work,
         receipt.tensor_work_units
     );
-    let claimable_at_height = chain
+    let pending_claim = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.beneficiary == miner)
-        .unwrap()
-        .claimable_at_height;
-    assert_eq!(
-        claimable_at_height,
-        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
-    );
+        .unwrap();
+    assert!(pending_claim.awaiting_inclusion());
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
 
@@ -283,7 +275,7 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
         .values()
         .find(|reward| reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert_eq!(
         inclusion_claimable_at_height,
         block
@@ -411,13 +403,13 @@ fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
         .find(|reward| reward.receipt_id == minority_receipt.receipt_id)
         .unwrap()
         .amount;
-    let dominant_claimable_at_height = chain
+    let dominant_reward_maturity = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.receipt_id == dominant_receipt.receipt_id)
         .unwrap()
-        .claimable_at_height;
+        .maturity;
 
     assert_eq!(dominant_reward + minority_reward, 1_100);
     assert_eq!(dominant_reward, 1_089);
@@ -461,8 +453,8 @@ fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
 
     let block = chain.produce_block(validator, 1_000).unwrap();
     assert_eq!(
-        dominant_claimable_at_height,
-        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
+        dominant_reward_maturity,
+        ReceiptRewardMaturity::AwaitingInclusion
     );
     assert_eq!(
         chain
@@ -471,7 +463,7 @@ fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
             .values()
             .find(|reward| reward.receipt_id == dominant_receipt.receipt_id)
             .unwrap()
-            .claimable_at_height,
+            .claimable_at_height(),
         block
             .height
             .saturating_add(chain.params().reward_maturity_delay_blocks())
@@ -564,17 +556,13 @@ fn receipt_rewards_use_minimum_reward_maturity_delay_when_epochs_are_zero() {
         .unwrap();
 
     chain.settle_epoch(1_000, 500);
-    let claimable_at_height = chain
+    let pending_claim = chain
         .state()
         .pending_receipt_rewards()
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id && reward.beneficiary == miner)
-        .unwrap()
-        .claimable_at_height;
-    assert_eq!(
-        claimable_at_height,
-        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
-    );
+        .unwrap();
+    assert!(pending_claim.awaiting_inclusion());
     assert_eq!(chain.params().tensor_retention_window_blocks(), 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
@@ -650,7 +638,7 @@ fn unavailable_data_evidence_voids_delayed_receipt_rewards_before_release() {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert!(
         chain
             .state()
@@ -793,7 +781,7 @@ fn invalid_output_evidence_voids_delayed_receipt_rewards_before_release() {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert!(
         chain
             .state()
@@ -1011,7 +999,7 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert!(
         delayed_claims
             .iter()
-            .all(|reward| reward.claimable_at_height == redundant_reward_delay_until_height)
+            .all(|reward| reward.claimable_at_height() == redundant_reward_delay_until_height)
     );
     chain.set_position_for_testing(redundant_reward_delay_until_height, 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

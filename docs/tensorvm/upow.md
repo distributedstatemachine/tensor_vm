@@ -680,7 +680,8 @@ This section is non-normative guidance on how the spec components partition into
   mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
 - [~] Reward concentration / TensorWork activation delay: the local reference now keeps newly settled miner
   TensorWork pending until the matching delayed miner receipt reward survives inclusion, challenge windows,
-  and maturity. Invalid-output, data-unavailability, and block-check challenge paths clear pending work
+  and maturity. Receipt rewards now store awaiting-inclusion and claimable-height maturity as explicit
+  chain state instead of a sentinel height. Invalid-output, data-unavailability, and block-check challenge paths clear pending work
   before it can activate, while telemetry/study reporting still tracks raw concentration. Deployed-run
   concentration measurements and governance tuning remain open.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).

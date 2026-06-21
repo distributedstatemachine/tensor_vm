@@ -407,7 +407,7 @@ fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
         .pending_receipt_rewards
         .iter()
         .filter(|(_, reward)| {
-            reward.claimable_at_height <= state.height
+            reward.is_mature_at(state.height)
                 && state.included_receipts.contains(&reward.receipt_id)
         })
         .map(|(claim_id, reward)| {

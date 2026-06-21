@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 118 complete - automatic external graph artifact fetch.
+- Active feature: Iteration 119 complete - explicit receipt reward maturity state.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage, automatic
@@ -13,7 +13,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   implemented locally. Miner and validator role helpers can execute and attest `GraphExecution` jobs from
   registered graph bodies, local tensor artifacts, and content-addressed `const_blob` tensors. Miner
   TensorWork activation now follows delayed miner receipt reward maturity instead of immediate settlement,
-  and settled receipt rewards explicitly await canonical blockspace inclusion before their maturity clock starts.
+  and settled receipt rewards carry explicit awaiting-inclusion or claimable-height maturity state before release.
   Selected-receipt block openings now expose typed block-check transcript commitments and
   submission-anchored retention deadlines. Redundancy-delayed receipts now have chain-owned state-rooted
   records when quorum-backed work cannot settle because agreement is missing or conflicting, and later
@@ -54,10 +54,37 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Redundancy and delayed settlement | Partial | Independent miner assignment, redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and public/operator independence evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; status/explorer expose seed-domain, local finalized-beacon round mapping, local validator VRF-seed derivation, external beacon record evidence, and block-hash-ban evidence | Add live drand/VRF client wiring and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, inclusion-started receipt reward maturity, mature release, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 119: Explicit Receipt Reward Maturity State
+
+Feature capability: model receipt reward delay directly as `ReceiptRewardMaturity` rather than a magic
+height value. Pending receipt rewards start as `AwaitingInclusion`, canonical block inclusion converts
+them to `ClaimableAt(height)`, and reward roots/storage commit the maturity tag.
+Readiness requirements covered: `mvp_spec.md` reward settlement delay, `upow.md` economics/TensorWork
+activation delay, and production evidence for delayed rewards from chain state.
+Canonical owner: chain state, reward roots, settlement, block application, and reward release.
+Adapter callers: status/RPC continue using the chain-owned pending reward claim view.
+Old shortcut being removed: the receipt reward ledger no longer uses `u64::MAX` as an
+awaiting-inclusion sentinel.
+Regression tests: reward, settlement, block, attestation, and storage tests cover awaiting inclusion,
+inclusion-derived claimable heights, mature release, audit delay/voiding, and persistence.
+Parallel subagents: not used; available subagent tool forbids spawning unless explicitly requested.
+Out of scope: Docker `/health` rerun, deployed-run measurements, and trace-chunk disputes.
+
+Validation evidence:
+- First Gate 0: `cargo test -p tensor_vm local_testnet --release` passed before edits on June 21, 2026.
+- Focused reward maturity tests passed: `chain::tests::rewards`, `chain::tests::settlement`,
+  `chain::tests::attestations`, and `storage::chain_state`.
+- Formatting/whitespace: `cargo fmt --all`, `cargo fmt --check --all`, and `git diff --check` passed.
+- TensorVM crate: `cargo test -p tensor_vm --quiet` passed 453 library tests plus integrations.
+- Lints: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Release workspace: `cargo test --workspace --release` passed.
+- Final Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Coverage attempt: `cargo tarpaulin --workspace --offline` remains blocked by missing `cargo-tarpaulin`.
 
 ### Iteration 118: Automatic External Graph Artifact Fetch
 

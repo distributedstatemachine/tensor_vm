@@ -437,7 +437,7 @@ pub fn resolve_validator_audit_appeal(
             && reward.kind == ReceiptRewardKind::Validator
         {
             matched_reward = true;
-            reward.claimable_at_height = reward.claimable_at_height.max(appeal.deadline_height);
+            reward.delay_until(appeal.deadline_height);
             if resolution == ValidatorAuditAppealResolution::ReverseRewardVoid {
                 reward.voided_by_challenge = false;
                 receipt_reward_reinstated = true;
@@ -534,7 +534,7 @@ fn void_validator_audit_reward(
             && reward.beneficiary == *validator
             && reward.kind == ReceiptRewardKind::Validator
         {
-            reward.claimable_at_height = reward.claimable_at_height.max(claimable_at_height);
+            reward.delay_until(claimable_at_height);
             reward.voided_by_challenge = true;
         }
     }

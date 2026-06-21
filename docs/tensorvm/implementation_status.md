@@ -149,7 +149,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `chain::roots` boundary
 - Receipt settlement in the internal `chain::settlement` boundary, 70/20/5/5 reward allocation,
   delayed miner and validator receipt rewards through consensus-visible pending receipt reward claims using
-  an explicit awaiting-inclusion sentinel before canonical blockspace inclusion and the explicit
+  an explicit `ReceiptRewardMaturity::AwaitingInclusion` state before canonical blockspace inclusion and the explicit
   reward-settlement plus challenge-window maturity rule with the chain's minimum maturity floor after
   inclusion,
   delayed proposer rewards through a pending reward ledger, delayed block-check challenger rewards through

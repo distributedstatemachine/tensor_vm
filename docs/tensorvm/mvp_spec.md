@@ -1420,7 +1420,8 @@ reward_weight_miner(epoch E) =
 ```
 
 Receipt-derived miner and validator rewards are first recorded as pending claims. A pending receipt reward
-claim is not spendable until the receipt has been included in blockspace and at least
+claim stores an explicit awaiting-inclusion maturity state until the receipt has been included in
+blockspace, then converts to an inclusion-derived claimable height after at least
 `reward_settlement_delay + verification_challenge_window` has elapsed from that inclusion point. Miner
 TensorWork activates only when the non-voided miner receipt claim is released. A valid block-check,
 invalid-output, or data-unavailability challenge before maturity voids the affected miner and validator

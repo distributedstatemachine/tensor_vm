@@ -593,7 +593,7 @@ mod tests {
         ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, JobState,
         PendingChallengeReward, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE,
         RANDOMNESS_DRAND_ROUND_MAPPING, RANDOMNESS_VRF_CONSTRUCTION, ReceiptRewardKind,
-        VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
+        ReceiptRewardMaturity, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
     };
     use crate::jobs::MatmulJob;
     use crate::types::{address, hash_bytes};
@@ -628,7 +628,7 @@ mod tests {
             beneficiary: miner,
             amount: 25,
             kind: ReceiptRewardKind::Miner,
-            claimable_at_height: 8,
+            maturity: ReceiptRewardMaturity::ClaimableAt(8),
             voided_by_challenge: false,
         });
         let challenge_claim = hash_bytes(b"test", &[b"status-challenge-claim"]);
@@ -708,7 +708,7 @@ mod tests {
             beneficiary: address(b"status-audit-validator"),
             amount: 50,
             kind: ReceiptRewardKind::Validator,
-            claimable_at_height: 10,
+            maturity: ReceiptRewardMaturity::ClaimableAt(10),
             voided_by_challenge: false,
         });
         chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -717,7 +717,7 @@ mod tests {
             beneficiary: address(b"status-fraud-path-miner"),
             amount: 9,
             kind: ReceiptRewardKind::Miner,
-            claimable_at_height: 10,
+            maturity: ReceiptRewardMaturity::ClaimableAt(10),
             voided_by_challenge: false,
         });
 

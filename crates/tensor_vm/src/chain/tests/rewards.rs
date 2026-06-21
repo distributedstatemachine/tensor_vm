@@ -66,10 +66,7 @@ fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
         .values()
         .find(|reward| reward.receipt_id == receipt.receipt_id)
         .expect("settled receipt should enqueue a delayed reward");
-    assert_eq!(
-        pending_reward.claimable_at_height,
-        RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT
-    );
+    assert!(pending_reward.awaiting_inclusion());
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     receipt.receipt_id
 }
@@ -268,7 +265,7 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
         .values_mut()
         .next()
         .unwrap()
-        .claimable_at_height = 0;
+        .maturity = ReceiptRewardMaturity::ClaimableAt(0);
     assert_ne!(full_root, reward_root(&changed_receipt));
 
     let mut changed_credit = chain.state().clone();
@@ -394,7 +391,7 @@ fn validator_audit_economic_calibration_delays_immature_validator_reward_exposur
         beneficiary: validator,
         amount: 40,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 0,
+        maturity: ReceiptRewardMaturity::ClaimableAt(0),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -403,7 +400,7 @@ fn validator_audit_economic_calibration_delays_immature_validator_reward_exposur
         beneficiary: validator,
         amount: 80,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 10,
+        maturity: ReceiptRewardMaturity::ClaimableAt(10),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -412,7 +409,7 @@ fn validator_audit_economic_calibration_delays_immature_validator_reward_exposur
         beneficiary: validator,
         amount: 10_000,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 11,
+        maturity: ReceiptRewardMaturity::ClaimableAt(11),
         voided_by_challenge: true,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -421,7 +418,7 @@ fn validator_audit_economic_calibration_delays_immature_validator_reward_exposur
         beneficiary: miner,
         amount: 10_000,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 11,
+        maturity: ReceiptRewardMaturity::ClaimableAt(11),
         voided_by_challenge: false,
     });
 
@@ -470,10 +467,12 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         beneficiary: address(b"fraud-path-miner"),
         amount: 7,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: chain
-            .state()
-            .height()
-            .saturating_add(chain.params().fraud_reward_hold_blocks()),
+        maturity: ReceiptRewardMaturity::ClaimableAt(
+            chain
+                .state()
+                .height()
+                .saturating_add(chain.params().fraud_reward_hold_blocks()),
+        ),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -482,7 +481,7 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         beneficiary: address(b"fraud-path-miner"),
         amount: 149,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 9,
+        maturity: ReceiptRewardMaturity::ClaimableAt(9),
         voided_by_challenge: false,
     });
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -491,7 +490,7 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
         beneficiary: address(b"fraud-path-validator"),
         amount: 120,
         kind: ReceiptRewardKind::Validator,
-        claimable_at_height: 10,
+        maturity: ReceiptRewardMaturity::ClaimableAt(10),
         voided_by_challenge: false,
     });
 
@@ -739,7 +738,7 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
         beneficiary: miner,
         amount: 1_000,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 0,
+        maturity: ReceiptRewardMaturity::ClaimableAt(0),
         voided_by_challenge: false,
     });
 
@@ -754,7 +753,7 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
         beneficiary: miner,
         amount: 1_000,
         kind: ReceiptRewardKind::Miner,
-        claimable_at_height: 0,
+        maturity: ReceiptRewardMaturity::ClaimableAt(0),
         voided_by_challenge: false,
     });
 
@@ -768,7 +767,7 @@ fn block_transition_releases_matured_receipt_rewards_without_manual_command() {
         .values()
         .find(|reward| reward.receipt_id == receipt_id && reward.beneficiary == miner)
         .unwrap()
-        .claimable_at_height;
+        .claimable_at_height();
     assert_eq!(
         claimable_at_height,
         block0

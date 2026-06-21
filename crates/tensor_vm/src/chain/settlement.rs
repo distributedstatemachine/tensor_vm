@@ -1,6 +1,6 @@
 use super::{
-    Chain, ChainEvent, ChainState, PendingReceiptReward, RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT,
-    ReceiptRewardKind, ReceiptState, RedundantSettlementDelayRecord,
+    Chain, ChainEvent, ChainState, PendingReceiptReward, ReceiptRewardKind, ReceiptRewardMaturity,
+    ReceiptState, RedundantSettlementDelayRecord,
 };
 use crate::jobs::LinearTrainingStepReceipt;
 use crate::types::{Address, Hash, hash_bytes};
@@ -73,8 +73,8 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 .state
                 .redundant_settlement_delays
                 .get(receipt_id)
-                .map(|record| record.reward_delay_until_height)
-                .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT);
+                .map(|record| ReceiptRewardMaturity::ClaimableAt(record.reward_delay_until_height))
+                .unwrap_or(ReceiptRewardMaturity::AwaitingInclusion);
             newly_settled.push((*receipt_id, receipt.clone(), reward_delay_until_height));
         }
     }
@@ -150,7 +150,7 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                 reward_delay_by_receipt
                     .get(&attestation.receipt_id)
                     .copied()
-                    .unwrap_or(RECEIPT_REWARD_AWAITING_INCLUSION_HEIGHT),
+                    .unwrap_or(ReceiptRewardMaturity::AwaitingInclusion),
             );
         }
     }
@@ -285,7 +285,7 @@ pub(super) fn events(
                 receipt_id: reward.receipt_id,
                 beneficiary: reward.beneficiary,
                 amount: reward.amount,
-                claimable_at_height: reward.claimable_at_height,
+                claimable_at_height: reward.claimable_at_height(),
             });
         }
     }
@@ -310,7 +310,7 @@ fn enqueue_pending_receipt_reward(
     beneficiary: Address,
     amount: u64,
     kind: ReceiptRewardKind,
-    claimable_at_height: u64,
+    maturity: ReceiptRewardMaturity,
 ) {
     if amount == 0 {
         return;
@@ -326,7 +326,7 @@ fn enqueue_pending_receipt_reward(
             beneficiary,
             amount,
             kind,
-            claimable_at_height,
+            maturity,
             voided_by_challenge: false,
         });
 }
