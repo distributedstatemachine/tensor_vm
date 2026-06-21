@@ -4,8 +4,8 @@ use crate::error::{Result, TvmError};
 use crate::field::{self, Elem};
 use crate::merkle::merkle_root;
 use crate::tensor::{
-    DType, Tensor, add_elem_for_dtype, multiply_elem_for_dtype, rescale_signed_elem_half_even,
-    signed_elem_to_i128, signed_i128_to_elem, sub_elem_for_dtype,
+    DType, Tensor, add_elem_for_dtype, divide_elem_for_dtype, multiply_elem_for_dtype,
+    rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem, sub_elem_for_dtype,
 };
 use crate::types::{Hash, hash_bytes, parse_hash_hex};
 use serde_json::Value as JsonValue;
@@ -595,7 +595,7 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         }
         "div" => {
             let [lhs, rhs] = two_tensor_values(&args)?;
-            field_div_tensor(lhs, rhs)?
+            div_tensor(lhs, rhs)?
         }
         "scalar_mul" => {
             let (tensor, scalar) = tensor_and_scalar_values(&args)?;
@@ -952,12 +952,15 @@ fn binary_mul_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
     Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
 
-fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
-    if lhs.dtype() != DType::FieldElement
-        || rhs.dtype() != DType::FieldElement
-        || lhs.scale() != 0
-        || rhs.scale() != 0
-    {
+fn div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+    let valid = match lhs.dtype() {
+        DType::FieldElement => {
+            rhs.dtype() == DType::FieldElement && lhs.scale() == 0 && rhs.scale() == 0
+        }
+        DType::Fixed32 => rhs.dtype() == DType::Fixed32,
+        _ => false,
+    };
+    if !valid {
         return Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"));
     }
     let shape = broadcast_shape_usize(&[lhs.shape().to_vec(), rhs.shape().to_vec()])?;
@@ -966,9 +969,16 @@ fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
     for index in 0..len {
         let numerator = broadcast_value(lhs, &shape, index)?;
         let divisor = broadcast_value(rhs, &shape, index)?;
-        data.push(field::mul(numerator, field_inverse(divisor)?));
+        data.push(divide_elem_for_dtype(
+            lhs.dtype(),
+            lhs.scale(),
+            rhs.scale(),
+            lhs.scale(),
+            numerator,
+            divisor,
+        )?);
     }
-    Tensor::from_vec_with_scale(shape, DType::FieldElement, 0, data)
+    Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
 
 fn unary_tensor(tensor: &Tensor, op: impl Fn(Elem) -> Elem) -> Result<Tensor> {
@@ -2046,17 +2056,15 @@ fn infer_outputs(
         }
         "div" => {
             let [lhs, rhs] = two_args(args)?;
-            if lhs.dtype != DType::FieldElement
-                || rhs.dtype != DType::FieldElement
-                || lhs.scale != 0
-                || rhs.scale != 0
-            {
-                return Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"));
-            }
+            same_div_dtype(lhs, rhs)?;
             ValueShape {
                 shape: broadcast_shape_i64(&[lhs.shape.clone(), rhs.shape.clone()])?,
-                dtype: DType::FieldElement,
-                scale: 0,
+                dtype: lhs.dtype,
+                scale: if lhs.dtype == DType::FieldElement {
+                    0
+                } else {
+                    lhs.scale
+                },
             }
         }
         "scalar_mul" => {
@@ -2543,6 +2551,18 @@ fn same_add_sub_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
 fn same_mul_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
     if lhs.dtype != rhs.dtype || (lhs.dtype != DType::Fixed32 && lhs.scale != rhs.scale) {
         return Err(TvmError::InvalidReceipt("tensor ir dtype mismatch"));
+    }
+    Ok(())
+}
+
+fn same_div_dtype(lhs: &ValueShape, rhs: &ValueShape) -> Result<()> {
+    let valid = match lhs.dtype {
+        DType::FieldElement => rhs.dtype == DType::FieldElement && lhs.scale == 0 && rhs.scale == 0,
+        DType::Fixed32 => rhs.dtype == DType::Fixed32,
+        _ => false,
+    };
+    if !valid {
+        return Err(TvmError::InvalidReceipt("tensor ir div dtype mismatch"));
     }
     Ok(())
 }
@@ -4145,12 +4165,13 @@ mod tests {
     }
 
     #[test]
-    fn graph_validation_rejects_unsupported_div() {
+    fn exact_interpreter_executes_fixed32_div_with_scale_rescale() {
+        let p = field::MODULUS;
         let graph = TensorGraph {
             ir_version: 1,
             inputs: vec![
                 tensor_spec("lhs", vec![2, 2], DType::Fixed32, 0),
-                tensor_spec("rhs", vec![2, 2], DType::Fixed32, 0),
+                tensor_spec("rhs", vec![2], DType::Fixed32, 1),
             ],
             params: Vec::new(),
             ops: vec![OpNode {
@@ -4159,6 +4180,68 @@ mod tests {
                 args: vec![input_ref("lhs"), input_ref("rhs")],
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_spec("quotient", vec![2, 2], DType::Fixed32, 0)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "quotient".to_owned(),
+                value: op_ref(0),
+            }],
+        };
+        graph.validate_for_consensus().unwrap();
+        let lhs =
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 0, vec![9, 7, p - 9, p - 7])
+                .unwrap();
+        let rhs = Tensor::from_vec_with_scale(vec![2], DType::Fixed32, 1, vec![4, 4]).unwrap();
+
+        let execution = graph
+            .execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([("lhs".to_owned(), lhs), ("rhs".to_owned(), rhs)]),
+                field_params: BTreeMap::new(),
+            })
+            .unwrap();
+
+        assert_eq!(
+            execution.outputs["quotient"],
+            Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 0, vec![4, 4, p - 4, p - 4])
+                .unwrap()
+        );
+
+        let zero_rhs = Tensor::from_vec_with_scale(vec![2], DType::Fixed32, 1, vec![4, 0]).unwrap();
+        assert_eq!(
+            graph.execute_exact(&IrExecutionInputs {
+                tensors: BTreeMap::from([
+                    (
+                        "lhs".to_owned(),
+                        Tensor::from_vec_with_scale(
+                            vec![2, 2],
+                            DType::Fixed32,
+                            0,
+                            vec![9, 7, p - 9, p - 7],
+                        )
+                        .unwrap()
+                    ),
+                    ("rhs".to_owned(), zero_rhs),
+                ]),
+                field_params: BTreeMap::new(),
+            }),
+            Err(TvmError::InvalidReceipt("tensor fixed division by zero"))
+        );
+    }
+
+    #[test]
+    fn graph_validation_rejects_unsupported_div_dtype() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("lhs", vec![2, 2], DType::Int32, 0),
+                tensor_spec("rhs", vec![2, 2], DType::Int32, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "div".to_owned(),
+                args: vec![input_ref("lhs"), input_ref("rhs")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("quotient", vec![2, 2], DType::Int32, 0)],
             }],
             outputs: vec![GraphOutput {
                 name: "quotient".to_owned(),

@@ -91,7 +91,8 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > `F_p` ops used by TensorOp and LinearTrainingStep, and receipt verification gates those current jobs on
 > the matching suite profile. The suite now carries per-input and expected output dtype/scale metadata for
 > fixed-point `cast`/`round` half-even rescale vectors, `Fixed32` `mul` half-even rescale vectors
-> including mixed-scale product rescale, exact field-only modular-inverse `div`, exact Tier-A matrix-contraction `einsum`, plus multi-output expected tensors for exact per-channel int8
+> including mixed-scale product rescale, exact field modular-inverse and `Fixed32` reciprocal `div`,
+> exact Tier-A matrix-contraction `einsum`, plus multi-output expected tensors for exact per-channel int8
 > quantize scale output. `int8`, `uint8`, and `bool` dtype tags are implemented, exact
 > `quantize_int8_per_channel`/`dequantize_int8_per_channel` vectors are CPU-conformance covered, and
 > `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Broader
@@ -265,7 +266,7 @@ The op set is **frozen per protocol version**. Each op has a fixed arity, a fixe
 | `qr` | 1 | — | 2 (Q, R) | iterative → **excluded from v0 consensus** until a canonical fixed-point algorithm + tolerance-free check is specified |
 | `data_indexer` | 1 | `B`, `T`, `mb_seed` | 2 (x, y) | canonical PRNG selects minibatch windows from a token stream |
 
-\* `div`, `pow`, `sqrt`: division/roots in `F_p` are either modular inverse (exact, for `field` dtype) or canonical fixed-point reciprocal/root (Tier C). The IR distinguishes the two by operand dtype; mixing is a typing error.
+\* `div`, `pow`, `sqrt`: division in `F_p` is either modular inverse (exact, for `field` dtype) or canonical signed fixed-point reciprocal division (exact integer quotient rescale for `Fixed32`). Roots remain Tier C until their canonical fixed-point references are published. The IR distinguishes the modes by operand dtype; mixing is a typing error.
 † `relu` is exact in fixed-point (`max(x,0)`), so it is Tier B despite living in the activation family.
 
 > Permissionless deployment of new ops is **not** allowed: a malicious or ill-defined op could be unverifiable. New ops are added only by protocol upgrade, each shipping (a) a canonical `F_p` semantics, (b) a verification tier + verifier, and (c) a soundness bound.
@@ -377,13 +378,14 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > replay through the graph verifier and conformance profile; and `gather`/`scatter`/`embedding` are
 > present only as non-admitted index-consistency-gated vocabulary. Runtime tensors now carry scale
 > metadata, exact replay enforces `TensorSpec.scale`, fixed-point `cast`/`round`, mixed-scale `add`/`sub`,
-> and mixed-scale `mul` use canonical round-half-even rescale, and exact per-channel int8
+> mixed-scale `mul`, and `Fixed32` reciprocal `div` use canonical round-half-even rescale, and exact per-channel int8
 > quantize/dequantize replay is conformance covered.
 > Byte-packed int8 quantization now uses a canonical flat `uint8` payload with explicit magic/version,
-> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Field-only `div` is
-> admitted as exact modular-inverse replay, while fixed-point reciprocal division remains deferred.
-> Remaining fixed-point arithmetic policy for reciprocal division, matmul
-> accumulation/range, low-level packed tensor storage/chunking APIs, and full verifier coverage for every
+> shape, axis, scale metadata, per-channel raw scales, and row-major int8 bytes. Field `div` is
+> admitted as exact modular-inverse replay, and `Fixed32` `div` is admitted as signed reciprocal
+> division that returns to the lhs/output scale with round-half-even semantics.
+> Remaining fixed-point arithmetic policy for matmul accumulation/range, low-level packed tensor
+> storage/chunking APIs, and full verifier coverage for every
 > exact Tier-B op remains TODO.
 
 ---
@@ -643,8 +645,8 @@ This section is non-normative guidance on how the spec components partition into
   canonical `int8`/`uint8`/`bool` dtype tags are implemented; exact
   per-channel int8 quantize/dequantize scale selection and saturation are conformance covered;
   byte-packed quantization has a conformance-covered flat `uint8` payload layout; fixed-point reciprocal
-  division, matmul accumulation/range policy, and low-level packed tensor storage
-  APIs remain open.
+  division is implemented for `Fixed32` `div`; matmul accumulation/range policy and low-level packed
+  tensor storage APIs remain open.
 - [~] Which Tier-B ops have *sound* random-linear checks vs. deterministic replay/fraud proofs: current
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,

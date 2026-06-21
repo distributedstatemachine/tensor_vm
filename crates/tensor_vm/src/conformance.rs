@@ -5,7 +5,8 @@ use crate::field::{self, Elem, MODULUS};
 use crate::ir::{TensorGraph, canonical_linear_training_step_graph, canonical_matmul_graph};
 use crate::jobs::{LinearTrainingStepJob, MatmulJob};
 use crate::tensor::{
-    DType, Tensor, rescale_signed_elem_half_even, signed_elem_to_i128, signed_i128_to_elem,
+    DType, Tensor, divide_elem_for_dtype, rescale_signed_elem_half_even, signed_elem_to_i128,
+    signed_i128_to_elem,
 };
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
@@ -174,6 +175,34 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             0,
             &[1, 2, 2, 3],
             &[2, 2],
+        ),
+        scaled_vector(
+            "fixed32-div-same-scale-half-even-v1",
+            "div",
+            "B",
+            &[&[6], &[6]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[2, 2],
+            &[],
+            &[&[12, p - 12, 7, p - 7, 10, p - 10], &[4, 4, 2, 2, 4, p - 4]],
+            DType::Fixed32,
+            2,
+            &[12, p - 12, 14, p - 14, 10, 10],
+            &[6],
+        ),
+        scaled_vector(
+            "fixed32-div-mixed-scale-half-even-rounding-v1",
+            "div",
+            "B",
+            &[&[4], &[4]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[0, 1],
+            &[],
+            &[&[9, 7, p - 9, p - 7], &[4, 4, 4, 4]],
+            DType::Fixed32,
+            0,
+            &[4, 4, p - 4, p - 4],
+            &[4],
         ),
         vector(
             "field-scalar-mul-wraparound-v1",
@@ -945,11 +974,14 @@ fn compare_tensors(
 }
 
 fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
-    if lhs.dtype() != DType::FieldElement
-        || rhs.dtype() != DType::FieldElement
-        || lhs.scale() != 0
-        || rhs.scale() != 0
-    {
+    let valid = match lhs.dtype() {
+        DType::FieldElement => {
+            rhs.dtype() == DType::FieldElement && lhs.scale() == 0 && rhs.scale() == 0
+        }
+        DType::Fixed32 => rhs.dtype() == DType::Fixed32,
+        _ => false,
+    };
+    if !valid {
         return Err(TvmError::InvalidReceipt("invalid conformance div"));
     }
     let shape = broadcast_shape(&[lhs.shape(), rhs.shape()])?;
@@ -962,9 +994,16 @@ fn field_div_tensor(lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
     for index in 0..len {
         let numerator = broadcast_value(lhs, &shape, index)?;
         let divisor = broadcast_value(rhs, &shape, index)?;
-        data.push(field::mul(numerator, field_inverse(divisor)?));
+        data.push(divide_elem_for_dtype(
+            lhs.dtype(),
+            lhs.scale(),
+            rhs.scale(),
+            lhs.scale(),
+            numerator,
+            divisor,
+        )?);
     }
-    Tensor::from_vec(shape, DType::FieldElement, data)
+    Tensor::from_vec_with_scale(shape, lhs.dtype(), lhs.scale(), data)
 }
 
 fn where_tensor(cond: &Tensor, when_true: &Tensor, when_false: &Tensor) -> Result<Tensor> {
@@ -1930,6 +1969,12 @@ mod tests {
                 && vector.input_scales == vec![2, 0]
                 && vector.expected_dtype == DType::Fixed32
                 && vector.expected_scale == 2
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-div-mixed-scale-half-even-rounding-v1"
+                && vector.input_scales == vec![0, 1]
+                && vector.expected_dtype == DType::Fixed32
+                && vector.expected_scale == 0
         }));
         assert!(vectors.iter().any(|vector| {
             vector.id == "fixed32-quantize-int8-per-channel-axis1-v1"

@@ -277,6 +277,22 @@ impl Tensor {
         Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
     }
 
+    pub fn div(&self, rhs: &Self) -> Result<Self> {
+        self.check_same_shape(rhs)?;
+        self.check_div_encoding(rhs)?;
+        let data = self
+            .data
+            .iter()
+            .zip(&rhs.data)
+            .map(|(lhs, rhs_elem)| {
+                divide_elem_for_dtype(
+                    self.dtype, self.scale, rhs.scale, self.scale, *lhs, *rhs_elem,
+                )
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Self::from_vec_with_scale(self.shape.clone(), self.dtype, self.scale, data)
+    }
+
     pub fn scalar_mul(&self, scalar: Elem) -> Result<Self> {
         let scalar = field::normalize(scalar);
         let data = self
@@ -559,6 +575,23 @@ impl Tensor {
         }
         Ok(())
     }
+
+    fn check_div_encoding(&self, rhs: &Self) -> Result<()> {
+        let valid = match self.dtype {
+            DType::FieldElement => {
+                rhs.dtype == DType::FieldElement && self.scale == 0 && rhs.scale == 0
+            }
+            DType::Fixed32 => rhs.dtype == DType::Fixed32,
+            _ => false,
+        };
+        if !valid {
+            return Err(TvmError::InvalidTensorData {
+                expected: self.dtype.tag() as usize,
+                actual: rhs.dtype.tag() as usize,
+            });
+        }
+        Ok(())
+    }
 }
 
 pub fn random_field_vector(seed: &Hash, label: &[u8], len: usize) -> Vec<Elem> {
@@ -738,6 +771,75 @@ pub fn multiply_elem_for_dtype(
     }
 }
 
+pub fn fixed32_div_rescale_half_even(
+    lhs: Elem,
+    rhs: Elem,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+) -> Result<Elem> {
+    let divisor = signed_elem_to_i128(rhs);
+    if divisor == 0 {
+        return Err(TvmError::InvalidReceipt("tensor fixed division by zero"));
+    }
+    let scale_delta = rhs_scale
+        .checked_add(output_scale)
+        .and_then(|scale| scale.checked_sub(lhs_scale))
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let lhs = signed_elem_to_i128(lhs);
+    let (numerator, denominator) = if scale_delta >= 0 {
+        let shift = u32::try_from(scale_delta)
+            .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+        (
+            lhs.checked_mul(
+                1_i128
+                    .checked_shl(shift)
+                    .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
+            )
+            .ok_or(TvmError::InvalidReceipt("tensor fixed divide overflow"))?,
+            divisor,
+        )
+    } else {
+        let shift = u32::try_from(
+            scale_delta
+                .checked_neg()
+                .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
+        )
+        .map_err(|_| TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+        (
+            lhs,
+            divisor
+                .checked_mul(
+                    1_i128
+                        .checked_shl(shift)
+                        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?,
+                )
+                .ok_or(TvmError::InvalidReceipt("tensor fixed divide overflow"))?,
+        )
+    };
+    Ok(signed_i128_to_elem(round_div_i128_half_even(
+        numerator,
+        denominator,
+    )?))
+}
+
+pub fn divide_elem_for_dtype(
+    dtype: DType,
+    lhs_scale: i64,
+    rhs_scale: i64,
+    output_scale: i64,
+    lhs: Elem,
+    rhs: Elem,
+) -> Result<Elem> {
+    match dtype {
+        DType::FieldElement => Ok(field::mul(lhs, field_inverse(rhs)?)),
+        DType::Fixed32 => {
+            fixed32_div_rescale_half_even(lhs, rhs, lhs_scale, rhs_scale, output_scale)
+        }
+        _ => Err(TvmError::InvalidReceipt("tensor div dtype mismatch")),
+    }
+}
+
 fn round_div_pow2_half_even(value: i128, shift: u32) -> Result<i128> {
     if shift == 0 {
         return Ok(value);
@@ -766,6 +868,59 @@ fn round_div_pow2_half_even(value: i128, shift: u32) -> Result<i128> {
     } else {
         Ok(rounded)
     }
+}
+
+fn round_div_i128_half_even(value: i128, divisor: i128) -> Result<i128> {
+    if divisor == 0 {
+        return Err(TvmError::InvalidReceipt("tensor fixed division by zero"));
+    }
+    let negative = value.is_negative() ^ divisor.is_negative();
+    let numerator = value
+        .checked_abs()
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let denominator = divisor
+        .checked_abs()
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let quotient = numerator / denominator;
+    let remainder = numerator % denominator;
+    let twice = remainder
+        .checked_mul(2)
+        .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?;
+    let round_up = twice > denominator || (twice == denominator && quotient % 2 == 1);
+    let rounded = if round_up {
+        quotient
+            .checked_add(1)
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))?
+    } else {
+        quotient
+    };
+    if negative {
+        rounded
+            .checked_neg()
+            .ok_or(TvmError::InvalidReceipt("tensor fixed scale overflow"))
+    } else {
+        Ok(rounded)
+    }
+}
+
+fn field_inverse(value: Elem) -> Result<Elem> {
+    let value = field::normalize(value);
+    if value == 0 {
+        return Err(TvmError::InvalidReceipt("tensor ir division by zero"));
+    }
+    Ok(field_pow(value, field::MODULUS - 2))
+}
+
+fn field_pow(mut base: Elem, mut exponent: Elem) -> Elem {
+    let mut acc = 1;
+    while exponent > 0 {
+        if exponent & 1 == 1 {
+            acc = field::mul(acc, base);
+        }
+        base = field::mul(base, base);
+        exponent >>= 1;
+    }
+    acc
 }
 
 fn checked_len(shape: &[usize]) -> Result<usize> {
@@ -875,6 +1030,52 @@ mod tests {
         assert_eq!(
             fixed32_mul_rescale_half_even(p - 3, 3, 0, 1, 0).unwrap(),
             p - 4
+        );
+    }
+
+    #[test]
+    fn fixed32_division_rescales_to_lhs_scale_half_even() {
+        let p = field::MODULUS;
+        let lhs = Tensor::from_vec_with_scale(
+            vec![6],
+            DType::Fixed32,
+            2,
+            vec![12, p - 12, 7, p - 7, 10, p - 10],
+        )
+        .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![6], DType::Fixed32, 2, vec![4, 4, 2, 2, 4, p - 4])
+                .unwrap();
+
+        assert_eq!(
+            lhs.div(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(
+                vec![6],
+                DType::Fixed32,
+                2,
+                vec![12, p - 12, 14, p - 14, 10, 10]
+            )
+            .unwrap()
+        );
+
+        let lhs = Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 0, vec![9, 7, p - 9, p - 7])
+            .unwrap();
+        let rhs =
+            Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 1, vec![4, 4, 4, 4]).unwrap();
+        assert_eq!(
+            lhs.div(&rhs).unwrap(),
+            Tensor::from_vec_with_scale(vec![4], DType::Fixed32, 0, vec![4, 4, p - 4, p - 4])
+                .unwrap()
+        );
+        assert_eq!(fixed32_div_rescale_half_even(9, 4, 0, 1, 0).unwrap(), 4);
+        assert_eq!(fixed32_div_rescale_half_even(7, 4, 0, 1, 0).unwrap(), 4);
+        assert_eq!(
+            fixed32_div_rescale_half_even(p - 7, 4, 0, 1, 0).unwrap(),
+            p - 4
+        );
+        assert_eq!(
+            fixed32_div_rescale_half_even(1, 0, 0, 0, 0),
+            Err(TvmError::InvalidReceipt("tensor fixed division by zero"))
         );
     }
 
