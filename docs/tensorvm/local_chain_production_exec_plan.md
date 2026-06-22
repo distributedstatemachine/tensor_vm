@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 198 committed locally; push pending: Unique VRF Lifecycle Receipt Coverage Gate.
+- Active feature: Iteration 198 pushed: Unique VRF Lifecycle Receipt Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -17,7 +17,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: push Iteration 198, then continue real public VRF/CUDA/deployed-run artifact work.
+- Next action: continue real public VRF/CUDA/deployed-run artifact work.
 
 ## Readiness Matrix
 
@@ -107,7 +107,7 @@ Validation evidence, June 22, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `08d8e57` (`Require unique VRF lifecycle receipts`).
-- Push: pending.
+- Push: `git push origin main` succeeded on June 22, 2026 (`2056689..9ff1804  main -> main`).
 
 ### Iteration 197: Public VRF Lifecycle Raw-Record Evidence Gate
 
