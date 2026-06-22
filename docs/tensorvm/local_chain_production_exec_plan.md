@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: none; Iteration 165 implementation and validation are complete, commit/push metadata is pending.
+- Active feature: none; Iteration 165 implementation, validation, commit, and push are complete.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move matured rewards into spendable balances; explicit
   `ClaimReward` remains the canonical spendability boundary. The trace-bisection path now has signed
@@ -50,7 +50,7 @@ checkpoint before edits.
 
 ### Iteration 165: Trace-Bisection Referee Slashing And Delayed Challenger Rewards
 
-Commit: pending.
+Commit: `e3af101` (pushed `main` -> `main`).
 
 Feature capability: a chain-owned one-op trace-bisection referee verdict settles the economic side without
 adapter workarounds. The losing registered miner or validator is slashed through consensus state, treasury
@@ -164,7 +164,8 @@ Validation passed on June 22, 2026: first-command Gate 0, focused
   `cargo test -p tensor_vm local_testnet --release`.
 - Iteration 165 coverage command remained environmentally blocked on June 22, 2026:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-- Iteration 165 commit/push metadata: pending.
+- Iteration 165 feature commit `e3af101` pushed to `main` on June 22, 2026:
+  `git push` returned `f7a5fe6..e3af101  main -> main`.
 
 ## Archive
 
