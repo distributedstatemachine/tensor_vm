@@ -15,13 +15,13 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   rewards into spendable balances; explicit `ClaimReward` remains the canonical spendability boundary.
   The graph verifier exact replay path has focused admission evidence for admitted exact generator,
   shaping, and comparison op clusters. A chain-neutral signed trace-bisection message/state core over
-  verified IR trace openings now exists; p2p/chain integration, one-op referee execution, slashing, and
-  challenger settlement remain open.
+  verified IR trace openings now exists, and bounded p2p wire payloads can carry signed bisection rounds;
+  chain admission, one-op referee execution, slashing, and challenger settlement remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are p2p/chain integration for
+- Next action: choose the next feature-sized slice. Current high-value options are chain admission for
   trace-bisection rounds, deployed full VRF lifecycle evidence, public/CUDA deployment evidence, or the
   remaining exact Tier-B/CUDA conformance surface.
 
@@ -29,7 +29,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 158 on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 160 on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -37,7 +37,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof | Add trace-bisection p2p/chain integration or deployed public/CUDA proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, p2p trace openings, signed trace-bisection core | Continue interactive trace dispute integration and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, p2p trace openings, signed trace-bisection core, and bounded trace-bisection round p2p payloads | Continue interactive trace dispute chain admission and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, verified drand, public chained drand, chain-owned epoch windows, registered validator reveal keys, and keyed Ed25519 reveal proofs before reward release | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -50,6 +50,48 @@ No active feature is checkpointed. Start the next slice with the required Gate 0
 checkpoint before edits.
 
 ## Recent Iterations
+
+### Iteration 160: Trace-Bisection P2P Wire Payloads
+
+Commit: pending.
+
+Feature capability: signed `TraceBisectionRound` values can cross node boundaries as bounded shared-codec
+gossip payloads with message-level identity checks for receipt, trace root, parties, and transcript leaf.
+
+Readiness requirements covered: `upow.md` §8.2 interactive fraud proofs over `trace_root`, §9 trace opening
+availability, `goal.md` shared-codec and bounded-wire rules, and the Iteration 158 out-of-scope item for
+p2p wire messages.
+
+Files/modules touched: `crates/tensor_vm/src/api.rs`, `crates/tensor_vm/src/p2p/wire.rs`,
+`crates/tensor_vm/src/p2p.rs`, `crates/tensor_vm/src/node/message_ingest.rs`, `docs/tensorvm/upow.md`,
+and this execution plan.
+
+Parallel subagents to run: skipped; the available subagent tool requires explicit user authorization before
+spawning agents. Read-only code/test discovery is being parallelized with local shell tools.
+
+Expected observable evidence: `P2pMessage::NewTraceBisectionRoundPayload` gossips on the blocks topic,
+decodes only when the bounded payload's decoded round matches the announced receipt, trace root, parties,
+and transcript leaf, rejects oversize/trailing/tampered opening or signature bytes, and reuses the existing
+trace-opening payload codec instead of adding an unbounded reader.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm p2p_messages_roundtrip --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm libp2p_mapping_separates_gossip_and_request_response --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm network_ingest_order_applies_payload_dependencies_before_blocks --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (518 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+
+Out of scope: chain command admission, pending queues/application counters, one-op referee re-execution,
+stake mutation, challenger settlement, runtime challenge generation, deployed evidence, and CUDA evidence.
 
 ### Iteration 159: Chain-Owned Delayed Challenge Rewards
 

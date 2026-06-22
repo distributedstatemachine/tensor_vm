@@ -686,9 +686,11 @@ This section is non-normative guidance on how the spec components partition into
   mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
 - [~] Fraud-proof game: signed trace-bisection session and round state now provide a deterministic
   message/hash boundary over verified `IrTraceOpening`s, with response deadlines and challenger/responder
-  bond envelope fields. Focused tests prove midpoint narrowing, final-op isolation, timeout reporting, and
-  tamper rejection. Chain command admission, p2p round codecs, referee one-op re-execution, slashing,
-  challenger bounty settlement, and multi-round DoS policy remain TODO (§8.2).
+  bond envelope fields. Bounded p2p round payloads now reuse the trace-opening codec, verify responder
+  signatures, and reject announcement/payload mismatches before gossip delivery. Focused tests prove
+  midpoint narrowing, final-op isolation, timeout reporting, tamper rejection, and malformed wire edges.
+  Chain command admission, referee one-op re-execution, slashing, challenger bounty settlement, and
+  multi-round DoS policy remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.

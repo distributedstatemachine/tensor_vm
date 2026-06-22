@@ -393,6 +393,9 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewTraceBisectionRoundPayload { .. } => {
+                ingested.block_announcements = ingested.block_announcements.saturating_add(1);
+            }
             P2pMessage::PeerInfo { address } => {
                 ingested.peers = ingested.peers.saturating_add(1);
                 if address == [0; 32] {
@@ -449,6 +452,7 @@ fn is_block_payload(message: &P2pMessage) -> bool {
         P2pMessage::NewBlockPayload { .. }
             | P2pMessage::NewBlockCheckChallengePayload { .. }
             | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
+            | P2pMessage::NewTraceBisectionRoundPayload { .. }
     )
 }
 
