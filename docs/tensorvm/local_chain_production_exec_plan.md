@@ -110,6 +110,7 @@ Validation evidence:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   565 instrumented tests and 84.74% line coverage, 23056/27207 lines covered.
+- Commit `e4c599f` (`Require raw public operational evidence`) pushed to `origin/main` on June 22, 2026.
 
 Out of scope: generating real public operational evidence, CUDA evidence, changing runtime evidence
 admission beyond the local synthetic-producer fallback reward delay, or changing local CPU checker
