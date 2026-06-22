@@ -53,7 +53,7 @@ checkpoint before edits.
 
 ### Iteration 159: Chain-Owned Delayed Challenge Rewards
 
-Commit: pending.
+Commit: `713c6a4` (pushed `main` -> `main`).
 
 Feature capability: `SubmitBlockCheckChallenge` should create or consume the canonical delayed proposer
 reward claim before resolving a canonical block-check challenge, so challenger bounty accounting is a
@@ -184,6 +184,22 @@ Coverage command remained environmentally blocked:
   `cargo test -p tensor_vm --lib` (516 passed); and final
   `cargo test -p tensor_vm local_testnet --release`.
 - Iteration 158 coverage command remained environmentally blocked on June 22, 2026:
+  `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+- Iteration 159 first executable command passed before code edits on June 22, 2026:
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 159 feature commit `713c6a4` pushed to `main` on June 22, 2026:
+  `git push` returned `44951a9..713c6a4  main -> main`.
+- Iteration 159 focused validation passed on June 22, 2026:
+  `cargo test -p tensor_vm canonical_block_check_challenge_materializes_and_delays_reward_in_chain --lib -- --nocapture`;
+  `cargo test -p tensor_vm block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges --lib -- --nocapture`;
+  `cargo test -p tensor_vm block_check_challenge --lib -- --nocapture`;
+  `cargo test -p tensor_vm reward --lib -- --nocapture`; and
+  `cargo test -p tensor_vm payload_application::tests::block_check --lib -- --nocapture`.
+- Iteration 159 broad validation passed on June 22, 2026:
+  `cargo fmt --check --all`; `cargo check -p tensor_vm --tests`; `git diff --check`;
+  `cargo test -p tensor_vm --lib` (517 passed); and final
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 159 coverage command remained environmentally blocked on June 22, 2026:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
 ## Archive
