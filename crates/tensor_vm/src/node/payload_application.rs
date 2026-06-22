@@ -657,6 +657,9 @@ pub fn apply_network_trace_bisection_round_payload(
     if existing.last_round_leaf == Some(transcript_leaf) {
         return NetworkPayloadApply::Applied;
     }
+    if existing.pending_expectation_leaf.is_none() {
+        return NetworkPayloadApply::Pending;
+    }
     chain
         .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
         .map(|_| NetworkPayloadApply::Applied)
@@ -803,8 +806,8 @@ mod tests {
             ReceiptState, TensorBlock, ValidatorAuditReport,
         },
         challenge::{
-            BlockCheckChallenge, TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound,
-            block_check_challenge_id,
+            BlockCheckChallenge, TraceBisectionConfig, TraceBisectionExpectation,
+            TraceBisectionOpen, TraceBisectionRound, block_check_challenge_id,
         },
         jobs::{GraphJob, GraphReceipt, MatmulJob, PrimitiveType, TensorOpReceipt},
         localnet::{
@@ -1833,6 +1836,22 @@ mod tests {
         (unopened_chain, config, round, payload)
     }
 
+    fn submit_trace_bisection_expectation(chain: &mut Chain, round: &TraceBisectionRound) {
+        let state = chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("trace bisection session should exist")
+            .state
+            .clone();
+        let expectation =
+            TraceBisectionExpectation::new(&state, round.expected_output_roots.clone()).unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
+            .unwrap();
+    }
+
     #[test]
     fn block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges() {
         let (chain, challenge, challenge_id, _observed_block_payload) =
@@ -1979,6 +1998,19 @@ mod tests {
         apply_chain
             .apply_command(ChainCommand::OpenTraceBisection(config))
             .unwrap();
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+        submit_trace_bisection_expectation(&mut apply_chain, &round);
         assert_eq!(
             apply_network_trace_bisection_round_payload(
                 &mut apply_chain,

@@ -1388,6 +1388,14 @@ fn encode_trace_bisection_challenges(
         write_u64(out, record.state.responder_bond);
         write_hash(out, &record.state.transcript_root);
         write_u64(out, record.opened_rounds);
+        write_hash_vec(out, &record.pending_expected_output_roots);
+        match record.pending_expectation_leaf {
+            Some(leaf) => {
+                out.push(1);
+                write_hash(out, &leaf);
+            }
+            None => out.push(0),
+        }
         match record.last_round_leaf {
             Some(leaf) => {
                 out.push(1);
@@ -1446,6 +1454,12 @@ fn decode_trace_bisection_challenges(
         let responder_bond = reader.read_u64()?;
         let transcript_root = reader.read_hash()?;
         let opened_rounds = reader.read_u64()?;
+        let pending_expected_output_roots = read_hash_vec(reader)?;
+        let pending_expectation_leaf = match reader.read_u8()? {
+            0 => None,
+            1 => Some(reader.read_hash()?),
+            _ => return Err(TvmError::Storage("invalid trace bisection expectation tag")),
+        };
         let last_round_leaf = match reader.read_u8()? {
             0 => None,
             1 => Some(reader.read_hash()?),
@@ -1497,6 +1511,8 @@ fn decode_trace_bisection_challenges(
                     transcript_root,
                 },
                 opened_rounds,
+                pending_expected_output_roots,
+                pending_expectation_leaf,
                 last_round_leaf,
                 last_opening_input_roots,
                 last_opening_output_roots,

@@ -258,6 +258,18 @@ pub(super) fn trace_bisection_challenge_root(
         encoded.extend_from_slice(&record.state.responder_bond.to_le_bytes());
         encoded.extend_from_slice(&record.state.transcript_root);
         encoded.extend_from_slice(&record.opened_rounds.to_le_bytes());
+        encoded
+            .extend_from_slice(&(record.pending_expected_output_roots.len() as u64).to_le_bytes());
+        for root in &record.pending_expected_output_roots {
+            encoded.extend_from_slice(root);
+        }
+        match record.pending_expectation_leaf {
+            Some(leaf) => {
+                encoded.push(1);
+                encoded.extend_from_slice(&leaf);
+            }
+            None => encoded.push(0),
+        }
         match record.last_round_leaf {
             Some(leaf) => {
                 encoded.push(1);

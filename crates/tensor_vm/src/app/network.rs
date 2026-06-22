@@ -431,6 +431,7 @@ fn trace_bisection_round_candidate(
         if record.status != TraceBisectionStatus::Active
             || record.state.responder != responder
             || record.state.is_isolated()
+            || record.pending_expectation_leaf.is_none()
         {
             continue;
         }
@@ -463,7 +464,7 @@ fn trace_bisection_round_candidate(
             .map_err(|error| format!("failed to open runtime trace-bisection midpoint: {error}"))?;
         let round = TraceBisectionRound::new(
             &record.state,
-            opening.op_trace.output_roots.clone(),
+            record.pending_expected_output_roots.clone(),
             opening,
         )
         .map_err(|error| format!("failed to build runtime trace-bisection round: {error}"))?;
@@ -920,12 +921,33 @@ fn block_vote_announcement_keys(chain: &Chain) -> impl Iterator<Item = (Hash, Ad
 mod tests {
     use super::*;
     use crate::{
+        ChainEvent,
+        challenge::TraceBisectionExpectation,
         decode_block_payload_with_selected_receipts,
         p2p::{decode_trace_bisection_open_payload, decode_trace_bisection_round_payload},
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
         types::{address, hash_bytes},
     };
+
+    fn submit_trace_bisection_expectation(
+        node: &mut RpcNode,
+        challenge_id: Hash,
+        expected_output_roots: Vec<Hash>,
+    ) {
+        let state = node
+            .chain
+            .state()
+            .trace_bisection_challenges()
+            .get(&challenge_id)
+            .unwrap()
+            .state
+            .clone();
+        let expectation = TraceBisectionExpectation::new(&state, expected_output_roots).unwrap();
+        node.chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
+            .unwrap();
+    }
 
     #[test]
     fn receipt_dependency_job_messages_replay_referenced_job_payload() {
@@ -1168,6 +1190,8 @@ mod tests {
             .next_graph_job(&job_chain);
         let (receipt, _outputs) =
             GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+        let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+        let expected_output_roots = execution.trace_opening(0).unwrap().op_trace.output_roots;
         let receipt_id = receipt.receipt_id;
 
         let mut missing_node = graph_receipt_node(
@@ -1178,7 +1202,7 @@ mod tests {
             job.clone(),
             receipt.clone(),
         );
-        missing_node
+        let missing_open_events = missing_node
             .chain
             .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
                 receipt_id,
@@ -1191,6 +1215,16 @@ mod tests {
                 responder_bond: 1,
             }))
             .unwrap();
+        let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] =
+            missing_open_events.as_slice()
+        else {
+            panic!("expected trace bisection open event");
+        };
+        submit_trace_bisection_expectation(
+            &mut missing_node,
+            *challenge_id,
+            expected_output_roots.clone(),
+        );
         assert_eq!(
             submit_runtime_trace_bisection_round(&mut missing_node, miner).unwrap(),
             None
@@ -1204,7 +1238,7 @@ mod tests {
             job.clone(),
             receipt.clone(),
         );
-        wrong_wallet_node
+        let wrong_wallet_open_events = wrong_wallet_node
             .chain
             .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
                 receipt_id,
@@ -1217,6 +1251,16 @@ mod tests {
                 responder_bond: 1,
             }))
             .unwrap();
+        let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] =
+            wrong_wallet_open_events.as_slice()
+        else {
+            panic!("expected trace bisection open event");
+        };
+        submit_trace_bisection_expectation(
+            &mut wrong_wallet_node,
+            *challenge_id,
+            expected_output_roots.clone(),
+        );
         for tensor in inputs.clone().into_values() {
             wrong_wallet_node.insert_tensor(tensor);
         }
@@ -1226,7 +1270,8 @@ mod tests {
         );
 
         let mut node = graph_receipt_node(seed, challenger, miner, &graph, job, receipt.clone());
-        node.chain
+        let open_events = node
+            .chain
             .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
                 receipt_id,
                 trace_root: receipt.trace_root,
@@ -1238,6 +1283,10 @@ mod tests {
                 responder_bond: 1,
             }))
             .unwrap();
+        let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+            panic!("expected trace bisection open event");
+        };
+        submit_trace_bisection_expectation(&mut node, *challenge_id, expected_output_roots);
         for tensor in inputs.into_values() {
             node.insert_tensor(tensor);
         }

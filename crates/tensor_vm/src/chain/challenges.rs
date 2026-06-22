@@ -5,8 +5,8 @@ use super::state::{
 use super::{Chain, blocks, settlement};
 use crate::challenge::{
     BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome, TraceBisectionConfig,
-    TraceBisectionOpen, TraceBisectionRound, TraceBisectionState, TraceBisectionStep,
-    trace_bisection_challenge_id,
+    TraceBisectionExpectation, TraceBisectionOpen, TraceBisectionRound, TraceBisectionState,
+    TraceBisectionStep, trace_bisection_challenge_id,
 };
 use crate::error::{Result, TvmError};
 use crate::ir::{IrOpRefereeWitness, TensorGraph};
@@ -352,6 +352,8 @@ pub fn open_trace_bisection(
         challenge_id,
         state,
         opened_rounds: 0,
+        pending_expected_output_roots: Vec::new(),
+        pending_expectation_leaf: None,
         last_round_leaf: None,
         last_opening_input_roots: Vec::new(),
         last_opening_output_roots: Vec::new(),
@@ -379,6 +381,36 @@ pub fn open_signed_trace_bisection(
     open_trace_bisection(chain, open.config)
 }
 
+pub fn submit_trace_bisection_expectation(
+    chain: &mut Chain,
+    expectation: TraceBisectionExpectation,
+) -> Result<TraceBisectionRecord> {
+    let challenge_id = trace_bisection_challenge_id(
+        &expectation.receipt_id,
+        &expectation.trace_root,
+        &expectation.challenger,
+        &expectation.responder,
+    );
+    let record = chain
+        .state
+        .trace_bisection_challenges
+        .get_mut(&challenge_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    if record.status != TraceBisectionStatus::Active {
+        return Err(TvmError::InvalidReceipt("trace bisection is closed"));
+    }
+    if record.state.timed_out(chain.state.height) {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation timed out",
+        ));
+    }
+    expectation.verify_for_state(&record.state)?;
+    record.pending_expected_output_roots = expectation.expected_output_roots.clone();
+    record.pending_expectation_leaf = Some(expectation.expectation_leaf());
+    record.updated_at_height = chain.state.height;
+    Ok(record.clone())
+}
+
 pub fn submit_trace_bisection_round(
     chain: &mut Chain,
     round: TraceBisectionRound,
@@ -400,6 +432,17 @@ pub fn submit_trace_bisection_round(
     if record.state.timed_out(chain.state.height) {
         return Err(TvmError::InvalidReceipt("trace bisection round timed out"));
     }
+    round.verify_for_state(&record.state)?;
+    if record.pending_expectation_leaf.is_none() {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation missing",
+        ));
+    }
+    if record.pending_expected_output_roots != round.expected_output_roots {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation mismatch",
+        ));
+    }
     let step = record.state.apply_round(&round)?;
     let round_leaf = round.transcript_leaf();
     match step {
@@ -413,6 +456,8 @@ pub fn submit_trace_bisection_round(
             record.last_opening_input_roots = round.opening.op_trace.input_roots.clone();
             record.last_opening_output_roots = round.opening.op_trace.output_roots.clone();
             record.last_matched_midpoint = Some(matched_midpoint);
+            record.pending_expected_output_roots.clear();
+            record.pending_expectation_leaf = None;
             record.updated_at_height = chain.state.height;
         }
         TraceBisectionStep::Isolated { op_index } => {
@@ -422,6 +467,8 @@ pub fn submit_trace_bisection_round(
             record.last_opening_output_roots = round.opening.op_trace.output_roots.clone();
             record.last_matched_midpoint =
                 Some(round.expected_output_roots == round.opening.op_trace.output_roots);
+            record.pending_expected_output_roots.clear();
+            record.pending_expectation_leaf = None;
             record.updated_at_height = chain.state.height;
             record.status = TraceBisectionStatus::Isolated { op_index };
         }

@@ -615,7 +615,10 @@ mod tests {
             ExternalRandomnessBeaconProof, JobState, TraceBisectionStatus, ValidatorAuditReport,
             verified_chained_drand_source_id, verified_drand_source_id,
         },
-        challenge::{TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound},
+        challenge::{
+            TraceBisectionConfig, TraceBisectionExpectation, TraceBisectionOpen,
+            TraceBisectionRound,
+        },
         ir::{
             GraphOutput, IrOpRefereeWitness, IrOpWitnessValue, IrRef, OpNode, TensorGraph,
             TensorSpec,
@@ -952,6 +955,22 @@ mod tests {
             round,
             payload,
         )
+    }
+
+    fn submit_trace_bisection_expectation(chain: &mut Chain, round: &TraceBisectionRound) {
+        let state = chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("trace bisection session should exist")
+            .state
+            .clone();
+        let expectation =
+            TraceBisectionExpectation::new(&state, round.expected_output_roots.clone()).unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
+            .unwrap();
     }
 
     fn trace_bisection_referee_context() -> (
@@ -1697,6 +1716,7 @@ mod tests {
             .chain
             .apply_command(ChainCommand::OpenTraceBisection(config))
             .unwrap();
+        submit_trace_bisection_expectation(&mut context.chain, &round);
         let mut processor = ChainNetworkPayloadProcessor::new(&mut context.chain);
         let retried = pending.retry_with(&mut processor);
 
@@ -1769,6 +1789,7 @@ mod tests {
             .chain
             .apply_command(ChainCommand::OpenTraceBisection(config))
             .unwrap();
+        submit_trace_bisection_expectation(&mut context.chain, &round);
         context
             .chain
             .apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone()))

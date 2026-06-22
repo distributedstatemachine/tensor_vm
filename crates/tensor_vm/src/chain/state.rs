@@ -340,6 +340,8 @@ pub struct TraceBisectionRecord {
     pub challenge_id: Hash,
     pub state: TraceBisectionState,
     pub opened_rounds: u64,
+    pub pending_expected_output_roots: Vec<Hash>,
+    pub pending_expectation_leaf: Option<Hash>,
     pub last_round_leaf: Option<Hash>,
     pub last_opening_input_roots: Vec<Hash>,
     pub last_opening_output_roots: Vec<Hash>,

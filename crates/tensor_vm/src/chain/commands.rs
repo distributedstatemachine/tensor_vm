@@ -429,6 +429,15 @@ impl ChainEngine for Chain {
                     transcript_root: record.state.transcript_root,
                 }])
             }
+            ChainCommand::SubmitTraceBisectionExpectation(expectation) => {
+                let record = challenges::submit_trace_bisection_expectation(self, expectation)?;
+                Ok(vec![ChainEvent::TraceBisectionExpectationAccepted {
+                    challenge_id: record.challenge_id,
+                    receipt_id: record.state.receipt_id,
+                    midpoint_op: record.state.midpoint(),
+                    expectation_leaf: record.pending_expectation_leaf.unwrap_or([0; 32]),
+                }])
+            }
             ChainCommand::SubmitTraceBisectionRound(round) => {
                 let record = challenges::submit_trace_bisection_round(self, round)?;
                 let event = match record.status {

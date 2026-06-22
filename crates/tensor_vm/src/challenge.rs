@@ -169,6 +169,22 @@ pub struct TraceBisectionRound {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraceBisectionExpectation {
+    pub receipt_id: Hash,
+    pub trace_root: Hash,
+    pub challenger: Address,
+    pub responder: Address,
+    pub low_op: u64,
+    pub high_op: u64,
+    pub midpoint_op: u64,
+    pub expected_output_roots: Vec<Hash>,
+    pub response_deadline_height: u64,
+    pub challenger_bond: u64,
+    pub responder_bond: u64,
+    pub challenger_signature: Signature,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TraceBisectionStep {
     Narrowed {
         next_state: TraceBisectionState,
@@ -354,6 +370,81 @@ impl TraceBisectionRound {
             || !self.opening.verify()
         {
             return Err(TvmError::InvalidReceipt("invalid trace bisection opening"));
+        }
+        Ok(())
+    }
+}
+
+impl TraceBisectionExpectation {
+    pub fn new(state: &TraceBisectionState, expected_output_roots: Vec<Hash>) -> Result<Self> {
+        let unsigned = Self {
+            receipt_id: state.receipt_id,
+            trace_root: state.trace_root,
+            challenger: state.challenger,
+            responder: state.responder,
+            low_op: state.low_op,
+            high_op: state.high_op,
+            midpoint_op: state.midpoint(),
+            expected_output_roots,
+            response_deadline_height: state.response_deadline_height,
+            challenger_bond: state.challenger_bond,
+            responder_bond: state.responder_bond,
+            challenger_signature: [0; 32],
+        };
+        unsigned.verify_unsigned_for_state(state)?;
+        let message = unsigned.message_hash();
+        Ok(Self {
+            challenger_signature: sign(&state.challenger, &message),
+            ..unsigned
+        })
+    }
+
+    pub fn message_hash(&self) -> Hash {
+        trace_bisection_expectation_hash(self, false)
+    }
+
+    pub fn expectation_leaf(&self) -> Hash {
+        trace_bisection_expectation_hash(self, true)
+    }
+
+    pub fn verify_for_state(&self, state: &TraceBisectionState) -> Result<()> {
+        self.verify_unsigned_for_state(state)?;
+        if !verify_signature(
+            &self.challenger,
+            &self.message_hash(),
+            &self.challenger_signature,
+        ) {
+            return Err(TvmError::InvalidReceipt(
+                "trace bisection expectation signature mismatch",
+            ));
+        }
+        Ok(())
+    }
+
+    fn verify_unsigned_for_state(&self, state: &TraceBisectionState) -> Result<()> {
+        if self.receipt_id != state.receipt_id
+            || self.trace_root != state.trace_root
+            || self.challenger != state.challenger
+            || self.responder != state.responder
+            || self.low_op != state.low_op
+            || self.high_op != state.high_op
+            || self.response_deadline_height != state.response_deadline_height
+            || self.challenger_bond != state.challenger_bond
+            || self.responder_bond != state.responder_bond
+        {
+            return Err(TvmError::InvalidReceipt(
+                "trace bisection expectation state mismatch",
+            ));
+        }
+        if state.is_isolated() || self.midpoint_op != state.midpoint() {
+            return Err(TvmError::InvalidReceipt(
+                "trace bisection expectation midpoint mismatch",
+            ));
+        }
+        if self.expected_output_roots.is_empty() {
+            return Err(TvmError::InvalidReceipt(
+                "trace bisection expectation missing output roots",
+            ));
         }
         Ok(())
     }
@@ -549,6 +640,31 @@ fn trace_bisection_round_hash(round: &TraceBisectionRound, include_signature: bo
         encoded.extend_from_slice(&round.responder_signature);
     }
     hash_bytes(b"tensor-vm-trace-bisection-round-v1", &[&encoded])
+}
+
+fn trace_bisection_expectation_hash(
+    expectation: &TraceBisectionExpectation,
+    include_signature: bool,
+) -> Hash {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&expectation.receipt_id);
+    encoded.extend_from_slice(&expectation.trace_root);
+    encoded.extend_from_slice(&expectation.challenger);
+    encoded.extend_from_slice(&expectation.responder);
+    encoded.extend_from_slice(&expectation.low_op.to_le_bytes());
+    encoded.extend_from_slice(&expectation.high_op.to_le_bytes());
+    encoded.extend_from_slice(&expectation.midpoint_op.to_le_bytes());
+    encoded.extend_from_slice(&(expectation.expected_output_roots.len() as u64).to_le_bytes());
+    for root in &expectation.expected_output_roots {
+        encoded.extend_from_slice(root);
+    }
+    encoded.extend_from_slice(&expectation.response_deadline_height.to_le_bytes());
+    encoded.extend_from_slice(&expectation.challenger_bond.to_le_bytes());
+    encoded.extend_from_slice(&expectation.responder_bond.to_le_bytes());
+    if include_signature {
+        encoded.extend_from_slice(&expectation.challenger_signature);
+    }
+    hash_bytes(b"tensor-vm-trace-bisection-expectation-v1", &[&encoded])
 }
 
 fn encode_trace_opening_for_hash(opening: &IrTraceOpening) -> Vec<u8> {

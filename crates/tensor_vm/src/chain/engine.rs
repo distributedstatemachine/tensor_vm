@@ -3,8 +3,8 @@ use super::state::{
     ValidatorAuditAppealResolution, ValidatorAuditReport, ValidatorVrfRevealRecord,
 };
 use crate::challenge::{
-    BlockCheckChallenge, ChallengeOutcome, TraceBisectionConfig, TraceBisectionOpen,
-    TraceBisectionRound,
+    BlockCheckChallenge, ChallengeOutcome, TraceBisectionConfig, TraceBisectionExpectation,
+    TraceBisectionOpen, TraceBisectionRound,
 };
 use crate::error::Result;
 use crate::ir::{GraphId, IrOpRefereeWitness};
@@ -148,6 +148,7 @@ pub enum ChainCommand {
     SubmitBlockCheckChallenge(BlockCheckChallenge),
     OpenTraceBisection(TraceBisectionConfig),
     OpenSignedTraceBisection(TraceBisectionOpen),
+    SubmitTraceBisectionExpectation(TraceBisectionExpectation),
     SubmitTraceBisectionRound(TraceBisectionRound),
     RefereeTraceBisection {
         challenge_id: Hash,
@@ -336,6 +337,12 @@ pub enum ChainEvent {
         low_op: u64,
         high_op: u64,
         transcript_root: Hash,
+    },
+    TraceBisectionExpectationAccepted {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        midpoint_op: u64,
+        expectation_leaf: Hash,
     },
     TraceBisectionNarrowed {
         challenge_id: Hash,

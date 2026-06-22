@@ -2,7 +2,8 @@ use super::*;
 use crate::{
     canonical_linear_training_step_graph,
     challenge::{
-        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionRound,
+        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig,
+        TraceBisectionExpectation, TraceBisectionRound,
     },
     ir::{
         GraphOutput, IrOpRefereeWitness, IrOpWitnessValue, IrRef, OpNode, TensorGraph, TensorSpec,
@@ -146,6 +147,28 @@ fn two_op_trace_bisection_fixture() -> (Chain, GraphReceipt, crate::ir::IrExecut
     (chain, receipt, execution, x, y)
 }
 
+fn submit_trace_bisection_expectation(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    expected_output_roots: Vec<Hash>,
+) {
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let expectation = TraceBisectionExpectation::new(&state, expected_output_roots).unwrap();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionExpectationAccepted { .. }]
+    ));
+}
+
 #[test]
 fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
     let (mut chain, receipt, execution) = trace_bisection_fixture();
@@ -183,8 +206,39 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
         .state
         .clone();
     let opening = execution.trace_opening(state.midpoint()).unwrap();
-    let round =
-        TraceBisectionRound::new(&state, opening.op_trace.output_roots.clone(), opening).unwrap();
+    let expected_output_roots = opening.op_trace.output_roots.clone();
+    let round = TraceBisectionRound::new(&state, expected_output_roots.clone(), opening).unwrap();
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone())),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection expectation missing"
+        ))
+    );
+    submit_trace_bisection_expectation(
+        &mut chain,
+        challenge_id,
+        vec![hash_bytes(b"test", &[b"wrong-pending-expected-root"])],
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone())),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection expectation mismatch"
+        ))
+    );
+    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots);
+    let pending_record = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap();
+    assert!(!pending_record.pending_expected_output_roots.is_empty());
+    assert!(pending_record.pending_expectation_leaf.is_some());
+    let pending_encoded = encode_chain_state_snapshot(chain.state());
+    let pending_decoded = decode_chain_state_snapshot(&pending_encoded).unwrap();
+    assert_eq!(
+        pending_decoded.trace_bisection_challenges(),
+        chain.state().trace_bisection_challenges()
+    );
     let narrowed_events = chain
         .apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone()))
         .unwrap();
@@ -213,8 +267,10 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
         .state
         .clone();
     let opening = execution.trace_opening(state.midpoint()).unwrap();
+    let expected_output_roots = opening.op_trace.output_roots.clone();
     let final_round =
-        TraceBisectionRound::new(&state, opening.op_trace.output_roots.clone(), opening).unwrap();
+        TraceBisectionRound::new(&state, expected_output_roots.clone(), opening).unwrap();
+    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots);
     let isolated_events = chain
         .apply_command(ChainCommand::SubmitTraceBisectionRound(final_round))
         .unwrap();
@@ -228,6 +284,8 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
         .get(&challenge_id)
         .unwrap();
     assert_eq!(record.opened_rounds, 2);
+    assert!(record.pending_expected_output_roots.is_empty());
+    assert!(record.pending_expectation_leaf.is_none());
     assert!(matches!(
         record.status,
         TraceBisectionStatus::Isolated { op_index: 5 }
@@ -286,6 +344,7 @@ fn isolated_trace_bisection_referee_records_one_op_verdict() {
         .clone();
     let opening = execution.trace_opening(0).unwrap();
     let wrong_expected = vec![hash_bytes(b"test", &[b"wrong-referee-expected-root"])];
+    submit_trace_bisection_expectation(&mut chain, challenge_id, wrong_expected.clone());
     let round = TraceBisectionRound::new(&state, wrong_expected, opening.clone()).unwrap();
     let isolated_events = chain
         .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
@@ -491,6 +550,7 @@ fn trace_bisection_referee_slashes_miner_and_delays_challenger_reward() {
         .clone();
     let opening = bad_execution.trace_opening(0).unwrap();
     let expected_output_roots = execution.op_traces[0].output_roots.clone();
+    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots.clone());
     let round = TraceBisectionRound::new(&state, expected_output_roots.clone(), opening).unwrap();
     assert!(matches!(
         chain
