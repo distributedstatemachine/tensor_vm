@@ -19,32 +19,31 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   chain admission now records sessions, signed rounds, transcript-root progress, isolated-op outcomes, and
   responder timeouts in state-rooted dispute records. Node-side application of bounded trace-bisection
   round payloads now uses the shared pending queue and canonical chain command path with status counters.
-  Trace openings now bind resolved input roots as well as output roots, and isolated trace-bisection
-  sessions can record chain-owned one-op referee verdicts from explicit witness values. Slashing,
-  challenger settlement, p2p referee payloads, session-open gossip, runtime generation, and multi-round DoS
-  policy remain open.
+  Trace openings now bind resolved input roots as well as output roots, isolated trace-bisection sessions
+  can record chain-owned one-op referee verdicts from explicit witness values, and bounded p2p referee
+  payloads now route through shared node pending queues into that canonical chain command. Slashing,
+  challenger settlement, session-open gossip, runtime generation, and multi-round DoS policy remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are p2p/runtime referee
-  payloads, trace-bisection slashing and challenger settlement, session-open/runtime challenge generation,
-  deployed full VRF lifecycle evidence, public/CUDA deployment evidence, or remaining exact Tier-B/CUDA
-  conformance surface.
+- Next action: choose the next feature-sized slice. Current high-value options are trace-bisection slashing
+  and challenger settlement, session-open/runtime challenge generation, deployed full VRF lifecycle
+  evidence, public/CUDA deployment evidence, or remaining exact Tier-B/CUDA conformance surface.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 163 on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 164 on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, trace-bisection rounds, drand, and validator reveals | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof, and trace-bisection p2p/chain admission | Add referee execution or deployed public/CUDA proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, input-rooted p2p trace openings, signed trace-bisection core, bounded trace-bisection round p2p payloads, state-rooted chain admission for trace-bisection sessions/rounds, node pending-queue application, and chain-owned one-op referee verdicts | Continue p2p/runtime referee payloads, slashing/settlement, session-open/runtime generation, and CUDA graph evidence |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof, and trace-bisection p2p/chain/referee admission | Add slashing/settlement or deployed public/CUDA proof |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, input-rooted p2p trace openings, signed trace-bisection core, bounded trace-bisection round and referee p2p payloads, state-rooted chain admission for trace-bisection sessions/rounds, node pending-queue application, and chain-owned one-op referee verdicts | Continue slashing/settlement, session-open/runtime generation, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, verified drand, public chained drand, chain-owned epoch windows, registered validator reveal keys, and keyed Ed25519 reveal proofs before reward release | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -57,6 +56,104 @@ No active feature is checkpointed. Start the next slice with the required Gate 0
 checkpoint before edits.
 
 ## Recent Iterations
+
+### Iteration 164: Trace-Bisection Referee Payload Gossip And Node Application
+
+Commit: pending.
+
+Feature capability: a one-op referee witness for an isolated trace-bisection dispute should cross node
+boundaries as a bounded gossip payload and be admitted only through the shared node pending queue plus
+canonical `ChainCommand::RefereeTraceBisection` path. This removes the current local-only gap where the
+chain can referee a dispute but peers cannot carry the referee witness/verdict through the same network
+surface as bisection rounds.
+
+Readiness requirements covered: `upow.md` §8.2 interactive fraud proofs over `trace_root`, §9 trace
+opening availability, `mvp_spec.md` §4.6 canonical transition boundary, and the Iteration 163 out-of-scope
+item for p2p referee payloads.
+
+Files/modules likely touched: `crates/tensor_vm/src/api.rs`, `crates/tensor_vm/src/p2p/wire.rs`,
+`crates/tensor_vm/src/p2p.rs`, `crates/tensor_vm/src/node/message_ingest.rs`,
+`crates/tensor_vm/src/node/pending_payloads.rs`, `crates/tensor_vm/src/node/payload_application.rs`,
+`crates/tensor_vm/src/node/payload_processor.rs`, `docs/tensorvm/upow.md`, and this execution plan.
+
+Canonical owner: `chain::challenges` remains the only owner of referee admission, verdict state, duplicate
+rejection, and any future economic effects. P2P/node only decode, bound, queue, retry, and call the chain
+command.
+
+Adapter callers: libp2p gossip/message ingest and pending-payload retry. Future runtime challenge
+generation can publish the same payload but does not own verdict semantics.
+
+Old shortcut being removed: referee witnesses are currently usable only by direct local chain command
+callers. Network peers cannot propagate or retry them through canonical bounded payload handling.
+
+Regression test that proves the shortcut is gone: a valid referee payload arriving before its isolated
+trace-bisection session is queued, retrying after isolation records the chain-owned referee verdict, and
+malformed/mismatched/duplicate payloads are invalid or idempotent according to chain state.
+
+Behavior with local synthetic block production disabled: unchanged; inbound referee payload application
+must not depend on synthetic jobs, local producer mode, or block proposal capability.
+
+Behavior for producer and non-producer roles: both roles ingest the same bounded p2p payload and apply it
+through the shared pending queue and chain command path.
+
+Structured evidence source: network ingest counters for referee payloads, pending queue counts, chain
+events, `TraceBisectionRecord::Refereed`, state roots, and snapshot codec.
+
+Finality source: unchanged block votes/finality; referee verdicts are ordinary chain state transitions and
+do not finalize blocks.
+
+Wire-size and codec boundary: add one bounded referee-witness payload under the existing shared p2p codec.
+No unbounded reads, no new block/job/receipt codec, and no adapter-local replay.
+
+Parallel subagents to run: skipped; the available subagent tool requires explicit user authorization before
+spawning agents. Read-only discovery is parallelized with local shell tools.
+
+Parallelizable implementation workstreams: p2p codec/API mapping, node pending/application counters, and
+focused tests can be explored independently, but the parent will be the single writer because these
+workstreams share enum and ingest surfaces.
+
+Tests/checkers/docs to add or update: p2p referee payload roundtrip/malformed tests, node message-ingest or
+payload-application retry tests, pending-payload tests, `upow.md`, and this execution plan.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm trace_bisection_referee --lib -- --nocapture`
+- `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`
+- `cargo test -p tensor_vm pending_payloads --lib -- --nocapture`
+- `cargo test -p tensor_vm network_event_driver_applies_and_retries_trace_bisection_referee_payloads --lib -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --tests`
+- `git diff --check`
+- `cargo test -p tensor_vm --lib`
+- `cargo test -p tensor_vm local_testnet --release`
+
+Expected observable evidence: `P2pMessage::NewTraceBisectionRefereePayload` gossips on the blocks topic,
+bounded decode rejects malformed/mismatched wrapper fields before chain mutation, pending retry applies
+once the isolated challenge exists, duplicate already-refereed payloads are idempotent when identical, and
+conflicting witness payloads are invalid.
+
+Out of scope: automatic runtime challenge generation, session-open gossip, stake slashing, challenger
+bounty settlement, public/CUDA evidence, and multi-round DoS policy.
+
+Split trigger: if witness payload encoding requires a general-purpose tensor-artifact transport instead of
+compact witness values, split that transport into its own feature before continuing referee gossip.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm trace_bisection_referee --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm pending_payloads --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm network_event_driver_applies_and_retries_trace_bisection_referee_payloads --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm p2p_messages_roundtrip --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (525 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
 ### Iteration 163: Trace-Bisection Referee-Ready Openings And Verdicts
 

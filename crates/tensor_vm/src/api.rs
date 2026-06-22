@@ -40,6 +40,15 @@ pub enum P2pMessage {
         transcript_leaf: Hash,
         payload: Vec<u8>,
     },
+    NewTraceBisectionRefereePayload {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Address,
+        responder: Address,
+        op_index: u64,
+        payload: Vec<u8>,
+    },
     NewJob(Hash),
     NewJobPayload {
         job_id: Hash,

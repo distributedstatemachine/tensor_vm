@@ -1,7 +1,7 @@
 use super::{NetworkBlockPayloadApply, NetworkPayloadApply};
 use crate::{
     chain::{
-        BlockAdmission, Chain, ChainCommand, ChainEngine, JobState,
+        BlockAdmission, Chain, ChainCommand, ChainEngine, JobState, TraceBisectionStatus,
         verified_chained_drand_source_id, verified_drand_source_id,
     },
     challenge::{block_check_challenge_id, trace_bisection_challenge_id},
@@ -9,9 +9,9 @@ use crate::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
-        decode_trace_bisection_round_payload, decode_validator_audit_report_payload,
-        decode_validator_vrf_reveal_payload, decode_verified_chained_drand_beacon_payload,
-        decode_verified_drand_beacon_payload,
+        decode_trace_bisection_referee_payload, decode_trace_bisection_round_payload,
+        decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
+        decode_verified_chained_drand_beacon_payload, decode_verified_drand_beacon_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -658,6 +658,73 @@ pub fn apply_network_trace_bisection_round_payload(
     }
     chain
         .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
+pub fn apply_network_trace_bisection_referee_payload(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    receipt_id: Hash,
+    trace_root: Hash,
+    challenger: Hash,
+    responder: Hash,
+    op_index: u64,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if challenge_id == [0; 32]
+        || receipt_id == [0; 32]
+        || trace_root == [0; 32]
+        || challenger == [0; 32]
+        || responder == [0; 32]
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if trace_bisection_challenge_id(&receipt_id, &trace_root, &challenger, &responder)
+        != challenge_id
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(witness) = decode_trace_bisection_referee_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if witness.op_index != op_index {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Some(existing) = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+    else {
+        return NetworkPayloadApply::Pending;
+    };
+    match &existing.status {
+        TraceBisectionStatus::Isolated {
+            op_index: isolated_op,
+        } if *isolated_op == op_index => {}
+        TraceBisectionStatus::Refereed {
+            op_index: refereed_op,
+            ..
+        } if *refereed_op == op_index => {
+            let input_roots = witness
+                .input_values
+                .iter()
+                .map(|value| value.commitment_root())
+                .collect::<Vec<_>>();
+            return if input_roots == existing.last_opening_input_roots {
+                NetworkPayloadApply::Applied
+            } else {
+                NetworkPayloadApply::Invalid
+            };
+        }
+        TraceBisectionStatus::Active => return NetworkPayloadApply::Pending,
+        _ => return NetworkPayloadApply::Invalid,
+    }
+    chain
+        .apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness,
+        })
         .map(|_| NetworkPayloadApply::Applied)
         .unwrap_or(NetworkPayloadApply::Invalid)
 }

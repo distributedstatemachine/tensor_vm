@@ -3,10 +3,13 @@ use crate::chain::{
     BlockVote, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
     ValidatorVrfRevealRecord,
 };
-use crate::challenge::{BlockCheckChallenge, TraceBisectionRound, block_check_challenge_id};
+use crate::challenge::{
+    BlockCheckChallenge, TraceBisectionRound, block_check_challenge_id,
+    trace_bisection_challenge_id,
+};
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
-use crate::ir::{IrOpTrace, IrTraceOpening};
+use crate::ir::{IrOpRefereeWitness, IrOpTrace, IrOpWitnessValue, IrTraceOpening};
 use crate::merkle::MerkleProof;
 use crate::storage::{decode_chain_state_snapshot, encode_chain_state_snapshot};
 use crate::tensor::{DType, Tensor};
@@ -40,6 +43,11 @@ const TRACE_BISECTION_ROUND_PAYLOAD_MAX_LEN: usize = 32
     + 8
     + 8
     + 32;
+const MAX_TRACE_REFEREE_INPUT_VALUES: usize = 16;
+const TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN: usize =
+    8 + MAX_TENSOR_SHAPE_DIMS * 8 + 1 + 8 + MAX_TENSOR_VALUES * 8;
+const TRACE_BISECTION_REFEREE_PAYLOAD_MAX_LEN: usize =
+    8 + 8 + MAX_TRACE_REFEREE_INPUT_VALUES * (1 + TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN);
 const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
 const BLOCK_PAYLOAD_LEN: usize = codec::TENSOR_BLOCK_PAYLOAD_LEN;
 const BLOCK_PAYLOAD_SELECTION_MAGIC: &[u8; 8] = b"TVMBSL1\0";
@@ -112,7 +120,8 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::NewBlockCheckChallenge(_)
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
-        | P2pMessage::NewTraceBisectionRoundPayload { .. } => Some(GossipTopic::Blocks),
+        | P2pMessage::NewTraceBisectionRoundPayload { .. }
+        | P2pMessage::NewTraceBisectionRefereePayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
         P2pMessage::NewReceipt(_) | P2pMessage::NewReceiptPayload { .. } => {
             Some(GossipTopic::Receipts)
@@ -168,6 +177,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
+        | P2pMessage::NewTraceBisectionRefereePayload { .. }
         | P2pMessage::NewJob(_)
         | P2pMessage::NewJobPayload { .. }
         | P2pMessage::NewReceipt(_)
@@ -291,6 +301,24 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             write_hash(&mut out, challenger);
             write_hash(&mut out, responder);
             write_hash(&mut out, transcript_leaf);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewTraceBisectionRefereePayload {
+            challenge_id,
+            receipt_id,
+            trace_root,
+            challenger,
+            responder,
+            op_index,
+            payload,
+        } => {
+            out.push(32);
+            write_hash(&mut out, challenge_id);
+            write_hash(&mut out, receipt_id);
+            write_hash(&mut out, trace_root);
+            write_hash(&mut out, challenger);
+            write_hash(&mut out, responder);
+            write_u64(&mut out, *op_index);
             write_bytes(&mut out, payload);
         }
         P2pMessage::NewJob(hash) => {
@@ -586,6 +614,33 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 challenger,
                 responder,
                 transcript_leaf,
+                payload,
+            }
+        }
+        32 => {
+            let challenge_id = reader.read_hash()?;
+            let receipt_id = reader.read_hash()?;
+            let trace_root = reader.read_hash()?;
+            let challenger = reader.read_hash()?;
+            let responder = reader.read_hash()?;
+            let op_index = reader.read_u64()?;
+            let payload = reader.read_bytes_with_max(TRACE_BISECTION_REFEREE_PAYLOAD_MAX_LEN)?;
+            let witness = decode_trace_bisection_referee_payload(&payload)?;
+            if trace_bisection_challenge_id(&receipt_id, &trace_root, &challenger, &responder)
+                != challenge_id
+                || witness.op_index != op_index
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "trace bisection referee payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewTraceBisectionRefereePayload {
+                challenge_id,
+                receipt_id,
+                trace_root,
+                challenger,
+                responder,
+                op_index,
                 payload,
             }
         }
@@ -1038,6 +1093,60 @@ pub fn decode_trace_bisection_round_payload(input: &[u8]) -> TvmResult<TraceBise
         ));
     }
     Ok(round)
+}
+
+pub fn encode_trace_bisection_referee_payload(witness: &IrOpRefereeWitness) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_u64(&mut out, witness.op_index);
+    write_u64(&mut out, witness.input_values.len() as u64);
+    for value in &witness.input_values {
+        match value {
+            IrOpWitnessValue::Tensor(tensor) => {
+                out.push(1);
+                write_bytes(&mut out, &encode_tensor_payload(tensor));
+            }
+            IrOpWitnessValue::Field(value) => {
+                out.push(2);
+                write_u64(&mut out, *value);
+            }
+        }
+    }
+    out
+}
+
+pub fn decode_trace_bisection_referee_payload(input: &[u8]) -> TvmResult<IrOpRefereeWitness> {
+    let mut reader = Reader::new(input);
+    let op_index = reader.read_u64()?;
+    let input_len = read_usize(&mut reader)?;
+    if input_len > MAX_TRACE_REFEREE_INPUT_VALUES {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection referee inputs too large",
+        ));
+    }
+    let mut input_values = Vec::with_capacity(input_len);
+    for _ in 0..input_len {
+        match reader.read_u8()? {
+            1 => {
+                let payload = reader.read_bytes_with_max(TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN)?;
+                input_values.push(IrOpWitnessValue::Tensor(decode_tensor_payload(&payload)?));
+            }
+            2 => input_values.push(IrOpWitnessValue::Field(reader.read_u64()?)),
+            _ => {
+                return Err(TvmError::InvalidReceipt(
+                    "unknown trace bisection referee input tag",
+                ));
+            }
+        }
+    }
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing trace bisection referee payload bytes",
+        ));
+    }
+    Ok(IrOpRefereeWitness {
+        op_index,
+        input_values,
+    })
 }
 
 pub fn encode_job_payload(job: &JobState) -> Vec<u8> {
@@ -1588,6 +1697,22 @@ mod tests {
             observed_at_height: 3,
         };
         let vrf_reveal_payload = encode_validator_vrf_reveal_payload(&vrf_reveal);
+        let referee_witness = IrOpRefereeWitness {
+            op_index: trace_bisection_round.midpoint_op,
+            input_values: vec![
+                IrOpWitnessValue::Tensor(
+                    Tensor::from_vec(vec![1], DType::FieldElement, vec![42]).unwrap(),
+                ),
+                IrOpWitnessValue::Field(7),
+            ],
+        };
+        let referee_payload = encode_trace_bisection_referee_payload(&referee_witness);
+        let referee_challenge_id = trace_bisection_challenge_id(
+            &trace_bisection_round.receipt_id,
+            &trace_bisection_round.trace_root,
+            &trace_bisection_round.challenger,
+            &trace_bisection_round.responder,
+        );
         let messages = vec![
             P2pMessage::NewBlock(h),
             P2pMessage::NewBlockHeader {
@@ -1667,6 +1792,15 @@ mod tests {
                 responder: trace_bisection_round.responder,
                 transcript_leaf: trace_bisection_round.transcript_leaf(),
                 payload: trace_bisection_round_payload,
+            },
+            P2pMessage::NewTraceBisectionRefereePayload {
+                challenge_id: referee_challenge_id,
+                receipt_id: trace_bisection_round.receipt_id,
+                trace_root: trace_bisection_round.trace_root,
+                challenger: trace_bisection_round.challenger,
+                responder: trace_bisection_round.responder,
+                op_index: referee_witness.op_index,
+                payload: referee_payload,
             },
             P2pMessage::RequestTensorChunk {
                 tensor_id: h,
@@ -2118,6 +2252,107 @@ mod tests {
             decode_trace_bisection_round_payload(&oversized_expected_roots),
             Err(TvmError::InvalidReceipt(
                 "trace bisection expected roots too large"
+            ))
+        );
+    }
+
+    #[test]
+    fn trace_bisection_referee_payloads_roundtrip_and_reject_malformed_edges() {
+        let round = trace_bisection_round_fixture();
+        let witness = IrOpRefereeWitness {
+            op_index: round.midpoint_op,
+            input_values: vec![
+                IrOpWitnessValue::Tensor(
+                    Tensor::from_vec(vec![2], DType::FieldElement, vec![3, 5]).unwrap(),
+                ),
+                IrOpWitnessValue::Field(8),
+            ],
+        };
+        let payload = encode_trace_bisection_referee_payload(&witness);
+        assert_eq!(
+            decode_trace_bisection_referee_payload(&payload).unwrap(),
+            witness
+        );
+
+        let challenge_id = trace_bisection_challenge_id(
+            &round.receipt_id,
+            &round.trace_root,
+            &round.challenger,
+            &round.responder,
+        );
+        let message = P2pMessage::NewTraceBisectionRefereePayload {
+            challenge_id,
+            receipt_id: round.receipt_id,
+            trace_root: round.trace_root,
+            challenger: round.challenger,
+            responder: round.responder,
+            op_index: witness.op_index,
+            payload: payload.clone(),
+        };
+        assert_eq!(decode_message(&encode_message(&message)).unwrap(), message);
+
+        let wrong_challenge = encode_message(&P2pMessage::NewTraceBisectionRefereePayload {
+            challenge_id: hash_bytes(b"test", &[b"wrong-referee-challenge"]),
+            receipt_id: round.receipt_id,
+            trace_root: round.trace_root,
+            challenger: round.challenger,
+            responder: round.responder,
+            op_index: witness.op_index,
+            payload: payload.clone(),
+        });
+        assert_eq!(
+            decode_message(&wrong_challenge),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection referee payload announcement mismatch"
+            ))
+        );
+
+        let wrong_op = encode_message(&P2pMessage::NewTraceBisectionRefereePayload {
+            challenge_id,
+            receipt_id: round.receipt_id,
+            trace_root: round.trace_root,
+            challenger: round.challenger,
+            responder: round.responder,
+            op_index: witness.op_index.saturating_add(1),
+            payload: payload.clone(),
+        });
+        assert_eq!(
+            decode_message(&wrong_op),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection referee payload announcement mismatch"
+            ))
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(1);
+        assert_eq!(
+            decode_trace_bisection_referee_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing trace bisection referee payload bytes"
+            ))
+        );
+
+        let mut oversized_inputs = Vec::new();
+        write_u64(&mut oversized_inputs, witness.op_index);
+        write_u64(
+            &mut oversized_inputs,
+            (MAX_TRACE_REFEREE_INPUT_VALUES + 1) as u64,
+        );
+        assert_eq!(
+            decode_trace_bisection_referee_payload(&oversized_inputs),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection referee inputs too large"
+            ))
+        );
+
+        let mut bad_tag = Vec::new();
+        write_u64(&mut bad_tag, witness.op_index);
+        write_u64(&mut bad_tag, 1);
+        bad_tag.push(99);
+        assert_eq!(
+            decode_trace_bisection_referee_payload(&bad_tag),
+            Err(TvmError::InvalidReceipt(
+                "unknown trace bisection referee input tag"
             ))
         );
     }
@@ -2707,6 +2942,30 @@ mod tests {
                 challenger: address(b"mapping-trace-challenger"),
                 responder: address(b"mapping-trace-responder"),
                 transcript_leaf: h,
+                payload: vec![1, 2, 3],
+            }),
+            None
+        );
+        assert_eq!(
+            gossip_topic_for_message(&P2pMessage::NewTraceBisectionRefereePayload {
+                challenge_id: h,
+                receipt_id: h,
+                trace_root: h,
+                challenger: address(b"mapping-trace-challenger"),
+                responder: address(b"mapping-trace-responder"),
+                op_index: 0,
+                payload: vec![1, 2, 3],
+            }),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(&P2pMessage::NewTraceBisectionRefereePayload {
+                challenge_id: h,
+                receipt_id: h,
+                trace_root: h,
+                challenger: address(b"mapping-trace-challenger"),
+                responder: address(b"mapping-trace-responder"),
+                op_index: 0,
                 payload: vec![1, 2, 3],
             }),
             None

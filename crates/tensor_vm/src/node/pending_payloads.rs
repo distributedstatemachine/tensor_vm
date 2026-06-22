@@ -7,6 +7,7 @@ use std::collections::BTreeMap;
 type BlockCheckChallengeKey = (Hash, Hash, Hash);
 type ObservedBlockCheckChallengePayload = (Vec<u8>, Vec<u8>);
 type TraceBisectionRoundKey = (Hash, Hash, Hash, Hash, Hash);
+type TraceBisectionRefereeKey = (Hash, Hash, Hash, Hash, Hash, u64);
 type ValidatorVrfRevealKey = (Hash, Hash, Hash);
 
 #[derive(Debug, Default)]
@@ -18,6 +19,7 @@ pub struct PendingNetworkPayloads {
     observed_block_check_challenges:
         BTreeMap<BlockCheckChallengeKey, ObservedBlockCheckChallengePayload>,
     trace_bisection_rounds: BTreeMap<TraceBisectionRoundKey, Vec<u8>>,
+    trace_bisection_referees: BTreeMap<TraceBisectionRefereeKey, Vec<u8>>,
     receipts: BTreeMap<Hash, Vec<u8>>,
     attestations: BTreeMap<Hash, Vec<u8>>,
     validator_audit_reports: BTreeMap<(Hash, Hash), Vec<u8>>,
@@ -32,6 +34,7 @@ impl PendingNetworkPayloads {
             && self.block_check_challenges.is_empty()
             && self.observed_block_check_challenges.is_empty()
             && self.trace_bisection_rounds.is_empty()
+            && self.trace_bisection_referees.is_empty()
             && self.receipts.is_empty()
             && self.attestations.is_empty()
             && self.validator_audit_reports.is_empty()
@@ -68,6 +71,10 @@ impl PendingNetworkPayloads {
 
     pub fn pending_trace_bisection_round_count(&self) -> usize {
         self.trace_bisection_rounds.len()
+    }
+
+    pub fn pending_trace_bisection_referee_count(&self) -> usize {
+        self.trace_bisection_referees.len()
     }
 
     pub fn pending_receipt_count(&self) -> usize {
@@ -141,6 +148,28 @@ impl PendingNetworkPayloads {
                 challenger,
                 responder,
                 transcript_leaf,
+            ))
+            .or_insert(payload);
+    }
+
+    pub fn queue_trace_bisection_referee(
+        &mut self,
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Hash,
+        responder: Hash,
+        op_index: u64,
+        payload: Vec<u8>,
+    ) {
+        self.trace_bisection_referees
+            .entry((
+                challenge_id,
+                receipt_id,
+                trace_root,
+                challenger,
+                responder,
+                op_index,
             ))
             .or_insert(payload);
     }
@@ -409,6 +438,61 @@ impl PendingNetworkPayloads {
                     }
                 }
             }
+            for (challenge_id, receipt_id, trace_root, challenger, responder, op_index) in self
+                .trace_bisection_referees
+                .keys()
+                .copied()
+                .collect::<Vec<_>>()
+            {
+                let payload = self
+                    .trace_bisection_referees
+                    .get(&(
+                        challenge_id,
+                        receipt_id,
+                        trace_root,
+                        challenger,
+                        responder,
+                        op_index,
+                    ))
+                    .expect("queued trace bisection referee payload must exist")
+                    .clone();
+                match processor.apply_trace_bisection_referee(
+                    challenge_id,
+                    receipt_id,
+                    trace_root,
+                    challenger,
+                    responder,
+                    op_index,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        self.trace_bisection_referees.remove(&(
+                            challenge_id,
+                            receipt_id,
+                            trace_root,
+                            challenger,
+                            responder,
+                            op_index,
+                        ));
+                        ingested.trace_bisection_referees_applied =
+                            ingested.trace_bisection_referees_applied.saturating_add(1);
+                        progressed = true;
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        self.trace_bisection_referees.remove(&(
+                            challenge_id,
+                            receipt_id,
+                            trace_root,
+                            challenger,
+                            responder,
+                            op_index,
+                        ));
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                        progressed = true;
+                    }
+                }
+            }
             for (audit_id, auditor) in self
                 .validator_audit_reports
                 .keys()
@@ -486,6 +570,7 @@ mod tests {
         block_check_challenge_result: NetworkPayloadApply,
         observed_block_check_challenge_result: NetworkPayloadApply,
         trace_bisection_round_result: NetworkPayloadApply,
+        trace_bisection_referee_result: NetworkPayloadApply,
         block_attempts: usize,
         receipt_attempts: usize,
         attestation_attempts: usize,
@@ -494,6 +579,7 @@ mod tests {
         block_check_challenge_attempts: usize,
         observed_block_check_challenge_attempts: usize,
         trace_bisection_round_attempts: usize,
+        trace_bisection_referee_attempts: usize,
     }
 
     impl NetworkPayloadProcessor for RetryProcessor {
@@ -560,6 +646,21 @@ mod tests {
             self.trace_bisection_round_result
         }
 
+        fn apply_trace_bisection_referee(
+            &mut self,
+            _challenge_id: Hash,
+            _receipt_id: Hash,
+            _trace_root: Hash,
+            _challenger: Hash,
+            _responder: Hash,
+            _op_index: u64,
+            _payload: &[u8],
+        ) -> NetworkPayloadApply {
+            self.trace_bisection_referee_attempts =
+                self.trace_bisection_referee_attempts.saturating_add(1);
+            self.trace_bisection_referee_result
+        }
+
         fn apply_receipt(&mut self, _receipt_id: Hash, _payload: &[u8]) -> NetworkPayloadApply {
             self.receipt_attempts = self.receipt_attempts.saturating_add(1);
             self.receipt_result
@@ -612,6 +713,7 @@ mod tests {
                 block_check_challenge_result: NetworkPayloadApply::Pending,
                 observed_block_check_challenge_result: NetworkPayloadApply::Pending,
                 trace_bisection_round_result: NetworkPayloadApply::Pending,
+                trace_bisection_referee_result: NetworkPayloadApply::Pending,
                 block_attempts: 0,
                 receipt_attempts: 0,
                 attestation_attempts: 0,
@@ -620,6 +722,7 @@ mod tests {
                 block_check_challenge_attempts: 0,
                 observed_block_check_challenge_attempts: 0,
                 trace_bisection_round_attempts: 0,
+                trace_bisection_referee_attempts: 0,
             }
         }
     }
@@ -685,6 +788,15 @@ mod tests {
             [24; 32],
             vec![92],
         );
+        pending.queue_trace_bisection_referee(
+            [25; 32],
+            [20; 32],
+            [21; 32],
+            [22; 32],
+            [23; 32],
+            0,
+            vec![93],
+        );
         let mut processor =
             RetryProcessor::new(NetworkPayloadApply::Pending, NetworkPayloadApply::Pending);
 
@@ -697,6 +809,7 @@ mod tests {
         assert_eq!(pending.pending_validator_vrf_reveal_count(), 1);
         assert_eq!(pending.pending_block_check_challenge_count(), 2);
         assert_eq!(pending.pending_trace_bisection_round_count(), 1);
+        assert_eq!(pending.pending_trace_bisection_referee_count(), 1);
         assert_eq!(processor.receipt_attempts, 1);
         assert_eq!(processor.attestation_attempts, 1);
         assert_eq!(processor.validator_audit_report_attempts, 1);
@@ -704,6 +817,7 @@ mod tests {
         assert_eq!(processor.block_check_challenge_attempts, 1);
         assert_eq!(processor.observed_block_check_challenge_attempts, 1);
         assert_eq!(processor.trace_bisection_round_attempts, 1);
+        assert_eq!(processor.trace_bisection_referee_attempts, 1);
     }
 
     #[test]
@@ -717,6 +831,7 @@ mod tests {
             block_check_challenge_payloads: Vec<Vec<u8>>,
             observed_block_check_challenge_payloads: Vec<(Vec<u8>, Vec<u8>)>,
             trace_bisection_round_payloads: Vec<Vec<u8>>,
+            trace_bisection_referee_payloads: Vec<Vec<u8>>,
         }
 
         impl NetworkPayloadProcessor for PayloadCapturingProcessor {
@@ -777,6 +892,20 @@ mod tests {
                 payload: &[u8],
             ) -> NetworkPayloadApply {
                 self.trace_bisection_round_payloads.push(payload.to_vec());
+                NetworkPayloadApply::Applied
+            }
+
+            fn apply_trace_bisection_referee(
+                &mut self,
+                _challenge_id: Hash,
+                _receipt_id: Hash,
+                _trace_root: Hash,
+                _challenger: Hash,
+                _responder: Hash,
+                _op_index: u64,
+                payload: &[u8],
+            ) -> NetworkPayloadApply {
+                self.trace_bisection_referee_payloads.push(payload.to_vec());
                 NetworkPayloadApply::Applied
             }
 
@@ -857,6 +986,24 @@ mod tests {
             [24; 32],
             vec![121],
         );
+        pending.queue_trace_bisection_referee(
+            [25; 32],
+            [20; 32],
+            [21; 32],
+            [22; 32],
+            [23; 32],
+            0,
+            vec![122],
+        );
+        pending.queue_trace_bisection_referee(
+            [25; 32],
+            [20; 32],
+            [21; 32],
+            [22; 32],
+            [23; 32],
+            0,
+            vec![123],
+        );
         let mut processor = PayloadCapturingProcessor {
             block_payloads: Vec::new(),
             receipt_payloads: Vec::new(),
@@ -866,6 +1013,7 @@ mod tests {
             block_check_challenge_payloads: Vec::new(),
             observed_block_check_challenge_payloads: Vec::new(),
             trace_bisection_round_payloads: Vec::new(),
+            trace_bisection_referee_payloads: Vec::new(),
         };
 
         let ingested = pending.retry_with(&mut processor);
@@ -876,6 +1024,7 @@ mod tests {
         assert_eq!(ingested.validator_vrf_reveals_applied, 1);
         assert_eq!(ingested.block_check_challenges_applied, 2);
         assert_eq!(ingested.trace_bisection_rounds_applied, 1);
+        assert_eq!(ingested.trace_bisection_referees_applied, 1);
         assert_eq!(processor.receipt_payloads, vec![vec![70]]);
         assert_eq!(processor.attestation_payloads, vec![vec![80]]);
         assert_eq!(processor.validator_audit_report_payloads, vec![vec![90]]);
@@ -886,6 +1035,7 @@ mod tests {
             vec![(vec![110], vec![111])]
         );
         assert_eq!(processor.trace_bisection_round_payloads, vec![vec![120]]);
+        assert_eq!(processor.trace_bisection_referee_payloads, vec![vec![122]]);
         assert!(pending.is_empty());
     }
 }

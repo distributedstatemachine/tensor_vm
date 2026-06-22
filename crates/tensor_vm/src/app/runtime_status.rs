@@ -377,6 +377,14 @@ pub fn format_role_runtime_report(
         "network_trace_bisection_rounds_applied",
         network_events.trace_bisection_rounds_applied,
     );
+    report.field(
+        "network_trace_bisection_referees_ingested",
+        network_events.trace_bisection_referees,
+    );
+    report.field(
+        "network_trace_bisection_referees_applied",
+        network_events.trace_bisection_referees_applied,
+    );
     report.field("network_job_events_ingested", network_events.jobs);
     report.field("network_job_payloads_ingested", network_events.job_payloads);
     report.field(
@@ -758,6 +766,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_network_trace_bisection_rounds_applied",
         network_events.trace_bisection_rounds_applied,
+    );
+    report.field(
+        "role_network_trace_bisection_referees_ingested",
+        network_events.trace_bisection_referees,
+    );
+    report.field(
+        "role_network_trace_bisection_referees_applied",
+        network_events.trace_bisection_referees_applied,
     );
     report.field("role_network_job_events_ingested", network_events.jobs);
     report.field(

@@ -2,8 +2,8 @@ use super::payload_application::{
     apply_network_attestation_payload, apply_network_block_check_challenge_payload,
     apply_network_block_payload, apply_network_block_vote_payload, apply_network_job_payload,
     apply_network_observed_block_check_challenge_payload, apply_network_receipt_payload,
-    apply_network_trace_bisection_round_payload, apply_network_validator_audit_report_payload,
-    apply_network_validator_vrf_reveal_payload,
+    apply_network_trace_bisection_referee_payload, apply_network_trace_bisection_round_payload,
+    apply_network_validator_audit_report_payload, apply_network_validator_vrf_reveal_payload,
 };
 use crate::{chain::Chain, types::Hash};
 
@@ -67,6 +67,17 @@ pub trait NetworkPayloadProcessor {
         challenger: Hash,
         responder: Hash,
         transcript_leaf: Hash,
+        payload: &[u8],
+    ) -> NetworkPayloadApply;
+
+    fn apply_trace_bisection_referee(
+        &mut self,
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Hash,
+        responder: Hash,
+        op_index: u64,
         payload: &[u8],
     ) -> NetworkPayloadApply;
 
@@ -188,6 +199,28 @@ impl NetworkPayloadProcessor for ChainNetworkPayloadProcessor<'_> {
         )
     }
 
+    fn apply_trace_bisection_referee(
+        &mut self,
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Hash,
+        responder: Hash,
+        op_index: u64,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_trace_bisection_referee_payload(
+            self.chain,
+            challenge_id,
+            receipt_id,
+            trace_root,
+            challenger,
+            responder,
+            op_index,
+            payload,
+        )
+    }
+
     fn apply_receipt(&mut self, receipt_id: Hash, payload: &[u8]) -> NetworkPayloadApply {
         apply_network_receipt_payload(self.chain, receipt_id, payload)
     }
@@ -302,6 +335,28 @@ impl<C: NetworkEventContext + ?Sized> NetworkPayloadProcessor
             challenger,
             responder,
             transcript_leaf,
+            payload,
+        )
+    }
+
+    fn apply_trace_bisection_referee(
+        &mut self,
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Hash,
+        responder: Hash,
+        op_index: u64,
+        payload: &[u8],
+    ) -> NetworkPayloadApply {
+        apply_network_trace_bisection_referee_payload(
+            self.context.chain(),
+            challenge_id,
+            receipt_id,
+            trace_root,
+            challenger,
+            responder,
+            op_index,
             payload,
         )
     }
