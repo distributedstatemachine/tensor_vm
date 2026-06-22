@@ -114,6 +114,7 @@ Validation evidence on June 22, 2026:
 - Manual ownership-boundary review: verifier bandwidth evidence is computed in `ChainState` and only
   rendered by status/RPC adapters; no verifier semantics, p2p/storage codec, CUDA path, or public evidence
   claim changed.
+- Commit `c6a44e3` (`Expose verifier bandwidth evidence`) pushed to `origin/main`.
 
 ### Iteration 186: Public Randomness Evidence Raw-Record Gate
 
