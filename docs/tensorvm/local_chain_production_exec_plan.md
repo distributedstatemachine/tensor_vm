@@ -113,6 +113,7 @@ Validation completed on June 22, 2026:
 - Manual ownership-boundary review: no standalone verifier binary was used or added; the change is limited
   to explorer WebSocket regression coverage and docs/status alignment, with no p2p, storage, or consensus
   wire-format changes.
+- Commit `932c69c` (`Expose graph execution in explorer websocket`) pushed to `origin/main`.
 
 ## Recent Iterations
 
@@ -166,8 +167,7 @@ Commit `be4af33` (`Cover admitted graph verifier ops`) pushed to `origin/main`.
 - Current Iteration 181 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 181 validation passed on June 22, 2026: focused WebSocket graph test; fmt/check/diff;
   `cargo test -p tensor_vm --lib` (546 passed); release local-testnet; clippy; tarpaulin 84.58%
-  (22613/26736, 561 instrumented tests). Latest pushed commit is `7a1c41b` on `origin/main`; Iteration 181
-  is not yet committed.
+  (22613/26736, 561 instrumented tests). Commit `932c69c` pushed to `origin/main`.
 
 ## Archive
 
