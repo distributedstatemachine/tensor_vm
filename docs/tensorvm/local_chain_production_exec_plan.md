@@ -1,11 +1,10 @@
 # Local Chain Production Execution Plan
-
-This file is the durable source of truth for local-chain production-readiness work. Keep it compact:
-current status, active/recent iterations, validation evidence, blockers, and archive commit anchors only.
+Durable source of truth for current status, active/recent iterations, validation evidence, blockers, and
+archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 172 ready to commit: Trace-Bisection Expected-Root Gossip.
+- Active feature: Iteration 172 complete: Trace-Bisection Expected-Root Gossip.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move active matured rewards into spendable balances;
   explicit beneficiary `ClaimReward` remains the canonical spendability boundary. The trace-bisection path
@@ -16,7 +15,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   delayed challenger reward claims.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: commit/push Iteration 172 and record the hash.
+- Next action: continue trace-bisection DoS policy, automatic referee witness generation, or public/CUDA
+  deployment evidence.
 
 ## Readiness Matrix
 
@@ -142,6 +142,8 @@ Validation completed on June 22, 2026:
   signature-checked at the wire boundary, node/runtime paths only queue, submit
   `ChainCommand::SubmitTraceBisectionExpectation`, publish, and count typed events, while
   `chain::challenges` remains the only owner of pending expected roots and round unblocking.
+- Feature commit `bbb3d28` pushed to `main` on June 22, 2026:
+  `git push` returned `8ff69c1..bbb3d28  main -> main`.
 
 ### Iteration 171: Trace-Bisection Challenger Expected Roots
 
@@ -290,8 +292,8 @@ Validation completed on June 22, 2026:
   application, input-rooted trace openings, and chain-owned one-op referee verdicts.
 - Iteration 157 (`fc14b63`, pushed `main` -> `main`; metadata `7d4e172`): graph-verifier exact-op coverage
   for admitted Tier-B op clusters.
-- Iterations 143 through 156 established verified drand/network randomness, production validator reveal
-  proofs, finality-delayed proposer rewards, finalized side-branch convergence, durable
+- Iterations 143 through 156 established verified drand/network randomness, validator reveal proofs,
+  finality-delayed proposer rewards, finalized side-branch convergence, durable
   restart-rehydrated tensor artifacts, deployment preflight/evidence surfaces, rolling restart evidence,
   richer IR/Tier-B execution, delayed reward maturity, claim-owned spendability, audit and challenge
   reward holds, exact trace openings, and related local CPU Docker proof evidence. Detailed historical
