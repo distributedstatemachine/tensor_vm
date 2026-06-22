@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: none; Iteration 168 implementation, validation, commit, and push are in progress.
+- Active feature: none; Iteration 168 implementation, validation, commit, and push are complete.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move active matured rewards into spendable balances;
   explicit beneficiary `ClaimReward` remains the canonical spendability boundary. The trace-bisection path
