@@ -115,6 +115,8 @@ Validation evidence on June 22, 2026:
   generated; this is a manifest/evidence validation gate. No standalone verifier binary exists or was
   added; validation used Rust tests, shell checks, clippy, tarpaulin, and manual ownership-boundary review.
 
+Commit `4e3f97a` (`Gate full spec evidence on public randomness records`) pushed to `origin/main`.
+
 ### Iteration 185: Mixed-Dtype Conformance Vector Coverage
 
 Feature capability: strengthen the canonical `F_p` conformance suite with additional mixed dtype/scale
