@@ -201,6 +201,8 @@ pub(super) fn complete_public_evidence_bundle() -> PublicTestnetEvidenceBundle {
             operator_identity_attestation_records: 3,
             network_runtime_observation_records: 3,
             network_runtime_observation_root,
+            randomness_beacon_records: 10,
+            randomness_beacon_root: hash_bytes(b"test", &[b"randomness-beacon-root"]),
             data_availability_measurement_records: 20,
             data_availability_measurement_root: hash_bytes(b"test", &[b"data-availability-root"]),
             invalid_work_rejection_records: 1,
@@ -309,6 +311,8 @@ pub(super) fn full_spec_public_evidence_bundle(
             operator_identity_attestation_records: operator_records,
             network_runtime_observation_records: operator_records,
             network_runtime_observation_root,
+            randomness_beacon_records: observed_blocks,
+            randomness_beacon_root: hash_bytes(b"test", &[b"full-spec-randomness-beacon-root"]),
             data_availability_measurement_records: checked_receipts,
             data_availability_measurement_root: hash_bytes(
                 b"test",

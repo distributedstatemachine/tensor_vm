@@ -119,6 +119,8 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
             operator_identity_attestation_records: 3,
             network_runtime_observation_records: 3,
             network_runtime_observation_root,
+            randomness_beacon_records: 10,
+            randomness_beacon_root: hash_bytes(b"test", &[b"randomness-beacon-root"]),
             data_availability_measurement_records: 20,
             data_availability_measurement_root: hash_bytes(b"test", &[b"data-availability-root"]),
             invalid_work_rejection_records: 1,

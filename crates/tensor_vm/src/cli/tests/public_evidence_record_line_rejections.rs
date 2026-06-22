@@ -24,6 +24,46 @@ fn direct_public_record_line_rejections_report_invalid_receipts() {
             "invalid_work_rejection=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,accepted,0",
         ),
         (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
+                "not-a-source,7,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "drand-v1,9,accepted"
+            ),
+        ),
+        (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,not-a-round,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "drand-v1,9,accepted"
+            ),
+        ),
+        (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,7,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "local-fixture,9,accepted"
+            ),
+        ),
+        (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,7,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "drand-v1,9,pending"
+            ),
+        ),
+        (
             PublicEvidenceRecordKind::RewardSettlements,
             "reward_settlement=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,miner,,0",
         ),

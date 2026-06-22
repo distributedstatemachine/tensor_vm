@@ -2,7 +2,7 @@ use super::*;
 
 #[test]
 fn execute_public_evidence_record_summary_and_artifact_reports_outputs() {
-    let record_cases: [(PublicEvidenceRecordKind, &[u8], u64, &str, String); 6] = [
+    let record_cases: [(PublicEvidenceRecordKind, &[u8], u64, &str, String); 7] = [
         (
             PublicEvidenceRecordKind::BlockHistory,
             b"block-history-root",
@@ -23,6 +23,13 @@ fn execute_public_evidence_record_summary_and_artifact_reports_outputs() {
             3,
             "network_runtime_observation",
             hex(&manifest_bundle().network_runtime_observation_signature),
+        ),
+        (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            b"randomness-beacon-root",
+            10,
+            "randomness_beacon",
+            hex(&manifest_bundle().randomness_beacon_signature),
         ),
         (
             PublicEvidenceRecordKind::DataAvailabilityMeasurements,

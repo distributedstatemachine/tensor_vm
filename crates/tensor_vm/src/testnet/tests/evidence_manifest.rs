@@ -182,6 +182,7 @@ fn assert_public_testnet_evidence_manifest_is_pending(manifest: &str) {
     assert!(report.has_finality_history);
     assert!(!report.has_operator_identity_attestations);
     assert!(!report.has_network_runtime_observations);
+    assert!(!report.has_randomness_beacon_evidence);
     assert!(report.has_data_availability_measurements);
     assert!(report.has_invalid_work_rejection_records);
     assert!(report.has_reward_settlement_record_summary);

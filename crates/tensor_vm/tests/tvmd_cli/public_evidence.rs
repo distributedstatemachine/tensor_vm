@@ -137,6 +137,7 @@ fn generated_public_evidence_manifest_round_trips_through_tvmd_validator() {
     for (kind, root, count) in [
         ("block-history", "44".repeat(32), "10"),
         ("finality-history", "55".repeat(32), "10"),
+        ("randomness-beacon", "a0".repeat(32), "10"),
         ("data-availability", "77".repeat(32), "20"),
         ("invalid-work", "88".repeat(32), "1"),
         ("reward-settlement", "99".repeat(32), "1"),
@@ -576,6 +577,7 @@ invalid_receipts_rejected=1
         stdout_value(&report, "network_runtime_observations"),
         "true"
     );
+    assert_eq!(stdout_value(&report, "randomness_beacon_evidence"), "true");
     assert_eq!(stdout_value(&report, "deployed_public_services"), "true");
     assert_eq!(
         stdout_value(&report, "deployed_public_service_content"),

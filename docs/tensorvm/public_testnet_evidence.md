@@ -187,6 +187,7 @@ auditor=<auditor-address-hex>,https://auditor.tensorvm.net/tensorvm/audit.json,<
 record_artifact=block-history,https://evidence.tensorvm.net/tensorvm/block-history.json,<history-root-hex>,100800,<artifact-signature-hex>
 record_artifact=finality-history,https://evidence.tensorvm.net/tensorvm/finality-history.json,<finality-root-hex>,100800,<artifact-signature-hex>
 record_artifact=network-runtime,https://evidence.tensorvm.net/tensorvm/network-runtime.json,<network-runtime-root-hex>,<operator-count>,<artifact-signature-hex>
+record_artifact=randomness-beacon,https://evidence.tensorvm.net/tensorvm/randomness-beacon.json,<randomness-root-hex>,100800,<artifact-signature-hex>
 record_artifact=data-availability,https://evidence.tensorvm.net/tensorvm/data-availability.json,<da-root-hex>,1000,<artifact-signature-hex>
 record_artifact=invalid-work,https://evidence.tensorvm.net/tensorvm/invalid-work.json,<invalid-work-root-hex>,1,<artifact-signature-hex>
 record_artifact=reward-settlement,https://evidence.tensorvm.net/tensorvm/reward-settlement.json,<reward-settlement-root-hex>,1,<artifact-signature-hex>
@@ -203,6 +204,9 @@ network_runtime_observation=<operator-id-hex>,<libp2p-peer-id>,/dns/node-a.tenso
 network_runtime_observation_records=<operator-count>
 network_runtime_observation_root=<network-runtime-root-hex>
 network_runtime_observation_signature=<network-runtime-signature-hex>
+randomness_beacon_records=100800
+randomness_beacon_root=<randomness-root-hex>
+randomness_beacon_signature=<randomness-signature-hex>
 data_availability_measurement_records=1000
 data_availability_measurement_root=<da-root-hex>
 data_availability_measurement_signature=<da-signature-hex>
@@ -482,15 +486,15 @@ tvmd public evidence record summary-file \
   --record-file artifacts/network-runtime.records
 ```
 
-Supported record kinds are `block-history`, `finality-history`, `network-runtime`, `data-availability`,
-`invalid-work`, and `reward-settlement`. The command emits the corresponding `<record>_records`,
+Supported record kinds are `block-history`, `finality-history`, `network-runtime`, `randomness-beacon`,
+`data-availability`, `invalid-work`, and `reward-settlement`. The command emits the corresponding `<record>_records`,
 `<record>_root`, and `<record>_signature` manifest fields using the same signature domain the validator
 checks.
 The `evidence record artifact` command emits a signed `record_artifact=...` manifest line that binds an external
 raw-record artifact URI to the same record kind, root, and count. The full independently checkable gate
-requires one valid artifact locator for every required supporting-record summary root and exactly six
-supporting artifact locators total: block history, finality history, network runtime, data availability,
-invalid work, and reward settlement.
+requires one valid artifact locator for every required supporting-record summary root and exactly seven
+supporting artifact locators total: block history, finality history, network runtime, randomness beacon,
+data availability, invalid work, and reward settlement.
 The `evidence record summary-roots` and `evidence record artifact-roots` variants derive a deterministic aggregate
 root and record count from unique provided supporting-record roots before signing the summary fields or
 artifact locator; duplicate roots are rejected so a summary count cannot be padded by repeating the same raw
@@ -502,11 +506,13 @@ saved line-oriented raw-record file. Blank lines and `#` comments are ignored; g
 network-runtime roots verify the full signed observation line, including the libp2p peer ID, public
 listen multiaddr, nonzero discovery/gossip/request-response/DoS-control counters, observation root, and
 observation signature, before the root can be aggregated. Non-network supporting-record files can contain
-exact `block_history_record=...`, `finality_history_record=...`, `data_availability_measurement=...`,
-`invalid_work_rejection=...`, or `reward_settlement=...` raw record lines. These typed lines are hashed
+exact `block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
+`data_availability_measurement=...`, `invalid_work_rejection=...`, or `reward_settlement=...` raw record
+lines. These typed lines are hashed
 with the record kind and exact line bytes only after the file parser validates the selected kind's fields:
 `block_history_record=<block>,<block-root-hex>`,
 `finality_history_record=<block>,<block-root-hex>,finalized|unfinalized`,
+`randomness_beacon_record=<source-id-hex>,<round>,<randomness-root-hex>,<proof-root-hex>,drand-v1|validator-vrf-v1|local-deterministic-fixture-v1,<observed-block>,accepted|rejected`,
 `data_availability_measurement=<receipt-root-hex>,available|unavailable,<block>`,
 `invalid_work_rejection=<receipt-root-hex>,rejected,<block>`, and
 `reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<block>`. Reward-settlement

@@ -79,6 +79,11 @@ impl PublicTestnetEvidenceBundle {
                 record_summaries.network_runtime_observation_records,
             ),
             (
+                PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+                record_summaries.randomness_beacon_root,
+                record_summaries.randomness_beacon_records,
+            ),
+            (
                 PublicEvidenceRecordKind::DataAvailabilityMeasurements,
                 record_summaries.data_availability_measurement_root,
                 record_summaries.data_availability_measurement_records,
@@ -143,6 +148,15 @@ impl PublicTestnetEvidenceBundle {
                 PublicEvidenceRecordKind::NetworkRuntimeObservations,
                 &record_summaries.network_runtime_observation_root,
                 record_summaries.network_runtime_observation_records,
+            ),
+            randomness_beacon_records: record_summaries.randomness_beacon_records,
+            randomness_beacon_root: record_summaries.randomness_beacon_root,
+            randomness_beacon_signature: sign_public_evidence_record(
+                &signer,
+                &bundle_id,
+                PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+                &record_summaries.randomness_beacon_root,
+                record_summaries.randomness_beacon_records,
             ),
             data_availability_measurement_records: record_summaries
                 .data_availability_measurement_records,
@@ -240,6 +254,13 @@ impl PublicTestnetEvidenceBundle {
                     self.network_runtime_observation_records,
                     &self.network_runtime_observation_signature,
                 );
+        let has_randomness_beacon_evidence = self.randomness_beacon_records > 0
+            && self.public_record_signature_valid(
+                PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+                &self.randomness_beacon_root,
+                self.randomness_beacon_records,
+                &self.randomness_beacon_signature,
+            );
         let has_data_availability_measurements = self.run.checked_receipts > 0
             && self.data_availability_measurement_records == self.run.checked_receipts
             && self.public_record_signature_valid(
@@ -280,6 +301,11 @@ impl PublicTestnetEvidenceBundle {
                 self.network_runtime_observation_records,
             ),
             (
+                PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+                &self.randomness_beacon_root,
+                self.randomness_beacon_records,
+            ),
+            (
                 PublicEvidenceRecordKind::DataAvailabilityMeasurements,
                 &self.data_availability_measurement_root,
                 self.data_availability_measurement_records,
@@ -313,6 +339,7 @@ impl PublicTestnetEvidenceBundle {
             && has_finality_history
             && has_operator_identity_attestations
             && has_network_runtime_observations
+            && has_randomness_beacon_evidence
             && has_data_availability_measurements
             && has_invalid_work_rejection_records
             && has_reward_settlement_record_summary
@@ -329,6 +356,7 @@ impl PublicTestnetEvidenceBundle {
             has_finality_history,
             has_operator_identity_attestations,
             has_network_runtime_observations,
+            has_randomness_beacon_evidence,
             has_data_availability_measurements,
             has_invalid_work_rejection_records,
             has_reward_settlement_record_summary,

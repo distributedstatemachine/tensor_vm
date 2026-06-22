@@ -65,6 +65,9 @@ struct PublicEvidenceManifestBuilder {
     network_runtime_observation_records: Option<u64>,
     network_runtime_observation_root: Option<Hash>,
     network_runtime_observation_signature: Option<Signature>,
+    randomness_beacon_records: Option<u64>,
+    randomness_beacon_root: Option<Hash>,
+    randomness_beacon_signature: Option<Signature>,
     data_availability_measurement_records: Option<u64>,
     data_availability_measurement_root: Option<Hash>,
     data_availability_measurement_signature: Option<Signature>,
@@ -152,6 +155,15 @@ impl PublicEvidenceManifestBuilder {
             }
             "network_runtime_observation_signature" => {
                 self.network_runtime_observation_signature = Some(parse_hash_hex(scalar)?);
+            }
+            "randomness_beacon_records" => {
+                self.randomness_beacon_records = Some(parse_manifest_u64(scalar)?);
+            }
+            "randomness_beacon_root" => {
+                self.randomness_beacon_root = Some(parse_hash_hex(scalar)?);
+            }
+            "randomness_beacon_signature" => {
+                self.randomness_beacon_signature = Some(parse_hash_hex(scalar)?);
             }
             "data_availability_measurement_records" => {
                 self.data_availability_measurement_records = Some(parse_manifest_u64(scalar)?);
@@ -278,6 +290,9 @@ impl PublicEvidenceManifestBuilder {
             network_runtime_observation_signature: required_hash(
                 self.network_runtime_observation_signature,
             )?,
+            randomness_beacon_records: required_u64(self.randomness_beacon_records)?,
+            randomness_beacon_root: required_hash(self.randomness_beacon_root)?,
+            randomness_beacon_signature: required_hash(self.randomness_beacon_signature)?,
             data_availability_measurement_records: required_u64(
                 self.data_availability_measurement_records,
             )?,

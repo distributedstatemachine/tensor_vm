@@ -12,6 +12,7 @@ pub(super) fn supporting_record_line_prefix(
         PublicEvidenceRecordKind::BlockHistory => Some("block_history_record="),
         PublicEvidenceRecordKind::FinalityHistory => Some("finality_history_record="),
         PublicEvidenceRecordKind::NetworkRuntimeObservations => None,
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence => Some("randomness_beacon_record="),
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => {
             Some("data_availability_measurement=")
         }
@@ -62,6 +63,23 @@ pub(super) fn validate_supporting_record_payload(
         }
         PublicEvidenceRecordKind::NetworkRuntimeObservations => {
             return Err(TvmError::InvalidReceipt(INVALID_SUPPORTING_RECORD));
+        }
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence => {
+            let fields = exact_comma_fields(payload, 7, INVALID_SUPPORTING_RECORD)?;
+            parse_hash_field(fields[0])?;
+            parse_u64_field(fields[1])?;
+            parse_hash_field(fields[2])?;
+            parse_hash_field(fields[3])?;
+            require_supporting_record_status(
+                fields[4],
+                &[
+                    "drand-v1",
+                    "validator-vrf-v1",
+                    "local-deterministic-fixture-v1",
+                ],
+            )?;
+            parse_u64_field(fields[5])?;
+            require_supporting_record_status(fields[6], &["accepted", "rejected"])?;
         }
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => {
             let fields = exact_comma_fields(payload, 3, INVALID_SUPPORTING_RECORD)?;

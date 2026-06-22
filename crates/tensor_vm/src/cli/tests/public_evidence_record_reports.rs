@@ -19,6 +19,17 @@ fn execute_public_evidence_record_reports_outputs() {
             "data_availability_measurement",
         ),
         (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,7,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "drand-v1,9,accepted"
+            ),
+            "randomness_beacon",
+        ),
+        (
             PublicEvidenceRecordKind::InvalidWorkRejections,
             "invalid_work_rejection=aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,rejected,0",
             "invalid_work_rejection",

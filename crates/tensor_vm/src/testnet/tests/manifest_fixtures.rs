@@ -169,6 +169,11 @@ pub(super) fn resign_record_summary_and_artifact(
             bundle.network_runtime_observation_root = record_root;
             bundle.network_runtime_observation_signature = summary_signature;
         }
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence => {
+            bundle.randomness_beacon_records = record_count;
+            bundle.randomness_beacon_root = record_root;
+            bundle.randomness_beacon_signature = summary_signature;
+        }
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => {
             bundle.data_availability_measurement_records = record_count;
             bundle.data_availability_measurement_root = record_root;
@@ -222,6 +227,7 @@ auditor={},{},1700000060,{}
 {}
 {}
 {}
+{}
 block_history_records=10
 block_history_root={}
 block_history_signature={}
@@ -236,6 +242,9 @@ operator=validator,{},{},{},1700000000,{}
 network_runtime_observation_records=3
 network_runtime_observation_root={}
 network_runtime_observation_signature={}
+randomness_beacon_records=10
+randomness_beacon_root={}
+randomness_beacon_signature={}
 data_availability_measurement_records=20
 data_availability_measurement_root={}
 data_availability_measurement_signature={}
@@ -293,6 +302,11 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
             3,
         ),
         manifest_artifact_line(
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            b"randomness-beacon-root",
+            10,
+        ),
+        manifest_artifact_line(
             PublicEvidenceRecordKind::DataAvailabilityMeasurements,
             b"data-availability-root",
             20,
@@ -330,6 +344,8 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
         manifest_network_observation_lines(),
         hex(&manifest_bundle().network_runtime_observation_root),
         hex(&manifest_bundle().network_runtime_observation_signature),
+        manifest_hash(b"test", b"randomness-beacon-root"),
+        hex(&manifest_bundle().randomness_beacon_signature),
         manifest_hash(b"test", b"data-availability-root"),
         hex(&manifest_bundle().data_availability_measurement_signature),
         hex(&manifest_bundle().run_window_signature),

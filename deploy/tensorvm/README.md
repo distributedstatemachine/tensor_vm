@@ -43,13 +43,13 @@ gossip, request/response, and configured DoS controls during the external run. T
 can be generated directly from captured `tvmd node serve` logs with
 `evidence network from-service-log`, but the supplied listen multiaddr still has to be public. They
 can be aggregated from the saved raw-record file with `evidence record summary-file` and
-`evidence record artifact-file`. Each signed block, finality, libp2p,
+`evidence record artifact-file`. Each signed block, finality, libp2p, randomness-beacon,
 data-availability, invalid-work, and reward summary root also needs a signed external artifact locator for
-the raw records behind that root; publish exactly one artifact locator for each of those six supporting
+the raw records behind that root; publish exactly one artifact locator for each of those seven supporting
 record kinds.
-For block, finality, data-availability, invalid-work, and reward evidence, the saved raw-record file can
+For block, finality, randomness-beacon, data-availability, invalid-work, and reward evidence, the saved raw-record file can
 contain exact `block_history_record=...`, `finality_history_record=...`,
-`data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` lines; the
+`randomness_beacon_record=...`, `data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` lines; the
 file-derived commands validate those typed fields, then hash each exact line before aggregating the record
 root. Use `block_history_record=<block>,<block-root-hex>`,
 `finality_history_record=<block>,<block-root-hex>,finalized|unfinalized`,

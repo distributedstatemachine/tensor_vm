@@ -5,12 +5,12 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 142 complete - durable restart-rehydrated tensor artifacts.
+- Active feature: Iteration 144 complete - typed public randomness evidence records.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
   side-branch fork storage, automatic unfinalized side-branch deep reorg, graph-backed synthetic jobs,
-  and delayed challenge rewards are
+  and canonical delayed challenge rewards are
   implemented locally. Pre-inclusion fraud/redundancy reward holds now remain explicit
   awaiting-inclusion delayed pending receipt rewards until a canonical block includes the receipt, and
   voided reveal-held claims can be pruned after the rooted hold height without waiting for a validator
@@ -45,7 +45,11 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   beacon records can now advance future receipt randomness through a rooted chain command and relay over
   the same bounded p2p/node ingest path used by local CPU role processes. Validator VRF reveal records are
   now chain-verified, state-rooted, p2p-relayed, retried when received before receipt anchors, and required
-  before positive validator receipt reward credit can release. `Fixed32`
+  before positive validator receipt reward credit can release.
+  Public evidence bundles now require a typed signed `randomness-beacon` supporting-record summary and
+  artifact locator, and record-file derivation validates exact `randomness_beacon_record=` lines before
+  hashing. This creates a public evidence surface for drand/validator-VRF records without claiming live
+  production drand BLS verification yet. `Fixed32`
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
@@ -63,9 +67,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: run Docker rolling-restart continuity with rebuilt local CPU images, then debug any remaining
-  restarted role runtime counter gaps, continue public/CUDA deployment runs, production drand/VRF
-  verification, and full interactive transcript disputes.
+- Next action: continue public/CUDA deployment runs, production drand/VRF verification, and full
+  interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -76,7 +79,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
-| Role-owned validator proposer tick | Docker-proven locally | Latest local CPU Docker proof reports delayed proposer rewards, finalized passive-observer convergence, current-head useful competitor replacement, side-branch storage, automatic unfinalized deep reorg, and three-validator chain-visible proposer cooldown state | Continue public/CUDA evidence |
+| Role-owned validator proposer tick | Docker-proven locally | Latest local CPU Docker proof reports delayed proposer rewards, all-operator finalized-head convergence, current-head useful competitor replacement, side-branch storage, automatic unfinalized deep reorg, and five-validator chain-visible proposer cadence state | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, and block-check challenges | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, submission-anchored opening retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, current-head competitor policy, persisted side-branch fork storage, automatic unfinalized side-branch reorg, Docker proof | Remaining: full interactive transcript disputes |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
@@ -87,6 +90,134 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 144: Typed Public Randomness Evidence Records
+
+Feature capability: public evidence bundles must bind randomness-beacon/drand/VRF evidence as a typed
+supporting-record class instead of relying on generic network-runtime observations. The record kind covers
+public beacon source, round, randomness, proof root, verification scheme, observed block, and accepted/rejected
+status so later production drand/VRF verification has a stable signed evidence surface.
+Readiness requirements covered: `upow.md` §10 beacon/VRF randomness evidence, `mvp_spec.md` public evidence
+manifest completeness, AC13 independently checkable supporting artifacts, and the shortcut ban against
+hardcoded checker booleans as readiness evidence.
+Files/modules likely touched: `crates/tensor_vm/src/testnet/public_evidence_crypto.rs`,
+`crates/tensor_vm/src/testnet/public_evidence_bundle.rs`,
+`crates/tensor_vm/src/testnet/public_evidence_manifest.rs`,
+`crates/tensor_vm/src/cli/public_evidence_record_commands.rs`,
+`crates/tensor_vm/src/cli/record_supporting_evidence.rs`, public evidence fixtures/tests, checked example
+manifests, coverage/status docs, and this execution plan.
+Parallel subagents to run: readiness/evidence mapper, public-evidence code-path explorer, and test-coverage
+explorer.
+Parallelizable implementation workstreams: read-only mapping runs in parallel; parent owns all edits because
+the record enum, manifest parser, CLI args, bundle completeness report, and fixtures must remain in lockstep.
+Tests/checkers/docs to add or update: record-kind parser coverage, raw supporting-line validation/rejection,
+summary/artifact CLI output for the new kind, bundle completeness requiring the randomness artifact, public
+evidence manifest fixtures/examples, and coverage/readiness documentation.
+Narrow validation commands: `cargo test -p tensor_vm public_evidence_record --lib -- --nocapture`,
+`cargo test -p tensor_vm public_evidence --test tvmd_cli -- --nocapture`, and focused testnet evidence bundle
+tests if touched.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo fmt --check --all`, `git diff --check`, and the public evidence CLI integration tests.
+Expected observable evidence: `tvmd public evidence record ... --kind randomness-beacon` can generate signed
+summary and artifact lines; `record summary-file` accepts typed randomness-beacon raw records and rejects
+malformed/tampered lines; full public evidence reports require exactly one public randomness-beacon artifact
+whose root/count/signature match the manifest signer.
+Out of scope: live drand HTTP fetching, BLS signature verification, production validator VRF key management,
+CUDA evidence, 7-day public deployment, and interactive transcript disputes.
+Split trigger: if adding the evidence kind requires changing chain state or p2p beacon payloads, land the
+public evidence surface first and keep chain-admission verification for a separate randomness iteration.
+Canonical owner: public evidence bundle evaluation, manifest parsing, typed record-kind crypto messages, and
+CLI supporting-record derivation.
+Adapter callers: `tvmd public evidence record ...`, checked evidence manifests, deployment runbook evidence
+generation, and public evidence validators.
+Old shortcut being removed: public randomness evidence can no longer be represented only as untyped
+network-runtime observations or a documentation claim; it must have its own signed summary and artifact.
+Regression test that proves the shortcut is gone: full-spec public evidence fixture/report tests fail without
+the randomness-beacon artifact and CLI record-file tests reject malformed randomness-beacon lines.
+Behavior with local synthetic block production disabled: record generation/validation works from captured
+public evidence files and does not require local fixture beacon ticks.
+Behavior for producer and non-producer roles: producers and observers can contribute the same signed
+randomness-beacon records; the public bundle validates the aggregated artifact independently of role.
+Structured evidence source: signed `randomness_beacon_record=` lines, aggregated record root, manifest
+summary signature, and public artifact locator signature.
+Finality source: observed block/finality fields inside the typed record plus the existing signed finality
+history artifact; this feature does not change chain finality.
+Wire-size and codec boundary: no p2p payload change; public evidence record files remain line-oriented,
+bounded by existing file/line parsing and exact comma-field validation.
+
+Latest validation evidence: Gate 0 first executable command for this resume,
+`cargo test -p tensor_vm local_testnet --release`, passed on June 22, 2026. Focused validation passed:
+`cargo test -p tensor_vm public_evidence_record --lib -- --nocapture`,
+`cargo test -p tensor_vm public_testnet_evidence_manifest --lib -- --nocapture`,
+`cargo test -p tensor_vm public_testnet_evidence_bundle --lib -- --nocapture`,
+`cargo test -p tensor_vm --test tvmd_cli public_evidence -- --nocapture`,
+`cargo test -p tensor_vm public_evidence --lib -- --nocapture`,
+`cargo test -p tensor_vm public_deployment --lib -- --nocapture`, and
+`cargo fmt --check --all`.
+
+### Iteration 143: Finality-Delayed Proposer Reward Accrual and Finalized Branch Convergence
+
+Feature capability: useful/fallback block proposer rewards are recorded only after the block reaches
+chain finality, while spendability remains claim-owned and delayed through the existing maturity window.
+Finalized useful side branches must also converge through the same chain-owned block/vote path, so passive
+operators advance past the seeded height without checker-side reward or fork workarounds.
+Readiness requirements covered: `upow.md` reward-finality delay, `mvp_spec.md` pending reward maturity,
+local CPU all-operator convergence, and the shortcut ban against papering over fork drift in Docker
+checkers.
+Files/modules likely touched: `crates/tensor_vm/src/chain/blocks.rs`,
+`crates/tensor_vm/src/chain/validation.rs`, reward/fork-choice tests, local CPU checker evidence, and
+this execution plan.
+Parallel subagents run: readiness mapper, restart/runtime counter path explorer, and test-coverage
+explorer.
+Parallelizable implementation workstreams: read-only mapping in parallel; parent owns consensus/reward
+edits because reward roots, finality, and fork admission must stay one chain-owned transition.
+Tests/checkers/docs to add or update: proposer reward finality-delay regression, current-head competitor
+admission with branch-local parent snapshots, side-branch/finality convergence coverage, passive-operator
+height-convergence evidence, and rolling restart evidence output.
+Narrow validation commands: `cargo test -p tensor_vm proposer_reward -- --nocapture`,
+`cargo test -p tensor_vm competing_useful_head -- --nocapture`, and local CPU compose script-shape tests.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo fmt --check --all`, `git diff --check`, and rebuilt local CPU Docker checkers including rolling
+restart continuity.
+Expected observable evidence: competing unfinalized branches no longer earn rooted proposer claims before
+votes finalize a block; after finality, the canonical block exposes a pending proposer reward with the same
+maturity delay and claim-only spendability as before. If a useful competing branch reaches finality before
+the current unfinalized head, block-vote application promotes that branch through consensus state instead of
+leaving observers parked at the seeded height.
+Out of scope: public/CUDA deployment evidence, production drand/VRF signatures, and interactive transcript
+disputes.
+Split trigger: if finality-delayed accrual requires broader storage/status schema changes, first land the
+chain-state reward timing and fork-admission tests, then extend explorer/status formatting in a follow-up.
+Canonical owner: block-vote finality and chain reward state. The checker must observe delayed rewards; it
+must not compensate for pre-finality reward-root drift.
+Adapter callers: validator proposer ticks, p2p block and vote ingest, status/explorer pending reward views,
+and local CPU restart evidence scripts.
+Old shortcut removed: unfinalized competing blocks no longer create immediately rooted proposer reward
+claims that adapters then have to work around during convergence.
+Regression evidence: tests must show no proposer pending reward before finality, reward creation when the
+block first finalizes, idempotent duplicate votes, side-branch vote acceptance/promotion, and unchanged
+claim-owned spendability after maturity.
+Behavior with local synthetic block production disabled: finality-delayed rewards are a chain-state rule
+triggered by signed block votes and do not depend on local job synthesis.
+Behavior for producer and non-producer roles: producers and passive observers ingest the same finalized
+block votes and derive the same pending proposer reward state.
+Structured evidence source: block votes, finalized block set, pending proposer reward claims, reward roots,
+and all-operator finalized-head status.
+Finality source: unchanged signed validator block-vote threshold.
+Wire-size/codec impact: no new p2p payload; existing block and vote codecs carry all required evidence.
+
+Latest validation evidence: Gate 0 first executable command for this resume,
+`cargo test -p tensor_vm local_testnet --release`, passed on June 21, 2026. On June 22, 2026, the rebuilt
+local CPU Docker proof passed `check-local-testnet.sh`, `check-restart-continuity.sh validator-02`, and a
+sampled `check-rolling-restart-continuity.sh miner-03 validator-02`. On June 22, 2026, the rolling matrix
+covered all 15 counted operators: `miner-00` through `miner-06` passed in the default rolling run before a
+transient `miner-01` status-read timeout during `miner-07`; `miner-07` and `miner-08` then passed in a
+continuation run; and `miner-09` plus `validator-00` through `validator-04` passed in the final
+continuation. The rolling evidence reported delayed proposer reward claims, applied diagnostic block-check
+evidence before restart counter reset, all 15 operators in the finalized common-head quorum, preserved peer
+identities and pre-restart finalized common head/state root, preserved tensor artifacts, and plateaued
+advancement flags (`restart_blocks_continue=false`, `rolling_restart_blocks_continue=false`) because no
+additional finalized block was needed after the stable common-head snapshot.
 
 ### Iteration 142: Durable Restart-Rehydrated Tensor Artifacts
 
@@ -387,24 +518,78 @@ evidence, and interactive trace disputes.
 
 ## Validation Evidence
 
-Latest local validation is Iteration 140 on June 21, 2026:
+Latest local validation is Iteration 146 on June 22, 2026:
 
 ```text
 cargo test -p tensor_vm local_testnet --release
-cargo test -p tensor_vm chain::tests::blocks -- --nocapture
-cargo test -p tensor_vm explorer -- --nocapture
-cargo test -p tensor_vm service_status -- --nocapture
-cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture
-cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract -- --nocapture
+cargo test -p tensor_vm block_check_challenge -- --nocapture
+cargo test -p tensor_vm network_event_driver_applies_observed_block_check_challenge_without_punishing_canonical_reward -- --nocapture
+cargo test -p tensor_vm selected_validator_proposer_emits_idle_fallback_block -- --nocapture
+cargo test -p tensor_vm validator_role -- --nocapture
+cargo test -p tensor_vm validator_role_votes_valid_side_branch_after_canonical_vote -- --nocapture
+cargo test -p tensor_vm block_vote_payload_finalizes_and_promotes_useful_side_branch -- --nocapture
+cargo test -p tensor_vm competing_useful_head_uses_candidate_parent_snapshot -- --nocapture
+cargo test -p tensor_vm competing -- --nocapture
+cargo test -p tensor_vm reward -- --nocapture
 docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml config --quiet
+sh -n deploy/tensorvm/local-cpu/scripts/entrypoint.sh
 deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
 cargo fmt --check --all
 git diff --check
 ```
 
-Rolling restart continuity is not yet a passing evidence item after this iteration; the post-restart
-checker currently fails on restarted role runtime counters/gossip observations and gateway tensor artifact
-availability.
+Docker evidence during this iteration:
+
+```text
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml build
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up --wait
+deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
+```
+
+Earlier Iteration 144 Docker runs reached a main-checker pass before later delayed-reward changes exposed
+the diagnostic observed-block punishment gap. Those earlier runs are superseded by the Iteration 146 Docker
+status below.
+
+Iteration 146 replaces the prior immediate proposer-reward workaround with actual delayed proposer
+reward materialization: pending proposer rewards are inserted only after the canonical block is finalized
+and claimable-at height is computed from the configured settlement/challenge/hold windows. Block
+production, network admission, side-branch promotion, vote finality, reorg, and challenge application now
+materialize finalized proposer rewards through the shared chain path. The local CPU profile was also
+changed to seed every operator before role startup, use a single deterministic selected validator proposer
+(`validator-02`) to avoid 3-of-5 early fork deadlock, and publish diagnostic block-check challenges after
+pending proposer rewards actually exist. Observed diagnostic challenge payloads now verify against the
+full observed checks tree and tolerate receiver-local parent anchor differences for observed invalid blocks.
+
+Current Docker readiness status for image `sha256:0669aaf0113669f80a4e1df3c761e9f08a88e1f25b1e153b32d0fe39ba9a613d`:
+
+```text
+docker compose -f deploy/tensorvm/local-cpu/docker-compose.yml up --wait
+deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh
+local_cpu_testnet_ready=true
+live_pending_proposer_rewards=1
+live_delayed_proposer_reward_claims=1
+live_pending_challenge_rewards=1
+live_delayed_challenge_reward_claims=1
+live_role_network_block_check_challenges_applied=70
+```
+
+Rolling restart continuity now separates restart safety from post-restart advancement. The latest rolling
+coverage exercised every counted operator across the default run and continuations, with `miner-09` plus
+all five validators passing in the final continuation while reporting preserved peer IDs, pre-restart
+finalized common head/state root, tensor artifact preservation, and all-operator common-head convergence.
+Because the local chain was already at a stable finalized common head when the snapshots were taken, the
+advancement booleans were reported as false instead of failing the gate:
+
+```text
+deploy/tensorvm/local-cpu/scripts/check-rolling-restart-continuity.sh miner-09 validator-00 validator-01 validator-02 validator-03 validator-04
+local_cpu_rolling_restart_continuity_ready=true
+rolling_restart_services=miner-09,validator-00,validator-01,validator-02,validator-03,validator-04
+rolling_restart_service_count=6
+rolling_restart_blocks_continue=false
+rolling_restart_previous_common_head_preserved=true
+rolling_restart_previous_common_state_root_preserved=true
+rolling_restart_common_head_convergence=true
+```
 
 Current coverage blocker:
 

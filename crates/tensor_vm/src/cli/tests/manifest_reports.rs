@@ -17,6 +17,7 @@ fn validate_public_evidence_manifest_reports_default_criteria_status() {
             ("finality_history", "true"),
             ("operator_identity_attestations", "true"),
             ("network_runtime_observations", "true"),
+            ("randomness_beacon_evidence", "true"),
             ("data_availability_measurements", "true"),
             ("signed_invalid_work_rejection_records", "true"),
             ("signed_reward_settlement_records", "true"),

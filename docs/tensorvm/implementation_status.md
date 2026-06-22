@@ -20,8 +20,8 @@ parent and child state snapshots, survive chain-state persistence, and do not mu
 unless the current-head replacement rule applies; strictly longer unfinalized branches now automatically
 reorganize canonical head state while finalized canonical blocks remain protected. The latest local CPU
 Docker proof covers live validator proposer/block-assembly networking, three validator block proposers with
-chain-visible proposer cooldown state, delayed proposer rewards, diagnostic challenge reward evidence, and
-passive observer finalized-head convergence. Remaining consensus/evidence gaps are full interactive
+chain-visible proposer cooldown state, delayed proposer rewards, applied diagnostic block-check evidence,
+and passive observer finalized-head convergence. Remaining consensus/evidence gaps are full interactive
 verifier-transcript challenge semantics, public deployment evidence, CUDA miner evidence, and public
 drand/VRF randomness verification. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
@@ -433,14 +433,14 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   a shared address, live but uncounted nodes cannot satisfy a missing counted operator attestation, and
   missing, duplicate, extra, or overreported operator-attestation records are rejected, signed
   per-operator production libp2p network-observation records, signed
-  block/finality/network-runtime/data-availability/invalid-work/reward-settlement summary roots, signed
+  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement summary roots, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind, well-formed whitespace-free
   `ipfs://`/`ar://` content identifiers with traversal/query/fragment path rejection, HTTPS evidence URI
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
   whitespace-padded repeated-record value rejection, and
-  exact run-derived block/finality/network-runtime/data-availability/invalid-work summary counts, distinct node-address
+  exact run-derived block/finality/network-runtime/randomness-beacon/data-availability/invalid-work summary counts, distinct node-address
   counting for public operators, plus network-runtime observation rejection for missing records,
   unmatched operators, non-public listen addresses, stale timestamps, undercounts, and overcounts against
   every counted public operator before full-spec evidence can be considered
@@ -519,7 +519,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   observation root from the live libp2p peer/protocol/control stdout and feeds that root through
   `evidence record summary-roots`, `evidence record artifact-roots`, and the matching file-derived commands,
   `tvmd public evidence record summary ...` generation for signed
-  block/finality/network-runtime/data-availability/invalid-work/reward-settlement summary fields including
+  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement summary fields including
   production libp2p network-observation roots,
   `tvmd public evidence record artifact ...` generation for signed external raw-record artifact locators,
   `tvmd public evidence record artifact-roots ...` generation that signs artifact locators from the
@@ -676,9 +676,14 @@ preflight, public evidence, or deployment-gated work can count:
   `check-rolling-restart-continuity.sh` is now the full local restart gate and runs the same continuity
   check one service at a time across every counted operator, proving each
   restarted service keeps a stable libp2p peer ID, preserves the pre-restart finalized common head and state
-  root on every operator, advances height, block count, state-root, and block-log-root evidence, and
-  continues finalizing blocks; `tvmd node init` repairs torn snapshot/block-log state from valid
-  `chain.state` before a restarted service reports readiness
+  root on every operator, avoids height, block-count, state-root, and block-log-root regression, preserves
+  a sampled tensor artifact, reconverges on a finalized common head, and reports whether post-restart
+  finalized blocks advanced; the restart path passes the restarted service list into the local checker so a
+  plateaued just-restarted service can satisfy volatile gossip-counter checks from preserved post-seed
+  state plus live peer connectivity, and restart continuity does not re-require process-lifetime
+  role/network totals after those processes have been restarted while normal local readiness remains
+  strict; `tvmd node init` repairs torn snapshot/block-log state from valid `chain.state` before a
+  restarted service reports readiness
 
 The workspace currently has 262 passing tests under Tarpaulin:
 

@@ -22,6 +22,7 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(complete.has_finality_history);
     assert!(complete.has_operator_identity_attestations);
     assert!(complete.has_network_runtime_observations);
+    assert!(complete.has_randomness_beacon_evidence);
     assert!(complete.has_data_availability_measurements);
     assert!(complete.has_invalid_work_rejection_records);
     assert!(complete.has_reward_settlement_record_summary);
@@ -697,6 +698,18 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     let no_network_runtime_observations = bundle.evaluate(&criteria, 6);
     assert!(!no_network_runtime_observations.has_network_runtime_observations);
     assert!(!no_network_runtime_observations.independently_checkable);
+
+    bundle = complete_public_evidence_bundle();
+    bundle.randomness_beacon_signature = [9; 32];
+    let tampered_randomness_beacon = bundle.evaluate(&criteria, 6);
+    assert!(!tampered_randomness_beacon.has_randomness_beacon_evidence);
+    assert!(!tampered_randomness_beacon.independently_checkable);
+
+    bundle = complete_public_evidence_bundle();
+    bundle.randomness_beacon_records = 0;
+    let missing_randomness_beacon = bundle.evaluate(&criteria, 6);
+    assert!(!missing_randomness_beacon.has_randomness_beacon_evidence);
+    assert!(!missing_randomness_beacon.independently_checkable);
 
     bundle = complete_public_evidence_bundle();
     bundle.data_availability_measurement_records = 19;

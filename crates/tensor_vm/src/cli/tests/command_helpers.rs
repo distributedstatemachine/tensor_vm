@@ -193,6 +193,9 @@ pub(super) fn record_kind_arg(kind: PublicEvidenceRecordKind) -> PublicEvidenceR
         PublicEvidenceRecordKind::NetworkRuntimeObservations => {
             PublicEvidenceRecordKindArg::NetworkRuntime
         }
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence => {
+            PublicEvidenceRecordKindArg::RandomnessBeacon
+        }
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => {
             PublicEvidenceRecordKindArg::DataAvailability
         }

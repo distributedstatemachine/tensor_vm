@@ -37,6 +37,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         report.has_network_runtime_observations,
     );
     output.field(
+        "randomness_beacon_evidence",
+        report.has_randomness_beacon_evidence,
+    );
+    output.field(
         "data_availability_measurements",
         report.has_data_availability_measurements,
     );

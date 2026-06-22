@@ -2374,16 +2374,16 @@ do not show `command=service_serve` and `p2p_runtime=libp2p`, and it still requi
 public listen multiaddr above; a loopback or private service log cannot be promoted into public evidence.
 The `evidence record summary` command emits the exact `<record>_records`, `<record>_root`, and
 `<record>_signature` manifest lines for block history, finality history, production libp2p network
-observations, data-availability measurements, invalid-work rejections, or reward settlements. Supported
-record kinds are `block-history`, `finality-history`, `network-runtime`, `data-availability`,
-`invalid-work`, and `reward-settlement`.
+observations, randomness-beacon evidence, data-availability measurements, invalid-work rejections, or
+reward settlements. Supported record kinds are `block-history`, `finality-history`, `network-runtime`,
+`randomness-beacon`, `data-availability`, `invalid-work`, and `reward-settlement`.
 The `network-runtime` record count must equal the counted independent public miner plus validator operator
 total; signed undercounts or overcounts cannot satisfy independently checkable evidence.
 The `evidence record artifact` command emits a signed `record_artifact=...` line that binds an external raw-record
 artifact URI to the record kind, root, and count; independently checkable public evidence requires one
-valid artifact locator for every required supporting-record summary root and exactly six supporting
-artifact locators total: block history, finality history, network runtime, data availability, invalid work,
-and reward settlement.
+valid artifact locator for every required supporting-record summary root and exactly seven supporting
+artifact locators total: block history, finality history, network runtime, randomness beacon, data
+availability, invalid work, and reward settlement.
 The `evidence record artifact-roots` command derives the same aggregate root and count as
 `evidence record summary-roots` before signing the artifact locator, so the summary line and artifact locator
 can be generated from the same raw record-root list.
@@ -2396,13 +2396,15 @@ count from a saved line-oriented raw-record file. Blank lines and `#` comments a
 supporting-record root files use `record_root=<hex>` lines, and network-runtime files may contain the
 exact signed `network_runtime_observation=...` lines emitted by `evidence network observation` or
 `evidence network from-service-log`. Non-network supporting-record files may contain exact
-`block_history_record=...`, `finality_history_record=...`, `data_availability_measurement=...`,
-`invalid_work_rejection=...`, or `reward_settlement=...` raw record lines. Those typed raw lines are
+`block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
+`data_availability_measurement=...`, `invalid_work_rejection=...`, or `reward_settlement=...` raw record
+lines. Those typed raw lines are
 validated against the selected record kind before hashing with the record kind and exact line bytes, so
 operators can derive summary roots and artifact locators from captured records without precomputing each
 `record_root=<hex>` by hand. The accepted typed fields are
 `block_history_record=<block>,<block-root-hex>`,
 `finality_history_record=<block>,<block-root-hex>,finalized|unfinalized`,
+`randomness_beacon_record=<source-id-hex>,<round>,<randomness-root-hex>,<proof-root-hex>,drand-v1|validator-vrf-v1|local-deterministic-fixture-v1,<observed-block>,accepted|rejected`,
 `data_availability_measurement=<receipt-root-hex>,available|unavailable,<block>`,
 `invalid_work_rejection=<receipt-root-hex>,rejected,<block>`, and
 `reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<block>`. Whitespace-padded record
@@ -2975,7 +2977,7 @@ the evidence bundle includes exactly one manifest publication signature in the c
 HTTPS public evidence URIs include concrete query-free paths
 the evidence includes a signed wall-clock run window; expected block count alone is not sufficient
 the evidence includes signed external artifact locators for the raw supporting records behind summary roots
-run-derived block/finality/data-availability/invalid-work summary counts match the signed run counters exactly
+run-derived block/finality/randomness-beacon/data-availability/invalid-work summary counts match the signed run counters exactly
 the required Cargo workspace structure is present
 the required verification commands have been executed and their results are documented
 ```
