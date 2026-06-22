@@ -294,7 +294,16 @@ pub(super) fn full_spec_public_evidence_bundle(
         reward_settlement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
-    PublicTestnetEvidenceBundle::new(
+    let randomness_beacon_raw_records = full_spec_randomness_beacon_records(observed_blocks);
+    let randomness_beacon_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+        &randomness_beacon_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated randomness beacon roots should aggregate");
+    let mut bundle = PublicTestnetEvidenceBundle::new(
         run,
         PublicEvidencePublication::new(
             hash_bytes(b"test", &[b"full-spec-public-evidence-bundle"]),
@@ -312,7 +321,7 @@ pub(super) fn full_spec_public_evidence_bundle(
             network_runtime_observation_records: operator_records,
             network_runtime_observation_root,
             randomness_beacon_records: observed_blocks,
-            randomness_beacon_root: hash_bytes(b"test", &[b"full-spec-randomness-beacon-root"]),
+            randomness_beacon_root,
             data_availability_measurement_records: checked_receipts,
             data_availability_measurement_root: hash_bytes(
                 b"test",
@@ -322,7 +331,32 @@ pub(super) fn full_spec_public_evidence_bundle(
             invalid_work_rejection_root: hash_bytes(b"test", &[b"full-spec-invalid-work-root"]),
             reward_settlement_root: hash_bytes(b"test", &[b"full-spec-reward-settlement-root"]),
         },
-    )
+    );
+    bundle.randomness_beacon_raw_records = randomness_beacon_raw_records;
+    bundle
+}
+
+pub(super) fn full_spec_randomness_beacon_records(
+    observed_blocks: u64,
+) -> Vec<PublicRandomnessBeaconRecord> {
+    (0..observed_blocks)
+        .map(|index| {
+            PublicRandomnessBeaconRecord::accepted_public(
+                hash_bytes(b"test", &[b"full-spec-public-drand-source"]),
+                index + 1,
+                hash_bytes(
+                    b"test",
+                    &[format!("full-spec-public-drand-randomness-{index}").as_bytes()],
+                ),
+                hash_bytes(
+                    b"test",
+                    &[format!("full-spec-public-drand-proof-{index}").as_bytes()],
+                ),
+                PublicRandomnessBeaconProofKind::DrandV1,
+                index,
+            )
+        })
+        .collect()
 }
 
 pub(super) fn network_runtime_root_for_run(run: &PublicTestnetRunEvidence) -> Hash {

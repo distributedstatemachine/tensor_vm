@@ -158,6 +158,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.randomness_beacon_root,
                 record_summaries.randomness_beacon_records,
             ),
+            randomness_beacon_raw_records: Vec::new(),
             data_availability_measurement_records: record_summaries
                 .data_availability_measurement_records,
             data_availability_measurement_root: record_summaries.data_availability_measurement_root,
@@ -261,6 +262,7 @@ impl PublicTestnetEvidenceBundle {
                 self.randomness_beacon_records,
                 &self.randomness_beacon_signature,
             );
+        let has_public_randomness_beacon_records = self.has_public_randomness_beacon_records();
         let has_data_availability_measurements = self.run.checked_receipts > 0
             && self.data_availability_measurement_records == self.run.checked_receipts
             && self.public_record_signature_valid(
@@ -346,7 +348,8 @@ impl PublicTestnetEvidenceBundle {
             && has_public_supporting_record_artifacts;
         let full_spec_evidence_met = public_testnet_criteria_are_full_spec(criteria)
             && run_evidence.public_criterion_met
-            && independently_checkable;
+            && independently_checkable
+            && has_public_randomness_beacon_records;
         PublicTestnetEvidenceBundleReport {
             run_evidence,
             has_published_evidence_bundle,
@@ -408,6 +411,31 @@ impl PublicTestnetEvidenceBundle {
                 ),
                 signature,
             )
+    }
+
+    fn has_public_randomness_beacon_records(&self) -> bool {
+        if self.randomness_beacon_records == 0
+            || self.randomness_beacon_raw_records.len() as u64 != self.randomness_beacon_records
+        {
+            return false;
+        }
+        if !self
+            .randomness_beacon_raw_records
+            .iter()
+            .all(|record| record.is_accepted_public_unbiasable())
+        {
+            return false;
+        }
+        let record_roots = self
+            .randomness_beacon_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>();
+        aggregate_public_evidence_record_roots(
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            &record_roots,
+        )
+        .is_ok_and(|record_root| record_root == self.randomness_beacon_root)
     }
 
     fn public_run_window_signature_valid(&self) -> bool {

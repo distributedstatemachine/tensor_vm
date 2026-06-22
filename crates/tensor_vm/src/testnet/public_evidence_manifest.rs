@@ -10,8 +10,10 @@ use super::{
     PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicEvidenceAuditorRecord,
     PublicEvidencePublication, PublicEvidenceSupportingArtifact, PublicNetworkRuntimeEvidence,
     PublicNetworkRuntimeObservation, PublicNodeEvidence, PublicNodeRole,
-    PublicOperatorIdentityAttestation, PublicServiceContentEvidence, PublicServiceEndpoint,
-    PublicServiceEvidence, PublicTestnetEvidenceBundle, PublicTestnetRunEvidence,
+    PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
+    PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicServiceContentEvidence,
+    PublicServiceEndpoint, PublicServiceEvidence, PublicTestnetEvidenceBundle,
+    PublicTestnetRunEvidence,
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash, Signature};
@@ -36,6 +38,7 @@ fn public_evidence_manifest_field_allows_repeated(key: &str) -> bool {
             | "record_artifact"
             | "operator"
             | "network_runtime_observation"
+            | "randomness_beacon_record"
             | "node"
             | "service"
             | "service_content"
@@ -68,6 +71,7 @@ struct PublicEvidenceManifestBuilder {
     randomness_beacon_records: Option<u64>,
     randomness_beacon_root: Option<Hash>,
     randomness_beacon_signature: Option<Signature>,
+    randomness_beacon_raw_records: Vec<PublicRandomnessBeaconRecord>,
     data_availability_measurement_records: Option<u64>,
     data_availability_measurement_root: Option<Hash>,
     data_availability_measurement_signature: Option<Signature>,
@@ -165,6 +169,9 @@ impl PublicEvidenceManifestBuilder {
             "randomness_beacon_signature" => {
                 self.randomness_beacon_signature = Some(parse_hash_hex(scalar)?);
             }
+            "randomness_beacon_record" => self
+                .randomness_beacon_raw_records
+                .push(parse_manifest_randomness_beacon_record(value)?),
             "data_availability_measurement_records" => {
                 self.data_availability_measurement_records = Some(parse_manifest_u64(scalar)?);
             }
@@ -293,6 +300,7 @@ impl PublicEvidenceManifestBuilder {
             randomness_beacon_records: required_u64(self.randomness_beacon_records)?,
             randomness_beacon_root: required_hash(self.randomness_beacon_root)?,
             randomness_beacon_signature: required_hash(self.randomness_beacon_signature)?,
+            randomness_beacon_raw_records: self.randomness_beacon_raw_records,
             data_availability_measurement_records: required_u64(
                 self.data_availability_measurement_records,
             )?,
@@ -319,6 +327,36 @@ fn parse_manifest_supporting_artifact(value: &str) -> Result<PublicEvidenceSuppo
         record_root: parse_hash_hex(fields[2])?,
         record_count: parse_manifest_u64(fields[3])?,
         artifact_signature: parse_hash_hex(fields[4])?,
+    })
+}
+
+fn parse_manifest_randomness_beacon_record(value: &str) -> Result<PublicRandomnessBeaconRecord> {
+    let fields = exact_manifest_record_fields(value, 7, "malformed randomness beacon record")?;
+    let proof_kind = match fields[4] {
+        "drand-v1" => PublicRandomnessBeaconProofKind::DrandV1,
+        "validator-vrf-v1" => PublicRandomnessBeaconProofKind::ValidatorVrfV1,
+        "local-deterministic-fixture-v1" => {
+            PublicRandomnessBeaconProofKind::LocalDeterministicFixtureV1
+        }
+        _ => {
+            return Err(TvmError::InvalidReceipt(
+                "unknown randomness beacon proof kind",
+            ));
+        }
+    };
+    let status = match fields[6] {
+        "accepted" => PublicRandomnessBeaconRecordStatus::Accepted,
+        "rejected" => PublicRandomnessBeaconRecordStatus::Rejected,
+        _ => return Err(TvmError::InvalidReceipt("unknown randomness beacon status")),
+    };
+    Ok(PublicRandomnessBeaconRecord {
+        source_id: parse_hash_hex(fields[0])?,
+        beacon_round: parse_manifest_u64(fields[1])?,
+        randomness_root: parse_hash_hex(fields[2])?,
+        proof_root: parse_hash_hex(fields[3])?,
+        proof_kind,
+        observed_block: parse_manifest_u64(fields[5])?,
+        status,
     })
 }
 

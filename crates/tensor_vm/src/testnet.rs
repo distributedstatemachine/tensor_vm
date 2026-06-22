@@ -1,7 +1,8 @@
+use crate::hash::hex;
 use crate::profile::ChainProfile;
 #[cfg(test)]
 use crate::types::address;
-use crate::types::{Hash, Signature};
+use crate::types::{Hash, Signature, hash_bytes};
 #[cfg(test)]
 use crate::{ChainParams, JobScheduler};
 #[cfg(test)]
@@ -274,6 +275,7 @@ pub struct PublicTestnetEvidenceBundle {
     pub randomness_beacon_records: u64,
     pub randomness_beacon_root: Hash,
     pub randomness_beacon_signature: Signature,
+    pub randomness_beacon_raw_records: Vec<PublicRandomnessBeaconRecord>,
     pub data_availability_measurement_records: u64,
     pub data_availability_measurement_root: Hash,
     pub data_availability_measurement_signature: Signature,
@@ -301,6 +303,125 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_public_supporting_record_artifacts: bool,
     pub independently_checkable: bool,
     pub full_spec_evidence_met: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicRandomnessBeaconProofKind {
+    DrandV1,
+    ValidatorVrfV1,
+    LocalDeterministicFixtureV1,
+}
+
+impl PublicRandomnessBeaconProofKind {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::DrandV1 => "drand-v1",
+            Self::ValidatorVrfV1 => "validator-vrf-v1",
+            Self::LocalDeterministicFixtureV1 => "local-deterministic-fixture-v1",
+        }
+    }
+
+    pub fn is_public_unbiasable(self) -> bool {
+        matches!(self, Self::DrandV1 | Self::ValidatorVrfV1)
+    }
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicRandomnessBeaconRecordStatus {
+    Accepted,
+    Rejected,
+}
+
+impl PublicRandomnessBeaconRecordStatus {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Accepted => "accepted",
+            Self::Rejected => "rejected",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicRandomnessBeaconRecord {
+    pub source_id: Hash,
+    pub beacon_round: u64,
+    pub randomness_root: Hash,
+    pub proof_root: Hash,
+    pub proof_kind: PublicRandomnessBeaconProofKind,
+    pub observed_block: u64,
+    pub status: PublicRandomnessBeaconRecordStatus,
+}
+
+impl PublicRandomnessBeaconRecord {
+    pub fn accepted_public(
+        source_id: Hash,
+        beacon_round: u64,
+        randomness_root: Hash,
+        proof_root: Hash,
+        proof_kind: PublicRandomnessBeaconProofKind,
+        observed_block: u64,
+    ) -> Self {
+        Self {
+            source_id,
+            beacon_round,
+            randomness_root,
+            proof_root,
+            proof_kind,
+            observed_block,
+            status: PublicRandomnessBeaconRecordStatus::Accepted,
+        }
+    }
+
+    pub fn local_fixture(
+        source_id: Hash,
+        beacon_round: u64,
+        randomness_root: Hash,
+        proof_root: Hash,
+        observed_block: u64,
+    ) -> Self {
+        Self {
+            source_id,
+            beacon_round,
+            randomness_root,
+            proof_root,
+            proof_kind: PublicRandomnessBeaconProofKind::LocalDeterministicFixtureV1,
+            observed_block,
+            status: PublicRandomnessBeaconRecordStatus::Accepted,
+        }
+    }
+
+    pub fn record_line(&self) -> String {
+        format!(
+            "randomness_beacon_record={},{},{},{},{},{},{}",
+            hex(&self.source_id),
+            self.beacon_round,
+            hex(&self.randomness_root),
+            hex(&self.proof_root),
+            self.proof_kind.tag(),
+            self.observed_block,
+            self.status.tag()
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        hash_bytes(
+            b"tensor-vm-public-evidence-supporting-record-root-v1",
+            &[
+                PublicEvidenceRecordKind::RandomnessBeaconEvidence
+                    .manifest_tag()
+                    .as_bytes(),
+                self.record_line().as_bytes(),
+            ],
+        )
+    }
+
+    pub fn is_accepted_public_unbiasable(&self) -> bool {
+        self.status == PublicRandomnessBeaconRecordStatus::Accepted
+            && self.proof_kind.is_public_unbiasable()
+            && self.source_id != [0; 32]
+            && self.randomness_root != [0; 32]
+            && self.proof_root != [0; 32]
+    }
 }
 
 fn ratio_to_bps(value: f64) -> u64 {

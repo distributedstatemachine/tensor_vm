@@ -38,6 +38,63 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(full_spec_report.independently_checkable);
     assert!(full_spec_report.full_spec_evidence_met);
 
+    let mut missing_raw_randomness = full_spec_public_evidence_bundle(full_spec_block_time);
+    missing_raw_randomness.randomness_beacon_raw_records.clear();
+    let missing_raw_randomness_report =
+        missing_raw_randomness.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(
+        missing_raw_randomness_report
+            .run_evidence
+            .public_criterion_met
+    );
+    assert!(missing_raw_randomness_report.independently_checkable);
+    assert!(!missing_raw_randomness_report.full_spec_evidence_met);
+
+    let mut local_fixture_randomness = full_spec_public_evidence_bundle(full_spec_block_time);
+    local_fixture_randomness.randomness_beacon_raw_records = (0..local_fixture_randomness
+        .randomness_beacon_records)
+        .map(|index| {
+            PublicRandomnessBeaconRecord::local_fixture(
+                hash_bytes(b"test", &[b"full-spec-local-randomness-source"]),
+                index + 1,
+                hash_bytes(
+                    b"test",
+                    &[format!("full-spec-local-randomness-{index}").as_bytes()],
+                ),
+                hash_bytes(
+                    b"test",
+                    &[format!("full-spec-local-randomness-proof-{index}").as_bytes()],
+                ),
+                index,
+            )
+        })
+        .collect();
+    let local_fixture_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+        &local_fixture_randomness
+            .randomness_beacon_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("local fixture randomness roots should aggregate");
+    let local_fixture_record_count = local_fixture_randomness.randomness_beacon_records;
+    resign_record_summary_and_artifact(
+        &mut local_fixture_randomness,
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+        local_fixture_root,
+        local_fixture_record_count,
+    );
+    let local_fixture_randomness_report =
+        local_fixture_randomness.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(
+        local_fixture_randomness_report
+            .run_evidence
+            .public_criterion_met
+    );
+    assert!(local_fixture_randomness_report.independently_checkable);
+    assert!(!local_fixture_randomness_report.full_spec_evidence_met);
+
     let mut role_order_bundle = complete_public_evidence_bundle();
     let shared_node_address = address(b"bundle-role-order-shared-address");
     let shared_miner_operator = hash_bytes(b"test", &[b"bundle-role-order-shared-miner"]);

@@ -271,6 +271,20 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
             "service_content=rpc,",
             "service_content=rpc,too,few,fields\n# removed original service_content=",
         ),
+        format!(
+            "{}randomness_beacon_record={},1,{},{},unknown-kind,1,accepted\n",
+            manifest,
+            manifest_hash(b"test", b"randomness-source"),
+            manifest_hash(b"test", b"randomness-root"),
+            manifest_hash(b"test", b"randomness-proof")
+        ),
+        format!(
+            "{}randomness_beacon_record={},1,{},{},drand-v1,1,pending\n",
+            manifest,
+            manifest_hash(b"test", b"randomness-source"),
+            manifest_hash(b"test", b"randomness-root"),
+            manifest_hash(b"test", b"randomness-proof")
+        ),
         manifest.replace("reward_settlement_records=1", "unknown_field=1"),
         manifest.replace("reward_settlement_records=1", "malformed-line"),
     ];

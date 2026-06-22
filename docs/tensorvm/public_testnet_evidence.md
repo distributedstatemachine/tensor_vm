@@ -101,7 +101,7 @@ External evidence can be represented as a line-oriented manifest parsed by
 must be exact with no leading or trailing whitespace around the key before `=`. Scalar manifest fields must
 appear exactly once, and scalar values are parsed exactly with no leading or trailing whitespace; repeated
 record fields are allowed only for `auditor`, `record_artifact`, `operator`, `network_runtime_observation`,
-`node`, `service`, and `service_content`. The comma-separated values inside those repeated public-evidence
+`randomness_beacon_record`, `node`, `service`, and `service_content`. The comma-separated values inside those repeated public-evidence
 records must also be exact, nonempty, and free of leading or trailing whitespace. For `record_artifact`, the full
 independently checkable gate requires exactly one valid line for each required supporting-record kind and
 rejects extra artifact locators. The manifest signature covers the bundle ID, public URI, manifest
@@ -207,6 +207,7 @@ network_runtime_observation_signature=<network-runtime-signature-hex>
 randomness_beacon_records=100800
 randomness_beacon_root=<randomness-root-hex>
 randomness_beacon_signature=<randomness-signature-hex>
+randomness_beacon_record=<source-id-hex>,1,<randomness-root-hex>,<proof-root-hex>,drand-v1,<observed-block>,accepted
 data_availability_measurement_records=1000
 data_availability_measurement_root=<da-root-hex>
 data_availability_measurement_signature=<da-signature-hex>
@@ -521,7 +522,11 @@ summary roots and artifact locators without hand-copying individual `record_root
 Whitespace-padded record lines and empty fields are rejected.
 
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
-public-testnet criteria or stricter criteria, `public_criterion=true`, and `independently_checkable=true`.
+public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`, and
+manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record. Those
+full-spec randomness records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
+`local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public
+randomness evidence.
 Relaxed local harness criteria can exercise the validator but cannot set the full-spec flag. The
 `external_operator_evidence` field is true only when enough signed node evidence and matching signed
 operator identity attestation records are present.

@@ -5,11 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 185 complete: Mixed-Dtype Conformance Vector Coverage.
-- Current status: the local CPU checker requires live TensorOp, LinearTrainingStep, and GraphExecution
-  receipt/block evidence. Graph receipt verification test scenarios cover every consensus-admitted frozen
-  registry op locally, and explorer WebSocket jobs/receipts now expose the same `graph_execution`
-  primitive already carried by chain/RPC/checker paths.
+- Active feature: Iteration 186 complete: Public Randomness Evidence Raw-Record Gate.
+- Current status: full-spec public evidence now requires manifest-level raw accepted public randomness
+  records whose aggregate root matches the signed randomness summary. Summary-only randomness evidence and
+  local deterministic fixture records remain parseable/testable but cannot satisfy the full-spec public
+  randomness gate.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
@@ -34,6 +34,86 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 186: Public Randomness Evidence Raw-Record Gate
+
+Feature capability: require full-spec public evidence bundles to include raw accepted public randomness
+records, so a signed randomness summary alone or a local deterministic fixture cannot satisfy the §10
+public randomness gate.
+
+Readiness requirements covered: `goal.md`/`upow.md` §10 unbiasable randomness, public evidence
+gatekeeping, and the local/full boundary that deployed public randomness evidence is still absent.
+
+Canonical owner: `testnet` public evidence evaluation owns public-run evidence claims and manifest parsing.
+
+Adapter callers: `tvmd public evidence validate` and docs/examples consume the parsed
+`PublicTestnetEvidenceBundle`; adapters may not promote summary-only randomness evidence to full-spec
+completion.
+
+Old shortcut being removed: full-spec evaluation accepted any correctly signed randomness summary root and
+record count without inspecting raw record kinds, so a local deterministic fixture summary could look like
+public randomness evidence at the manifest layer.
+
+Regression tests that prove the shortcut is gone: public evidence bundle tests will keep relaxed
+independently-checkable summaries working while proving full-spec evidence fails without raw public
+randomness records and fails when those records are local fixtures.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run evidence validation.
+
+Behavior for producer and non-producer roles: unchanged; the validation concerns public evidence bundles,
+not runtime role logic.
+
+Structured evidence source: repeated `randomness_beacon_record` manifest lines, their aggregate root, the
+signed randomness summary, and the public evidence bundle report.
+
+Finality source: unchanged; this validates evidence for finalized public runs rather than producing blocks.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC wire format changes.
+
+Parallel subagents to run: none. The slice is confined to public evidence parsing/evaluation, tests, and
+docs/status alignment.
+
+Parallelizable implementation workstreams: not split; one writer owns the manifest/evidence structs and
+fixture updates.
+
+Tests/checkers/docs to add or update: public evidence bundle/manifest tests, public evidence docs,
+`coverage_matrix.md`, `implementation_status.md`, `tarpaulin_report.md` if coverage changes, and this exec
+plan.
+
+Narrow validation commands: `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_publication_and_audit_records --lib`
+and `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because evidence tests and reportable coverage change.
+
+Expected observable evidence: full-spec public evidence remains true only with accepted `drand-v1` or
+`validator-vrf-v1` raw randomness records whose aggregate root matches the signed summary; local fixture
+randomness records no longer satisfy full-spec evidence.
+
+Out of scope: generating public drand evidence, CUDA evidence, changing runtime randomness admission, or
+changing local CPU checker behavior.
+
+Split trigger: split only if manifest backward compatibility requires a larger evidence schema migration.
+
+Validation evidence on June 22, 2026:
+- First executable Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused public-evidence checks passed:
+  `public_testnet_evidence_bundle_requires_publication_and_audit_records`,
+  `public_testnet_evidence_manifest_parses_into_bundle`, `public_testnet_evidence`, and
+  `public_evidence_record`.
+- Manifest malformed-input coverage now rejects unknown `randomness_beacon_record` proof kinds and
+  statuses.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 548 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release library local-testnet tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 563
+  instrumented tests, 84.62% workspace line coverage, 22726/26858 lines covered.
+- Manual ownership-boundary review: no runtime randomness admission changed and no public evidence was
+  generated; this is a manifest/evidence validation gate. No standalone verifier binary exists or was
+  added; validation used Rust tests, shell checks, clippy, tarpaulin, and manual ownership-boundary review.
 
 ### Iteration 185: Mixed-Dtype Conformance Vector Coverage
 

@@ -440,7 +440,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   a shared address, live but uncounted nodes cannot satisfy a missing counted operator attestation, and
   missing, duplicate, extra, or overreported operator-attestation records are rejected, signed
   per-operator production libp2p network-observation records, signed
-  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement summary roots, signed
+  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement summary roots, manifest-level raw accepted
+  public `drand-v1` or `validator-vrf-v1` randomness records whose aggregate root must match the signed
+  randomness summary before full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind, well-formed whitespace-free
   `ipfs://`/`ar://` content identifiers with traversal/query/fragment path rejection, HTTPS evidence URI
@@ -535,8 +537,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   duplicate-root and whitespace-padded root-list rejection, plus `tvmd public evidence record summary-file ...` and
   `tvmd public evidence record artifact-file ...` generation from saved raw-record files containing
   `record_root=...` lines, fully verified signed `network_runtime_observation=...` lines, or typed
-  `block_history_record=...`, `finality_history_record=...`, `data_availability_measurement=...`,
-  `invalid_work_rejection=...`, and `reward_settlement=...` supporting-record lines with kind-specific
+  `block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
+  `data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` supporting-record lines with kind-specific
   field validation, including hex reward-settlement participant IDs, exact-line hashing, and
   whitespace-padded or empty-field rejection; network-runtime file
   derivation rejects malformed peer IDs, non-public multiaddrs, zero counters, and mismatched observation

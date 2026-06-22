@@ -735,8 +735,11 @@ This section is non-normative guidance on how the spec components partition into
   ingest a deterministic drand-style external beacon fixture and expose checker-gated applied-record
   evidence. Chain and p2p/node admission can now verify bounded `pedersen-bls-unchained` drand evidence.
   Public drand mode now polls and verifies newer default-chain `pedersen-bls-chained` rounds with stale
-  skip, backoff, endpoint expected-round, chain-epoch, and freshness-lag evidence. Consensus-level drand
-  round ↔ epoch mapping and validator VRF construction remain TODO (§10).
+  skip, backoff, endpoint expected-round, chain-epoch, and freshness-lag evidence. Full-spec public
+  evidence validation now requires raw accepted `drand-v1` or `validator-vrf-v1` randomness records whose
+  aggregate root matches the signed randomness summary; local deterministic fixture records cannot satisfy
+  that public randomness gate. Consensus-level drand round ↔ epoch mapping and validator VRF construction
+  remain TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
 - [~] Retention evidence: selected-receipt block openings now anchor `expires_at_block` to receipt
   submission height plus the configured tensor-retention window, so delayed inclusion cannot extend the
