@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 170 validation complete: Runtime Trace-Bisection Round Progression.
+- Active feature: Iteration 170 complete: Runtime Trace-Bisection Round Progression.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move active matured rewards into spendable balances;
   explicit beneficiary `ClaimReward` remains the canonical spendability boundary. The trace-bisection path
@@ -15,8 +15,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   reward claims.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: commit and push Iteration 170, then continue public/CUDA deployment evidence or
-  trace-bisection DoS/expected-root negotiation work.
+- Next action: continue public/CUDA deployment evidence or trace-bisection DoS/expected-root negotiation
+  work.
 
 ## Readiness Matrix
 
@@ -141,6 +141,8 @@ Validation started on June 22, 2026:
   `chain::challenges`, runtime round generation is responder-wallet scoped, requires local replay to match
   the committed `trace_root`, publishes only the existing bounded round payload, and status/checkers only
   observe typed counters.
+- Commit `d88a14d` pushed to `main` on June 22, 2026:
+  `git push` returned `091142d..d88a14d  main -> main`.
 
 ### Iteration 169: Runtime Trace-Bisection Challenge Generation
 
@@ -312,6 +314,8 @@ Tarpaulin was not yet installed during this iteration.
   focused `trace_bisection_round_generation`, `trace_bisection_round`, `tvmd_runtime::runtime_state`,
   and `tvmd_cli::role_run_commands_serve_through_role_specific_surfaces`; broad fmt/check/diff/lib
   (532 passed), release local-testnet, and tarpaulin 84.52%.
+- Iteration 170 feature commit `d88a14d` pushed to `main` on June 22, 2026:
+  `git push` returned `091142d..d88a14d  main -> main`.
 - Iteration 166 feature commit `bfcefa7` pushed to `main` on June 22, 2026:
   `git push` returned `7ab5580..bfcefa7  main -> main`.
 - Iteration 165 feature commit `e3af101` pushed to `main` on June 22, 2026:
