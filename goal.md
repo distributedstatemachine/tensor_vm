@@ -171,7 +171,8 @@ During implementation, parallelize as much as the tooling safely allows:
 - Run test discovery in parallel with code-path discovery.
 - Use separate implementation subagents or worktrees for independent development workstreams when they will not edit the same files.
 - Use `tensorvm-test-runner` for noisy or long validation while the parent reviews the diff.
-- Use `tensorvm-verifier` before commit to challenge the whole feature, not just the last small edit.
+- Before commit, challenge the whole integrated diff with a manual verifier-style review of ownership
+  boundaries, tests, and readiness evidence; do not require a nonexistent `tensorvm-verifier` binary.
 - Use `tensorvm-goal-supervisor` before resuming after pauses, after several iterations, or whenever scope starts shrinking into busywork.
 
 Do not parallelize two writers against the same files in the same worktree. If parallel implementation would collide, keep the parent as the single writer and use subagents for read-only exploration, test planning, and verification.
@@ -265,7 +266,8 @@ Before committing:
 
 ```text
 1. Run the targeted validation for the feature.
-2. Run `tensorvm-verifier` against the integrated diff.
+2. Review the integrated diff with a verifier-style pass over ownership boundaries, tests, and readiness
+   evidence.
 3. Review `git status --short` and `git diff`.
 4. Update the exec plan with validation evidence.
 5. Compact the exec plan if required by the compaction rule.

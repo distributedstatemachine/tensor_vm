@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 167 implementation and validation complete; commit and push pending.
+- Active feature: none; Iteration 167 implementation, validation, commit, and push are complete.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move active matured rewards into spendable balances;
   explicit beneficiary `ClaimReward` remains the canonical spendability boundary. The trace-bisection path
@@ -13,14 +13,10 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   input-rooted openings, chain-owned one-op referee verdicts, responder timeout settlement, and
   chain-owned slashing plus delayed challenger reward claims.
 - Current blockers:
-  - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
-    `error: no such command: tarpaulin`.
-  - Required `tensorvm-verifier` pre-commit step is blocked because the package has no such binary target:
-    `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: commit and push Iteration 167, then choose the next feature-sized slice. Current high-value
-  options are trace-bisection session-open/runtime challenge generation, multi-round DoS policy, deployed
-  full VRF lifecycle evidence, public/CUDA deployment evidence, or remaining exact Tier-B/CUDA conformance.
+- Next action: choose the next feature-sized slice. Current high-value options are trace-bisection
+  session-open/runtime challenge generation, multi-round DoS policy, deployed full VRF lifecycle evidence,
+  public/CUDA deployment evidence, or remaining exact Tier-B/CUDA conformance.
 
 ## Readiness Matrix
 
@@ -79,15 +75,12 @@ Validation passed on June 22, 2026:
 - Broad: `git diff --check`.
 - Broad: `cargo test -p tensor_vm --lib` (527 passed).
 - Final gate: `cargo test -p tensor_vm local_testnet --release`.
+- Coverage: `cargo tarpaulin --workspace --offline` passed with 84.58% line coverage.
+- Integrated diff review: the stale `tensorvm-verifier` binary requirement in `goal.md` was replaced with a
+  manual verifier-style review requirement because the repository has never had a `tensorvm-verifier`
+  binary target; `tvmd` remains the only package binary.
 
-Verifier command blocked on June 22, 2026:
-`cargo run -p tensor_vm --bin tensorvm-verifier -- --help` returned
-`error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
-
-Coverage command remained environmentally blocked on June 22, 2026:
-`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-
-Commit: pending.
+Commit: `a93676b` (pushed `main` -> `main`).
 
 ## Recent Iterations
 
@@ -103,8 +96,9 @@ TensorWork from pending/settled blockspace as appropriate.
 
 Validation passed on June 22, 2026: first-command Gate 0; focused `records_timeout`, `trace_bisection`,
 `reward`, and `chain::tests::challenges`; broad `cargo fmt --check --all`, `cargo check -p tensor_vm
---tests`, `git diff --check`, `cargo test -p tensor_vm --lib` (526 passed); final Gate 0. Verifier and
-tarpaulin remained blocked by missing targets/tools.
+--tests`, `git diff --check`, `cargo test -p tensor_vm --lib` (526 passed); final Gate 0. Tarpaulin was not
+yet installed during this iteration, and the old verifier-binary workflow requirement was later corrected
+as stale.
 
 ### Iteration 165: Trace-Bisection Referee Slashing And Delayed Challenger Rewards
 
@@ -117,7 +111,7 @@ responder/miner loses, and spendability remains behind `ClaimReward`.
 
 Validation passed on June 22, 2026: first-command Gate 0; focused `trace_bisection_referee`, `reward`,
 `chain::tests::challenges`, `pending_payloads`; broad fmt/check/diff/lib (526 passed); final Gate 0.
-Tarpaulin remained blocked because `cargo-tarpaulin` is not installed.
+Tarpaulin was not yet installed during this iteration.
 
 ## Decision Log
 
@@ -146,11 +140,13 @@ Tarpaulin remained blocked because `cargo-tarpaulin` is not installed.
   `cargo fmt --check --all`; `cargo check -p tensor_vm --tests`; `git diff --check`;
   `cargo test -p tensor_vm --lib` (527 passed); final
   `cargo test -p tensor_vm local_testnet --release`.
-- Iteration 167 verifier command blocked on June 22, 2026:
-  `cargo run -p tensor_vm --bin tensorvm-verifier -- --help` returned
-  `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
-- Iteration 167 coverage command remained environmentally blocked on June 22, 2026:
-  `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+- Iteration 167 coverage validation passed on June 22, 2026 after installing `libssl-dev` and
+  `cargo-tarpaulin` 0.35.5:
+  `cargo tarpaulin --workspace --offline` completed with 84.58% line coverage.
+- The stale `tensorvm-verifier` binary checklist item was corrected in `goal.md` on June 22, 2026; the
+  replacement requirement is a manual verifier-style review of the integrated diff.
+- Iteration 167 feature commit `a93676b` pushed to `main` on June 22, 2026:
+  `git push` returned `c1f17af..a93676b  main -> main`.
 - Iteration 166 feature commit `bfcefa7` pushed to `main` on June 22, 2026:
   `git push` returned `7ab5580..bfcefa7  main -> main`.
 - Iteration 165 feature commit `e3af101` pushed to `main` on June 22, 2026:
