@@ -53,7 +53,7 @@ checkpoint before edits.
 
 ### Iteration 158: Trace Bisection Dispute Protocol Core
 
-Commit: pending.
+Commit: `6f6344a` (pushed `main` -> `main`).
 
 Feature capability: added a signed, deterministic trace-bisection dispute round/state core over verified
 `IrTraceOpening` values. This creates the protocol message/state boundary for the `upow.md` §8.2
@@ -129,6 +129,8 @@ Coverage command remained environmentally blocked:
 
 - Iteration 158 first executable command passed before code edits on June 22, 2026:
   `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 158 feature commit `6f6344a` pushed to `main` on June 22, 2026:
+  `git push` returned `7d4e172..6f6344a  main -> main`.
 - Iteration 158 focused validation passed on June 22, 2026:
   `cargo test -p tensor_vm trace_bisection --lib -- --nocapture` and
   `cargo test -p tensor_vm challenge --lib -- --nocapture`.
