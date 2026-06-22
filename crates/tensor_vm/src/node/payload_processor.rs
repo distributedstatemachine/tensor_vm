@@ -91,6 +91,7 @@ pub trait NetworkPayloadProcessor {
         payload: &[u8],
     ) -> NetworkPayloadApply;
 
+    #[allow(clippy::too_many_arguments)]
     fn apply_trace_bisection_referee(
         &mut self,
         challenge_id: Hash,

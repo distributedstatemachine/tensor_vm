@@ -45,8 +45,9 @@ pub use network::{
     publish_block_vote_announcements, publish_chain_payload_announcements,
     publish_new_chain_announcements, publish_observed_block_check_challenge,
     publish_runtime_trace_bisection_expectation, publish_runtime_trace_bisection_open,
-    publish_validator_block_proposal, submit_runtime_trace_bisection_expectation,
-    submit_runtime_trace_bisection_open,
+    publish_runtime_trace_bisection_referee, publish_validator_block_proposal,
+    submit_runtime_trace_bisection_expectation, submit_runtime_trace_bisection_open,
+    submit_runtime_trace_bisection_referee,
 };
 pub use randomness_beacon::{
     DrandBeaconClient, RandomnessBeaconMode, RandomnessBeaconRuntimeConfig,

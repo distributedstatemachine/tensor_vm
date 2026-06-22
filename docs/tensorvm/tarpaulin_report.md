@@ -1,24 +1,33 @@
 # TensorVM Tarpaulin Report
 
-Latest attempted run: June 22, 2026 from the workspace root during Iteration 155 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 174 with:
 
 ```bash
-cargo tarpaulin --workspace --offline
+cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
 ```
 
 Result:
 
 ```text
-error: no such command: `tarpaulin`
+553 tests passed under instrumentation:
+- 14 experiments library tests
+- 538 tensor_vm library tests
+- 1 tensor_vm_explorer library test
 
-help: view all installed commands with `cargo --list`
-help: find a package to install `tarpaulin` with `cargo search cargo-tarpaulin`
+84.48% workspace line coverage
+22570/26717 workspace lines covered
 ```
 
-This environment does not currently have `cargo-tarpaulin` installed, so Iteration 155 coverage could not
-be regenerated. Iterations 78 through 128 and Iterations 154 through 155 rechecked the same command and hit
-the same missing-binary blocker. The most recent completed coverage report below remains the prior May 23,
-2026 run.
+The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
+`/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 174 coverage-changing work added automatic runtime trace-bisection referee witness generation
+from local graph replay, IR-level witness materialization coverage, runtime challenger submission/gossip
+coverage, and status counters for validator referee submissions. The line-coverage percentage remains
+lower than the old May 23, 2026 report because the current workspace includes substantially more runtime,
+deployment, public-evidence, and libp2p surface area in the denominator.
+
+Historical report:
 
 Generated on May 23, 2026 from the workspace root with:
 

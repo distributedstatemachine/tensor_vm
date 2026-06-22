@@ -474,7 +474,7 @@ pub fn submit_validator_role_block_vote(
                 && !validator_has_block_vote(&node.chain, validator, block_hash)
                 && node.chain.validate_block(block).is_ok()
         })
-        .min_by(|left, right| validator_vote_candidate_order(left, right))
+        .min_by(validator_vote_candidate_order)
         .map(|(block, canonical)| (block.clone(), canonical))
     else {
         return Ok(None);

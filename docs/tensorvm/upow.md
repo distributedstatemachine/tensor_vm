@@ -701,14 +701,19 @@ This section is non-normative guidance on how the spec components partition into
   `PendingChallengeReward` claim that remains non-spendable until the normal reward maturity plus
   beneficiary `ClaimReward` boundary.
   Bounded p2p referee-witness payloads now route through the shared node pending queue into the same chain
-  command, with dedicated ingest/application counters.
+  command, with dedicated ingest/application counters. Runtime challenger nodes now derive one-op referee
+  witnesses from local graph replay for isolated sessions whose stored opening input roots match the
+  generated witness, submit them through `ChainCommand::RefereeTraceBisection`, persist the resulting
+  chain state, publish the existing bounded referee payload, and report validator referee-submission
+  counters.
   Focused tests prove midpoint narrowing, final-op isolation, one-op referee verdicts, timeout reporting
   with slashing and delayed challenger rewards, tamper rejection, malformed wire edges, duplicate rejection,
   round, expectation, and referee pending retry, runtime session-open generation/gossip from local
   evidence, runtime challenger expected-root generation/gossip from local replay, runtime responder round
-  generation from committed local traces, challenger-signed expected midpoint roots enforced by chain
-  admission before responder rounds can advance, and snapshot persistence. Multi-round DoS policy,
-  automatic referee witness generation, and deployed public/CUDA dispute evidence remain TODO (§8.2).
+  generation from committed local traces, runtime challenger referee-witness generation/gossip from local
+  replay, challenger-signed expected midpoint roots enforced by chain admission before responder rounds can
+  advance, and snapshot persistence. Multi-round DoS policy and deployed public/CUDA dispute evidence
+  remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.

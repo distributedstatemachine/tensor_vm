@@ -5,17 +5,18 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 173 complete: Reward Claim Boundary Regression Hardening.
+- Active feature: Iteration 174 complete: Runtime Trace-Bisection Referee Witness Generation.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Valid matured claims remain non-spendable until the beneficiary calls `ClaimReward`;
   direct maturity-sweep commands can prune only voided/unavailable matured claims and cannot credit live
   beneficiary balances. Trace-bisection has signed sessions/rounds, bounded p2p open/expectation/round/
   referee payloads, pending-queue application, runtime session-open, challenger expectation, responder
-  round generation, one-op referee verdicts, timeout settlement, slashing, and delayed challenger rewards.
+  round generation, runtime challenger referee-witness generation from local graph replay, one-op referee
+  verdicts, timeout settlement, slashing, and delayed challenger rewards.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue trace-bisection DoS policy, automatic referee witness generation, or public/CUDA
-  deployment evidence.
+- Next action: continue trace-bisection DoS policy, incomplete-transcript handling for multi-round
+  isolation edges, or public/CUDA deployment evidence.
 
 ## Readiness Matrix
 
@@ -27,7 +28,7 @@ archive commit anchors only.
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection expectations/rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof or remaining fraud-proof DoS policy |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, packed int8 APIs, const blobs, role-owned graph execution, and trace-bisection state | Continue CUDA graph evidence and fraud-proof DoS/referee automation |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, packed int8 APIs, const blobs, role-owned graph execution, and automatic runtime trace-bisection referee witnesses when isolated-opening roots match local replay | Continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -36,67 +37,59 @@ archive commit anchors only.
 
 ## Active Feature Iteration
 
-### Iteration 173: Reward Claim Boundary Regression Hardening
+### Iteration 174: Runtime Trace-Bisection Referee Witness Generation
 
-Feature capability: matured reward sweeps cannot be used as a workaround for verifier-dependent reward
-finality. Proposer, receipt, challenge, and credit rewards remain pending through maturity and become
-spendable only through the beneficiary-owned `ClaimReward` command; direct release/sweep commands prune
-only voided or unavailable matured claims and never credit live beneficiary balances.
+Feature capability: a validator/challenger node with local graph evidence automatically derives an
+isolated one-op referee witness from canonical graph replay when the isolated session's stored opening
+input roots match the generated witness, submits `ChainCommand::RefereeTraceBisection`, and gossips the
+existing bounded referee payload. This removes the manual referee step for referrable isolated transcripts
+without adding or depending on any standalone verifier binary.
 
-Readiness requirements covered: `upow.md` §12.1 delayed verifier-dependent rewards, `mvp_spec.md` §20.3
-receipt reward finality, §20.7/§25.5 challenge/proposer reward finality, and the readiness requirement
-that live pending reward claims mature into spendable balances only through `ClaimReward`.
+Readiness requirements covered: `upow.md` §16 trace-bisection fraud-proof lifecycle and `mvp_spec.md`
+§38 v1 fraud-proof path for single invalid op proof after interactive bisection.
 
-Canonical owner: `chain::commands` remains the only owner of pending reward claim release/pruning and
-beneficiary claim spendability. Runtime, p2p, status, and checkers only observe or request chain commands.
+Canonical owner: chain admission remains `ChainCommand::RefereeTraceBisection`; runtime only derives the
+witness from local graph inputs and submits/publishes it. P2P/node boundaries continue using the existing
+`NewTraceBisectionRefereePayload` codec and pending-queue application.
 
-Old shortcut being removed: any maturity-sweep command that converts a valid pending claim into a
-spendable balance without the beneficiary explicitly claiming it.
+Verifier reality check: no `tensorvm-verifier` binary exists in this repository. Validation for this slice
+will use cargo/tarpaulin evidence plus manual verifier-style review of the chain/runtime boundaries.
 
-Regression test that proves the shortcut is gone: `reward_release_commands_preserve_live_matured_claims_
-until_beneficiary_claim` seeds mature valid proposer, receipt, challenge, and credit claims, invokes every
-direct `ReleaseMatured*` command, proves no spendable reward/account balance changes and live claims remain
-pending, then proves `ClaimReward` is the only command that releases them.
-
-Behavior with local synthetic block production disabled: reward claimability depends only on chain state,
-claim maturity, and beneficiary command submission, not on local production mode.
-
-Behavior for producer and non-producer roles: producers and non-producers apply the same chain command
-boundary; neither role can gain spendable rewards from a sweep-only command.
-
-Structured evidence source: focused `chain::tests::rewards` assertions over pending reward ledgers,
-`RewardState`, account balances, and emitted `ChainEvent`s.
-
-Finality source: unchanged block append/vote/finality; reward finality is the pending-claim maturity plus
-explicit beneficiary claim boundary.
-
-Wire-size and codec boundary: no network wire change.
-
-Parallel subagents to run: skipped; available subagent tooling requires explicit user authorization.
-Read-only discovery was parallelized with local shell tools.
-
-Tests/checkers/docs updated: `crates/tensor_vm/src/chain/tests/rewards.rs` and this execution plan.
+Runtime behavior: validator ticks now run the referee candidate after session-open and expected-root
+submission. Successful submissions are persisted, published over the existing bounded referee payload, and
+reported through `validator_trace_bisection_referees_submitted` and
+`role_validator_trace_bisection_referees_submitted` status fields.
 
 Validation completed on June 22, 2026:
 - First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
-- `cargo test -p tensor_vm reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim --lib -- --nocapture` passed.
-- `cargo test -p tensor_vm rewards --lib -- --nocapture` passed: 26 tests.
-- `cargo fmt --all -- --check` passed after applying `cargo fmt --all`.
+- `cargo test -p tensor_vm trace_bisection_referee_generation_requires_challenger_and_local_witness --lib -- --nocapture` passed.
+- `cargo test -p tensor_vm exact_interpreter_executes_hand_built_graph_and_commits_trace --lib -- --nocapture` passed.
+- `cargo test -p tensor_vm trace_bisection --lib -- --nocapture` passed: 23 tests.
+- `cargo test -p tensor_vm runtime_state_tracks_loop_counters --lib -- --nocapture` passed.
+- `cargo fmt --all -- --check` passed.
 - `cargo check --all-targets` passed.
 - `git diff --check` passed.
-- `cargo test -p tensor_vm --lib` passed: 537 tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed after mechanical cleanup of current-toolchain clippy warnings.
+- `cargo test -p tensor_vm --lib` passed: 538 tests.
 - `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered `tvmd_cli` local-testnet gateway test.
-- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 84.52% line coverage.
-- Manual verifier-style review: production reward commands already used pending claims; the new test locks
-  the critical boundary that direct `ReleaseMatured*` commands cannot credit live matured claims, while
-  `ClaimReward` remains the only spendability path.
-- Feature commit `919f77f` pushed to `main` on June 22, 2026:
-  `git push` returned `8b94508..919f77f  main -> main`.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 84.48% line coverage.
+- Manual verifier-style review: there is no standalone verifier binary. Runtime only materializes witness
+  inputs from local graph replay and submits the existing chain-owned `RefereeTraceBisection` command;
+  chain admission still validates op index, input roots, canonical op output roots, slashing, and delayed
+  challenger reward settlement.
 
-Out of scope: changing reward allocation formulas, adding new reward ledgers, trace-bisection DoS policy,
-automatic referee witness generation, and public/CUDA deployment evidence.
+Out of scope: adding a standalone verifier binary, changing trace-bisection economics, multi-round DoS
+policy, incomplete-transcript final-opening automation when isolation advances past the last opened op, and
+public/CUDA deployment evidence.
 
 ## Recent Iterations
+
+### Iteration 173: Reward Claim Boundary Regression Hardening
+
+Feature capability: matured reward sweeps cannot be used as a workaround for verifier-dependent reward
+finality. Validation covered the reward-boundary regression, reward module tests, fmt/check/diff, lib
+tests, release local-testnet, tarpaulin, and manual review. Feature commit `919f77f` pushed to `main` on
+June 22, 2026.
 
 ### Iteration 172: Trace-Bisection Expected-Root Gossip
 
@@ -132,12 +125,15 @@ local-testnet, tarpaulin, and manual review. Feature commit `6901655` pushed to 
   claim/state transitions. Valid matured claims become spendable only through beneficiary `ClaimReward`.
 - Bounded p2p/node payloads remain the only network wire surface for randomness, reveal records, and
   trace-bisection expectation/round/referee evidence.
-- Public 7-day evidence, CUDA evidence, deployed full VRF construction, automatic referee witness
-  generation, and multi-round DoS policy remain deployment or future-feature gates, not local-completion
-  claims.
+- Public 7-day evidence, CUDA evidence, deployed full VRF construction, incomplete-transcript
+  final-opening automation, and multi-round DoS policy remain deployment or future-feature gates, not
+  local-completion claims.
 
 ## Validation Evidence
 
+- Iteration 174 validation passed on June 22, 2026: first executable Gate 0; focused referee/IR/runtime
+  state tests; trace-bisection filtered tests; fmt/check/diff; clippy; `cargo test -p tensor_vm --lib`
+  (538 passed); release local-testnet; tarpaulin 84.48%; and manual chain/runtime boundary review.
 - Iteration 173 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary and
   reward module tests; broad fmt/check/diff/lib (537 passed), release local-testnet, tarpaulin 84.52%, and
   manual review. Feature commit `919f77f` pushed to `main` (`8b94508..919f77f`).

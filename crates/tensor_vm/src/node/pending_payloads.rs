@@ -200,6 +200,7 @@ impl PendingNetworkPayloads {
             .or_insert(payload);
     }
 
+    #[allow(clippy::too_many_arguments)]
     pub fn queue_trace_bisection_referee(
         &mut self,
         challenge_id: Hash,

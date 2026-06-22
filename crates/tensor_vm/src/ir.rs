@@ -245,6 +245,15 @@ impl From<IrOpWitnessValue> for RuntimeValue {
     }
 }
 
+impl From<RuntimeValue> for IrOpWitnessValue {
+    fn from(value: RuntimeValue) -> Self {
+        match value {
+            RuntimeValue::Tensor(tensor) => Self::Tensor(tensor),
+            RuntimeValue::Field(value) => Self::Field(value),
+        }
+    }
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum IrOpWitnessValue {
     Tensor(Tensor),
@@ -409,6 +418,43 @@ impl TensorGraph {
             op_index: witness.op_index,
             input_roots,
             canonical_output_roots,
+        })
+    }
+
+    pub fn referee_witness(
+        &self,
+        inputs: &IrExecutionInputs,
+        op_index: u64,
+    ) -> Result<IrOpRefereeWitness> {
+        self.validate_for_consensus()?;
+        validate_execution_inputs(self, inputs)?;
+        let target = op_index as usize;
+        if target >= self.ops.len() {
+            return Err(TvmError::InvalidChunk {
+                chunk_index: op_index,
+            });
+        }
+
+        let mut op_outputs = Vec::<Vec<RuntimeValue>>::new();
+        for (index, op) in self.ops.iter().enumerate() {
+            let args = op
+                .args
+                .iter()
+                .map(|arg| {
+                    resolve_runtime_ref(arg, &inputs.tensors, &inputs.field_params, &op_outputs)
+                })
+                .collect::<Result<Vec<_>>>()?;
+            if index == target {
+                return Ok(IrOpRefereeWitness {
+                    op_index,
+                    input_values: args.into_iter().map(IrOpWitnessValue::from).collect(),
+                });
+            }
+            op_outputs.push(execute_op(op, args)?);
+        }
+
+        Err(TvmError::InvalidChunk {
+            chunk_index: op_index,
         })
     }
 
@@ -4016,6 +4062,38 @@ mod tests {
             expected_biased.commitment_root()
         );
         assert!(opening.verify());
+        let witness = graph
+            .referee_witness(
+                &IrExecutionInputs {
+                    tensors: BTreeMap::from([
+                        (
+                            "lhs".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4])
+                                .unwrap(),
+                        ),
+                        (
+                            "rhs".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8])
+                                .unwrap(),
+                        ),
+                        (
+                            "bias".to_owned(),
+                            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![9, 10, 11, 12])
+                                .unwrap(),
+                        ),
+                    ]),
+                    field_params: BTreeMap::new(),
+                },
+                1,
+            )
+            .unwrap();
+        let verdict = graph.referee_op(&witness).unwrap();
+        assert_eq!(witness.op_index, 1);
+        assert_eq!(verdict.input_roots, opening.op_trace.input_roots);
+        assert_eq!(
+            verdict.canonical_output_roots,
+            opening.op_trace.output_roots
+        );
         let mut tampered_input = opening.clone();
         tampered_input.op_trace.input_roots[0] = expected_row_sum.commitment_root();
         assert!(!tampered_input.verify());

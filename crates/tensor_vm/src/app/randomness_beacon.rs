@@ -440,7 +440,7 @@ fn parse_env_hash(name: &str, value: &str) -> std::result::Result<Hash, String> 
 
 fn parse_env_hex_bytes(name: &str, value: &str) -> std::result::Result<Vec<u8>, String> {
     let value = value.trim();
-    if value.len() % 2 != 0 {
+    if !value.len().is_multiple_of(2) {
         return Err(format!("invalid {name}: odd-length hex"));
     }
     value
@@ -698,13 +698,12 @@ pub fn tick_randomness_beacon_once_with_client(
                 .external_randomness_beacons()
                 .contains_key(&config.beacon_round)
         {
-            publish_external_randomness_beacon(p2p_service, config).map_err(|error| {
+            publish_external_randomness_beacon(p2p_service, config).inspect_err(|error| {
                 runtime_state.record_randomness_beacon_failure(
                     &config.source_id,
                     config.beacon_round,
-                    &error,
+                    error,
                 );
-                error
             })?;
             runtime_state
                 .record_randomness_beacon_published(&config.source_id, config.beacon_round);
@@ -793,13 +792,12 @@ pub fn tick_randomness_beacon_once_with_client(
             store.persist_chain(chain).map_err(|error| {
                 format!("failed to persist external randomness beacon: {error}")
             })?;
-            publish_external_randomness_beacon(p2p_service, config).map_err(|error| {
+            publish_external_randomness_beacon(p2p_service, config).inspect_err(|error| {
                 runtime_state.record_randomness_beacon_failure(
                     &config.source_id,
                     config.beacon_round,
-                    &error,
+                    error,
                 );
-                error
             })?;
             runtime_state.record_randomness_beacon_applied(&config.source_id, config.beacon_round);
             if public_drand_poll {

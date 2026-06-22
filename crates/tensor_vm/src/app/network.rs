@@ -9,7 +9,7 @@ use crate::{
     encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
     encode_receipt_payload, encode_validator_audit_report_payload,
     encode_validator_vrf_reveal_payload,
-    ir::IrExecution,
+    ir::{IrExecution, IrExecutionInputs, IrOpRefereeWitness},
     jobs::{GraphJob, GraphReceipt},
     localnet::produce_synthetic_cpu_work_with_profile,
     node::{
@@ -18,7 +18,8 @@ use crate::{
     },
     p2p::{
         encode_block_check_challenge_payload, encode_trace_bisection_expectation_payload,
-        encode_trace_bisection_open_payload, encode_trace_bisection_round_payload,
+        encode_trace_bisection_open_payload, encode_trace_bisection_referee_payload,
+        encode_trace_bisection_round_payload,
     },
     scheduler::{JobSource, SyntheticLocalJobSource},
     types::{Address, Hash, parse_hash_hex},
@@ -324,6 +325,13 @@ pub struct RuntimeTraceBisectionExpectation {
     pub message: P2pMessage,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct RuntimeTraceBisectionReferee {
+    pub challenge_id: Hash,
+    pub witness: IrOpRefereeWitness,
+    pub message: P2pMessage,
+}
+
 pub fn submit_runtime_trace_bisection_open(
     node: &mut RpcNode,
     challenger: Address,
@@ -407,6 +415,37 @@ pub fn publish_runtime_trace_bisection_round(
     p2p_service
         .publish_gossip(round.message.clone())
         .map_err(|error| format!("failed to publish trace-bisection round payload: {error}"))
+}
+
+pub fn submit_runtime_trace_bisection_referee(
+    node: &mut RpcNode,
+    challenger: Address,
+) -> std::result::Result<Option<RuntimeTraceBisectionReferee>, String> {
+    let Some((challenge_id, witness, message)) =
+        trace_bisection_referee_candidate(node, challenger)?
+    else {
+        return Ok(None);
+    };
+    node.chain
+        .apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness: witness.clone(),
+        })
+        .map_err(|error| format!("failed to submit runtime trace-bisection referee: {error}"))?;
+    Ok(Some(RuntimeTraceBisectionReferee {
+        challenge_id,
+        witness,
+        message,
+    }))
+}
+
+pub fn publish_runtime_trace_bisection_referee(
+    p2p_service: &TensorVmLibp2pService,
+    referee: &RuntimeTraceBisectionReferee,
+) -> std::result::Result<(), String> {
+    p2p_service
+        .publish_gossip(referee.message.clone())
+        .map_err(|error| format!("failed to publish trace-bisection referee payload: {error}"))
 }
 
 fn trace_bisection_open_candidate(
@@ -558,6 +597,60 @@ fn trace_bisection_expectation_candidate(
     Ok(None)
 }
 
+fn trace_bisection_referee_candidate(
+    node: &RpcNode,
+    challenger: Address,
+) -> std::result::Result<Option<(Hash, IrOpRefereeWitness, P2pMessage)>, String> {
+    for (challenge_id, record) in node.chain.state().trace_bisection_challenges() {
+        let TraceBisectionStatus::Isolated { op_index } = record.status else {
+            continue;
+        };
+        if record.state.challenger != challenger {
+            continue;
+        }
+        let Some(ReceiptState::GraphExecution(receipt)) =
+            node.chain.state().receipts().get(&record.state.receipt_id)
+        else {
+            continue;
+        };
+        if receipt.trace_root != record.state.trace_root || receipt.miner != record.state.responder
+        {
+            continue;
+        }
+        let Some(JobState::GraphExecution(job)) = node.chain.state().jobs().get(&receipt.job_id)
+        else {
+            continue;
+        };
+        let Some(graph) = local_graph_receipt_evidence_graph(node, job.graph_id)? else {
+            continue;
+        };
+        let Some(inputs) = local_graph_receipt_inputs(node, job, &graph)? else {
+            continue;
+        };
+        let witness = graph
+            .referee_witness(&inputs, op_index)
+            .map_err(|error| format!("failed to build runtime trace-bisection referee: {error}"))?;
+        let input_roots = witness
+            .input_values
+            .iter()
+            .map(|value| value.commitment_root())
+            .collect::<Vec<_>>();
+        if input_roots != record.last_opening_input_roots {
+            continue;
+        }
+        let message = trace_bisection_referee_message(
+            *challenge_id,
+            record.state.receipt_id,
+            record.state.trace_root,
+            record.state.challenger,
+            record.state.responder,
+            &witness,
+        );
+        return Ok(Some((*challenge_id, witness, message)));
+    }
+    Ok(None)
+}
+
 fn local_graph_receipt_evidence_graph(
     node: &RpcNode,
     graph_id: Hash,
@@ -612,6 +705,20 @@ fn local_graph_receipt_execution(
     job: &GraphJob,
     graph: &TensorGraph,
 ) -> std::result::Result<Option<IrExecution>, String> {
+    let Some(inputs) = local_graph_receipt_inputs(node, job, graph)? else {
+        return Ok(None);
+    };
+    let execution = graph
+        .execute_exact(&inputs)
+        .map_err(|error| format!("failed to replay trace-bisection graph receipt: {error}"))?;
+    Ok(Some(execution))
+}
+
+fn local_graph_receipt_inputs(
+    node: &RpcNode,
+    job: &GraphJob,
+    graph: &TensorGraph,
+) -> std::result::Result<Option<IrExecutionInputs>, String> {
     let mut inputs = BTreeMap::new();
     for (name, root) in &job.input_roots {
         let Some(tensor) = node.tensor_by_commitment_root(root) else {
@@ -632,10 +739,15 @@ fn local_graph_receipt_execution(
         };
         const_blobs.insert(uri, tensor.clone());
     }
-    let execution = job
-        .exact_ir_execution_with_const_blobs(graph, &inputs, &const_blobs)
-        .map_err(|error| format!("failed to replay trace-bisection graph receipt: {error}"))?;
-    Ok(Some(execution))
+    for (uri, tensor) in const_blobs {
+        if inputs.insert(uri, tensor).is_some() {
+            return Err("graph const_blob input collision".to_string());
+        }
+    }
+    Ok(Some(IrExecutionInputs {
+        tensors: inputs,
+        field_params: job.field_params.clone(),
+    }))
 }
 
 fn trace_bisection_open_message(open: &TraceBisectionOpen) -> P2pMessage {
@@ -668,6 +780,25 @@ fn trace_bisection_expectation_message(expectation: &TraceBisectionExpectation) 
         responder: expectation.responder,
         expectation_leaf: expectation.expectation_leaf(),
         payload: encode_trace_bisection_expectation_payload(expectation),
+    }
+}
+
+fn trace_bisection_referee_message(
+    challenge_id: Hash,
+    receipt_id: Hash,
+    trace_root: Hash,
+    challenger: Address,
+    responder: Address,
+    witness: &IrOpRefereeWitness,
+) -> P2pMessage {
+    P2pMessage::NewTraceBisectionRefereePayload {
+        challenge_id,
+        receipt_id,
+        trace_root,
+        challenger,
+        responder,
+        op_index: witness.op_index,
+        payload: encode_trace_bisection_referee_payload(witness),
     }
 }
 
@@ -1022,7 +1153,7 @@ mod tests {
         decode_block_payload_with_selected_receipts,
         p2p::{
             decode_trace_bisection_expectation_payload, decode_trace_bisection_open_payload,
-            decode_trace_bisection_round_payload,
+            decode_trace_bisection_referee_payload, decode_trace_bisection_round_payload,
         },
         scheduler::JobScheduler,
         testnet::{LocalTestnet, TestnetConfig},
@@ -1604,6 +1735,197 @@ mod tests {
         );
         assert_eq!(
             submit_runtime_trace_bisection_round(&mut node, miner).unwrap(),
+            None
+        );
+    }
+
+    #[test]
+    fn trace_bisection_referee_generation_requires_challenger_and_local_witness() {
+        let seed = hash_bytes(b"test", &[b"app-network-trace-bisection-referee"]);
+        let challenger = address(b"trace-referee-validator");
+        let miner = address(b"trace-referee-miner");
+        let unrelated = address(b"trace-referee-unrelated");
+
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+        let job_chain = Chain::new(seed);
+        let job = SyntheticLocalJobSource::new(JobScheduler::with_small_shape((8, 8, 8)))
+            .next_graph_job(&job_chain);
+        let (receipt, _outputs) =
+            GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+        let expected_output_roots = vec![hash_bytes(b"test", &[b"trace-referee-expected-output"])];
+        let receipt_id = receipt.receipt_id;
+
+        let mut round_source = graph_receipt_node(
+            seed,
+            challenger,
+            miner,
+            &graph,
+            job.clone(),
+            receipt.clone(),
+        );
+        let open_events = round_source
+            .chain
+            .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+                receipt_id,
+                trace_root: receipt.trace_root,
+                challenger,
+                responder: miner,
+                op_count: graph.ops.len() as u64,
+                response_deadline_height: 10,
+                challenger_bond: 1,
+                responder_bond: 1,
+            }))
+            .unwrap();
+        let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+            panic!("expected trace bisection open event");
+        };
+        submit_trace_bisection_expectation(
+            &mut round_source,
+            *challenge_id,
+            expected_output_roots.clone(),
+        );
+        for tensor in inputs.clone().into_values() {
+            round_source.insert_tensor(tensor);
+        }
+        let round = submit_runtime_trace_bisection_round(&mut round_source, miner)
+            .unwrap()
+            .expect("responder should isolate a disputed op")
+            .round;
+
+        let mut missing_node = graph_receipt_node(
+            seed,
+            challenger,
+            miner,
+            &graph,
+            job.clone(),
+            receipt.clone(),
+        );
+        missing_node
+            .chain
+            .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+                receipt_id,
+                trace_root: receipt.trace_root,
+                challenger,
+                responder: miner,
+                op_count: graph.ops.len() as u64,
+                response_deadline_height: 10,
+                challenger_bond: 1,
+                responder_bond: 1,
+            }))
+            .unwrap();
+        submit_trace_bisection_expectation(
+            &mut missing_node,
+            *challenge_id,
+            expected_output_roots.clone(),
+        );
+        missing_node
+            .chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone()))
+            .unwrap();
+        assert_eq!(
+            submit_runtime_trace_bisection_referee(&mut missing_node, challenger).unwrap(),
+            None
+        );
+
+        let mut wrong_wallet_node = graph_receipt_node(
+            seed,
+            challenger,
+            miner,
+            &graph,
+            job.clone(),
+            receipt.clone(),
+        );
+        wrong_wallet_node
+            .chain
+            .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+                receipt_id,
+                trace_root: receipt.trace_root,
+                challenger,
+                responder: miner,
+                op_count: graph.ops.len() as u64,
+                response_deadline_height: 10,
+                challenger_bond: 1,
+                responder_bond: 1,
+            }))
+            .unwrap();
+        submit_trace_bisection_expectation(
+            &mut wrong_wallet_node,
+            *challenge_id,
+            expected_output_roots.clone(),
+        );
+        wrong_wallet_node
+            .chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone()))
+            .unwrap();
+        for tensor in inputs.clone().into_values() {
+            wrong_wallet_node.insert_tensor(tensor);
+        }
+        assert_eq!(
+            submit_runtime_trace_bisection_referee(&mut wrong_wallet_node, unrelated).unwrap(),
+            None
+        );
+
+        let mut node = graph_receipt_node(seed, challenger, miner, &graph, job, receipt.clone());
+        node.chain
+            .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+                receipt_id,
+                trace_root: receipt.trace_root,
+                challenger,
+                responder: miner,
+                op_count: graph.ops.len() as u64,
+                response_deadline_height: 10,
+                challenger_bond: 1,
+                responder_bond: 1,
+            }))
+            .unwrap();
+        submit_trace_bisection_expectation(&mut node, *challenge_id, expected_output_roots);
+        node.chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+            .unwrap();
+        for tensor in inputs.into_values() {
+            node.insert_tensor(tensor);
+        }
+        let generated = submit_runtime_trace_bisection_referee(&mut node, challenger)
+            .unwrap()
+            .expect("challenger with local graph witness should submit referee payload");
+
+        assert_eq!(generated.challenge_id, *challenge_id);
+        assert_eq!(generated.witness.op_index, 0);
+        let record = node
+            .chain
+            .state()
+            .trace_bisection_challenges()
+            .get(&generated.challenge_id)
+            .expect("referee should update challenge record");
+        assert!(matches!(
+            record.status,
+            TraceBisectionStatus::Refereed { op_index: 0, .. }
+        ));
+        let P2pMessage::NewTraceBisectionRefereePayload {
+            challenge_id: message_challenge_id,
+            receipt_id: message_receipt_id,
+            trace_root,
+            challenger: message_challenger,
+            responder,
+            op_index,
+            payload,
+        } = &generated.message
+        else {
+            panic!("runtime referee should carry signed trace-bisection referee payload");
+        };
+        assert_eq!(*message_challenge_id, *challenge_id);
+        assert_eq!(*message_receipt_id, receipt_id);
+        assert_eq!(*trace_root, receipt.trace_root);
+        assert_eq!(*message_challenger, challenger);
+        assert_eq!(*responder, miner);
+        assert_eq!(*op_index, generated.witness.op_index);
+        assert_eq!(
+            decode_trace_bisection_referee_payload(payload).unwrap(),
+            generated.witness
+        );
+        assert_eq!(
+            submit_runtime_trace_bisection_referee(&mut node, challenger).unwrap(),
             None
         );
     }

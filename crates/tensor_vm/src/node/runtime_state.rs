@@ -180,6 +180,7 @@ pub struct NodeRuntimeState {
     validator_block_votes_submitted: usize,
     validator_trace_bisection_opens_submitted: usize,
     validator_trace_bisection_expectations_submitted: usize,
+    validator_trace_bisection_referees_submitted: usize,
     validator_remote_tensor_fetch_attempts: usize,
     validator_remote_tensor_fetch_successes: usize,
     validator_remote_tensor_fetch_failures: usize,
@@ -360,6 +361,10 @@ impl NodeRuntimeState {
         self.validator_trace_bisection_expectations_submitted
     }
 
+    pub fn validator_trace_bisection_referees_submitted(&self) -> usize {
+        self.validator_trace_bisection_referees_submitted
+    }
+
     pub fn validator_remote_tensor_fetch_attempts(&self) -> usize {
         self.validator_remote_tensor_fetch_attempts
     }
@@ -525,6 +530,15 @@ impl NodeRuntimeState {
         self.validator_trace_bisection_expectations_submitted = self
             .validator_trace_bisection_expectations_submitted
             .saturating_add(expectations_submitted);
+    }
+
+    pub fn record_validator_trace_bisection_referee_submission(
+        &mut self,
+        referees_submitted: usize,
+    ) {
+        self.validator_trace_bisection_referees_submitted = self
+            .validator_trace_bisection_referees_submitted
+            .saturating_add(referees_submitted);
     }
 
     pub fn record_validator_work_observation(
@@ -835,6 +849,8 @@ mod tests {
         assert_eq!(state.validator_block_votes_submitted(), 1);
         state.record_validator_trace_bisection_open_submission(1);
         assert_eq!(state.validator_trace_bisection_opens_submitted(), 1);
+        state.record_validator_trace_bisection_referee_submission(1);
+        assert_eq!(state.validator_trace_bisection_referees_submitted(), 1);
         state.record_validator_remote_tensor_fetch(3, 2, 1, 128, 2);
         assert_eq!(state.validator_remote_tensor_fetch_attempts(), 3);
         assert_eq!(state.validator_remote_tensor_fetch_successes(), 2);

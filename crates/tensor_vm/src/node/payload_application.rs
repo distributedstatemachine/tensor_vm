@@ -185,10 +185,10 @@ pub fn apply_network_block_vote_payload(
         .blocks
         .iter()
         .any(|block| block.height == vote.block_height && block.hash() == block_hash)
-        && !chain
+        && chain
             .side_branch_blocks()
             .get(&block_hash)
-            .is_some_and(|block| block.height == vote.block_height)
+            .is_none_or(|block| block.height != vote.block_height)
     {
         return NetworkPayloadApply::Pending;
     }
@@ -761,6 +761,7 @@ pub fn apply_network_trace_bisection_expectation_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+#[allow(clippy::too_many_arguments)]
 pub fn apply_network_trace_bisection_referee_payload(
     chain: &mut Chain,
     challenge_id: Hash,
@@ -2431,14 +2432,14 @@ mod tests {
     fn observed_block_check_challenge_payload_applies_for_local_cpu_graph_block() {
         let beacon = hash_bytes(b"test", &[b"network-block-check-local-cpu"]);
         let mut testnet = LocalTestnet::from_profile(&ChainProfile::local_cpu(), beacon);
-        let mut chain = &mut testnet.chain;
+        let chain = &mut testnet.chain;
         for _ in 0..2 {
-            produce_synthetic_cpu_round(&mut chain).unwrap();
+            produce_synthetic_cpu_round(chain).unwrap();
             let block = chain.blocks().last().unwrap().clone();
-            finalize_local_cpu_block(&mut chain, &block).unwrap();
+            finalize_local_cpu_block(chain, &block).unwrap();
         }
         let profile = ChainProfile::local_cpu();
-        produce_synthetic_cpu_work_with_profile(&mut chain, &profile)
+        produce_synthetic_cpu_work_with_profile(chain, &profile)
             .unwrap()
             .expect("third local CPU work round should produce graph work");
         let proposer = chain
@@ -2456,7 +2457,7 @@ mod tests {
         let block = chain
             .produce_block_with_rewards(proposer, timestamp, 400, 100)
             .unwrap();
-        finalize_local_cpu_block(&mut chain, &block).unwrap();
+        finalize_local_cpu_block(chain, &block).unwrap();
         let block = chain
             .blocks()
             .last()

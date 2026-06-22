@@ -89,9 +89,11 @@ pub struct RuntimeStatusSnapshot {
     pub(super) validator_block_votes_submitted: usize,
     pub(super) validator_trace_bisection_opens_submitted: usize,
     pub(super) validator_trace_bisection_expectations_submitted: usize,
+    pub(super) validator_trace_bisection_referees_submitted: usize,
 }
 
 impl RuntimeStatusSnapshot {
+    #[allow(clippy::too_many_arguments)]
     pub fn from_runtime_state(
         state: &NodeRuntimeState,
         server: &RpcHttpServer,
@@ -220,6 +222,8 @@ impl RuntimeStatusSnapshot {
                 .validator_trace_bisection_opens_submitted(),
             validator_trace_bisection_expectations_submitted: state
                 .validator_trace_bisection_expectations_submitted(),
+            validator_trace_bisection_referees_submitted: state
+                .validator_trace_bisection_referees_submitted(),
         }
     }
 }

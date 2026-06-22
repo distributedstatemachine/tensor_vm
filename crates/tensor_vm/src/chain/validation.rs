@@ -112,25 +112,25 @@ pub fn verified_drand_beacon_record(
         return Err(TvmError::InvalidReceipt("drand signature length mismatch"));
     }
     let mut public_key_bytes = [0; DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES];
-    public_key_bytes.copy_from_slice(&public_key);
+    public_key_bytes.copy_from_slice(public_key);
     let public_key = G1Pubkey::from_fixed(public_key_bytes)
         .map_err(|_| TvmError::InvalidReceipt("invalid drand public key"))?;
     let verified = public_key
-        .verify(beacon_round, b"", &signature)
+        .verify(beacon_round, b"", signature)
         .map_err(|_| TvmError::InvalidReceipt("invalid drand signature point"))?;
     if !verified {
         return Err(TvmError::InvalidReceipt(
             "drand signature verification failed",
         ));
     }
-    let randomness = derive_randomness(&signature);
+    let randomness = derive_randomness(signature);
     let public_key_hash = hash_bytes(
         b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
         &[&public_key_bytes],
     );
     let signature_hash = hash_bytes(
         b"tensor-vm-drand-pedersen-bls-unchained-signature-v1",
-        &[&signature],
+        &[signature],
     );
     let proof_hash = hash_bytes(
         b"tensor-vm-drand-pedersen-bls-unchained-proof-v1",
@@ -1131,6 +1131,7 @@ fn validator_vrf_ed25519_signature_hash(public_key: &Hash, proof: &[u8]) -> Hash
     )
 }
 
+#[allow(clippy::too_many_arguments)]
 fn validator_vrf_ed25519_proof_hash(
     validation_seed_commitment: &Hash,
     receipt_id: &Hash,

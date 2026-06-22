@@ -123,6 +123,7 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_validator_block_votes_submitted",
     "role_validator_trace_bisection_opens_submitted",
     "role_validator_trace_bisection_expectations_submitted",
+    "role_validator_trace_bisection_referees_submitted",
     "role_local_producer",
     "role_local_block_proposer",
     "role_local_block_proposer_delay_blocks",
