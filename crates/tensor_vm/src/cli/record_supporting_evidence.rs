@@ -19,6 +19,7 @@ pub(super) fn supporting_record_line_prefix(
         PublicEvidenceRecordKind::InvalidWorkRejections => Some("invalid_work_rejection="),
         PublicEvidenceRecordKind::RewardSettlements => Some("reward_settlement="),
         PublicEvidenceRecordKind::DetectionMeasurements => Some("detection_measurement="),
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle => Some("validator_vrf_lifecycle="),
     }
 }
 
@@ -110,6 +111,14 @@ pub(super) fn validate_supporting_record_payload(
             if sample_count == 0 || detected_count > sample_count {
                 return Err(TvmError::InvalidReceipt(INVALID_SUPPORTING_RECORD));
             }
+            parse_u64_field(fields[4])?;
+        }
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle => {
+            let fields = exact_comma_fields(payload, 5, INVALID_SUPPORTING_RECORD)?;
+            parse_hash_field(fields[0])?;
+            parse_hash_field(fields[1])?;
+            parse_u64_field(fields[2])?;
+            require_supporting_record_status(fields[3], &["committed", "revealed"])?;
             parse_u64_field(fields[4])?;
         }
     }

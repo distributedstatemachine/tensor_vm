@@ -109,6 +109,7 @@ pub(crate) enum PublicEvidenceRecordKindArg {
     InvalidWork,
     RewardSettlement,
     DetectionMeasurement,
+    ValidatorVrfLifecycle,
 }
 
 impl From<PublicEvidenceRecordKindArg> for PublicEvidenceRecordKind {
@@ -122,6 +123,7 @@ impl From<PublicEvidenceRecordKindArg> for PublicEvidenceRecordKind {
             PublicEvidenceRecordKindArg::InvalidWork => Self::InvalidWorkRejections,
             PublicEvidenceRecordKindArg::RewardSettlement => Self::RewardSettlements,
             PublicEvidenceRecordKindArg::DetectionMeasurement => Self::DetectionMeasurements,
+            PublicEvidenceRecordKindArg::ValidatorVrfLifecycle => Self::ValidatorVrfLifecycle,
         }
     }
 }

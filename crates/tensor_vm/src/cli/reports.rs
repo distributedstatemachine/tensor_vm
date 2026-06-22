@@ -57,6 +57,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         report.has_deployed_detection_measurement_records,
     );
     output.field(
+        "signed_validator_vrf_lifecycle_records",
+        report.has_validator_vrf_lifecycle_record_summary,
+    );
+    output.field(
         "supporting_record_artifacts",
         report.has_public_supporting_record_artifacts,
     );

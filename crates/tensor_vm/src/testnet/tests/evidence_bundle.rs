@@ -1163,12 +1163,13 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
     let missing_lifecycle_report =
         missing_lifecycle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(missing_lifecycle_report.run_evidence.public_criterion_met);
-    assert!(missing_lifecycle_report.independently_checkable);
+    assert!(!missing_lifecycle_report.independently_checkable);
     assert!(
         !missing_lifecycle_report
             .run_evidence
             .has_validator_vrf_lifecycle_evidence
     );
+    assert!(!missing_lifecycle_report.has_validator_vrf_lifecycle_record_summary);
     assert!(!missing_lifecycle_report.full_spec_evidence_met);
 
     let mut undercounted_lifecycle = full_spec_bundle.clone();
@@ -1183,12 +1184,13 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
             .run_evidence
             .public_criterion_met
     );
-    assert!(undercounted_lifecycle_report.independently_checkable);
+    assert!(!undercounted_lifecycle_report.independently_checkable);
     assert!(
         !undercounted_lifecycle_report
             .run_evidence
             .has_validator_vrf_lifecycle_evidence
     );
+    assert!(!undercounted_lifecycle_report.has_validator_vrf_lifecycle_record_summary);
     assert!(!undercounted_lifecycle_report.full_spec_evidence_met);
 
     let mut overcounted_lifecycle = full_spec_bundle;
@@ -1201,13 +1203,54 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
             .run_evidence
             .public_criterion_met
     );
-    assert!(overcounted_lifecycle_report.independently_checkable);
+    assert!(!overcounted_lifecycle_report.independently_checkable);
     assert!(
         !overcounted_lifecycle_report
             .run_evidence
             .has_validator_vrf_lifecycle_evidence
     );
+    assert!(!overcounted_lifecycle_report.has_validator_vrf_lifecycle_record_summary);
     assert!(!overcounted_lifecycle_report.full_spec_evidence_met);
+}
+
+#[test]
+fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    assert!(
+        full_spec_bundle
+            .evaluate(&full_spec_criteria, full_spec_block_time)
+            .full_spec_evidence_met
+    );
+
+    let mut missing_raw_records = full_spec_bundle.clone();
+    missing_raw_records
+        .validator_vrf_lifecycle_raw_records
+        .clear();
+    let report = missing_raw_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_raw_records = full_spec_bundle.clone();
+    mismatched_raw_records.validator_vrf_lifecycle_raw_records[0].receipt_root =
+        hash_bytes(b"test", &[b"mismatched-vrf-lifecycle-receipt"]);
+    let report = mismatched_raw_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut incomplete_lifecycle_records = full_spec_bundle;
+    incomplete_lifecycle_records.validator_vrf_lifecycle_raw_records[0].phase =
+        PublicValidatorVrfLifecyclePhase::Committed;
+    let report = incomplete_lifecycle_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
 }
 
 #[test]

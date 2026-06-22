@@ -8,7 +8,7 @@ use super::{
     PublicEvidenceAuditorRecord, PublicEvidencePublication, PublicEvidenceRecordKind,
     PublicEvidenceRecordSummaries, PublicEvidenceSupportingArtifact, PublicNodeRole,
     PublicOperatorIdentityAttestation, PublicTestnetCriteria, PublicTestnetEvidenceBundle,
-    PublicTestnetEvidenceBundleReport, PublicTestnetRunEvidence,
+    PublicTestnetEvidenceBundleReport, PublicTestnetRunEvidence, PublicValidatorVrfLifecyclePhase,
     public_testnet_criteria_are_full_spec,
 };
 use crate::hash::hex;
@@ -102,6 +102,11 @@ impl PublicTestnetEvidenceBundle {
                 PublicEvidenceRecordKind::DetectionMeasurements,
                 record_summaries.detection_measurement_root,
                 record_summaries.detection_measurement_records,
+            ),
+            (
+                PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+                record_summaries.validator_vrf_lifecycle_root,
+                record_summaries.validator_vrf_lifecycle_records,
             ),
         ]
         .into_iter()
@@ -206,6 +211,16 @@ impl PublicTestnetEvidenceBundle {
                 record_summaries.detection_measurement_records,
             ),
             detection_measurement_raw_records: Vec::new(),
+            validator_vrf_lifecycle_records: record_summaries.validator_vrf_lifecycle_records,
+            validator_vrf_lifecycle_root: record_summaries.validator_vrf_lifecycle_root,
+            validator_vrf_lifecycle_signature: sign_public_evidence_record(
+                &signer,
+                &bundle_id,
+                PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+                &record_summaries.validator_vrf_lifecycle_root,
+                record_summaries.validator_vrf_lifecycle_records,
+            ),
+            validator_vrf_lifecycle_raw_records: Vec::new(),
         }
     }
 
@@ -318,6 +333,15 @@ impl PublicTestnetEvidenceBundle {
                 self.detection_measurement_records,
                 &self.detection_measurement_signature,
             );
+        let has_validator_vrf_lifecycle_record_summary = run_evidence
+            .has_validator_vrf_lifecycle_evidence
+            && self.validator_vrf_lifecycle_records == self.run.validator_vrf_lifecycle_records
+            && self.public_record_signature_valid(
+                PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+                &self.validator_vrf_lifecycle_root,
+                self.validator_vrf_lifecycle_records,
+                &self.validator_vrf_lifecycle_signature,
+            );
         let required_supporting_artifacts = [
             (
                 PublicEvidenceRecordKind::BlockHistory,
@@ -359,6 +383,11 @@ impl PublicTestnetEvidenceBundle {
                 &self.detection_measurement_root,
                 self.detection_measurement_records,
             ),
+            (
+                PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+                &self.validator_vrf_lifecycle_root,
+                self.validator_vrf_lifecycle_records,
+            ),
         ];
         let has_public_supporting_record_artifacts = self.supporting_artifacts.len()
             == required_supporting_artifacts.len()
@@ -383,17 +412,20 @@ impl PublicTestnetEvidenceBundle {
             && has_invalid_work_rejection_records
             && has_reward_settlement_record_summary
             && has_deployed_detection_measurement_records
+            && has_validator_vrf_lifecycle_record_summary
             && has_public_supporting_record_artifacts;
         let full_spec_evidence_met = public_testnet_criteria_are_full_spec(criteria)
             && run_evidence.public_criterion_met
             && run_evidence.has_cuda_verified_miners
             && run_evidence.has_cuda_graph_execution_evidence
             && run_evidence.has_validator_vrf_lifecycle_evidence
+            && has_validator_vrf_lifecycle_record_summary
             && run_evidence.has_deployed_detection_measurements
             && independently_checkable
             && has_public_randomness_beacon_records
             && has_public_chain_history_records
-            && has_public_operational_records;
+            && has_public_operational_records
+            && self.has_public_validator_vrf_lifecycle_records();
         let has_cuda_verified_miners = run_evidence.has_cuda_verified_miners;
         let has_cuda_graph_execution_evidence = run_evidence.has_cuda_graph_execution_evidence;
         PublicTestnetEvidenceBundleReport {
@@ -410,6 +442,7 @@ impl PublicTestnetEvidenceBundle {
             has_invalid_work_rejection_records,
             has_reward_settlement_record_summary,
             has_deployed_detection_measurement_records,
+            has_validator_vrf_lifecycle_record_summary,
             has_public_supporting_record_artifacts,
             has_cuda_verified_miners,
             has_cuda_graph_execution_evidence,
@@ -514,6 +547,34 @@ impl PublicTestnetEvidenceBundle {
             self.detection_measurement_records,
             &self.detection_measurement_root,
             self.detection_measurement_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn has_public_validator_vrf_lifecycle_records(&self) -> bool {
+        if self.validator_vrf_lifecycle_records == 0
+            || self.validator_vrf_lifecycle_raw_records.len() as u64
+                != self.validator_vrf_lifecycle_records
+        {
+            return false;
+        }
+        if !self
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .all(|record| {
+                record.receipt_root != [0; 32]
+                    && record.validator_id != [0; 32]
+                    && record.phase == PublicValidatorVrfLifecyclePhase::Revealed
+            })
+        {
+            return false;
+        }
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+            self.validator_vrf_lifecycle_records,
+            &self.validator_vrf_lifecycle_root,
+            self.validator_vrf_lifecycle_raw_records
                 .iter()
                 .map(|record| record.record_root()),
         )

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 196 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 197 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,13 +9,13 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-573 tests passed under instrumentation:
+574 tests passed under instrumentation:
 - 14 experiments library tests
-- 558 tensor_vm library tests
+- 559 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.81% workspace line coverage
-23261/27428 workspace lines covered
+84.77% workspace line coverage
+23329/27520 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
@@ -39,8 +39,14 @@ count and boolean gate.
 
 Iteration 194 coverage-changing work added a public-evidence validator VRF lifecycle gate for full-spec
 evidence. The new regression proves otherwise complete public evidence cannot set
-`public_evidence_full_spec=true` unless `validator_vrf_lifecycle_records` exactly covers the checked
-receipt count, and manifest parsing/report output now exposes the lifecycle count and boolean gate.
+`public_evidence_full_spec=true` unless signed `validator_vrf_lifecycle_records` exactly cover the
+checked receipt count, and manifest parsing/report output now exposes the lifecycle count and boolean
+gate.
+
+Iteration 197 coverage-changing work extended that gate from a scalar count to signed and raw
+validator-VRF-lifecycle evidence. The new regression proves otherwise complete public evidence cannot set
+`public_evidence_full_spec=true` unless raw revealed `validator_vrf_lifecycle=...` records aggregate to
+the signed lifecycle summary root.
 
 Iteration 191 coverage-changing work added a public-evidence CUDA miner gate for full-spec evidence. The
 new regression proves otherwise complete public evidence cannot set `public_evidence_full_spec=true`

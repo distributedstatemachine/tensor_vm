@@ -16,7 +16,8 @@ use super::{
     PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
     PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicRewardSettlementRecord,
     PublicServiceContentEvidence, PublicServiceEndpoint, PublicServiceEvidence,
-    PublicTestnetEvidenceBundle, PublicTestnetRunEvidence,
+    PublicTestnetEvidenceBundle, PublicTestnetRunEvidence, PublicValidatorVrfLifecyclePhase,
+    PublicValidatorVrfLifecycleRecord,
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash, Signature};
@@ -48,6 +49,7 @@ fn public_evidence_manifest_field_allows_repeated(key: &str) -> bool {
             | "invalid_work_rejection"
             | "reward_settlement"
             | "detection_measurement"
+            | "validator_vrf_lifecycle"
             | "node"
             | "service"
             | "service_content"
@@ -98,6 +100,9 @@ struct PublicEvidenceManifestBuilder {
     detection_measurement_root: Option<Hash>,
     detection_measurement_signature: Option<Signature>,
     detection_measurement_raw_records: Vec<PublicDetectionMeasurementRecord>,
+    validator_vrf_lifecycle_root: Option<Hash>,
+    validator_vrf_lifecycle_signature: Option<Signature>,
+    validator_vrf_lifecycle_raw_records: Vec<PublicValidatorVrfLifecycleRecord>,
     run_started_at_unix_seconds: Option<u64>,
     run_ended_at_unix_seconds: Option<u64>,
     run_window_signature: Option<Signature>,
@@ -242,6 +247,15 @@ impl PublicEvidenceManifestBuilder {
             "detection_measurement" => self
                 .detection_measurement_raw_records
                 .push(parse_manifest_detection_measurement(value)?),
+            "validator_vrf_lifecycle_root" => {
+                self.validator_vrf_lifecycle_root = Some(parse_hash_hex(scalar)?);
+            }
+            "validator_vrf_lifecycle_signature" => {
+                self.validator_vrf_lifecycle_signature = Some(parse_hash_hex(scalar)?);
+            }
+            "validator_vrf_lifecycle" => self
+                .validator_vrf_lifecycle_raw_records
+                .push(parse_manifest_validator_vrf_lifecycle(value)?),
             "run_started_at_unix_seconds" => {
                 self.run_started_at_unix_seconds = Some(parse_manifest_u64(scalar)?);
             }
@@ -387,6 +401,12 @@ impl PublicEvidenceManifestBuilder {
             detection_measurement_root: required_hash(self.detection_measurement_root)?,
             detection_measurement_signature: required_hash(self.detection_measurement_signature)?,
             detection_measurement_raw_records: self.detection_measurement_raw_records,
+            validator_vrf_lifecycle_records: required_u64(self.validator_vrf_lifecycle_records)?,
+            validator_vrf_lifecycle_root: required_hash(self.validator_vrf_lifecycle_root)?,
+            validator_vrf_lifecycle_signature: required_hash(
+                self.validator_vrf_lifecycle_signature,
+            )?,
+            validator_vrf_lifecycle_raw_records: self.validator_vrf_lifecycle_raw_records,
         })
     }
 }
@@ -518,6 +538,28 @@ fn parse_manifest_detection_measurement(value: &str) -> Result<PublicDetectionMe
         subject_root: parse_hash_hex(fields[1])?,
         sample_count,
         detected_count,
+        observed_block: parse_manifest_u64(fields[4])?,
+    })
+}
+
+fn parse_manifest_validator_vrf_lifecycle(
+    value: &str,
+) -> Result<PublicValidatorVrfLifecycleRecord> {
+    let fields = exact_manifest_record_fields(value, 5, "malformed validator vrf lifecycle")?;
+    let phase = match fields[3] {
+        "committed" => PublicValidatorVrfLifecyclePhase::Committed,
+        "revealed" => PublicValidatorVrfLifecyclePhase::Revealed,
+        _ => {
+            return Err(TvmError::InvalidReceipt(
+                "unknown validator vrf lifecycle phase",
+            ));
+        }
+    };
+    Ok(PublicValidatorVrfLifecycleRecord {
+        receipt_root: parse_hash_hex(fields[0])?,
+        validator_id: parse_hash_hex(fields[1])?,
+        beacon_round: parse_manifest_u64(fields[2])?,
+        phase,
         observed_block: parse_manifest_u64(fields[4])?,
     })
 }

@@ -5,19 +5,18 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 196 complete: Public Detection Measurement Evidence Gate.
+- Active feature: Iteration 197 validation complete; commit/push pending: Public VRF Lifecycle Raw-Record Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
-  `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds positive signed
-  deployed detection-measurement summaries and matching raw detection records before
-  `public_evidence_full_spec=true` can pass. Signed randomness-beacon summary evidence also requires an
-  explicit run-coverage count match so undercounted or overcounted beacon records cannot satisfy
-  independently checkable public evidence.
+  `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
+  validator-VRF-lifecycle summary roots and matching raw lifecycle records so the scalar count must be
+  derived from independently checkable deployed commit-reveal records before `public_evidence_full_spec=true`
+  can pass.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: continue real public VRF/CUDA/deployed-run artifact work.
+- Next action: commit and push Iteration 197, then continue real public VRF/CUDA/deployed-run artifact work.
 
 ## Readiness Matrix
 
@@ -36,6 +35,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 197: Public VRF Lifecycle Raw-Record Evidence Gate
+
+Feature capability: require full-spec public evidence to include signed validator VRF lifecycle summary
+evidence and raw deployed lifecycle records that aggregate to the signed lifecycle root.
+
+Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` require deployed validator VRF
+commit-to-reveal lifecycle evidence for checked receipts, not only a copied scalar lifecycle count.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns full-spec evidence admission; the manifest
+parser owns typed raw lifecycle syntax; `tvmd public evidence record ...` owns signed summary/artifact
+generation from raw lifecycle files.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment runbooks, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: an otherwise complete full-spec public evidence bundle could pass with
+`validator_vrf_lifecycle_records` set to the checked receipt count but without raw lifecycle records or a
+signed lifecycle summary root behind that count.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec` will prove
+missing lifecycle summaries, missing raw lifecycle records, and mismatched lifecycle roots keep otherwise
+complete evidence non-full-spec.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: `validator_vrf_lifecycle_records`, `validator_vrf_lifecycle_root`,
+`validator_vrf_lifecycle_signature`, and typed raw
+`validator_vrf_lifecycle=<receipt-root>,<validator-id>,<beacon-round>,committed|revealed,<block>` records.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain separate
+gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; public evidence manifest and record-kind CLI
+gain one supporting-record kind.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle/manifest/report tests, record-file summary
+tests, checked evidence manifests, public evidence docs/status/coverage/tarpaulin docs, and this exec plan.
+
+Narrow validation commands: focused public evidence raw lifecycle tests, manifest parser tests, and record
+summary-file tests.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`,
+`cargo test --workspace --release`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`.
+
+Expected observable evidence: otherwise complete full-spec public evidence passes only when the signed
+validator VRF lifecycle summary count/root matches raw lifecycle records covering the checked receipts.
+
+Out of scope: generating real deployed validator VRF artifacts, replacing the local chain VRF
+implementation, or claiming a 7-day public run in this workspace.
+
+Split trigger: split if adding the supporting-record kind requires unrelated deployment-template or
+process-runner refactors beyond fixture updates.
+
+Validation evidence, June 22, 2026:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused public-evidence validation: `cargo test -p tensor_vm public_testnet_evidence --lib` and
+  `cargo test -p tensor_vm public_evidence_record --lib` passed, including
+  `public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`.
+- Full library validation: `cargo test -p tensor_vm --lib` passed, 559 tests.
+- Formatting and diff hygiene: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Broad validation: `cargo test --workspace --release` passed.
+- Lint validation: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Coverage validation: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
+  passed, 574 instrumented tests, 84.77% line coverage, 23329/27520 lines covered.
+- Commit: pending.
+- Push: pending.
 
 ### Iteration 196: Public Detection Measurement Evidence Gate
 

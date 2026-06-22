@@ -142,6 +142,7 @@ fn generated_public_evidence_manifest_round_trips_through_tvmd_validator() {
         ("invalid-work", "88".repeat(32), "1"),
         ("reward-settlement", "99".repeat(32), "1"),
         ("detection-measurement", "cc".repeat(32), "1"),
+        ("validator-vrf-lifecycle", "dd".repeat(32), "20"),
     ] {
         summary_lines.push(trimmed_tvmd(&[
             "public",
@@ -556,7 +557,6 @@ invalid_receipts_submitted=1
 invalid_receipts_rejected=1
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
-validator_vrf_lifecycle_records=20
 {}
 {}
 {}

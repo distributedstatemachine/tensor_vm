@@ -206,5 +206,8 @@ pub(super) fn record_kind_arg(kind: PublicEvidenceRecordKind) -> PublicEvidenceR
         PublicEvidenceRecordKind::DetectionMeasurements => {
             PublicEvidenceRecordKindArg::DetectionMeasurement
         }
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle => {
+            PublicEvidenceRecordKindArg::ValidatorVrfLifecycle
+        }
     }
 }

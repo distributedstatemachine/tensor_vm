@@ -51,6 +51,7 @@ pub(super) fn public_evidence_record_kind_tag(kind: PublicEvidenceRecordKind) ->
         PublicEvidenceRecordKind::InvalidWorkRejections => "invalid-work",
         PublicEvidenceRecordKind::RewardSettlements => "reward-settlement",
         PublicEvidenceRecordKind::DetectionMeasurements => "detection-measurement",
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle => "validator-vrf-lifecycle",
     }
 }
 
@@ -64,6 +65,7 @@ pub(super) fn public_evidence_record_field_prefix(kind: PublicEvidenceRecordKind
         PublicEvidenceRecordKind::InvalidWorkRejections => "invalid_work_rejection",
         PublicEvidenceRecordKind::RewardSettlements => "reward_settlement",
         PublicEvidenceRecordKind::DetectionMeasurements => "detection_measurement",
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle => "validator_vrf_lifecycle",
     }
 }
 

@@ -43,6 +43,7 @@ auditor={},{},1700000060,{}
 {}
 {}
 {}
+{}
 block_history_records=10
 block_history_root={}
 block_history_signature={}
@@ -86,6 +87,8 @@ reward_settlement_signature={}
 detection_measurement_records=1
 detection_measurement_root={}
 detection_measurement_signature={}
+validator_vrf_lifecycle_root={}
+validator_vrf_lifecycle_signature={}
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
 validator_vrf_lifecycle_records=20
@@ -147,6 +150,11 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
             b"detection-measurement-root",
             1
         ),
+        manifest_artifact_line(
+            PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+            b"validator-vrf-lifecycle-root",
+            20
+        ),
         manifest_hash(b"block-history-root"),
         hex(&manifest_bundle().block_history_signature),
         manifest_hash(b"finality-history-root"),
@@ -181,6 +189,8 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
         hex(&manifest_bundle().reward_settlement_signature),
         manifest_hash(b"detection-measurement-root"),
         hex(&manifest_bundle().detection_measurement_signature),
+        manifest_hash(b"validator-vrf-lifecycle-root"),
+        hex(&manifest_bundle().validator_vrf_lifecycle_signature),
         manifest_address(b"miner-a"),
         manifest_hash(b"miner-a-operator"),
         manifest_node_signature(PublicNodeRole::Miner, b"miner-a", b"miner-a-operator"),

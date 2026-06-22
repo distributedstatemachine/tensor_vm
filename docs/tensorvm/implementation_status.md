@@ -448,9 +448,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   a shared address, live but uncounted nodes cannot satisfy a missing counted operator attestation, and
   missing, duplicate, extra, or overreported operator-attestation records are rejected, signed
   per-operator production libp2p network-observation records, signed
-  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement summary roots, manifest-level raw accepted
+  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary roots, manifest-level raw accepted
   public `drand-v1` or `validator-vrf-v1` randomness records plus raw block-history, finality-history,
-  data-availability, invalid-work, reward-settlement, and deployed detection-measurement records whose aggregate roots must match their signed summaries before
+  data-availability, invalid-work, reward-settlement, deployed detection-measurement, and revealed
+  validator VRF lifecycle records whose aggregate roots must match their signed summaries before
   full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind, well-formed whitespace-free
@@ -458,7 +459,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
   whitespace-padded repeated-record value rejection, and
-  exact run-derived block/finality/network-runtime/data-availability/invalid-work/detection-measurement summary counts,
+  exact run-derived block/finality/network-runtime/data-availability/invalid-work/detection-measurement/validator-vrf-lifecycle summary counts,
   randomness-beacon summary counts that match the observed run block count, raw chain-history and operational-record
   parser coverage for malformed block/finality/DA/invalid-work/reward statuses and field counts, distinct node-address
   counting for public operators, plus network-runtime observation rejection for missing records,
@@ -467,8 +468,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   independently checkable; the `public_evidence_full_spec`
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
-  checked or available receipt counts, and `validator_vrf_lifecycle_records` to cover every checked
-  receipt's deployed validator VRF commit→reveal lifecycle, plus positive signed deployed
+  checked or available receipt counts, and signed `validator_vrf_lifecycle_records` with raw revealed
+  lifecycle records to cover every checked receipt's deployed validator VRF commit-to-reveal reward-delay
+  lifecycle and aggregate to the signed lifecycle root, plus positive signed deployed
   detection-measurement records whose raw records aggregate to the signed summary, plus the default 7-day, 10-miner,
   5-validator public-testnet criteria or stricter criteria, so relaxed local harness criteria and otherwise
   complete CPU-only, non-graph, or VRF-lifecycle-free public bundles cannot mark an evidence bundle
@@ -546,7 +548,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   observation root from the live libp2p peer/protocol/control stdout and feeds that root through
   `evidence record summary-roots`, `evidence record artifact-roots`, and the matching file-derived commands,
   `tvmd public evidence record summary ...` generation for signed
-  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement summary fields including
+  block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary fields including
   production libp2p network-observation roots,
   `tvmd public evidence record artifact ...` generation for signed external raw-record artifact locators,
   `tvmd public evidence record artifact-roots ...` generation that signs artifact locators from the
@@ -556,8 +558,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `tvmd public evidence record artifact-file ...` generation from saved raw-record files containing
   `record_root=...` lines, fully verified signed `network_runtime_observation=...` lines, or typed
   `block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
-  `data_availability_measurement=...`, `invalid_work_rejection=...`, `reward_settlement=...`, and
-  `detection_measurement=...` supporting-record lines with kind-specific
+  `data_availability_measurement=...`, `invalid_work_rejection=...`, `reward_settlement=...`,
+  `detection_measurement=...`, and `validator_vrf_lifecycle=...` supporting-record lines with kind-specific
   field validation, including hex reward-settlement participant IDs, bounded detection sample/detected
   counts and lowercase mechanism IDs, exact-line hashing, and
   whitespace-padded or empty-field rejection; network-runtime file

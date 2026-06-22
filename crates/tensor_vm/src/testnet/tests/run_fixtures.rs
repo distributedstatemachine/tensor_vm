@@ -214,6 +214,8 @@ pub(super) fn complete_public_evidence_bundle() -> PublicTestnetEvidenceBundle {
             reward_settlement_root: hash_bytes(b"test", &[b"reward-settlement-root"]),
             detection_measurement_records: 1,
             detection_measurement_root: hash_bytes(b"test", &[b"detection-measurement-root"]),
+            validator_vrf_lifecycle_records: 20,
+            validator_vrf_lifecycle_root: hash_bytes(b"test", &[b"validator-vrf-lifecycle-root"]),
         },
     )
 }
@@ -367,6 +369,16 @@ pub(super) fn full_spec_public_evidence_bundle(
             .collect::<Vec<_>>(),
     )
     .expect("generated detection measurement roots should aggregate");
+    let validator_vrf_lifecycle_raw_records =
+        full_spec_validator_vrf_lifecycle_records(checked_receipts);
+    let validator_vrf_lifecycle_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        &validator_vrf_lifecycle_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated validator vrf lifecycle roots should aggregate");
     let mut bundle = PublicTestnetEvidenceBundle::new(
         run,
         PublicEvidencePublication::new(
@@ -393,6 +405,8 @@ pub(super) fn full_spec_public_evidence_bundle(
             reward_settlement_root,
             detection_measurement_records: 1,
             detection_measurement_root,
+            validator_vrf_lifecycle_records: checked_receipts,
+            validator_vrf_lifecycle_root,
         },
     );
     bundle.block_history_raw_records = block_history_raw_records;
@@ -402,6 +416,7 @@ pub(super) fn full_spec_public_evidence_bundle(
     bundle.invalid_work_raw_records = invalid_work_raw_records;
     bundle.reward_settlement_raw_records = reward_settlement_raw_records;
     bundle.detection_measurement_raw_records = detection_measurement_raw_records;
+    bundle.validator_vrf_lifecycle_raw_records = validator_vrf_lifecycle_raw_records;
     bundle
 }
 
@@ -496,6 +511,23 @@ pub(super) fn full_spec_detection_measurement_records() -> Vec<PublicDetectionMe
         detected_count: 20,
         observed_block: 1,
     }]
+}
+
+pub(super) fn full_spec_validator_vrf_lifecycle_records(
+    checked_receipts: u64,
+) -> Vec<PublicValidatorVrfLifecycleRecord> {
+    (0..checked_receipts)
+        .map(|index| PublicValidatorVrfLifecycleRecord {
+            receipt_root: hash_bytes(
+                b"test",
+                &[format!("full-spec-vrf-lifecycle-receipt-{index}").as_bytes()],
+            ),
+            validator_id: address(format!("full-spec-vrf-lifecycle-validator-{index}").as_bytes()),
+            beacon_round: index + 1,
+            phase: PublicValidatorVrfLifecyclePhase::Revealed,
+            observed_block: index,
+        })
+        .collect()
 }
 
 pub(super) fn network_runtime_root_for_run(run: &PublicTestnetRunEvidence) -> Hash {

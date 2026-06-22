@@ -72,6 +72,7 @@ pub enum PublicEvidenceRecordKind {
     InvalidWorkRejections,
     RewardSettlements,
     DetectionMeasurements,
+    ValidatorVrfLifecycle,
 }
 
 impl PublicEvidenceRecordKind {
@@ -85,6 +86,7 @@ impl PublicEvidenceRecordKind {
             Self::InvalidWorkRejections => b"invalid-work-rejections",
             Self::RewardSettlements => b"reward-settlements",
             Self::DetectionMeasurements => b"detection-measurements",
+            Self::ValidatorVrfLifecycle => b"validator-vrf-lifecycle",
         }
     }
 
@@ -98,6 +100,7 @@ impl PublicEvidenceRecordKind {
             Self::InvalidWorkRejections => "invalid-work",
             Self::RewardSettlements => "reward-settlement",
             Self::DetectionMeasurements => "detection-measurement",
+            Self::ValidatorVrfLifecycle => "validator-vrf-lifecycle",
         }
     }
 }
@@ -114,6 +117,7 @@ pub(super) fn parse_public_evidence_record_kind_tag(
         "invalid-work" => Ok(PublicEvidenceRecordKind::InvalidWorkRejections),
         "reward-settlement" => Ok(PublicEvidenceRecordKind::RewardSettlements),
         "detection-measurement" => Ok(PublicEvidenceRecordKind::DetectionMeasurements),
+        "validator-vrf-lifecycle" => Ok(PublicEvidenceRecordKind::ValidatorVrfLifecycle),
         _ => Err(TvmError::InvalidReceipt(
             "invalid public evidence record kind",
         )),
