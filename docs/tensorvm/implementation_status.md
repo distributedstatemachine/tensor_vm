@@ -111,16 +111,18 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `sum`, `reduce_sum`, `mean`, `clamp`, `squeeze`, `unsqueeze`, `slice`, `split`, `tril`, `triu`, `cast`,
   `concat`, `stack`, `matmul`, `einsum`, `full`, `arange`,
   `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
-  `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`),
+  `unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), and `where`, plus the explicit
+  auxiliary LinearTrainingStep verifier vector for `mse_loss`),
   including per-input and expected output dtype/scale metadata for fixed-point `cast`/`round` rescale,
   mixed-scale `add`/`sub` vectors, mixed-scale `mul` vectors, `Fixed32` reciprocal `div` vectors, and
   `Fixed32` `matmul` accumulation/rescale vectors,
   multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
   field modular-inverse and `Fixed32` reciprocal `div`, Tier-A matrix-contraction `einsum`, field-order comparison/selection/clamp
   vectors, row-major structural vectors, and byte-exact packed payload vectors, with a stable suite hash,
-  CPU reference backend pass reporting,
+  CPU reference backend pass reporting with unique vector IDs,
   default-build CUDA non-admission, a registry-derived guard that requires every consensus-admitted frozen
-  op spelling to have vector and CPU profile evidence, and receipt verification gates that reject
+  op spelling to have vector and CPU profile evidence, an explicit auxiliary boundary for non-registry
+  verifier vectors, and receipt verification gates that reject
   otherwise-valid TensorOp, LinearTrainingStep, or GraphExecution receipts when the required conformance
   profile is unavailable or missing an admitted op.
 - Tensor descriptors, Merkle commitments, chunk openings, and row access

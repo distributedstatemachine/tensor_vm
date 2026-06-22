@@ -1776,9 +1776,21 @@ mod tests {
             .collect()
     }
 
+    fn auxiliary_conformance_ops() -> BTreeSet<&'static str> {
+        BTreeSet::from(["mse_loss"])
+    }
+
     #[test]
     fn conformance_vectors_are_stable_and_cover_current_ops() {
         let vectors = conformance_vectors();
+        let mut vector_ids = BTreeSet::new();
+        for vector in &vectors {
+            assert!(
+                vector_ids.insert(vector.id),
+                "duplicate conformance vector id {}",
+                vector.id
+            );
+        }
         let op_names = vectors
             .iter()
             .map(|vector| vector.op_name)
@@ -1871,6 +1883,25 @@ mod tests {
     }
 
     #[test]
+    fn conformance_vectors_only_cover_admitted_or_auxiliary_ops() {
+        let admitted = consensus_admitted_ops();
+        let auxiliary = auxiliary_conformance_ops();
+        let op_names = conformance_vectors()
+            .iter()
+            .map(|vector| vector.op_name)
+            .collect::<BTreeSet<_>>();
+        let unexpected = op_names
+            .difference(&admitted)
+            .filter(|op| !auxiliary.contains(**op))
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            unexpected.is_empty(),
+            "conformance vectors for non-admitted ops need explicit auxiliary status: {unexpected:?}"
+        );
+    }
+
+    #[test]
     fn cpu_reference_passes_all_vectors() {
         let profile = cpu_reference_conformance_profile().unwrap();
         assert_eq!(profile.suite_hash, conformance_suite_hash());
@@ -1926,6 +1957,29 @@ mod tests {
         assert!(
             missing.is_empty(),
             "CPU reference profile missing admitted ops: {missing:?}"
+        );
+    }
+
+    #[test]
+    fn cpu_reference_profile_matches_registry_and_auxiliary_boundary() {
+        let profile = cpu_reference_conformance_profile().unwrap();
+        let vector_ops = conformance_vectors()
+            .iter()
+            .map(|vector| vector.op_name)
+            .collect::<BTreeSet<_>>();
+        assert_eq!(profile.passed_ops, vector_ops);
+
+        let admitted = consensus_admitted_ops();
+        let auxiliary = auxiliary_conformance_ops();
+        let unexpected = profile
+            .passed_ops
+            .difference(&admitted)
+            .filter(|op| !auxiliary.contains(**op))
+            .copied()
+            .collect::<Vec<_>>();
+        assert!(
+            unexpected.is_empty(),
+            "CPU reference profile passed non-admitted ops without auxiliary status: {unexpected:?}"
         );
     }
 

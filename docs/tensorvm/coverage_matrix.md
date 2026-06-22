@@ -136,20 +136,24 @@ admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`,
 `reshape`, `broadcast`, `sum`, `reduce_sum`, `mean`, `clamp`, `squeeze`, `unsqueeze`, `slice`, `split`,
 `tril`, `triu`, `concat`, `stack`, `matmul`, `einsum`, `full`, `arange`, and
 `quantize_int8_per_channel`, `dequantize_int8_per_channel`, `quantize_pack_int8`,
-`unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), `where`, and `mse_loss`, plus
+`unpack_dequantize_int8`, comparison masks (`gt`, `lt`, `ge`, `le`, `eq`), and `where`, plus the explicit
+auxiliary LinearTrainingStep verifier vector for `mse_loss`, plus
 scale-aware fixed-point `cast`/`round`, mixed-scale `add`/`sub`, mixed-scale `mul`, `Fixed32` reciprocal `div`, and `Fixed32` `matmul` vectors using per-input and expected output dtype/scale metadata,
 multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
 field modular-inverse and `Fixed32` reciprocal `div`, Tier-A matrix-contraction `einsum`, field-order comparison, selection, and clamp
-vectors, row-major structural vectors, and byte-exact packed payload vectors. The suite has a stable hash, derives its admitted-op guard
+vectors, row-major structural vectors, and byte-exact packed payload vectors. The suite has a stable hash, requires unique vector IDs, derives its admitted-op guard
 from `ir::frozen_op_registry()`, requires every consensus-admitted op spelling to have vector and CPU
-profile evidence, the CPU reference backend must pass it through `runtime::backend_conformance_profile`,
+profile evidence, rejects non-admitted vector/profile entries unless they are explicitly marked auxiliary,
+the CPU reference backend must pass it through `runtime::backend_conformance_profile`,
 and `verify_tensor_op` / `verify_linear_training_step` reject otherwise-valid receipts when their required
 conformance profile is unavailable or missing an op.
 Focused evidence:
 `conformance::tests::conformance_vectors_are_stable_and_cover_current_ops`,
 `conformance::tests::conformance_vectors_cover_every_consensus_admitted_op`,
+`conformance::tests::conformance_vectors_only_cover_admitted_or_auxiliary_ops`,
 `conformance::tests::cpu_reference_passes_all_vectors`,
 `conformance::tests::cpu_reference_passes_all_admitted_ops`,
+`conformance::tests::cpu_reference_profile_matches_registry_and_auxiliary_boundary`,
 `conformance::tests::required_conformance_gates_current_jobs`,
 `verify::tests::graph_verifier_accepts_fixed_point_rescale_receipt`,
 `verify::tests::graph_verifier_accepts_quantize_dequantize_receipt`,

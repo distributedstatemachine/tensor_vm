@@ -5,8 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 174 complete: Runtime Trace-Bisection Referee Witness Generation.
-- Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
+- Active feature: Iteration 175 complete: Admitted-Op Conformance Identity Guard.
+- Current status: deterministic `F_p` conformance vectors now have unique identity checks, every
+  consensus-admitted frozen registry op must have vector and CPU profile evidence, and any non-registry
+  conformance vector/profile entry must be explicitly marked as an auxiliary verifier vector. Delayed
+  proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Valid matured claims remain non-spendable until the beneficiary calls `ClaimReward`;
   direct maturity-sweep commands can prune only voided/unavailable matured claims and cannot credit live
   beneficiary balances. Trace-bisection has signed sessions/rounds, bounded p2p open/expectation/round/
@@ -15,8 +18,9 @@ archive commit anchors only.
   verdicts, timeout settlement, slashing, and delayed challenger rewards.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue trace-bisection DoS policy, incomplete-transcript handling for multi-round
-  isolation edges, or public/CUDA deployment evidence.
+- Next action: continue CUDA/public deployment evidence, generic arbitrary-IR job admission and role
+  execution, or remaining trace-dispute hardening without treating roadmap trace-bisection work as a v0
+  blocker.
 
 ## Readiness Matrix
 
@@ -36,6 +40,63 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 175: Admitted-Op Conformance Identity Guard
+
+Feature capability: tighten the v0 deterministic `F_p` conformance evidence by making vector IDs unique,
+asserting that every conformance vector op is either registry-admitted or explicitly auxiliary, and proving
+that the CPU reference profile exactly matches the vector op set with the same auxiliary boundary.
+
+Readiness requirements covered: `upow.md` §3.3 per-op `F_p` conformance vectors and §4.7-§4.9 frozen
+registry admission gates for exact v0 ops.
+
+Canonical owner: `crates/tensor_vm/src/conformance.rs` owns the vector suite, stable hash, and CPU profile;
+receipt/graph verifiers continue to consume `ConformanceProfile` rather than reimplementing suite policy.
+
+Adapter callers: `verify.rs` and `runtime::backend_conformance_profile` consume the profile. No network,
+storage, or consensus command boundary changes are expected.
+
+Old shortcut being removed: vector/profile evidence could be weakened by duplicate vector IDs or by
+non-registry vector/profile entries that were not explicitly identified as auxiliary verifier-only
+coverage.
+
+Regression test that proves the shortcut is gone: conformance tests will reject duplicate vector IDs and
+will reject non-admitted vector/profile entries unless they are explicitly listed as auxiliary.
+
+Behavior with local synthetic block production disabled: unchanged; this is a verifier/conformance gate.
+
+Behavior for producer and non-producer roles: unchanged; both roles consume the same verifier profile when
+validating receipts/graph executions.
+
+Structured evidence source: conformance test names, coverage matrix, tarpaulin report, and this exec plan.
+
+Finality source: unchanged; no block/finality mutation in this slice.
+
+Wire-size and codec boundary: unchanged; no p2p/RPC/storage codec changes.
+
+Tests/checkers/docs to add or update: focused conformance tests, coverage matrix, tarpaulin report, and
+exec plan.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm conformance --lib -- --nocapture` passed: 10 focused conformance/profile tests.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 540 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered `tvmd_cli`
+  local-testnet gateway test.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 555
+  instrumented tests, 84.48% workspace line coverage, 22570/26717 lines covered.
+- Manual verifier-style review: conformance remains owned by `conformance.rs`; verifiers consume the same
+  profile interface; no adapter, network, storage, or consensus command path was changed.
+- Feature commit `1e9c32e` prepared for push to `main` on June 22, 2026.
+
+Out of scope: CUDA conformance execution, adding new admitted ops, generic arbitrary-IR job admission,
+public deployment evidence, and trace-bisection DoS policy.
+
+Split trigger: if exact admitted-op profile matching exposes missing execution support for an op, split the
+missing op implementation/vector work into a separate feature-sized iteration.
 
 ### Iteration 174: Runtime Trace-Bisection Referee Witness Generation
 

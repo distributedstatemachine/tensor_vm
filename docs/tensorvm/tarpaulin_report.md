@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 174 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 175 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,9 +9,9 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-553 tests passed under instrumentation:
+555 tests passed under instrumentation:
 - 14 experiments library tests
-- 538 tensor_vm library tests
+- 540 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.48% workspace line coverage
@@ -21,11 +21,11 @@ Result:
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
-Iteration 174 coverage-changing work added automatic runtime trace-bisection referee witness generation
-from local graph replay, IR-level witness materialization coverage, runtime challenger submission/gossip
-coverage, and status counters for validator referee submissions. The line-coverage percentage remains
-lower than the old May 23, 2026 report because the current workspace includes substantially more runtime,
-deployment, public-evidence, and libp2p surface area in the denominator.
+Iteration 175 coverage-changing work added conformance identity guard tests for unique vector IDs,
+registry-derived admitted-op coverage, and explicit auxiliary non-registry vector/profile boundaries. The
+line-coverage percentage remains lower than the old May 23, 2026 report because the current workspace
+includes substantially more runtime, deployment, public-evidence, and libp2p surface area in the
+denominator.
 
 Historical report:
 
@@ -186,6 +186,9 @@ maturity, mature beneficiary claim through the chain command, and only then spen
 Iteration 116 adds first-class packed int8 tensor artifact APIs. Focused tensor, IR, and conformance tests
 cover construction of packed `TVQ8` payloads as `Uint8` tensors, descriptor/chunk/opening verification,
 decode validation, exact replay, and unchanged conformance vectors.
+Iteration 175 strengthens admitted-op conformance identity evidence. Focused conformance tests now require
+unique vector IDs, registry-derived coverage for every consensus-admitted frozen op, and an explicit
+auxiliary boundary for non-registry verifier vectors such as LinearTrainingStep `mse_loss`.
 Iteration 117 adds external graph artifact propagation evidence. Focused node and libp2p tests cover
 valid graph job payloads staying pending while their graph body is missing, runtime retry after program
 registration, and loopback request-response fetching of graph program plus input tensor artifacts before
