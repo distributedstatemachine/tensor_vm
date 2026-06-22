@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: none; Iteration 166 implementation and validation are complete, commit/push metadata is pending.
+- Active feature: none; Iteration 166 implementation, validation, commit, and push are complete.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move matured rewards into spendable balances; explicit
   `ClaimReward` remains the canonical spendability boundary. The trace-bisection path now has signed
@@ -21,7 +21,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - Required `tensorvm-verifier` pre-commit step is blocked because the package has no such binary target:
     `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: commit and push Iteration 166, then choose the next feature-sized slice.
+- Next action: choose the next feature-sized slice. Current high-value options are trace-bisection
+  session-open/runtime challenge generation, multi-round DoS policy, deployed full VRF lifecycle evidence,
+  public/CUDA deployment evidence, or remaining exact Tier-B/CUDA conformance surface.
 
 ## Readiness Matrix
 
@@ -45,6 +47,8 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 ## Active Feature Iteration
 
 ### Iteration 166: Trace-Bisection Timeout Slashing And Delayed Challenger Rewards
+
+Commit: `bfcefa7` (pushed `main` -> `main`).
 
 Feature capability: a chain-owned trace-bisection timeout should settle the economic side without adapter
 workarounds. When the responder/miner forfeits by timeout, the chain slashes the responder bond, credits
@@ -145,7 +149,7 @@ Verifier command blocked on June 22, 2026:
 Coverage command remained environmentally blocked on June 22, 2026:
 `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
-Commit/push metadata: pending.
+Commit: `bfcefa7` (pushed `main` -> `main`).
 
 ## Recent Iterations
 
@@ -270,7 +274,8 @@ Validation passed on June 22, 2026: first-command Gate 0, focused
   `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
 - Iteration 166 coverage command remained environmentally blocked on June 22, 2026:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-- Iteration 166 commit/push metadata: pending.
+- Iteration 166 feature commit `bfcefa7` pushed to `main` on June 22, 2026:
+  `git push` returned `7ab5580..bfcefa7  main -> main`.
 
 ## Archive
 
