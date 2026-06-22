@@ -458,7 +458,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
   whitespace-padded repeated-record value rejection, and
-  exact run-derived block/finality/network-runtime/randomness-beacon/data-availability/invalid-work summary counts, raw chain-history and operational-record
+  exact run-derived block/finality/network-runtime/data-availability/invalid-work summary counts,
+  randomness-beacon summary counts that match the observed run block count, raw chain-history and operational-record
   parser coverage for malformed block/finality/DA/invalid-work/reward statuses and field counts, distinct node-address
   counting for public operators, plus network-runtime observation rejection for missing records,
   unmatched operators, non-public listen addresses, stale timestamps, undercounts, and overcounts against

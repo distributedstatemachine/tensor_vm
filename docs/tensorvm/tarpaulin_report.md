@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 191 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 192 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,22 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-568 tests passed under instrumentation:
+570 tests passed under instrumentation:
 - 14 experiments library tests
-- 553 tensor_vm library tests
+- 555 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.80% workspace line coverage
-23153/27302 workspace lines covered
+23154/27303 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 192 coverage-changing work added a public-evidence randomness run-coverage gate. The new
+regression proves signed public randomness-beacon summaries must cover the full observed run block count;
+valid signatures and artifact locators no longer make undercounted or overcounted randomness summaries
+independently checkable.
 
 Iteration 191 coverage-changing work added a public-evidence CUDA miner gate for full-spec evidence. The
 new regression proves otherwise complete public evidence cannot set `public_evidence_full_spec=true`

@@ -529,6 +529,7 @@ Whitespace-padded record lines and empty fields are rejected.
 
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
 public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
+the signed randomness-beacon summary count to equal `observed_blocks`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
 manifest-level raw `block_history_record=...`, `finality_history_record=...`,
 `data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` lines

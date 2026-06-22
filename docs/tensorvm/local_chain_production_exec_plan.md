@@ -5,15 +5,16 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 191 complete and pushed: Public Evidence CUDA Miner Gate.
-- Current status: post-run public evidence now requires `cuda_verified_miner_count` to cover counted public
-  miners before a bundle can report `public_evidence_full_spec=true`; deployed services, public operators,
-  raw supporting records, and network-runtime roots remain separately enforced.
+- Active feature: Iteration 192 complete locally: Public Randomness Run Coverage Gate.
+- Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
+  miners before a bundle can report `public_evidence_full_spec=true`, and signed randomness-beacon summary
+  evidence now requires an explicit run-coverage count match so an undercounted or overcounted beacon
+  record set cannot satisfy independently checkable public evidence.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: continue the remaining deployed public/CUDA evidence work.
+- Next action: commit and push Iteration 192, then continue deployed public/CUDA evidence work.
 
 ## Readiness Matrix
 
@@ -32,6 +33,85 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 192: Public Randomness Run Coverage Gate
+
+Feature capability: require signed public randomness-beacon summary evidence to cover the full observed
+run window before a public evidence bundle can become independently checkable or full-spec.
+
+Readiness requirements covered: `mvp_spec.md` requires run-derived block, finality, randomness-beacon,
+data-availability, invalid-work, and reward-settlement summary counts to match signed run counters exactly;
+`upow.md` §10 requires unbiasable randomness evidence after receipt commitments.
+
+Canonical owner: `testnet::PublicTestnetEvidenceBundle::evaluate` owns public-run evidence admission; the
+manifest parser owns only syntactic record decoding and must not infer run coverage from a nonzero summary.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, and deployment runbooks
+consume the bundle report.
+
+Old shortcut being removed: a signed positive randomness-beacon summary could make
+`has_randomness_beacon_evidence=true` even when its record count underreported or overreported the signed
+run window's observed block count.
+
+Regression test that proves the shortcut is gone: focused public evidence bundle coverage will resign
+under-counted and over-counted randomness summaries and prove they no longer satisfy randomness evidence or
+independently checkable evidence while the rest of the public bundle remains otherwise valid.
+
+Behavior with local synthetic block production disabled: unchanged; this only validates public evidence
+after a run.
+
+Behavior for producer and non-producer roles: unchanged; the gate is evaluated at evidence-bundle level,
+not in role runtime mutation.
+
+Structured evidence source: `randomness_beacon_records`, `observed_blocks`, signed randomness summary root,
+and manifest-level raw randomness records.
+
+Finality source: unchanged; the run window and finality-history summaries remain separately signed.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this tightens public evidence validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation,
+and this is a single-writer public evidence/test/docs slice.
+
+Parallelizable implementation workstreams: single-writer slice across bundle evaluation, focused tests,
+and docs/status.
+
+Tests/checkers/docs to add or update: public evidence bundle tests, public evidence docs/status/coverage,
+tarpaulin report, and this exec plan.
+
+Narrow validation commands:
+`cargo test -p tensor_vm public_testnet_evidence_bundle_requires_randomness_records_for_full_run --lib`
+and `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`,
+`cargo test --workspace --release`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+tarpaulin because public evidence tests/reportable coverage change.
+
+Expected observable evidence: signed randomness-beacon summaries only pass public evidence when their count
+equals the signed observed block count; undercounts or overcounts fail even with valid signatures and
+artifact locators.
+
+Out of scope: generating real public drand/VRF deployment records or claiming a 7-day public run.
+
+Split trigger: split if enforcing the count uncovers unrelated manifest generation drift outside public
+randomness evidence.
+
+Validation evidence:
+
+- Required first executable on this resume, before implementation:
+  `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026.
+- Focused evidence passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_randomness_records_for_full_run --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`, and
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_publication_and_audit_records --lib`.
+- Broad gates passed:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Tarpaulin passed:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  570 instrumented tests and 84.80% line coverage, 23154/27303 lines covered.
 
 ### Iteration 191: Public Evidence CUDA Miner Gate
 
@@ -194,6 +274,8 @@ Validation evidence:
 
 ## Recent Completed Iterations
 
+- Iteration 192: Public Randomness Run Coverage Gate. Commit pending; full local validation passed on
+  June 22, 2026.
 - Iteration 191: Public Evidence CUDA Miner Gate. Commit `a0697dc`
   (`Require CUDA miner evidence for full spec`) pushed to `origin/main` on June 22, 2026.
 - Iteration 190: Proposer Reward Delay Tombstone. Commit `b1b368b` (`Delay proposer rewards without height
@@ -223,6 +305,18 @@ Validation evidence:
 
 ## Validation Evidence
 
+- Current Iteration 192 first executable Gate 0 passed on June 22, 2026.
+- Current Iteration 192 focused validation passed on June 22, 2026:
+  `public_testnet_evidence_bundle_requires_randomness_records_for_full_run`,
+  `public_testnet_evidence_bundle_requires_raw_randomness_records`, and
+  `public_testnet_evidence_bundle_requires_publication_and_audit_records`.
+- Current Iteration 192 broad validation passed on June 22, 2026:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Current Iteration 192 tarpaulin passed on June 22, 2026:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  570 instrumented tests and 84.80% line coverage, 23154/27303 lines covered.
 - Current Iteration 191 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 191 focused validation passed on June 22, 2026:
   `public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec`,

@@ -260,7 +260,8 @@ impl PublicTestnetEvidenceBundle {
                     self.network_runtime_observation_records,
                     &self.network_runtime_observation_signature,
                 );
-        let has_randomness_beacon_evidence = self.randomness_beacon_records > 0
+        let has_randomness_beacon_evidence = self.run.observed_blocks > 0
+            && self.randomness_beacon_records == self.run.observed_blocks
             && self.public_record_signature_valid(
                 PublicEvidenceRecordKind::RandomnessBeaconEvidence,
                 &self.randomness_beacon_root,

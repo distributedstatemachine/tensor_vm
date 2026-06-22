@@ -37,8 +37,74 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(full_spec_report.run_evidence.public_criterion_met);
     assert!(full_spec_report.independently_checkable);
     assert!(full_spec_report.full_spec_evidence_met);
+}
 
-    let mut missing_raw_randomness = full_spec_public_evidence_bundle(full_spec_block_time);
+#[test]
+fn public_testnet_evidence_bundle_requires_randomness_records_for_full_run() {
+    let criteria = PublicTestnetCriteria {
+        min_miners: 2,
+        min_validators: 1,
+        duration_days: 0,
+        min_finality_rate_bps: 9_000,
+        min_data_availability_bps: 9_500,
+        min_invalid_work_rejections: 1,
+        min_reward_settlement_records: 1,
+    };
+    let complete = complete_public_evidence_bundle();
+    assert_eq!(
+        complete.randomness_beacon_records,
+        complete.run.observed_blocks
+    );
+    assert!(
+        complete
+            .evaluate(&criteria, 6)
+            .has_randomness_beacon_evidence
+    );
+
+    let mut undercounted_randomness = complete.clone();
+    let randomness_root = undercounted_randomness.randomness_beacon_root;
+    let undercounted_record_count = undercounted_randomness
+        .run
+        .observed_blocks
+        .saturating_sub(1);
+    resign_record_summary_and_artifact(
+        &mut undercounted_randomness,
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+        randomness_root,
+        undercounted_record_count,
+    );
+    let undercounted_report = undercounted_randomness.evaluate(&criteria, 6);
+    assert!(!undercounted_report.has_randomness_beacon_evidence);
+    assert!(undercounted_report.has_public_supporting_record_artifacts);
+    assert!(!undercounted_report.independently_checkable);
+
+    let mut overcounted_randomness = complete;
+    let randomness_root = overcounted_randomness.randomness_beacon_root;
+    let overcounted_record_count = overcounted_randomness.run.observed_blocks + 1;
+    resign_record_summary_and_artifact(
+        &mut overcounted_randomness,
+        PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+        randomness_root,
+        overcounted_record_count,
+    );
+    let overcounted_report = overcounted_randomness.evaluate(&criteria, 6);
+    assert!(!overcounted_report.has_randomness_beacon_evidence);
+    assert!(overcounted_report.has_public_supporting_record_artifacts);
+    assert!(!overcounted_report.independently_checkable);
+}
+
+#[test]
+fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    assert!(
+        full_spec_bundle
+            .evaluate(&full_spec_criteria, full_spec_block_time)
+            .full_spec_evidence_met
+    );
+
+    let mut missing_raw_randomness = full_spec_bundle.clone();
     missing_raw_randomness.randomness_beacon_raw_records.clear();
     let missing_raw_randomness_report =
         missing_raw_randomness.evaluate(&full_spec_criteria, full_spec_block_time);
@@ -50,7 +116,7 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(missing_raw_randomness_report.independently_checkable);
     assert!(!missing_raw_randomness_report.full_spec_evidence_met);
 
-    let mut local_fixture_randomness = full_spec_public_evidence_bundle(full_spec_block_time);
+    let mut local_fixture_randomness = full_spec_bundle;
     local_fixture_randomness.randomness_beacon_raw_records = (0..local_fixture_randomness
         .randomness_beacon_records)
         .map(|index| {
