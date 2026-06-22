@@ -662,7 +662,7 @@ fn release_matured_receipt_rewards_with_policy(
                 receipt_reward_can_be_automatically_pruned_without_credit(state, reward);
             (reward.is_mature_at(state.height)
                 || (prunable_without_credit && reward.hold_mature_at(state.height)))
-                && state.included_receipts.contains(&reward.receipt_id)
+                && (state.included_receipts.contains(&reward.receipt_id) || prunable_without_credit)
                 && (prunable_without_credit
                     || validator_receipt_reward_has_vrf_reveal(state, reward))
                 && (!prunable_only

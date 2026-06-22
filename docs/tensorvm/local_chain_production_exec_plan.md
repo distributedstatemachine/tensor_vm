@@ -5,10 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 177 complete: Graph Receipt Pending Program Boundary.
+- Active feature: Iteration 178 complete: Pre-Inclusion Voided Receipt Reward Delay.
 - Current status: network graph receipt payloads now wait on missing canonical program bodies instead of
   being misclassified as invalid when the graph job is already known through a direct/local state path.
-  Automatic block-state reward pruning uses the receipt reward maturity policy for
+  Pre-inclusion voided receipt rewards now prune directly after their explicit delayed hold even when the
+  challenged receipt never reaches `included_receipts`. Automatic block-state reward pruning uses the
+  receipt reward maturity policy for
   auto-prunable verifier-dependent receipt claims: voided miner claims and unavailable-data claims. Valid
   matured claims remain non-spendable pending claims until beneficiary `ClaimReward`, and voided validator
   audit claims stay on the explicit appeal-aware release path. Deterministic `F_p` conformance vectors now
@@ -31,7 +33,7 @@ archive commit anchors only.
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 177 first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 178 first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -45,6 +47,88 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 178: Pre-Inclusion Voided Receipt Reward Delay
+
+Feature capability: voided receipt rewards that are challenged before block inclusion keep their explicit
+delayed hold and then prune without credit once that hold matures. This removes the leftover dependency on
+`included_receipts` for claims that can no longer become spendable, so the reward delay itself is the
+canonical lifecycle boundary rather than a later release workaround.
+
+Readiness requirements covered: `upow.md` §12 reward-finality delay and `mvp_spec.md` §20.3 pending
+receipt-reward lifecycle: verifier-dependent receipt rewards are pending claims, invalidated claims are
+voided before spendability, and matured voided claims are pruned without crediting balances.
+
+Canonical owner: `crates/tensor_vm/src/chain/commands.rs` owns reward claim/prune policy. Challenge and
+attestation paths already set the delayed hold; this iteration makes the shared release policy honor that
+state directly.
+
+Adapter callers: block child-state projection via `release_all_matured_rewards`, explicit release helpers,
+and beneficiary `ClaimReward` all share the same chain-owned reward policy.
+
+Old shortcut being removed: pre-inclusion voided receipt rewards could be delayed correctly but then remain
+stuck because pruning still required `included_receipts`, effectively depending on a later inclusion path
+that a challenged receipt should not need.
+
+Regression test that proves the shortcut is gone: add focused reward tests for delayed pre-inclusion
+voided miner and unavailable-data receipt claims.
+
+Behavior with local synthetic block production disabled: unchanged; this is a deterministic chain-state
+reward transition used by every profile.
+
+Behavior for producer and non-producer roles: unchanged; both project block child state and process
+reward claims through the same chain transition.
+
+Structured evidence source: focused reward regression, settlement challenge regressions, release
+local-testnet gate, tarpaulin report, and this exec plan.
+
+Finality source: unchanged; claims remain state-rooted through the configured hold and are pruned only
+after maturity.
+
+Wire-size and codec boundary: unchanged; no p2p, RPC, storage codec, or payload format changes.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to reward release policy and
+focused tests.
+
+Tests/checkers/docs to add or update: focused reward regression and exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm chain::tests::rewards --lib` and relevant settlement
+challenge regressions.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin.
+
+Expected observable evidence: a voided pre-inclusion receipt reward survives before its hold height, is
+removed after the hold matures, credits no spendable balance, and does not activate miner TensorWork.
+
+Out of scope: changing reward amounts, challenge economics, validator-audit appeal semantics, public/CUDA
+deployment evidence, and new verifier binaries.
+
+Split trigger: split only if the policy change exposes unrelated audit-appeal or TensorWork activation
+failures requiring a separate ownership pass.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm chain::tests::rewards --lib` passed: 19 reward lifecycle tests.
+- `cargo test -p tensor_vm unavailable_data_evidence_voids_delayed_receipt_rewards_before_release --lib`
+  passed.
+- `cargo test -p tensor_vm invalid_output_evidence_voids_delayed_receipt_rewards_before_release --lib`
+  passed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 543 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered
+  `tvmd_cli` local-testnet gateway test.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 558
+  instrumented tests, 84.49% workspace line coverage, 22588/26736 lines covered.
+- Initial parallel clippy failed because tarpaulin concurrently cleaned `target/debug`; rerun alone passed:
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Manual verifier-style review: no standalone verifier binary was used or added; the change stays inside
+  chain reward-prune policy, preserves `ClaimReward` as the only live-reward credit path, and changes no
+  p2p/RPC/storage wire format.
 
 ### Iteration 177: Graph Receipt Pending Program Boundary
 
@@ -111,70 +195,6 @@ and changing graph receipt verification semantics.
 
 ## Recent Iterations
 
-### Iteration 176: Direct Voided Receipt Reward Pruning
-
-Feature capability: automatic block-state matured-reward pruning now directly covers auto-prunable
-receipt reward claims without using spendable-balance release as a workaround. Voided miner receipt claims
-and data-unavailable receipt claims can be pruned without credit during block projection; valid matured
-proposer, receipt, challenge, and generic credit claims remain non-spendable until the beneficiary calls
-`ClaimReward`; voided validator-audit receipt claims remain on the explicit appeal-aware release path.
-
-Readiness requirements covered: `upow.md` reward-finality delay and `mvp_spec.md` delayed-reward state:
-verifier-dependent receipt rewards stay pending through the challenge/audit window, invalidated claims are
-voided before release, and matured voided claims are pruned without spendable credit.
-
-Canonical owner: `crates/tensor_vm/src/chain/commands.rs` owns the shared reward claim/prune policy.
-Block projection calls the shared automatic prune helper after advancing height; explicit beneficiary
-claims remain the only live-reward credit path.
-
-Adapter callers: `blocks.rs` calls `release_all_matured_rewards` during child-state projection.
-Transaction/RPC callers still use `ChainCommand::ClaimReward` or the explicit release commands.
-
-Old shortcut being removed: automatic matured-reward pruning skipped receipt claims that were already
-safe to prune without credit, leaving voided miner/data-unavailable receipt claim cleanup to explicit
-release/claim paths rather than the shared consensus projection helper.
-
-Regression test that proves the shortcut is gone:
-`chain::tests::rewards::automatic_matured_reward_prune_removes_only_auto_prunable_receipt_claims`.
-
-Behavior with local synthetic block production disabled: unchanged; this is a chain-state reward
-lifecycle rule used by both local and network block validation.
-
-Behavior for producer and non-producer roles: unchanged; both roles validate projected state through the
-same chain transition and reward root.
-
-Structured evidence source: focused reward regression, reward module tests, release local-testnet gate,
-and this exec plan.
-
-Finality source: unchanged; delayed claims remain state-rooted until maturity and beneficiary claim, while
-auto-prunable voided/unavailable receipt rewards are removed only after their hold matures.
-
-Wire-size and codec boundary: unchanged; no p2p/RPC/storage codec changes.
-
-Tests/checkers/docs to add or update: focused reward regression and exec plan.
-
-Validation completed on June 22, 2026:
-- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
-- `cargo test -p tensor_vm chain::tests::rewards --lib` passed: 18 reward lifecycle tests.
-- `cargo test -p tensor_vm mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply --lib`
-  passed.
-- `cargo fmt --all -- --check` passed.
-- `git diff --check` passed.
-- `cargo test -p tensor_vm --lib` passed: 541 tests.
-- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered
-  `tvmd_cli` local-testnet gateway test.
-- `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 556
-  instrumented tests, 84.48% workspace line coverage, 22580/26727 lines covered.
-- Manual verifier-style review: no standalone verifier binary was used or added; the change stays inside
-  chain reward-prune policy, preserves `ClaimReward` as the only live-reward credit path, and keeps
-  validator-audit voided claims on the existing appeal-aware explicit release path.
-- Feature commit `b96debd` pushed to `main` on June 22, 2026:
-  `git push` returned `8087fbe..b96debd  main -> main`.
-
-Out of scope: public deployment evidence, CUDA evidence, new verifier binaries, and changing challenge
-economics.
-
 ## Decision Log
 
 - Gate 0 remains `cargo test -p tensor_vm local_testnet --release` and must be the first executable command
@@ -194,20 +214,23 @@ economics.
 
 ## Validation Evidence
 
+- Iteration 178 validation passed on June 22, 2026: first executable Gate 0; focused reward and
+  settlement challenge regressions; fmt/check/diff; `cargo test -p tensor_vm --lib` (543 passed);
+  release local-testnet; clippy rerun after tarpaulin/target contention; tarpaulin 84.49%
+  (22588/26736); and manual reward-boundary review.
 - Iteration 177 validation passed on June 22, 2026: first executable Gate 0; focused graph receipt pending
   program test; `cargo test -p tensor_vm node::payload_application --lib` (19 passed); fmt/check/diff;
   `cargo test -p tensor_vm --lib` (542 passed); release local-testnet; clippy; tarpaulin 84.49%
   (22588/26736); and manual node/chain boundary review.
-- Iteration 176 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary,
-  reward module, and validator-audit regression tests; fmt/check/diff; `cargo test -p tensor_vm --lib`
-  (541 passed); release local-testnet; clippy; tarpaulin 84.48% (22580/26727); and manual review.
-  Feature commit `b96debd` and metadata commit `ee329bc` pushed to `main`.
 
 ## Archive
 
 - Iteration 175 (`e45c876` plus metadata `b3c4bf9`, pushed `main` -> `main`): conformance vector/profile
   identity guard requiring unique vector IDs, registry-admitted coverage, and explicit auxiliary
   non-registry verifier vectors.
+- Iteration 176 (`b96debd` plus metadata `ee329bc`, pushed `main` -> `main`): automatic block-state
+  matured-reward pruning directly covers auto-prunable voided miner and unavailable-data receipt claims
+  without credit while preserving `ClaimReward` as the only live-reward credit path.
 - Iteration 174 (`b5bf0d9`, pushed `main` -> `main`): runtime challenger derives one-op
   trace-bisection referee witnesses from local graph replay and submits/gossips the existing bounded
   referee payload without adding any standalone verifier binary.
