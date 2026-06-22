@@ -59,6 +59,7 @@ impl RoleServiceRunner {
             runtime_command: self.runtime_command(),
             role,
             role_wallet_address: Some(role_wallet_address(config.wallet)?),
+            role_wallet_secret: Some(config.wallet.to_owned()),
             node: runtime_node_config(
                 config.data_dir,
                 role,

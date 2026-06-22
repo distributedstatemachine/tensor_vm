@@ -83,6 +83,7 @@ pub fn tick_validator_role_work_once(
             &mut server.gateway_mut().node,
             validator,
             receipt_id,
+            config.role_wallet_secret.as_deref(),
         )? {
             publish_new_chain_announcements(
                 p2p_service,

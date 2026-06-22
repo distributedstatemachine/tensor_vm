@@ -18,6 +18,16 @@ impl ChainEngine for Chain {
                 self.register_validator(address, stake)?;
                 Ok(vec![ChainEvent::ValidatorRegistered(address)])
             }
+            ChainCommand::RegisterValidatorVrfKey {
+                validator,
+                vrf_public_key,
+            } => {
+                super::operators::register_validator_vrf_key(self, validator, vrf_public_key)?;
+                Ok(vec![ChainEvent::ValidatorVrfKeyRegistered {
+                    validator,
+                    vrf_public_key,
+                }])
+            }
             ChainCommand::SubmitExternalRandomnessBeacon {
                 source_id,
                 beacon_round,

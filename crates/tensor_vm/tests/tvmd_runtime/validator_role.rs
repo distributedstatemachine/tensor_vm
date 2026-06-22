@@ -119,26 +119,31 @@ fn validator_role_attestation_submission_skips_missing_unregistered_unassigned_a
     let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
 
     assert!(
-        submit_validator_role_attestation(&mut node, unknown, receipt_id)
+        submit_validator_role_attestation(&mut node, unknown, receipt_id, None)
             .unwrap()
             .is_none()
     );
     assert!(
-        submit_validator_role_attestation(&mut node, unassigned, receipt_id)
+        submit_validator_role_attestation(&mut node, unassigned, receipt_id, None)
             .unwrap()
             .is_none()
     );
     assert!(
-        submit_validator_role_attestation(&mut node, assigned, receipt_id)
+        submit_validator_role_attestation(&mut node, assigned, receipt_id, None)
             .unwrap()
             .is_none()
     );
     assert!(!node.chain.state().attestations().contains_key(&receipt_id));
 
     insert_bundle_tensors(&mut node, &bundle);
-    let submission = submit_validator_role_attestation(&mut node, assigned, receipt_id)
-        .unwrap()
-        .expect("assigned validator with local tensors should submit attestation");
+    let submission = submit_validator_role_attestation(
+        &mut node,
+        assigned,
+        receipt_id,
+        Some("validator-role-vrf-secret"),
+    )
+    .unwrap()
+    .expect("assigned validator with local tensors should submit attestation");
     assert_eq!(submission.attestations_submitted, 1);
     let attestations = node
         .chain
@@ -149,8 +154,17 @@ fn validator_role_attestation_submission_skips_missing_unregistered_unassigned_a
     assert_eq!(attestations.len(), 1);
     assert_eq!(attestations[0].validator, assigned);
     assert_eq!(attestations[0].result, VerificationResult::Valid);
+    let reveal = node
+        .chain
+        .state()
+        .validator_vrf_reveals()
+        .values()
+        .find(|reveal| reveal.receipt_id == receipt_id && reveal.validator == assigned)
+        .expect("validator role should submit a reveal");
+    assert_ne!(reveal.vrf_public_key, [0; 32]);
+    assert_eq!(reveal.vrf_proof.len(), 64);
     assert!(
-        submit_validator_role_attestation(&mut node, assigned, receipt_id)
+        submit_validator_role_attestation(&mut node, assigned, receipt_id, None)
             .unwrap()
             .is_none()
     );
@@ -266,7 +280,7 @@ fn validator_role_audit_report_submission_observes_assignments_and_skips_duplica
     let audited = assignment.validators[0];
     let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
     insert_bundle_tensors(&mut node, &bundle);
-    submit_validator_role_attestation(&mut node, audited, receipt_id)
+    submit_validator_role_attestation(&mut node, audited, receipt_id, None)
         .unwrap()
         .expect("assigned validator should attest before audit assignment");
     let proposer = node
@@ -527,7 +541,7 @@ fn validator_role_fetches_remote_tensors_before_attesting() {
         BTreeSet::from([receipt_id])
     );
     assert!(observation.artifact_missing_receipts.is_empty());
-    let submission = submit_validator_role_attestation(&mut node, validator, receipt_id)
+    let submission = submit_validator_role_attestation(&mut node, validator, receipt_id, None)
         .unwrap()
         .expect("remote-fetched tensors should allow attestation");
     assert_eq!(submission.attestations_submitted, 1);
@@ -607,7 +621,7 @@ fn validator_role_fetches_remote_graph_const_blobs_before_attesting() {
     wait_for_connected_role_services(&provider, &requester);
 
     assert!(
-        submit_validator_role_attestation(&mut node, validator, receipt_id)
+        submit_validator_role_attestation(&mut node, validator, receipt_id, None)
             .unwrap()
             .is_none()
     );
@@ -617,7 +631,7 @@ fn validator_role_fetches_remote_graph_const_blobs_before_attesting() {
     assert_eq!(report.successes, 3);
     assert_eq!(report.tensors_inserted, 3);
 
-    let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id)
+    let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id, None)
         .unwrap()
         .expect("remote graph tensors and const_blob should allow attestation");
     assert_eq!(attestation.attestations_submitted, 1);

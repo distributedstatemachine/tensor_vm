@@ -62,6 +62,10 @@ pub enum ChainCommand {
         address: Address,
         stake: u64,
     },
+    RegisterValidatorVrfKey {
+        validator: Address,
+        vrf_public_key: Hash,
+    },
     SubmitExternalRandomnessBeacon {
         source_id: String,
         beacon_round: u64,
@@ -145,6 +149,10 @@ pub enum ChainCommand {
 pub enum ChainEvent {
     MinerRegistered(Address),
     ValidatorRegistered(Address),
+    ValidatorVrfKeyRegistered {
+        validator: Address,
+        vrf_public_key: Hash,
+    },
     ExternalRandomnessBeaconAccepted {
         source_id: String,
         beacon_round: u64,

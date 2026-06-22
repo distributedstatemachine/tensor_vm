@@ -507,9 +507,17 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
     chain
         .register_validator(proposer, chain.params().validator_min_stake)
         .unwrap();
-    chain
+    let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    chain
+        .submit_block_vote(BlockVote::new(
+            proposer,
+            chain.params().validator_min_stake,
+            &block,
+        ))
+        .unwrap();
+    assert!(chain.is_block_finalized(&block.hash()));
     chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
         0, 0, 32, 8, 16, &beacon, 20,
     )));
@@ -685,7 +693,19 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         Some(0)
     );
     assert_eq!(randomness["validator_vrf_seed_count"].as_u64(), Some(0));
+    assert_eq!(
+        randomness["validator_vrf_registered_key_count"].as_u64(),
+        Some(0)
+    );
     assert_eq!(randomness["validator_vrf_reveal_count"].as_u64(), Some(0));
+    assert_eq!(
+        randomness["validator_vrf_production_reveal_count"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(
+        randomness["validator_vrf_legacy_reveal_count"].as_u64(),
+        Some(0)
+    );
     assert_eq!(
         randomness["current_block_hash_anchor_count"].as_u64(),
         Some(0)

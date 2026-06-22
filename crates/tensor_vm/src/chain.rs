@@ -49,8 +49,8 @@ pub(crate) use state::{ChainParts, ChainStateParts};
 pub use validation::{
     ASSIGNMENT_SEED_DOMAIN, RANDOMNESS_BEACON_SOURCE, RANDOMNESS_DRAND_ROUND_MAPPING,
     RANDOMNESS_VRF_CONSTRUCTION, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
-    verified_chained_drand_beacon_record, verified_chained_drand_source_id,
-    verified_drand_beacon_record, verified_drand_source_id,
+    validator_vrf_ed25519_public_key_from_secret, verified_chained_drand_beacon_record,
+    verified_chained_drand_source_id, verified_drand_beacon_record, verified_drand_source_id,
 };
 
 impl Chain {
@@ -131,6 +131,14 @@ impl Chain {
 
     pub fn register_validator(&mut self, address: Address, stake: u64) -> Result<()> {
         operators::register_validator(self, address, stake)
+    }
+
+    pub fn register_validator_vrf_key(
+        &mut self,
+        validator: Address,
+        vrf_public_key: Hash,
+    ) -> Result<()> {
+        operators::register_validator_vrf_key(self, validator, vrf_public_key)
     }
 
     pub fn credit_account(&mut self, address: Address, amount: u64) {
@@ -352,6 +360,22 @@ impl Chain {
         validation_round: u64,
     ) -> Result<ValidatorVrfRevealRecord> {
         validation::validator_vrf_reveal_record(self, receipt_id, validator, validation_round)
+    }
+
+    pub fn validator_vrf_reveal_record_with_secret(
+        &self,
+        receipt_id: Hash,
+        validator: Address,
+        validation_round: u64,
+        secret: &str,
+    ) -> Result<ValidatorVrfRevealRecord> {
+        validation::validator_vrf_reveal_record_with_secret(
+            self,
+            receipt_id,
+            validator,
+            validation_round,
+            secret,
+        )
     }
 
     pub fn settle_epoch(&mut self, miner_reward_pool: u64, validator_reward_pool: u64) {

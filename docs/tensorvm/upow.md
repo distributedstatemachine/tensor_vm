@@ -450,7 +450,10 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > seed commitment; `ChainState::randomness_binding_evidence` reports the exact local seed domains,
 > commit→reveal ordering (`receipt_id + finalized_beacon_round` committed before validator/job/round seed
 > reveal), zero current-block-hash anchors, consistency counts for persisted receipt anchors, and
-> state-rooted local validator VRF reveal records. Local CPU role runtimes can now ingest a configured
+> state-rooted local validator VRF reveal records. Validators with registered reveal public keys must now
+> provide bounded Ed25519 proof bytes over the committed receipt seed input; the chain verifies those proof
+> bytes against the registered key before releasing validator receipt rewards, while the old unkeyed helper
+> remains only as a local fallback for validators with no registered key. Local CPU role runtimes can now ingest a configured
 > deterministic drand-style external beacon fixture through `ChainCommand::SubmitExternalRandomnessBeacon`,
 > persist the state-rooted beacon record, submit validator reveal records before validator reward release,
 > relay bounded reveal payloads over p2p/node ingest, retry out-of-order reveal payloads until receipt
@@ -462,8 +465,8 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > `previous_signature`, applies only strictly newer finalized beacon rounds through the same chain
 > command, skips stale rounds, computes endpoint-observed expected latest round and chain-epoch mapping
 > evidence, rejects locally fetched public rounds outside the configured freshness lag, and exposes
-> poll/backoff/freshness counters. Consensus-level chain-genesis-time drand epoch mapping, production
-> validator VRF signatures, and deployed commit-reveal lifecycle evidence remain TODO before claiming the
+> poll/backoff/freshness counters. Consensus-level chain-genesis-time drand epoch mapping, deployed
+> validator reveal key lifecycle/full VRF construction, and deployed commit-reveal lifecycle evidence remain TODO before claiming the
 > full §10 construction.
 
 ---

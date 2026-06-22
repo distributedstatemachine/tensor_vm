@@ -192,6 +192,9 @@ pub(super) fn validator_vrf_reveal_root(
         encoded.extend_from_slice(&reveal.validation_round.to_le_bytes());
         encoded.extend_from_slice(&reveal.vrf_output);
         encoded.extend_from_slice(&reveal.proof_hash);
+        encoded.extend_from_slice(&reveal.vrf_public_key);
+        encoded.extend_from_slice(&(reveal.vrf_proof.len() as u64).to_le_bytes());
+        encoded.extend_from_slice(&reveal.vrf_proof);
         encoded.extend_from_slice(&reveal.signature);
         encoded.extend_from_slice(&reveal.observed_at_height.to_le_bytes());
     }
@@ -522,6 +525,13 @@ pub(super) fn validator_root(validators: &BTreeMap<Address, ValidatorState>) -> 
         encoded.extend_from_slice(&validator.reputation.to_le_bytes());
         encoded.extend_from_slice(&validator.valid_attestations.to_le_bytes());
         encoded.extend_from_slice(&validator.missed_assignments.to_le_bytes());
+        match validator.vrf_public_key {
+            Some(key) => {
+                encoded.push(1);
+                encoded.extend_from_slice(&key);
+            }
+            None => encoded.push(0),
+        }
     }
     hash_bytes(b"tensor-vm-validator-root-v1", &[&encoded])
 }

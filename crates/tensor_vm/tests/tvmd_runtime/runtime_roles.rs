@@ -336,6 +336,7 @@ fn selected_validator_proposer_emits_idle_fallback_block() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -441,6 +442,7 @@ fn nonselected_validator_proposer_observes_settled_work_without_racing_useful_bl
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(nonselected),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -539,6 +541,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         &mut server.gateway_mut().node,
         validator,
         receipt.receipt_id(),
+        None,
     )
     .unwrap()
     .expect("assigned validator should attest role-owned receipt");
@@ -580,6 +583,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -788,10 +792,14 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
         .next()
         .expect("receipt should be stored")
         .receipt_id();
-    let attestation_submission =
-        submit_validator_role_attestation(&mut server.gateway_mut().node, validator, receipt_id)
-            .unwrap()
-            .expect("assigned validator should attest receipt");
+    let attestation_submission = submit_validator_role_attestation(
+        &mut server.gateway_mut().node,
+        validator,
+        receipt_id,
+        None,
+    )
+    .unwrap()
+    .expect("assigned validator should attest receipt");
     assert_eq!(attestation_submission.attestations_submitted, 1);
     assert!(
         server
@@ -810,6 +818,7 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -970,6 +979,7 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -1004,6 +1014,7 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
+        role_wallet_secret: Some("test-validator-vrf".to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),

@@ -10,6 +10,7 @@ use crate::scheduler::JobScheduler;
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use crate::verify::{ValidatorAttestation, VerificationResult};
 use drand_verify::{G1Pubkey, Pubkey, derive_randomness};
+use ed25519_dalek::{Signature as Ed25519Signature, Signer, SigningKey, Verifier, VerifyingKey};
 use std::collections::BTreeSet;
 
 const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
@@ -20,14 +21,15 @@ const DRAND_PEDERSEN_BLS_PREVIOUS_SIGNATURE_MAX_BYTES: usize = 96;
 pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
 pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str =
     "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round";
-pub const RANDOMNESS_VRF_CONSTRUCTION: &str =
-    "local_validator_vrf_seed_v1:H(commitment,receipt_id,job_id,validator,round)";
+pub const RANDOMNESS_VRF_CONSTRUCTION: &str = "validator_vrf_ed25519_v1:output=H(ed25519_signature(seed_input));legacy_unkeyed_local_fallback";
 pub const ASSIGNMENT_SEED_DOMAIN: &str = "tensor-vm-validator-assignment-seed-v1";
 pub const VALIDATION_SEED_COMMITMENT_DOMAIN: &str = "tensor-vm-validation-seed-commitment-v1";
 pub const VALIDATION_SEED_REVEAL_DOMAIN: &str = "tensor-vm-committed-validation-seed-v1";
 pub const VALIDATOR_VRF_REVEAL_ID_DOMAIN: &str = "tensor-vm-validator-vrf-reveal-id-v1";
 pub const VALIDATOR_VRF_PROOF_DOMAIN: &str = "tensor-vm-validator-vrf-proof-v1";
 pub const VALIDATOR_VRF_SIGNATURE_DOMAIN: &str = "tensor-vm-validator-vrf-signature-v1";
+pub const VALIDATOR_VRF_ED25519_PROOF_BYTES: usize = 64;
+pub const VALIDATOR_VRF_LEGACY_PUBLIC_KEY: Hash = [0; 32];
 
 pub fn submit_external_randomness_beacon(
     chain: &mut Chain,
@@ -298,9 +300,11 @@ pub fn submit_validator_vrf_reveal(
     chain: &mut Chain,
     mut reveal: ValidatorVrfRevealRecord,
 ) -> Result<ValidatorVrfRevealRecord> {
-    if !chain.state.validators.contains_key(&reveal.validator) {
-        return Err(TvmError::UnknownValidator);
-    }
+    let validator_state = chain
+        .state
+        .validators
+        .get(&reveal.validator)
+        .ok_or(TvmError::UnknownValidator)?;
     let receipt = chain
         .state
         .receipts
@@ -323,31 +327,11 @@ pub fn submit_validator_vrf_reveal(
             "validator vrf reveal beacon round mismatch",
         ));
     }
-    let expected_output = committed_seed(
+    validate_validator_vrf_reveal_proof(
+        validator_state.vrf_public_key,
         &anchor.validation_seed_commitment,
-        &reveal.receipt_id,
-        &reveal.job_id,
-        &reveal.validator,
-        reveal.validation_round,
-    );
-    if reveal.vrf_output != expected_output {
-        return Err(TvmError::InvalidReceipt(
-            "validator vrf reveal output mismatch",
-        ));
-    }
-    let expected_proof = validator_vrf_proof_hash(
-        &anchor.validation_seed_commitment,
-        &reveal.receipt_id,
-        &reveal.job_id,
-        &reveal.validator,
-        reveal.validation_round,
-        &reveal.vrf_output,
-    );
-    if reveal.proof_hash != expected_proof {
-        return Err(TvmError::InvalidReceipt(
-            "validator vrf reveal proof mismatch",
-        ));
-    }
+        &reveal,
+    )?;
     let expected_reveal_id = validator_vrf_reveal_id(
         &reveal.receipt_id,
         &reveal.job_id,
@@ -359,12 +343,6 @@ pub fn submit_validator_vrf_reveal(
     );
     if reveal.reveal_id != expected_reveal_id {
         return Err(TvmError::InvalidReceipt("validator vrf reveal id mismatch"));
-    }
-    let message = validator_vrf_reveal_signature_message(&reveal);
-    if !verify_signature(&reveal.validator, &message, &reveal.signature) {
-        return Err(TvmError::InvalidReceipt(
-            "bad validator vrf reveal signature",
-        ));
     }
     if chain
         .state
@@ -1066,6 +1044,22 @@ pub fn committed_seed(
     )
 }
 
+pub fn validator_vrf_input(
+    validation_seed_commitment: &Hash,
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    validation_round: u64,
+) -> Hash {
+    committed_seed(
+        validation_seed_commitment,
+        receipt_id,
+        job_id,
+        validator,
+        validation_round,
+    )
+}
+
 pub fn validator_vrf_proof_hash(
     validation_seed_commitment: &Hash,
     receipt_id: &Hash,
@@ -1085,6 +1079,162 @@ pub fn validator_vrf_proof_hash(
             vrf_output,
         ],
     )
+}
+
+pub fn validator_vrf_ed25519_public_key_from_secret(secret: &str) -> Hash {
+    validator_vrf_ed25519_signing_key(secret)
+        .verifying_key()
+        .to_bytes()
+}
+
+fn validator_vrf_ed25519_signing_key(secret: &str) -> SigningKey {
+    let seed = hash_bytes(
+        b"tensor-vm-validator-vrf-ed25519-secret-v1",
+        &[secret.as_bytes()],
+    );
+    SigningKey::from_bytes(&seed)
+}
+
+fn validator_vrf_ed25519_output(proof: &[u8]) -> Hash {
+    hash_bytes(b"tensor-vm-validator-vrf-ed25519-output-v1", &[proof])
+}
+
+fn validator_vrf_ed25519_signature_hash(public_key: &Hash, proof: &[u8]) -> Hash {
+    hash_bytes(
+        VALIDATOR_VRF_SIGNATURE_DOMAIN.as_bytes(),
+        &[public_key, proof],
+    )
+}
+
+fn validator_vrf_ed25519_proof_hash(
+    validation_seed_commitment: &Hash,
+    receipt_id: &Hash,
+    job_id: &Hash,
+    validator: &Address,
+    validation_round: u64,
+    vrf_output: &Hash,
+    public_key: &Hash,
+    proof: &[u8],
+) -> Hash {
+    hash_bytes(
+        VALIDATOR_VRF_PROOF_DOMAIN.as_bytes(),
+        &[
+            b"ed25519-v1",
+            validation_seed_commitment,
+            receipt_id,
+            job_id,
+            validator,
+            &validation_round.to_le_bytes(),
+            vrf_output,
+            public_key,
+            proof,
+        ],
+    )
+}
+
+fn validate_validator_vrf_reveal_proof(
+    registered_public_key: Option<Hash>,
+    validation_seed_commitment: &Hash,
+    reveal: &ValidatorVrfRevealRecord,
+) -> Result<()> {
+    match registered_public_key {
+        Some(public_key) => {
+            if reveal.vrf_public_key != public_key {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf public key mismatch",
+                ));
+            }
+            if reveal.vrf_proof.len() != VALIDATOR_VRF_ED25519_PROOF_BYTES {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf proof length mismatch",
+                ));
+            }
+            let input = validator_vrf_input(
+                validation_seed_commitment,
+                &reveal.receipt_id,
+                &reveal.job_id,
+                &reveal.validator,
+                reveal.validation_round,
+            );
+            let verifying_key = VerifyingKey::from_bytes(&public_key)
+                .map_err(|_| TvmError::InvalidReceipt("invalid validator vrf public key"))?;
+            let signature = Ed25519Signature::from_slice(&reveal.vrf_proof)
+                .map_err(|_| TvmError::InvalidReceipt("invalid validator vrf proof"))?;
+            verifying_key
+                .verify(&input, &signature)
+                .map_err(|_| TvmError::InvalidReceipt("bad validator vrf reveal proof"))?;
+            let expected_output = validator_vrf_ed25519_output(&reveal.vrf_proof);
+            if reveal.vrf_output != expected_output {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf reveal output mismatch",
+                ));
+            }
+            let expected_proof = validator_vrf_ed25519_proof_hash(
+                validation_seed_commitment,
+                &reveal.receipt_id,
+                &reveal.job_id,
+                &reveal.validator,
+                reveal.validation_round,
+                &reveal.vrf_output,
+                &public_key,
+                &reveal.vrf_proof,
+            );
+            if reveal.proof_hash != expected_proof {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf reveal proof mismatch",
+                ));
+            }
+            if reveal.signature
+                != validator_vrf_ed25519_signature_hash(&public_key, &reveal.vrf_proof)
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "bad validator vrf reveal signature",
+                ));
+            }
+            Ok(())
+        }
+        None => {
+            if reveal.vrf_public_key != VALIDATOR_VRF_LEGACY_PUBLIC_KEY
+                || !reveal.vrf_proof.is_empty()
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf public key not registered",
+                ));
+            }
+            let expected_output = committed_seed(
+                validation_seed_commitment,
+                &reveal.receipt_id,
+                &reveal.job_id,
+                &reveal.validator,
+                reveal.validation_round,
+            );
+            if reveal.vrf_output != expected_output {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf reveal output mismatch",
+                ));
+            }
+            let expected_proof = validator_vrf_proof_hash(
+                validation_seed_commitment,
+                &reveal.receipt_id,
+                &reveal.job_id,
+                &reveal.validator,
+                reveal.validation_round,
+                &reveal.vrf_output,
+            );
+            if reveal.proof_hash != expected_proof {
+                return Err(TvmError::InvalidReceipt(
+                    "validator vrf reveal proof mismatch",
+                ));
+            }
+            let message = validator_vrf_reveal_signature_message(reveal);
+            if !verify_signature(&reveal.validator, &message, &reveal.signature) {
+                return Err(TvmError::InvalidReceipt(
+                    "bad validator vrf reveal signature",
+                ));
+            }
+            Ok(())
+        }
+    }
 }
 
 pub fn validator_vrf_reveal_id(
@@ -1178,12 +1328,80 @@ pub fn validator_vrf_reveal_record(
         validation_round,
         vrf_output,
         proof_hash,
+        vrf_public_key: VALIDATOR_VRF_LEGACY_PUBLIC_KEY,
+        vrf_proof: Vec::new(),
         signature: [0; 32],
         observed_at_height: chain.state().height(),
     };
     let message = validator_vrf_reveal_signature_message(&reveal);
     reveal.signature = sign(&validator, &message);
     Ok(reveal)
+}
+
+pub fn validator_vrf_reveal_record_with_secret(
+    chain: &Chain,
+    receipt_id: Hash,
+    validator: Address,
+    validation_round: u64,
+    secret: &str,
+) -> Result<ValidatorVrfRevealRecord> {
+    let receipt = chain
+        .state()
+        .receipts()
+        .get(&receipt_id)
+        .ok_or(TvmError::UnknownReceipt)?;
+    let anchor = chain
+        .state()
+        .receipt_randomness_anchors()
+        .get(&receipt_id)
+        .ok_or(TvmError::InvalidReceipt(
+            "receipt randomness anchor missing for validator vrf reveal",
+        ))?;
+    let job_id = receipt.job_id();
+    let input = validator_vrf_input(
+        &anchor.validation_seed_commitment,
+        &receipt_id,
+        &job_id,
+        &validator,
+        validation_round,
+    );
+    let signing_key = validator_vrf_ed25519_signing_key(secret);
+    let vrf_public_key = signing_key.verifying_key().to_bytes();
+    let proof = signing_key.sign(&input).to_bytes().to_vec();
+    let vrf_output = validator_vrf_ed25519_output(&proof);
+    let proof_hash = validator_vrf_ed25519_proof_hash(
+        &anchor.validation_seed_commitment,
+        &receipt_id,
+        &job_id,
+        &validator,
+        validation_round,
+        &vrf_output,
+        &vrf_public_key,
+        &proof,
+    );
+    let reveal_id = validator_vrf_reveal_id(
+        &receipt_id,
+        &job_id,
+        &validator,
+        anchor.beacon_round,
+        validation_round,
+        &vrf_output,
+        &proof_hash,
+    );
+    Ok(ValidatorVrfRevealRecord {
+        reveal_id,
+        receipt_id,
+        job_id,
+        validator,
+        beacon_round: anchor.beacon_round,
+        validation_round,
+        vrf_output,
+        proof_hash,
+        vrf_public_key,
+        signature: validator_vrf_ed25519_signature_hash(&vrf_public_key, &proof),
+        vrf_proof: proof,
+        observed_at_height: chain.state().height(),
+    })
 }
 
 pub fn missing_anchor_seed(receipt_id: &Hash, validator: &Address) -> Hash {

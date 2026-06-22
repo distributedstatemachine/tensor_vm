@@ -399,6 +399,65 @@ fn validator_vrf_reveal_rejects_tampered_binding_fields() {
 }
 
 #[test]
+fn keyed_validator_vrf_reveal_requires_production_proof() {
+    let beacon = hash_bytes(b"test", &[b"validator-vrf-production"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"validator-vrf-production-miner");
+    let validator = address(b"validator-vrf-production-validator");
+    let secret = "validator-vrf-production-secret";
+    let public_key = validation::validator_vrf_ed25519_public_key_from_secret(secret);
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(validator, 10_000).unwrap();
+    chain
+        .register_validator_vrf_key(validator, public_key)
+        .unwrap();
+
+    let job = MatmulJob::synthetic(19, 0, 4, 4, 4, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 3).unwrap();
+    let receipt_id = receipt.receipt_id;
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
+
+    let helper_reveal = validation::validator_vrf_reveal_record(&chain, receipt_id, validator, 0)
+        .expect("legacy helper can still build a local reveal");
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(helper_reveal)),
+        Err(TvmError::InvalidReceipt(
+            "validator vrf public key mismatch"
+        ))
+    );
+
+    let reveal = validation::validator_vrf_reveal_record_with_secret(
+        &chain, receipt_id, validator, 0, secret,
+    )
+    .unwrap();
+    assert_eq!(reveal.vrf_public_key, public_key);
+    assert_eq!(
+        reveal.vrf_proof.len(),
+        validation::VALIDATOR_VRF_ED25519_PROOF_BYTES
+    );
+    let events = chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal.clone()))
+        .unwrap();
+    assert_eq!(
+        events,
+        vec![ChainEvent::ValidatorVrfRevealAccepted {
+            reveal_id: reveal.reveal_id,
+            receipt_id,
+            validator,
+            beacon_round: reveal.beacon_round,
+        }]
+    );
+
+    let mut bad_proof = reveal;
+    bad_proof.vrf_proof[0] ^= 1;
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitValidatorVrfReveal(bad_proof)),
+        Err(TvmError::InvalidReceipt("bad validator vrf reveal proof"))
+    );
+}
+
+#[test]
 fn admitted_receipt_validation_randomness_is_anchored_at_submission() {
     let beacon = hash_bytes(b"test", &[b"anchored-receipt-beacon"]);
     let mut chain = Chain::new(beacon);

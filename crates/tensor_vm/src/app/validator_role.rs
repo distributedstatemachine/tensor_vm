@@ -6,7 +6,7 @@ use std::{
 use crate::{
     BlockVote, Chain, ChainCommand, ChainEngine, JobScheduler, JobState, ReceiptState, RpcNode,
     SyntheticLocalJobSource, Tensor, TensorGraph,
-    chain::ValidatorAuditReport,
+    chain::{ValidatorAuditReport, validator_vrf_ed25519_public_key_from_secret},
     hash::hex,
     jobs::LinearTrainingStepOutput,
     roles::{ReferenceValidatorRole, RoleReceiptArtifacts, RoleReceiptBundle},
@@ -241,6 +241,7 @@ pub fn submit_validator_role_attestation(
     node: &mut RpcNode,
     validator: Address,
     receipt_id: Hash,
+    wallet_secret: Option<&str>,
 ) -> std::result::Result<Option<ValidatorRoleAttestationSubmission>, String> {
     let Some(validator_state) = node.chain.state().validators().get(&validator) else {
         return Ok(None);
@@ -282,15 +283,37 @@ pub fn submit_validator_role_attestation(
             "validator role produced attestation for the wrong receipt or validator".to_owned(),
         );
     }
-    let reveal = node
-        .chain
-        .validator_vrf_reveal_record(receipt_id, validator, 0)
-        .map_err(|error| {
-            format!(
-                "validator role failed to build vrf reveal {}: {error}",
-                hex(&receipt_id)
-            )
-        })?;
+    let reveal = if let Some(secret) = wallet_secret {
+        let public_key = validator_vrf_ed25519_public_key_from_secret(secret);
+        node.chain
+            .apply_command(ChainCommand::RegisterValidatorVrfKey {
+                validator,
+                vrf_public_key: public_key,
+            })
+            .map_err(|error| {
+                format!(
+                    "validator role failed to register vrf key {}: {error}",
+                    hex(&receipt_id)
+                )
+            })?;
+        node.chain
+            .validator_vrf_reveal_record_with_secret(receipt_id, validator, 0, secret)
+            .map_err(|error| {
+                format!(
+                    "validator role failed to build vrf reveal {}: {error}",
+                    hex(&receipt_id)
+                )
+            })?
+    } else {
+        node.chain
+            .validator_vrf_reveal_record(receipt_id, validator, 0)
+            .map_err(|error| {
+                format!(
+                    "validator role failed to build vrf reveal {}: {error}",
+                    hex(&receipt_id)
+                )
+            })?
+    };
     if !node
         .chain
         .state()
@@ -738,7 +761,7 @@ mod tests {
         let observation = validator_role_work_observation(&node, validator);
         assert!(observation.artifact_ready_receipts.contains(&receipt_id));
 
-        let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id)
+        let attestation = submit_validator_role_attestation(&mut node, validator, receipt_id, None)
             .unwrap()
             .expect("validator role should attest the graph receipt");
 

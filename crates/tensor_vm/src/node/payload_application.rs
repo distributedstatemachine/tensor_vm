@@ -1357,6 +1357,13 @@ mod tests {
             .validator_vrf_reveal_record(receipt_id, validator, 0)
             .unwrap();
         let payload = encode_validator_vrf_reveal_payload(&reveal);
+        let secret = "network-validator-vrf-secret";
+        let public_key = crate::chain::validator_vrf_ed25519_public_key_from_secret(secret);
+        let production_reveal = testnet
+            .chain
+            .validator_vrf_reveal_record_with_secret(receipt_id, validator, 0, secret)
+            .unwrap();
+        let production_payload = encode_validator_vrf_reveal_payload(&production_reveal);
 
         let mut missing_receipt_chain = testnet.chain.clone();
         missing_receipt_chain.remove_receipt_for_testing(&receipt_id);
@@ -1388,6 +1395,33 @@ mod tests {
                 .validator_vrf_reveals()
                 .get(&reveal.reveal_id),
             Some(&reveal)
+        );
+        let mut keyed_chain = testnet.chain.clone();
+        keyed_chain
+            .apply_command(ChainCommand::RegisterValidatorVrfKey {
+                validator,
+                vrf_public_key: public_key,
+            })
+            .unwrap();
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut keyed_chain,
+                &reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_validator_vrf_reveal_payload(
+                &mut keyed_chain,
+                &production_reveal.reveal_id,
+                &receipt_id,
+                &validator,
+                &production_payload,
+            ),
+            NetworkPayloadApply::Applied
         );
         assert_eq!(
             apply_network_validator_vrf_reveal_payload(

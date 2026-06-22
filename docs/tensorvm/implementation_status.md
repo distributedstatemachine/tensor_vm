@@ -266,7 +266,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   overview now expose the local finalized-beacon source, local finalized-height-to-beacon-round mapping,
   local validator VRF-seed derivation, assignment/commitment/reveal seed domains, commit-reveal ordering,
   receipt-anchor consistency counts, finalized beacon round mapping counts, validator VRF seed counts,
-  validator VRF reveal record counts, and an explicit current-block-hash randomness ban.
+  validator VRF reveal record counts, registered reveal-key counts, production-vs-legacy reveal counts,
+  and an explicit current-block-hash randomness ban.
   `ChainCommand::SubmitExternalRandomnessBeacon` now records
   strictly newer externally observed beacon rounds as state-rooted `ExternalRandomnessBeaconRecord` entries,
   advances finalized beacon randomness for future receipt anchors, persists those records through
@@ -275,11 +276,12 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   command before network/role work, persist accepted records, expose observed/applied/skipped/failure
   counters through role and node status, relay accepted beacon records as bounded p2p payloads, apply
   network-originated beacon payloads idempotently through the same chain command, submit chain-verified
-  validator VRF reveal records before validator receipt rewards can become spendable, relay/retry bounded
+  validator VRF reveal records before validator receipt rewards can become spendable, require keyed
+  validators to prove reveal bytes against their registered Ed25519 public key, relay/retry bounded
   reveal payloads through the same p2p/node ingest path, and the local checker gates the external-beacon
   record, validator-reveal record, network-applied beacon/reveal, and current-block-hash-ban evidence.
-  Public drand signature verification, production validator VRF signatures, and deployed commit-reveal
-  lifecycle evidence remain open.
+  Deployed public drand epoch mapping, deployed validator reveal key lifecycle/full VRF construction, and
+  deployed commit-reveal lifecycle evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

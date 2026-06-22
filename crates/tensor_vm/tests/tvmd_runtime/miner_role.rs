@@ -311,6 +311,7 @@ fn miner_role_tick_keeps_missing_graph_artifacts_pending_without_exiting() {
         runtime_command: "miner_run",
         role: RuntimeRole::Miner,
         role_wallet_address: Some(miner),
+        role_wallet_secret: Some("miner-missing-graph".to_owned()),
         node: runtime_node_config(
             &data_dir_text,
             RuntimeRole::Miner,

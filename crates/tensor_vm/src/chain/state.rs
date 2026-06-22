@@ -623,12 +623,15 @@ pub struct RandomnessBindingEvidence {
     pub finalized_beacon_anchor_count: usize,
     pub finalized_beacon_round_mapping_count: usize,
     pub validator_vrf_seed_count: usize,
+    pub validator_vrf_registered_key_count: usize,
     pub receipt_bound_anchor_count: usize,
     pub consistent_anchor_count: usize,
     pub current_block_hash_anchor_count: usize,
     pub external_beacon_record_count: usize,
     pub latest_external_beacon_round: u64,
     pub validator_vrf_reveal_count: usize,
+    pub validator_vrf_production_reveal_count: usize,
+    pub validator_vrf_legacy_reveal_count: usize,
     pub all_receipt_anchors_consistent: bool,
 }
 
@@ -690,6 +693,8 @@ pub struct ValidatorVrfRevealRecord {
     pub validation_round: u64,
     pub vrf_output: Hash,
     pub proof_hash: Hash,
+    pub vrf_public_key: Hash,
+    pub vrf_proof: Vec<u8>,
     pub signature: Signature,
     pub observed_at_height: u64,
 }
@@ -937,6 +942,7 @@ pub struct ValidatorState {
     pub reputation: i64,
     pub valid_attestations: u64,
     pub missed_assignments: u64,
+    pub vrf_public_key: Option<Hash>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Default)]
@@ -1551,6 +1557,18 @@ impl ChainState {
             .next_back()
             .copied()
             .unwrap_or_default();
+        let validator_vrf_registered_key_count = self
+            .validators
+            .values()
+            .filter(|validator| validator.vrf_public_key.is_some())
+            .count();
+        let validator_vrf_production_reveal_count = self
+            .validator_vrf_reveals
+            .values()
+            .filter(|reveal| {
+                reveal.vrf_public_key != super::validation::VALIDATOR_VRF_LEGACY_PUBLIC_KEY
+            })
+            .count();
         RandomnessBindingEvidence {
             beacon_source: super::validation::RANDOMNESS_BEACON_SOURCE,
             drand_round_mapping: super::validation::RANDOMNESS_DRAND_ROUND_MAPPING,
@@ -1564,12 +1582,18 @@ impl ChainState {
             finalized_beacon_anchor_count,
             finalized_beacon_round_mapping_count,
             validator_vrf_seed_count,
+            validator_vrf_registered_key_count,
             receipt_bound_anchor_count,
             consistent_anchor_count,
             current_block_hash_anchor_count: 0,
             external_beacon_record_count: self.external_randomness_beacons.len(),
             latest_external_beacon_round,
             validator_vrf_reveal_count: self.validator_vrf_reveals.len(),
+            validator_vrf_production_reveal_count,
+            validator_vrf_legacy_reveal_count: self
+                .validator_vrf_reveals
+                .len()
+                .saturating_sub(validator_vrf_production_reveal_count),
             all_receipt_anchors_consistent: receipt_anchor_count == consistent_anchor_count,
         }
     }

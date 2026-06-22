@@ -53,7 +53,9 @@ const VERIFIED_DRAND_BEACON_PAYLOAD_MAX_LEN: usize = 8
 const DRAND_PEDERSEN_BLS_PREVIOUS_SIGNATURE_BYTES: usize = 96;
 const VERIFIED_CHAINED_DRAND_BEACON_PAYLOAD_MAX_LEN: usize =
     VERIFIED_DRAND_BEACON_PAYLOAD_MAX_LEN + 8 + DRAND_PEDERSEN_BLS_PREVIOUS_SIGNATURE_BYTES;
-const VALIDATOR_VRF_REVEAL_PAYLOAD_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 32 + 32 + 32 + 8;
+const VALIDATOR_VRF_PROOF_MAX_BYTES: usize = 64;
+const VALIDATOR_VRF_REVEAL_PAYLOAD_MAX_LEN: usize =
+    32 + 32 + 32 + 32 + 8 + 8 + 32 + 32 + 32 + 8 + VALIDATOR_VRF_PROOF_MAX_BYTES + 32 + 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalRandomnessBeaconPayload {
@@ -614,7 +616,7 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             let reveal_id = reader.read_hash()?;
             let receipt_id = reader.read_hash()?;
             let validator = reader.read_hash()?;
-            let payload = reader.read_bytes_with_max(VALIDATOR_VRF_REVEAL_PAYLOAD_LEN)?;
+            let payload = reader.read_bytes_with_max(VALIDATOR_VRF_REVEAL_PAYLOAD_MAX_LEN)?;
             let decoded = decode_validator_vrf_reveal_payload(&payload)?;
             if decoded.reveal.reveal_id != reveal_id
                 || decoded.reveal.receipt_id != receipt_id
@@ -1055,6 +1057,8 @@ pub fn encode_validator_vrf_reveal_payload(reveal: &ValidatorVrfRevealRecord) ->
     write_u64(&mut out, reveal.validation_round);
     write_hash(&mut out, &reveal.vrf_output);
     write_hash(&mut out, &reveal.proof_hash);
+    write_hash(&mut out, &reveal.vrf_public_key);
+    write_bytes(&mut out, &reveal.vrf_proof);
     write_hash(&mut out, &reveal.signature);
     write_u64(&mut out, reveal.observed_at_height);
     out
@@ -1071,6 +1075,8 @@ pub fn decode_validator_vrf_reveal_payload(input: &[u8]) -> TvmResult<ValidatorV
         validation_round: reader.read_u64()?,
         vrf_output: reader.read_hash()?,
         proof_hash: reader.read_hash()?,
+        vrf_public_key: reader.read_hash()?,
+        vrf_proof: reader.read_bytes_with_max(VALIDATOR_VRF_PROOF_MAX_BYTES)?,
         signature: reader.read_hash()?,
         observed_at_height: reader.read_u64()?,
     };
@@ -1410,6 +1416,8 @@ mod tests {
             validation_round: 0,
             vrf_output: hash_bytes(b"test", &[b"roundtrip-vrf-output"]),
             proof_hash: hash_bytes(b"test", &[b"roundtrip-vrf-proof"]),
+            vrf_public_key: [0; 32],
+            vrf_proof: Vec::new(),
             signature: [9; 32],
             observed_at_height: 3,
         };
@@ -1722,6 +1730,8 @@ mod tests {
             validation_round: 2,
             vrf_output: hash_bytes(b"test", &[b"vrf-output"]),
             proof_hash: hash_bytes(b"test", &[b"vrf-proof"]),
+            vrf_public_key: [0; 32],
+            vrf_proof: Vec::new(),
             signature: [7; 32],
             observed_at_height: 5,
         };
@@ -1742,6 +1752,16 @@ mod tests {
             ))
         );
         assert!(decode_validator_vrf_reveal_payload(&payload[..payload.len() - 1]).is_err());
+        let oversized_proof = ValidatorVrfRevealRecord {
+            vrf_proof: vec![0; VALIDATOR_VRF_PROOF_MAX_BYTES + 1],
+            ..reveal.clone()
+        };
+        assert!(
+            decode_validator_vrf_reveal_payload(&encode_validator_vrf_reveal_payload(
+                &oversized_proof
+            ))
+            .is_err()
+        );
 
         for message in [
             P2pMessage::NewValidatorVrfRevealPayload {

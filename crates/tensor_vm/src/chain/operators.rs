@@ -94,7 +94,28 @@ pub fn register_validator(chain: &mut Chain, address: Address, stake: u64) -> Re
             reputation: 0,
             valid_attestations: 0,
             missed_assignments: 0,
+            vrf_public_key: None,
         },
     );
     Ok(())
+}
+
+pub fn register_validator_vrf_key(
+    chain: &mut Chain,
+    validator: Address,
+    vrf_public_key: Hash,
+) -> Result<()> {
+    let Some(state) = chain.state.validators.get_mut(&validator) else {
+        return Err(TvmError::UnknownValidator);
+    };
+    match state.vrf_public_key {
+        Some(existing) if existing == vrf_public_key => Ok(()),
+        Some(_) => Err(TvmError::InvalidReceipt(
+            "validator vrf public key already registered",
+        )),
+        None => {
+            state.vrf_public_key = Some(vrf_public_key);
+            Ok(())
+        }
+    }
 }

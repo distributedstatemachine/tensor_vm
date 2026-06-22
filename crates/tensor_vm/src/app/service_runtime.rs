@@ -16,6 +16,7 @@ pub fn serve_service(
             runtime_command: "service_serve",
             role: RuntimeRole::Service,
             role_wallet_address: None,
+            role_wallet_secret: None,
             node: runtime_node_config(
                 data_dir,
                 RuntimeRole::Service,

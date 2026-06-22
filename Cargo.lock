@@ -3003,6 +3003,7 @@ version = "0.1.0"
 dependencies = [
  "clap",
  "drand-verify",
+ "ed25519-dalek",
  "futures",
  "libp2p",
  "num-bigint",

@@ -448,8 +448,20 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         randomness.validator_vrf_seed_count,
     );
     report.field(
+        "randomness_validator_vrf_registered_key_count",
+        randomness.validator_vrf_registered_key_count,
+    );
+    report.field(
         "randomness_validator_vrf_reveal_count",
         randomness.validator_vrf_reveal_count,
+    );
+    report.field(
+        "randomness_validator_vrf_production_reveal_count",
+        randomness.validator_vrf_production_reveal_count,
+    );
+    report.field(
+        "randomness_validator_vrf_legacy_reveal_count",
+        randomness.validator_vrf_legacy_reveal_count,
     );
     report.field(
         "randomness_receipt_bound_anchor_count",
@@ -1023,7 +1035,19 @@ mod tests {
             Some("1")
         );
         assert_eq!(
+            fields.value("randomness_validator_vrf_registered_key_count"),
+            Some("0")
+        );
+        assert_eq!(
             fields.value("randomness_validator_vrf_reveal_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_validator_vrf_production_reveal_count"),
+            Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_validator_vrf_legacy_reveal_count"),
             Some("1")
         );
         assert_eq!(

@@ -432,6 +432,7 @@ fn encode_validators(out: &mut Vec<u8>, validators: &BTreeMap<Hash, ValidatorSta
         write_i64(out, validator.reputation);
         write_u64(out, validator.valid_attestations);
         write_u64(out, validator.missed_assignments);
+        write_option_hash(out, &validator.vrf_public_key);
     }
 }
 
@@ -448,6 +449,7 @@ fn decode_validators(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, Vali
                 reputation: reader.read_i64()?,
                 valid_attestations: reader.read_u64()?,
                 missed_assignments: reader.read_u64()?,
+                vrf_public_key: reader.read_option_hash()?,
             },
         );
     }
@@ -588,6 +590,8 @@ fn encode_validator_vrf_reveals(
         write_u64(out, reveal.validation_round);
         write_hash(out, &reveal.vrf_output);
         write_hash(out, &reveal.proof_hash);
+        write_hash(out, &reveal.vrf_public_key);
+        write_bytes(out, &reveal.vrf_proof);
         write_hash(out, &reveal.signature);
         write_u64(out, reveal.observed_at_height);
     }
@@ -610,6 +614,8 @@ fn decode_validator_vrf_reveals(
                 validation_round: reader.read_u64()?,
                 vrf_output: reader.read_hash()?,
                 proof_hash: reader.read_hash()?,
+                vrf_public_key: reader.read_hash()?,
+                vrf_proof: reader.read_bytes()?,
                 signature: reader.read_hash()?,
                 observed_at_height: reader.read_u64()?,
             },
