@@ -2414,11 +2414,13 @@ IDs.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
 The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and
-device checks for the counted public miner set, plus `cuda_graph_execution_receipts`, derived from CUDA
-graph-execution receipt checks in the public run. Full-spec evidence requires the CUDA miner count to
-cover the counted public miners and the CUDA graph-execution receipt count to be positive without
-exceeding checked or available receipt counts; a public run with otherwise valid services, operators,
-network observations, and raw supporting records but missing, undercounted, or overcounted CUDA/graph
+device checks for the counted public miner set, `cuda_graph_execution_receipts`, derived from CUDA
+graph-execution receipt checks in the public run, and `validator_vrf_lifecycle_records`, derived from
+deployed validator VRF commit→reveal lifecycle records for checked receipts. Full-spec evidence requires
+the CUDA miner count to cover the counted public miners, the CUDA graph-execution receipt count to be
+positive without exceeding checked or available receipt counts, and the validator VRF lifecycle record
+count to equal the checked receipt count; a public run with otherwise valid services, operators, network
+observations, and raw supporting records but missing, undercounted, or overcounted CUDA/graph/VRF-lifecycle
 evidence must report
 `public_evidence_full_spec=false`.
 `public_evidence_full_spec=true` is reserved for default-or-stricter public-testnet criteria; shortened or

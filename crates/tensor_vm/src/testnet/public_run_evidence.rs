@@ -59,6 +59,8 @@ impl PublicTestnetRunEvidence {
         let has_cuda_graph_execution_evidence = self.cuda_graph_execution_receipts > 0
             && self.cuda_graph_execution_receipts <= self.checked_receipts
             && self.cuda_graph_execution_receipts <= self.available_receipts;
+        let has_validator_vrf_lifecycle_evidence = self.checked_receipts > 0
+            && self.validator_vrf_lifecycle_records == self.checked_receipts;
         let external_operator_evidence =
             external_operator_evidence && miner_count > 0 && validator_count > 0;
         let has_production_libp2p_runtime = self.network_runtime.has_production_libp2p_runtime();
@@ -136,6 +138,8 @@ impl PublicTestnetRunEvidence {
             has_cuda_verified_miners,
             cuda_graph_execution_receipts: self.cuda_graph_execution_receipts,
             has_cuda_graph_execution_evidence,
+            validator_vrf_lifecycle_records: self.validator_vrf_lifecycle_records,
+            has_validator_vrf_lifecycle_evidence,
             public_criterion_met,
         }
     }

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 193 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 194 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,13 +9,13 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-571 tests passed under instrumentation:
+572 tests passed under instrumentation:
 - 14 experiments library tests
-- 556 tensor_vm library tests
+- 557 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.81% workspace line coverage
-23169/27318 workspace lines covered
+84.82% workspace line coverage
+23183/27332 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
@@ -31,6 +31,11 @@ evidence. The new regression proves otherwise complete public evidence cannot se
 `public_evidence_full_spec=true` unless `cuda_graph_execution_receipts` is positive and does not exceed
 checked or available receipt counts, and manifest parsing/report output now exposes the CUDA graph receipt
 count and boolean gate.
+
+Iteration 194 coverage-changing work added a public-evidence validator VRF lifecycle gate for full-spec
+evidence. The new regression proves otherwise complete public evidence cannot set
+`public_evidence_full_spec=true` unless `validator_vrf_lifecycle_records` exactly covers the checked
+receipt count, and manifest parsing/report output now exposes the lifecycle count and boolean gate.
 
 Iteration 191 coverage-changing work added a public-evidence CUDA miner gate for full-spec evidence. The
 new regression proves otherwise complete public evidence cannot set `public_evidence_full_spec=true`

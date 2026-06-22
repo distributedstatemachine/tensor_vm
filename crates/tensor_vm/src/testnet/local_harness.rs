@@ -501,6 +501,8 @@ impl LocalTestnet {
             has_cuda_verified_miners: false,
             cuda_graph_execution_receipts: 0,
             has_cuda_graph_execution_evidence: false,
+            validator_vrf_lifecycle_records: 0,
+            has_validator_vrf_lifecycle_evidence: false,
             public_criterion_met,
         }
     }

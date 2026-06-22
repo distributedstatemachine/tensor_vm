@@ -467,9 +467,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   independently checkable; the `public_evidence_full_spec`
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
-  checked or available receipt counts, plus the default 7-day, 10-miner, 5-validator public-testnet
-  criteria or stricter criteria, so relaxed local harness criteria and otherwise complete CPU-only or
-  non-graph public bundles cannot mark an evidence bundle full-spec
+  checked or available receipt counts, and `validator_vrf_lifecycle_records` to cover every checked
+  receipt's deployed validator VRF commit→reveal lifecycle, plus the default 7-day, 10-miner,
+  5-validator public-testnet criteria or stricter criteria, so relaxed local harness criteria and otherwise
+  complete CPU-only, non-graph, or VRF-lifecycle-free public bundles cannot mark an evidence bundle
+  full-spec
 - Dependency-free public-testnet preflight manifest parsing plus a CLI launch-readiness surface for
   `tvmd public preflight <path>`, with public service endpoint checks rejecting local,
   private, link-local, special-use DNS, single-label DNS, documentation, shared-address, benchmarking,
@@ -488,8 +490,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   a process-level generated external-addressed preflight manifest reports
   `public_testnet_preflight_ready=true`, and
   `tvmd public evidence validate docs/tensorvm/public-testnet.evidence` reads the checked
-  manifest, reports `cuda_verified_miner_count=0`, reports `cuda_graph_execution_receipts=0`, and
-  reports `public_evidence_full_spec=false`
+  manifest, reports `cuda_verified_miner_count=0`, reports `cuda_graph_execution_receipts=0`, reports
+  `validator_vrf_lifecycle_records=0`, and reports `public_evidence_full_spec=false`
 - Public deployment scaffold under `deploy/tensorvm/` with an environment template, systemd unit for the
   explicit `tvmd` binary target, nginx HTTPS reverse-proxy template for RPC/explorer/faucet/telemetry
   hostnames, a template guard test that requires mandatory libp2p startup, durable data-dir use,

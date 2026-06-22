@@ -555,6 +555,7 @@ invalid_receipts_submitted=1
 invalid_receipts_rejected=1
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
+validator_vrf_lifecycle_records=20
 {}
 {}
 {}
@@ -588,6 +589,14 @@ cuda_graph_execution_receipts=1
     assert_eq!(stdout_value(&report, "production_libp2p_runtime"), "true");
     assert_eq!(stdout_value(&report, "cuda_verified_miner_count"), "2");
     assert_eq!(stdout_value(&report, "cuda_miner_evidence"), "true");
+    assert_eq!(
+        stdout_value(&report, "validator_vrf_lifecycle_records"),
+        "20"
+    );
+    assert_eq!(
+        stdout_value(&report, "validator_vrf_lifecycle_record_evidence"),
+        "true"
+    );
     assert_eq!(stdout_value(&report, "required_run_duration"), "false");
     assert_eq!(stdout_value(&report, "required_block_count"), "false");
     assert_eq!(stdout_value(&report, "required_miners"), "false");

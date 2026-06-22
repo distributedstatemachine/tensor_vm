@@ -55,6 +55,13 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
             .run_evidence
             .has_cuda_graph_execution_evidence
     );
+    assert_eq!(parsed.run.validator_vrf_lifecycle_records, 20);
+    assert!(
+        parsed
+            .evaluate(&criteria, 6)
+            .run_evidence
+            .has_validator_vrf_lifecycle_evidence
+    );
     assert!(
         parsed
             .evaluate(&criteria, 6)
@@ -265,6 +272,7 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
         manifest_without_line(&manifest, "reward_settlement_signature="),
         manifest_without_line(&manifest, "cuda_verified_miner_count="),
         manifest_without_line(&manifest, "cuda_graph_execution_receipts="),
+        manifest_without_line(&manifest, "validator_vrf_lifecycle_records="),
         manifest_without_line(&manifest, "run_started_at_unix_seconds="),
         manifest_without_line(&manifest, "run_ended_at_unix_seconds="),
         manifest_without_line(&manifest, "run_window_signature="),
@@ -282,6 +290,10 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
         manifest.replace(
             "cuda_graph_execution_receipts=1",
             "cuda_graph_execution_receipts=abc",
+        ),
+        manifest.replace(
+            "validator_vrf_lifecycle_records=20",
+            "validator_vrf_lifecycle_records=abc",
         ),
         manifest.replace("dos_controls_enabled=true", "dos_controls_enabled=maybe"),
         manifest.replace("node=miner", "node=archive"),

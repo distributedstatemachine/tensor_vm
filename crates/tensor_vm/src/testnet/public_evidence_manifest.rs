@@ -112,6 +112,7 @@ struct PublicEvidenceManifestBuilder {
     reward_settlement_records: Option<u64>,
     cuda_verified_miner_count: Option<u64>,
     cuda_graph_execution_receipts: Option<u64>,
+    validator_vrf_lifecycle_records: Option<u64>,
 }
 
 impl PublicEvidenceManifestBuilder {
@@ -267,6 +268,9 @@ impl PublicEvidenceManifestBuilder {
             "cuda_graph_execution_receipts" => {
                 self.cuda_graph_execution_receipts = Some(parse_manifest_u64(scalar)?);
             }
+            "validator_vrf_lifecycle_records" => {
+                self.validator_vrf_lifecycle_records = Some(parse_manifest_u64(scalar)?);
+            }
             _ => return Err(TvmError::InvalidReceipt("unknown evidence manifest field")),
         }
         Ok(())
@@ -301,6 +305,9 @@ impl PublicEvidenceManifestBuilder {
                 reward_settlement_records: required_u64(self.reward_settlement_records)?,
                 cuda_verified_miner_count: required_u64(self.cuda_verified_miner_count)?,
                 cuda_graph_execution_receipts: required_u64(self.cuda_graph_execution_receipts)?,
+                validator_vrf_lifecycle_records: required_u64(
+                    self.validator_vrf_lifecycle_records,
+                )?,
             },
             publication: {
                 let mut publication = PublicEvidencePublication::new(

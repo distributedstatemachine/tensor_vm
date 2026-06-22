@@ -358,6 +358,7 @@ impl PublicTestnetEvidenceBundle {
             && run_evidence.public_criterion_met
             && run_evidence.has_cuda_verified_miners
             && run_evidence.has_cuda_graph_execution_evidence
+            && run_evidence.has_validator_vrf_lifecycle_evidence
             && independently_checkable
             && has_public_randomness_beacon_records
             && has_public_chain_history_records

@@ -264,8 +264,11 @@ that otherwise complete full-spec public evidence remains non-full-spec unless
 `testnet::tests::public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec` now also
 proves that otherwise complete full-spec public evidence remains non-full-spec unless
 `cuda_graph_execution_receipts` is positive and does not exceed checked or available receipt counts. The
-public evidence manifest parser requires both fields, and CLI validation reports the counts and boolean
-CUDA miner/graph evidence gates.
+`testnet::tests::public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec` now proves
+that otherwise complete full-spec public evidence remains non-full-spec unless
+`validator_vrf_lifecycle_records` exactly covers checked receipts. The public evidence manifest parser
+requires all three fields, and CLI validation reports the counts and boolean CUDA miner/graph and VRF
+lifecycle evidence gates.
 
 ## Non-Local Gaps
 

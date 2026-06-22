@@ -61,6 +61,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         "cuda_graph_execution_evidence",
         report.has_cuda_graph_execution_evidence,
     );
+    output.field(
+        "validator_vrf_lifecycle_evidence",
+        run.has_validator_vrf_lifecycle_evidence,
+    );
     output.field("miners", run.miner_count);
     output.field("validators", run.validator_count);
     output.field(
@@ -86,6 +90,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         "cuda_graph_execution_receipts",
         run.cuda_graph_execution_receipts,
     );
+    output.field(
+        "validator_vrf_lifecycle_records",
+        run.validator_vrf_lifecycle_records,
+    );
     output.field("external_operator_evidence", run.external_operator_evidence);
     output.field("required_miners", run.has_required_miners);
     output.field("required_validators", run.has_required_validators);
@@ -108,6 +116,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
     output.field(
         "cuda_graph_execution_receipt_evidence",
         run.has_cuda_graph_execution_evidence,
+    );
+    output.field(
+        "validator_vrf_lifecycle_record_evidence",
+        run.has_validator_vrf_lifecycle_evidence,
     );
     output.field(
         "production_libp2p_runtime",

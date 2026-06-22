@@ -219,6 +219,8 @@ pub struct PublicTestnetEvidence {
     pub has_cuda_verified_miners: bool,
     pub cuda_graph_execution_receipts: u64,
     pub has_cuda_graph_execution_evidence: bool,
+    pub validator_vrf_lifecycle_records: u64,
+    pub has_validator_vrf_lifecycle_evidence: bool,
     pub public_criterion_met: bool,
 }
 
@@ -239,6 +241,7 @@ pub struct PublicTestnetRunEvidence {
     pub reward_settlement_records: u64,
     pub cuda_verified_miner_count: u64,
     pub cuda_graph_execution_receipts: u64,
+    pub validator_vrf_lifecycle_records: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
