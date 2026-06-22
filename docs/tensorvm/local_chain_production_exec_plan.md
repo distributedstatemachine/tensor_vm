@@ -90,7 +90,7 @@ Validation completed on June 22, 2026:
   instrumented tests, 84.48% workspace line coverage, 22570/26717 lines covered.
 - Manual verifier-style review: conformance remains owned by `conformance.rs`; verifiers consume the same
   profile interface; no adapter, network, storage, or consensus command path was changed.
-- Feature commit `1e9c32e` prepared for push to `main` on June 22, 2026.
+- Feature commit `e45c876` prepared for push to `main` on June 22, 2026.
 
 Out of scope: CUDA conformance execution, adding new admitted ops, generic arbitrary-IR job admission,
 public deployment evidence, and trace-bisection DoS policy.
