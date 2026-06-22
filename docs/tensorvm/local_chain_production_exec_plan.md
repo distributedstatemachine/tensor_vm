@@ -129,6 +129,8 @@ Validation completed on June 22, 2026:
 - Manual verifier-style review: no standalone verifier binary was used or added; the change stays inside
   chain reward-prune policy, preserves `ClaimReward` as the only live-reward credit path, and changes no
   p2p/RPC/storage wire format.
+- Feature commit `638ba58` pushed to `main` on June 22, 2026:
+  `git push` returned `ab26932..638ba58  main -> main`.
 
 ### Iteration 177: Graph Receipt Pending Program Boundary
 
@@ -217,7 +219,7 @@ and changing graph receipt verification semantics.
 - Iteration 178 validation passed on June 22, 2026: first executable Gate 0; focused reward and
   settlement challenge regressions; fmt/check/diff; `cargo test -p tensor_vm --lib` (543 passed);
   release local-testnet; clippy rerun after tarpaulin/target contention; tarpaulin 84.49%
-  (22588/26736); and manual reward-boundary review.
+  (22588/26736); manual reward-boundary review; feature commit `638ba58` pushed to `main`.
 - Iteration 177 validation passed on June 22, 2026: first executable Gate 0; focused graph receipt pending
   program test; `cargo test -p tensor_vm node::payload_application --lib` (19 passed); fmt/check/diff;
   `cargo test -p tensor_vm --lib` (542 passed); release local-testnet; clippy; tarpaulin 84.49%
