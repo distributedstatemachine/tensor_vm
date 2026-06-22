@@ -119,6 +119,7 @@ Validation completed on June 22, 2026:
   insertion, duplicate expectation replay remains idempotent for p2p retries, conflicting expectation
   overwrites are rejected while a midpoint response is pending, and no p2p, storage, or RPC wire format
   changed.
+- Commit `c8b76fc` (`Bound trace bisection admission`) pushed to `origin/main`.
 
 ### Iteration 183: Isolated Trace-Bisection Timeout Policy
 
