@@ -116,6 +116,7 @@ Validation completed on June 22, 2026:
   remains chain-owned through `ChainCommand::RecordTraceBisectionTimeout`; active sessions still punish
   non-responsive responders; isolated sessions that pass the deadline punish incomplete challengers without
   voiding the responder/miner receipt reward path; no p2p, storage, or RPC wire format changed.
+- Commit `ff3bf9a` (`Close isolated trace bisection timeouts`) pushed to `origin/main`.
 
 ### Iteration 182: Reward Sweep Boundary Naming
 
