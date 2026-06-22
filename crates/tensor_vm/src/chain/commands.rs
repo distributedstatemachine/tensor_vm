@@ -56,6 +56,27 @@ impl ChainEngine for Chain {
                     randomness: record.randomness,
                 }])
             }
+            ChainCommand::SubmitVerifiedChainedDrandBeacon {
+                source_id,
+                beacon_round,
+                public_key,
+                signature,
+                previous_signature,
+            } => {
+                let record = super::validation::submit_verified_chained_drand_beacon(
+                    self,
+                    source_id,
+                    beacon_round,
+                    public_key,
+                    signature,
+                    previous_signature,
+                )?;
+                Ok(vec![ChainEvent::ExternalRandomnessBeaconAccepted {
+                    source_id: record.source_id,
+                    beacon_round: record.beacon_round,
+                    randomness: record.randomness,
+                }])
+            }
             ChainCommand::SubmitValidatorVrfReveal(reveal) => {
                 let record = super::validation::submit_validator_vrf_reveal(self, reveal)?;
                 Ok(vec![ChainEvent::ValidatorVrfRevealAccepted {

@@ -48,6 +48,7 @@ pub use chain::{
     AccountState, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainCommand, ChainEngine,
     ChainEvent, ChainParams, ChainState, DeterministicBlockCheckChallenge, HardwareClass, JobState,
     MinerState, ReceiptState, RewardAllocation, RewardState, ValidatorState,
+    verified_chained_drand_beacon_record, verified_chained_drand_source_id,
     verified_drand_beacon_record, verified_drand_source_id,
 };
 pub use challenge::{ChallengeOutcome, FraudChallenge, TensorOpChallengeInput, TraceStep};
@@ -86,14 +87,15 @@ pub use p2p::{
     decode_block_payload_with_selected_receipts, decode_block_vote_payload,
     decode_external_randomness_beacon_payload, decode_job_payload, decode_message,
     decode_receipt_payload, decode_tensor_payload, decode_validator_audit_report_payload,
-    decode_validator_vrf_reveal_payload, decode_verified_drand_beacon_payload,
-    encode_attestation_payload, encode_block_payload, encode_block_payload_with_selected_receipts,
-    encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_gossipsub_message,
-    encode_job_payload, encode_message, encode_receipt_payload, encode_tensor_payload,
+    decode_validator_vrf_reveal_payload, decode_verified_chained_drand_beacon_payload,
+    decode_verified_drand_beacon_payload, encode_attestation_payload, encode_block_payload,
+    encode_block_payload_with_selected_receipts, encode_block_vote_payload,
+    encode_external_randomness_beacon_payload, encode_gossipsub_message, encode_job_payload,
+    encode_message, encode_receipt_payload, encode_tensor_payload,
     encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
-    encode_verified_drand_beacon_payload, gossip_topic_for_message, gossipsub_ident_topic,
-    recommended_network_stack, request_response_protocol_for_message,
-    request_response_stream_protocol, spawn_libp2p_service,
+    encode_verified_chained_drand_beacon_payload, encode_verified_drand_beacon_payload,
+    gossip_topic_for_message, gossipsub_ident_topic, recommended_network_stack,
+    request_response_protocol_for_message, request_response_stream_protocol, spawn_libp2p_service,
 };
 pub use profile::{
     ChainNetwork, ChainProfile, NetworkConfig, NodeConfig, NodeRole, ServiceExposure, StorageConfig,

@@ -1,13 +1,16 @@
 use super::{NetworkBlockPayloadApply, NetworkPayloadApply};
 use crate::{
-    chain::{BlockAdmission, Chain, ChainCommand, ChainEngine, JobState, verified_drand_source_id},
+    chain::{
+        BlockAdmission, Chain, ChainCommand, ChainEngine, JobState,
+        verified_chained_drand_source_id, verified_drand_source_id,
+    },
     challenge::block_check_challenge_id,
     p2p::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
         decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
-        decode_verified_drand_beacon_payload,
+        decode_verified_chained_drand_beacon_payload, decode_verified_drand_beacon_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -15,6 +18,7 @@ use crate::{
 };
 
 const VERIFIED_DRAND_SOURCE_PREFIX: &str = "drand-pedersen-bls-unchained-v1:";
+const VERIFIED_CHAINED_DRAND_SOURCE_PREFIX: &str = "drand-pedersen-bls-chained-v1:";
 
 pub fn apply_network_job_payload(
     chain: &mut Chain,
@@ -337,7 +341,11 @@ pub fn apply_network_external_randomness_beacon_payload(
     if beacon.source_id != source_id || beacon.beacon_round != beacon_round {
         return NetworkPayloadApply::Invalid;
     }
-    if beacon.source_id.starts_with(VERIFIED_DRAND_SOURCE_PREFIX) {
+    if beacon.source_id.starts_with(VERIFIED_DRAND_SOURCE_PREFIX)
+        || beacon
+            .source_id
+            .starts_with(VERIFIED_CHAINED_DRAND_SOURCE_PREFIX)
+    {
         return NetworkPayloadApply::Invalid;
     }
     if beacon.beacon_round <= chain.state().finalized_beacon_round()
@@ -391,6 +399,44 @@ pub fn apply_network_verified_drand_beacon_payload(
             beacon_round: beacon.beacon_round,
             public_key: beacon.public_key,
             signature: beacon.signature,
+        })
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
+pub fn apply_network_verified_chained_drand_beacon_payload(
+    chain: &mut Chain,
+    source_id: &str,
+    beacon_round: u64,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if source_id.is_empty() || beacon_round == 0 {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(beacon) = decode_verified_chained_drand_beacon_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if beacon.source_id != source_id || beacon.beacon_round != beacon_round {
+        return NetworkPayloadApply::Invalid;
+    }
+    if verified_chained_drand_source_id(&beacon.public_key) != beacon.source_id {
+        return NetworkPayloadApply::Invalid;
+    }
+    if beacon.beacon_round <= chain.state().finalized_beacon_round()
+        || chain
+            .state()
+            .external_randomness_beacons()
+            .contains_key(&beacon.beacon_round)
+    {
+        return NetworkPayloadApply::Applied;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitVerifiedChainedDrandBeacon {
+            source_id: beacon.source_id,
+            beacon_round: beacon.beacon_round,
+            public_key: beacon.public_key,
+            signature: beacon.signature,
+            previous_signature: beacon.previous_signature,
         })
         .map(|_| NetworkPayloadApply::Applied)
         .unwrap_or(NetworkPayloadApply::Invalid)

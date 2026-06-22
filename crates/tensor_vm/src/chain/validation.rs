@@ -16,6 +16,7 @@ const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
 const EXTERNAL_RANDOMNESS_SOURCE_ID_MAX_BYTES: usize = 96;
 const DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES: usize = 48;
 const DRAND_PEDERSEN_BLS_SIGNATURE_BYTES: usize = 96;
+const DRAND_PEDERSEN_BLS_PREVIOUS_SIGNATURE_MAX_BYTES: usize = 96;
 pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
 pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str =
     "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round";
@@ -57,6 +58,32 @@ pub fn submit_verified_drand_beacon(
         beacon_round,
         &public_key,
         &signature,
+        chain.state.height,
+    )?;
+    record_external_randomness_beacon(
+        chain,
+        record.source_id,
+        record.beacon_round,
+        record.randomness,
+        record.proof_hash,
+        record.proof,
+    )
+}
+
+pub fn submit_verified_chained_drand_beacon(
+    chain: &mut Chain,
+    source_id: String,
+    beacon_round: u64,
+    public_key: Vec<u8>,
+    signature: Vec<u8>,
+    previous_signature: Vec<u8>,
+) -> Result<ExternalRandomnessBeaconRecord> {
+    let record = verified_chained_drand_beacon_record(
+        source_id,
+        beacon_round,
+        &public_key,
+        &signature,
+        &previous_signature,
         chain.state.height,
     )?;
     record_external_randomness_beacon(
@@ -128,12 +155,94 @@ pub fn verified_drand_beacon_record(
     })
 }
 
+pub fn verified_chained_drand_beacon_record(
+    source_id: String,
+    beacon_round: u64,
+    public_key: &[u8],
+    signature: &[u8],
+    previous_signature: &[u8],
+    observed_at_height: u64,
+) -> Result<ExternalRandomnessBeaconRecord> {
+    if public_key.len() != DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES {
+        return Err(TvmError::InvalidReceipt("drand public key length mismatch"));
+    }
+    if signature.len() != DRAND_PEDERSEN_BLS_SIGNATURE_BYTES {
+        return Err(TvmError::InvalidReceipt("drand signature length mismatch"));
+    }
+    if previous_signature.is_empty()
+        || previous_signature.len() > DRAND_PEDERSEN_BLS_PREVIOUS_SIGNATURE_MAX_BYTES
+    {
+        return Err(TvmError::InvalidReceipt(
+            "drand previous signature length mismatch",
+        ));
+    }
+    let mut public_key_bytes = [0; DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES];
+    public_key_bytes.copy_from_slice(public_key);
+    let public_key = G1Pubkey::from_fixed(public_key_bytes)
+        .map_err(|_| TvmError::InvalidReceipt("invalid drand public key"))?;
+    let verified = public_key
+        .verify(beacon_round, previous_signature, signature)
+        .map_err(|_| TvmError::InvalidReceipt("invalid drand signature point"))?;
+    if !verified {
+        return Err(TvmError::InvalidReceipt(
+            "drand signature verification failed",
+        ));
+    }
+    let randomness = derive_randomness(signature);
+    let public_key_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-chained-public-key-v1",
+        &[&public_key_bytes],
+    );
+    let signature_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-chained-signature-v1",
+        &[signature],
+    );
+    let previous_signature_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-chained-previous-signature-v1",
+        &[previous_signature],
+    );
+    let proof_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-chained-proof-v1",
+        &[
+            source_id.as_bytes(),
+            &beacon_round.to_le_bytes(),
+            &public_key_hash,
+            &signature_hash,
+            &previous_signature_hash,
+            &randomness,
+        ],
+    );
+    Ok(ExternalRandomnessBeaconRecord {
+        source_id,
+        beacon_round,
+        randomness,
+        proof_hash,
+        proof: ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 {
+            public_key_hash,
+            signature_hash,
+            previous_signature_hash,
+            public_key_len: DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES as u64,
+            signature_len: DRAND_PEDERSEN_BLS_SIGNATURE_BYTES as u64,
+            previous_signature_len: previous_signature.len() as u64,
+        },
+        observed_at_height,
+    })
+}
+
 pub fn verified_drand_source_id(public_key: &[u8]) -> String {
     let public_key_hash = hash_bytes(
         b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
         &[public_key],
     );
     format!("drand-pedersen-bls-unchained-v1:{}", hex(&public_key_hash))
+}
+
+pub fn verified_chained_drand_source_id(public_key: &[u8]) -> String {
+    let public_key_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-chained-public-key-v1",
+        &[public_key],
+    );
+    format!("drand-pedersen-bls-chained-v1:{}", hex(&public_key_hash))
 }
 
 fn record_external_randomness_beacon(

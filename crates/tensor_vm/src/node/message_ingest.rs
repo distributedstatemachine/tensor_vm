@@ -6,7 +6,9 @@ use super::{
         apply_network_block_vote_payload, apply_network_external_randomness_beacon_payload,
         apply_network_job_payload, apply_network_observed_block_check_challenge_payload,
         apply_network_receipt_payload, apply_network_validator_audit_report_payload,
-        apply_network_validator_vrf_reveal_payload, apply_network_verified_drand_beacon_payload,
+        apply_network_validator_vrf_reveal_payload,
+        apply_network_verified_chained_drand_beacon_payload,
+        apply_network_verified_drand_beacon_payload,
     },
     payload_processor,
 };
@@ -336,6 +338,34 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewVerifiedChainedDrandBeaconPayload {
+                source_id,
+                beacon_round,
+                payload,
+            } => {
+                ingested.external_randomness_beacons =
+                    ingested.external_randomness_beacons.saturating_add(1);
+                if source_id.is_empty() || beacon_round == 0 {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_verified_chained_drand_beacon_payload(
+                    context.chain(),
+                    &source_id,
+                    beacon_round,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.external_randomness_beacons_applied = ingested
+                            .external_randomness_beacons_applied
+                            .saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::NewValidatorVrfRevealPayload {
                 reveal_id,
                 receipt_id,
@@ -433,14 +463,15 @@ mod tests {
         chain::{
             BlockVote, Chain, ChainCommand, ChainEngine, ChainParams,
             ExternalRandomnessBeaconProof, JobState, ValidatorAuditReport,
-            verified_drand_source_id,
+            verified_chained_drand_source_id, verified_drand_source_id,
         },
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload,
             encode_block_payload_with_selected_receipts, encode_external_randomness_beacon_payload,
             encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
-            encode_validator_vrf_reveal_payload, encode_verified_drand_beacon_payload,
+            encode_validator_vrf_reveal_payload, encode_verified_chained_drand_beacon_payload,
+            encode_verified_drand_beacon_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -481,6 +512,34 @@ mod tests {
             public_key,
             signature,
             expected_randomness,
+        )
+    }
+
+    fn verified_chained_drand_vector() -> (String, u64, Vec<u8>, Vec<u8>, Vec<u8>, Hash) {
+        let public_key = hex_bytes(
+            "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31",
+        );
+        let signature = hex_bytes(
+            "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655",
+        );
+        let previous_signature =
+            hex_bytes("176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a");
+        let record = crate::chain::verified_chained_drand_beacon_record(
+            verified_chained_drand_source_id(&public_key),
+            1,
+            &public_key,
+            &signature,
+            &previous_signature,
+            0,
+        )
+        .unwrap();
+        (
+            verified_chained_drand_source_id(&public_key),
+            1,
+            public_key,
+            signature,
+            previous_signature,
+            record.randomness,
         )
     }
 
@@ -961,6 +1020,76 @@ mod tests {
         assert_eq!(invalid.external_randomness_beacons_applied, 0);
         assert_eq!(invalid.invalid_events, 1);
         assert_eq!(invalid_context.chain.state().finalized_beacon_round(), 0);
+    }
+
+    #[test]
+    fn network_event_driver_applies_verified_chained_drand_beacon_payloads() {
+        let mut context = TestNetworkEventContext::new(b"verified-chained-drand-beacon-payload");
+        let (
+            source_id,
+            beacon_round,
+            public_key,
+            signature,
+            previous_signature,
+            expected_randomness,
+        ) = verified_chained_drand_vector();
+        let payload = encode_verified_chained_drand_beacon_payload(
+            &source_id,
+            beacon_round,
+            &public_key,
+            &signature,
+            &previous_signature,
+        );
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewVerifiedChainedDrandBeaconPayload {
+                source_id: source_id.clone(),
+                beacon_round,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.events, 1);
+        assert_eq!(ingested.external_randomness_beacons, 1);
+        assert_eq!(ingested.external_randomness_beacons_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert_eq!(context.chain.state().finalized_beacon_round(), beacon_round);
+        assert_eq!(
+            context.chain.state().finalized_randomness(),
+            expected_randomness
+        );
+        let record = context
+            .chain
+            .state()
+            .external_randomness_beacons()
+            .get(&beacon_round)
+            .expect("verified chained drand beacon should be stored");
+        assert_eq!(record.source_id, source_id);
+        assert_eq!(record.randomness, expected_randomness);
+        assert!(matches!(
+            record.proof,
+            ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 { .. }
+        ));
+
+        let duplicate = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewVerifiedChainedDrandBeaconPayload {
+                source_id,
+                beacon_round,
+                payload,
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(duplicate.external_randomness_beacons_applied, 1);
+        assert_eq!(duplicate.invalid_events, 0);
     }
 
     #[test]

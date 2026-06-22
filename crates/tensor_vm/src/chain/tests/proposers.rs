@@ -207,6 +207,59 @@ fn verified_drand_beacon_command_rejects_wrong_round_and_signature() {
 }
 
 #[test]
+fn verified_chained_drand_beacon_command_derives_public_default_randomness() {
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"verified-chained-drand"]));
+    let public_key = hex_bytes(
+        "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31",
+    );
+    let signature = hex_bytes(
+        "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655",
+    );
+    let previous_signature =
+        hex_bytes("176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a");
+    let source_id = verified_chained_drand_source_id(&public_key);
+    let expected = verified_chained_drand_beacon_record(
+        source_id.clone(),
+        1,
+        &public_key,
+        &signature,
+        &previous_signature,
+        0,
+    )
+    .unwrap();
+
+    let events = chain
+        .apply_command(ChainCommand::SubmitVerifiedChainedDrandBeacon {
+            source_id: source_id.clone(),
+            beacon_round: 1,
+            public_key: public_key.clone(),
+            signature: signature.clone(),
+            previous_signature: previous_signature.clone(),
+        })
+        .unwrap();
+
+    assert_eq!(
+        events,
+        vec![ChainEvent::ExternalRandomnessBeaconAccepted {
+            source_id: source_id.clone(),
+            beacon_round: 1,
+            randomness: expected.randomness,
+        }]
+    );
+    let record = chain
+        .state()
+        .external_randomness_beacons()
+        .get(&1)
+        .expect("verified chained drand beacon should be recorded");
+    assert_eq!(record.randomness, expected.randomness);
+    assert_eq!(record.proof_hash, expected.proof_hash);
+    assert!(matches!(
+        record.proof,
+        ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 { .. }
+    ));
+}
+
+#[test]
 fn external_randomness_beacon_command_rejects_stale_and_empty_records() {
     let genesis_beacon = hash_bytes(b"test", &[b"external-randomness-reject"]);
     let mut chain = Chain::new(genesis_beacon);

@@ -159,6 +159,22 @@ fn encode_external_randomness_beacon_proof(
             encoded.extend_from_slice(&public_key_len.to_le_bytes());
             encoded.extend_from_slice(&signature_len.to_le_bytes());
         }
+        ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 {
+            public_key_hash,
+            signature_hash,
+            previous_signature_hash,
+            public_key_len,
+            signature_len,
+            previous_signature_len,
+        } => {
+            encoded.push(2);
+            encoded.extend_from_slice(public_key_hash);
+            encoded.extend_from_slice(signature_hash);
+            encoded.extend_from_slice(previous_signature_hash);
+            encoded.extend_from_slice(&public_key_len.to_le_bytes());
+            encoded.extend_from_slice(&signature_len.to_le_bytes());
+            encoded.extend_from_slice(&previous_signature_len.to_le_bytes());
+        }
     }
 }
 

@@ -3,18 +3,31 @@ use crate::{
     api::P2pMessage,
     chain::{
         ExternalRandomnessBeaconProof, ExternalRandomnessBeaconRecord,
+        verified_chained_drand_beacon_record, verified_chained_drand_source_id,
         verified_drand_beacon_record, verified_drand_source_id,
     },
     hash::hex,
-    p2p::{encode_external_randomness_beacon_payload, encode_verified_drand_beacon_payload},
+    p2p::{
+        encode_external_randomness_beacon_payload, encode_verified_chained_drand_beacon_payload,
+        encode_verified_drand_beacon_payload,
+    },
     types::{Hash, hash_bytes, parse_hash_hex},
 };
+use serde::Deserialize;
+use std::time::Duration;
+
+pub const PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL: &str = "https://api.drand.sh/v2";
+pub const PUBLIC_DRAND_DEFAULT_CHAIN_HASH: &str =
+    "8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce";
+const PUBLIC_DRAND_DEFAULT_TIMEOUT_MS: u64 = 5_000;
+const PUBLIC_DRAND_CHAINED_SCHEME: &str = "pedersen-bls-chained";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum RandomnessBeaconMode {
     Off,
     LocalDeterministic,
     VerifiedDrand,
+    PublicDrand,
 }
 
 impl RandomnessBeaconMode {
@@ -23,6 +36,7 @@ impl RandomnessBeaconMode {
             Self::Off => "off",
             Self::LocalDeterministic => "local_deterministic",
             Self::VerifiedDrand => "verified_drand",
+            Self::PublicDrand => "public_drand",
         }
     }
 }
@@ -36,6 +50,10 @@ pub struct RandomnessBeaconRuntimeConfig {
     pub proof_hash: Hash,
     pub drand_public_key: Vec<u8>,
     pub drand_signature: Vec<u8>,
+    pub drand_previous_signature: Vec<u8>,
+    pub drand_http_base_url: String,
+    pub drand_chain_hash: String,
+    pub drand_fetch_timeout_ms: u64,
 }
 
 impl RandomnessBeaconRuntimeConfig {
@@ -48,6 +66,10 @@ impl RandomnessBeaconRuntimeConfig {
             proof_hash: [0; 32],
             drand_public_key: Vec::new(),
             drand_signature: Vec::new(),
+            drand_previous_signature: Vec::new(),
+            drand_http_base_url: String::new(),
+            drand_chain_hash: String::new(),
+            drand_fetch_timeout_ms: 0,
         }
     }
 
@@ -70,6 +92,10 @@ impl RandomnessBeaconRuntimeConfig {
             proof_hash,
             drand_public_key: Vec::new(),
             drand_signature: Vec::new(),
+            drand_previous_signature: Vec::new(),
+            drand_http_base_url: String::new(),
+            drand_chain_hash: String::new(),
+            drand_fetch_timeout_ms: 0,
         }
     }
 
@@ -116,6 +142,102 @@ impl RandomnessBeaconRuntimeConfig {
             proof_hash: record.proof_hash,
             drand_public_key: public_key,
             drand_signature: signature,
+            drand_previous_signature: Vec::new(),
+            drand_http_base_url: String::new(),
+            drand_chain_hash: String::new(),
+            drand_fetch_timeout_ms: 0,
+        })
+    }
+
+    pub fn verified_chained_drand(
+        beacon_round: u64,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
+        previous_signature: Vec<u8>,
+    ) -> std::result::Result<Self, String> {
+        if beacon_round == 0 {
+            return Err("verified chained drand beacon round must be greater than zero".to_owned());
+        }
+        let source_id = verified_chained_drand_source_id(&public_key);
+        Self::verified_chained_drand_with_source(
+            source_id,
+            beacon_round,
+            public_key,
+            signature,
+            previous_signature,
+        )
+    }
+
+    pub fn verified_chained_drand_with_source(
+        source_id: String,
+        beacon_round: u64,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
+        previous_signature: Vec<u8>,
+    ) -> std::result::Result<Self, String> {
+        if beacon_round == 0 {
+            return Err("verified chained drand beacon round must be greater than zero".to_owned());
+        }
+        let expected_source_id = verified_chained_drand_source_id(&public_key);
+        if source_id != expected_source_id {
+            return Err(format!(
+                "verified chained drand source id must equal public key hash source {expected_source_id}"
+            ));
+        }
+        let record = verified_chained_drand_beacon_record(
+            source_id.clone(),
+            beacon_round,
+            &public_key,
+            &signature,
+            &previous_signature,
+            0,
+        )
+        .map_err(|error| format!("invalid verified chained drand beacon config: {error}"))?;
+        Ok(Self {
+            mode: RandomnessBeaconMode::PublicDrand,
+            source_id,
+            beacon_round,
+            randomness: record.randomness,
+            proof_hash: record.proof_hash,
+            drand_public_key: public_key,
+            drand_signature: signature,
+            drand_previous_signature: previous_signature,
+            drand_http_base_url: String::new(),
+            drand_chain_hash: String::new(),
+            drand_fetch_timeout_ms: 0,
+        })
+    }
+
+    pub fn public_drand(
+        http_base_url: impl Into<String>,
+        chain_hash: impl Into<String>,
+        fetch_timeout_ms: u64,
+    ) -> std::result::Result<Self, String> {
+        let http_base_url = normalize_drand_http_base_url(&http_base_url.into())?;
+        let chain_hash = chain_hash.into();
+        if parse_env_hex_bytes("TENSORVM_RANDOMNESS_BEACON_DRAND_CHAIN_HASH", &chain_hash)?.len()
+            != 32
+        {
+            return Err("TENSORVM_RANDOMNESS_BEACON_DRAND_CHAIN_HASH must be 32 bytes".to_owned());
+        }
+        if fetch_timeout_ms == 0 {
+            return Err(
+                "TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS must be greater than zero"
+                    .to_owned(),
+            );
+        }
+        Ok(Self {
+            mode: RandomnessBeaconMode::PublicDrand,
+            source_id: format!("public-drand:{}", &chain_hash[..16]),
+            beacon_round: 0,
+            randomness: [0; 32],
+            proof_hash: [0; 32],
+            drand_public_key: Vec::new(),
+            drand_signature: Vec::new(),
+            drand_previous_signature: Vec::new(),
+            drand_http_base_url: http_base_url,
+            drand_chain_hash: chain_hash,
+            drand_fetch_timeout_ms: fetch_timeout_ms,
         })
     }
 
@@ -197,8 +319,24 @@ impl RandomnessBeaconRuntimeConfig {
                 }
                 Self::verified_drand_with_source(source_id, beacon_round, public_key, signature)
             }
+            "public_drand" => {
+                let http_base_url = std::env::var("TENSORVM_RANDOMNESS_BEACON_DRAND_HTTP_BASE_URL")
+                    .unwrap_or_else(|_| PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL.to_owned());
+                let chain_hash = std::env::var("TENSORVM_RANDOMNESS_BEACON_DRAND_CHAIN_HASH")
+                    .unwrap_or_else(|_| PUBLIC_DRAND_DEFAULT_CHAIN_HASH.to_owned());
+                let fetch_timeout_ms =
+                    match std::env::var("TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS") {
+                        Ok(value) => value.parse::<u64>().map_err(|error| {
+                            format!(
+                                "invalid TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS: {error}"
+                            )
+                        })?,
+                        Err(_) => PUBLIC_DRAND_DEFAULT_TIMEOUT_MS,
+                    };
+                Self::public_drand(http_base_url, chain_hash, fetch_timeout_ms)
+            }
             other => Err(format!(
-                "unsupported TENSORVM_RANDOMNESS_BEACON_MODE {other:?}; expected off, local_deterministic, or verified_drand"
+                "unsupported TENSORVM_RANDOMNESS_BEACON_MODE {other:?}; expected off, local_deterministic, verified_drand, or public_drand"
             )),
         }
     }
@@ -232,6 +370,130 @@ fn parse_env_hex_bytes(name: &str, value: &str) -> std::result::Result<Vec<u8>, 
         .collect()
 }
 
+fn normalize_drand_http_base_url(value: &str) -> std::result::Result<String, String> {
+    let value = value.trim_end_matches('/');
+    if value.trim() != value || value.is_empty() {
+        return Err("drand HTTP base URL must not be empty or whitespace padded".to_owned());
+    }
+    if !value.starts_with("https://") && !value.starts_with("http://127.0.0.1") {
+        return Err("drand HTTP base URL must be https or local test loopback".to_owned());
+    }
+    Ok(value.to_owned())
+}
+
+#[derive(Debug, Deserialize)]
+struct DrandChainInfoResponse {
+    public_key: String,
+    period: u64,
+    genesis_time: u64,
+    chain_hash: String,
+    scheme: String,
+}
+
+#[derive(Debug, Deserialize)]
+struct DrandRoundResponse {
+    round: u64,
+    signature: String,
+    previous_signature: Option<String>,
+}
+
+pub fn drand_round_for_unix_time(
+    genesis_time: u64,
+    period: u64,
+    unix_time: u64,
+) -> std::result::Result<u64, String> {
+    if period == 0 {
+        return Err("drand period must be greater than zero".to_owned());
+    }
+    if unix_time < genesis_time {
+        return Err("unix time is before drand genesis time".to_owned());
+    }
+    Ok(((unix_time - genesis_time) / period).saturating_add(1))
+}
+
+fn public_drand_config_from_json(
+    expected_chain_hash: &str,
+    info_json: &str,
+    round_json: &str,
+) -> std::result::Result<RandomnessBeaconRuntimeConfig, String> {
+    let info: DrandChainInfoResponse = serde_json::from_str(info_json)
+        .map_err(|error| format!("invalid drand info response JSON: {error}"))?;
+    if info.chain_hash != expected_chain_hash {
+        return Err(format!(
+            "drand chain hash mismatch: expected {expected_chain_hash}, got {}",
+            info.chain_hash
+        ));
+    }
+    if info.scheme != PUBLIC_DRAND_CHAINED_SCHEME {
+        return Err(format!(
+            "unsupported drand scheme {:?}; expected {PUBLIC_DRAND_CHAINED_SCHEME}",
+            info.scheme
+        ));
+    }
+    drand_round_for_unix_time(info.genesis_time, info.period, info.genesis_time)?;
+    let round: DrandRoundResponse = serde_json::from_str(round_json)
+        .map_err(|error| format!("invalid drand round response JSON: {error}"))?;
+    let public_key = parse_env_hex_bytes("drand public_key", &info.public_key)?;
+    let signature = parse_env_hex_bytes("drand signature", &round.signature)?;
+    let previous_signature = parse_env_hex_bytes(
+        "drand previous_signature",
+        round
+            .previous_signature
+            .as_deref()
+            .ok_or_else(|| "drand chained response missing previous_signature".to_owned())?,
+    )?;
+    RandomnessBeaconRuntimeConfig::verified_chained_drand(
+        round.round,
+        public_key,
+        signature,
+        previous_signature,
+    )
+}
+
+pub trait DrandBeaconClient {
+    fn fetch_latest_chained(
+        &self,
+        config: &RandomnessBeaconRuntimeConfig,
+    ) -> std::result::Result<RandomnessBeaconRuntimeConfig, String>;
+}
+
+pub struct HttpDrandBeaconClient;
+
+impl DrandBeaconClient for HttpDrandBeaconClient {
+    fn fetch_latest_chained(
+        &self,
+        config: &RandomnessBeaconRuntimeConfig,
+    ) -> std::result::Result<RandomnessBeaconRuntimeConfig, String> {
+        let timeout = Duration::from_millis(config.drand_fetch_timeout_ms);
+        let info_url = format!(
+            "{}/chains/{}/info",
+            config.drand_http_base_url, config.drand_chain_hash
+        );
+        let round_url = format!(
+            "{}/chains/{}/rounds/latest",
+            config.drand_http_base_url, config.drand_chain_hash
+        );
+        let info_json = ureq::get(&info_url)
+            .timeout(timeout)
+            .call()
+            .map_err(|error| format!("failed to fetch drand chain info: {error}"))?
+            .into_string()
+            .map_err(|error| format!("failed to read drand chain info response: {error}"))?;
+        let round_json = ureq::get(&round_url)
+            .timeout(timeout)
+            .call()
+            .map_err(|error| format!("failed to fetch drand latest round: {error}"))?
+            .into_string()
+            .map_err(|error| format!("failed to read drand latest round response: {error}"))?;
+        let mut fetched =
+            public_drand_config_from_json(&config.drand_chain_hash, &info_json, &round_json)?;
+        fetched.drand_http_base_url = config.drand_http_base_url.clone();
+        fetched.drand_chain_hash = config.drand_chain_hash.clone();
+        fetched.drand_fetch_timeout_ms = config.drand_fetch_timeout_ms;
+        Ok(fetched)
+    }
+}
+
 pub fn tick_randomness_beacon_once(
     config: &RandomnessBeaconRuntimeConfig,
     store: &NodeStore,
@@ -239,9 +501,47 @@ pub fn tick_randomness_beacon_once(
     p2p_service: &TensorVmLibp2pService,
     runtime_state: &mut NodeRuntimeState,
 ) -> std::result::Result<bool, String> {
+    tick_randomness_beacon_once_with_client(
+        config,
+        store,
+        server,
+        p2p_service,
+        runtime_state,
+        &HttpDrandBeaconClient,
+    )
+}
+
+pub fn tick_randomness_beacon_once_with_client(
+    config: &RandomnessBeaconRuntimeConfig,
+    store: &NodeStore,
+    server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
+    runtime_state: &mut NodeRuntimeState,
+    drand_client: &dyn DrandBeaconClient,
+) -> std::result::Result<bool, String> {
     if !config.enabled() {
         return Ok(false);
     }
+    let fetched_config;
+    let config = if config.mode == RandomnessBeaconMode::PublicDrand && config.beacon_round == 0 {
+        if runtime_state.randomness_beacons_observed() > 0 {
+            return Ok(false);
+        }
+        fetched_config = match drand_client.fetch_latest_chained(config) {
+            Ok(config) => config,
+            Err(error) => {
+                runtime_state.record_randomness_beacon_failure(
+                    &config.source_id,
+                    config.beacon_round,
+                    &error,
+                );
+                return Ok(true);
+            }
+        };
+        &fetched_config
+    } else {
+        config
+    };
     if runtime_state.randomness_latest_source_id() == config.source_id
         && runtime_state.randomness_latest_round() == config.beacon_round
         && runtime_state.randomness_beacons_observed() > 0
@@ -306,6 +606,13 @@ pub fn tick_randomness_beacon_once(
             public_key: config.drand_public_key.clone(),
             signature: config.drand_signature.clone(),
         },
+        RandomnessBeaconMode::PublicDrand => ChainCommand::SubmitVerifiedChainedDrandBeacon {
+            source_id: config.source_id.clone(),
+            beacon_round: config.beacon_round,
+            public_key: config.drand_public_key.clone(),
+            signature: config.drand_signature.clone(),
+            previous_signature: config.drand_previous_signature.clone(),
+        },
     };
     match chain.apply_command(command) {
         Ok(_) => {
@@ -361,6 +668,15 @@ fn external_randomness_beacon_matches_config(
             record.observed_at_height,
         )
         .is_ok_and(|expected| expected.proof == record.proof),
+        RandomnessBeaconMode::PublicDrand => verified_chained_drand_beacon_record(
+            config.source_id.clone(),
+            config.beacon_round,
+            &config.drand_public_key,
+            &config.drand_signature,
+            &config.drand_previous_signature,
+            record.observed_at_height,
+        )
+        .is_ok_and(|expected| expected.proof == record.proof),
     }
 }
 
@@ -386,6 +702,17 @@ pub fn external_randomness_beacon_message(config: &RandomnessBeaconRuntimeConfig
                 config.beacon_round,
                 &config.drand_public_key,
                 &config.drand_signature,
+            ),
+        },
+        RandomnessBeaconMode::PublicDrand => P2pMessage::NewVerifiedChainedDrandBeaconPayload {
+            source_id: config.source_id.clone(),
+            beacon_round: config.beacon_round,
+            payload: encode_verified_chained_drand_beacon_payload(
+                &config.source_id,
+                config.beacon_round,
+                &config.drand_public_key,
+                &config.drand_signature,
+                &config.drand_previous_signature,
             ),
         },
     }
@@ -415,7 +742,8 @@ pub fn randomness_beacon_hash_label(hash: &Hash) -> String {
 mod tests {
     use super::*;
     use crate::p2p::{
-        decode_external_randomness_beacon_payload, decode_verified_drand_beacon_payload,
+        decode_external_randomness_beacon_payload, decode_verified_chained_drand_beacon_payload,
+        decode_verified_drand_beacon_payload,
     };
     use std::sync::Mutex;
 
@@ -423,6 +751,12 @@ mod tests {
 
     const VERIFIED_DRAND_PUBLIC_KEY_HEX: &str = "8200fc249deb0148eb918d6e213980c5d01acd7fc251900d9260136da3b54836ce125172399ddc69c4e3e11429b62c11";
     const VERIFIED_DRAND_SIGNATURE_HEX: &str = "94f6b85df7cce7237e8e7df66d794ddad092de5d8bb6a791b97e905aa89852e506ac36a792eba7021e22eebf34891f8914bf9a8dd9233ea0a4c5ca00ef8404999f899073dd2eade61fe54077fee8168f83dcb61a758b6883b38904054e64a433";
+    const PUBLIC_DRAND_DEFAULT_PUBLIC_KEY_HEX: &str = "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31";
+    const PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX: &str = "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655";
+    const PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX: &str =
+        "176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a";
+    const PUBLIC_DRAND_DEFAULT_INFO_JSON: &str = r#"{"public_key":"868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31","period":30,"genesis_time":1595431050,"chain_hash":"8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce","scheme":"pedersen-bls-chained"}"#;
+    const PUBLIC_DRAND_DEFAULT_ROUND_1_JSON: &str = r#"{"round":1,"signature":"8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655","previous_signature":"176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a"}"#;
 
     fn verified_drand_vector() -> (u64, Vec<u8>, Vec<u8>, Hash) {
         (
@@ -439,6 +773,40 @@ mod tests {
         )
     }
 
+    fn public_drand_default_round_1_vector() -> (u64, Vec<u8>, Vec<u8>, Vec<u8>, Hash) {
+        let public_key = parse_env_hex_bytes(
+            "PUBLIC_DRAND_DEFAULT_PUBLIC_KEY_HEX",
+            PUBLIC_DRAND_DEFAULT_PUBLIC_KEY_HEX,
+        )
+        .unwrap();
+        let signature = parse_env_hex_bytes(
+            "PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX",
+            PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX,
+        )
+        .unwrap();
+        let previous_signature = parse_env_hex_bytes(
+            "PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX",
+            PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX,
+        )
+        .unwrap();
+        let record = verified_chained_drand_beacon_record(
+            verified_chained_drand_source_id(&public_key),
+            1,
+            &public_key,
+            &signature,
+            &previous_signature,
+            0,
+        )
+        .unwrap();
+        (
+            1,
+            public_key,
+            signature,
+            previous_signature,
+            record.randomness,
+        )
+    }
+
     fn clear_randomness_beacon_env() {
         unsafe {
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_MODE");
@@ -448,6 +816,9 @@ mod tests {
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_PROOF_HASH");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_PUBLIC_KEY_HEX");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_SIGNATURE_HEX");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_HTTP_BASE_URL");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_CHAIN_HASH");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS");
         }
     }
 
@@ -555,6 +926,110 @@ mod tests {
         assert!(error.contains("TENSORVM_RANDOMNESS_BEACON_SOURCE_ID must equal"));
 
         clear_randomness_beacon_env();
+    }
+
+    #[test]
+    fn public_drand_round_mapping_handles_boundaries() {
+        assert_eq!(drand_round_for_unix_time(100, 30, 100).unwrap(), 1);
+        assert_eq!(drand_round_for_unix_time(100, 30, 129).unwrap(), 1);
+        assert_eq!(drand_round_for_unix_time(100, 30, 130).unwrap(), 2);
+        assert!(drand_round_for_unix_time(100, 0, 130).is_err());
+        assert!(drand_round_for_unix_time(100, 30, 99).is_err());
+    }
+
+    #[test]
+    fn public_drand_config_from_env_uses_default_chain() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_randomness_beacon_env();
+        unsafe {
+            std::env::set_var("TENSORVM_RANDOMNESS_BEACON_MODE", "public_drand");
+        }
+
+        let config = RandomnessBeaconRuntimeConfig::from_env().unwrap();
+        assert_eq!(config.mode, RandomnessBeaconMode::PublicDrand);
+        assert_eq!(config.mode.label(), "public_drand");
+        assert_eq!(config.source_id, "public-drand:8990e7a9aaed2ffe");
+        assert_eq!(config.beacon_round, 0);
+        assert_eq!(
+            config.drand_http_base_url,
+            PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL
+        );
+        assert_eq!(config.drand_chain_hash, PUBLIC_DRAND_DEFAULT_CHAIN_HASH);
+        assert_eq!(
+            config.drand_fetch_timeout_ms,
+            PUBLIC_DRAND_DEFAULT_TIMEOUT_MS
+        );
+
+        clear_randomness_beacon_env();
+    }
+
+    #[test]
+    fn public_drand_fetch_json_builds_chained_verified_payload() {
+        let (round, public_key, signature, previous_signature, expected_randomness) =
+            public_drand_default_round_1_vector();
+        let config = public_drand_config_from_json(
+            PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+            PUBLIC_DRAND_DEFAULT_INFO_JSON,
+            PUBLIC_DRAND_DEFAULT_ROUND_1_JSON,
+        )
+        .unwrap();
+
+        assert_eq!(config.mode, RandomnessBeaconMode::PublicDrand);
+        assert_eq!(
+            config.source_id,
+            verified_chained_drand_source_id(&public_key)
+        );
+        assert_eq!(config.beacon_round, round);
+        assert_eq!(config.randomness, expected_randomness);
+        assert_eq!(config.drand_public_key, public_key);
+        assert_eq!(config.drand_signature, signature);
+        assert_eq!(config.drand_previous_signature, previous_signature);
+
+        let P2pMessage::NewVerifiedChainedDrandBeaconPayload {
+            source_id,
+            beacon_round,
+            payload,
+        } = external_randomness_beacon_message(&config)
+        else {
+            panic!("public drand config must produce verified chained drand payload");
+        };
+        assert_eq!(source_id, config.source_id);
+        assert_eq!(beacon_round, round);
+        let decoded = decode_verified_chained_drand_beacon_payload(&payload).unwrap();
+        assert_eq!(decoded.source_id, config.source_id);
+        assert_eq!(decoded.beacon_round, round);
+        assert_eq!(decoded.public_key, config.drand_public_key);
+        assert_eq!(decoded.signature, config.drand_signature);
+        assert_eq!(decoded.previous_signature, config.drand_previous_signature);
+    }
+
+    #[test]
+    fn public_drand_fetch_rejects_wrong_chain_or_scheme() {
+        let wrong_chain = PUBLIC_DRAND_DEFAULT_INFO_JSON.replace(
+            PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+        );
+        assert!(
+            public_drand_config_from_json(
+                PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+                &wrong_chain,
+                PUBLIC_DRAND_DEFAULT_ROUND_1_JSON
+            )
+            .unwrap_err()
+            .contains("drand chain hash mismatch")
+        );
+
+        let wrong_scheme = PUBLIC_DRAND_DEFAULT_INFO_JSON
+            .replace("pedersen-bls-chained", "bls-unchained-g1-rfc9380");
+        assert!(
+            public_drand_config_from_json(
+                PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+                &wrong_scheme,
+                PUBLIC_DRAND_DEFAULT_ROUND_1_JSON
+            )
+            .unwrap_err()
+            .contains("unsupported drand scheme")
+        );
     }
 
     #[test]

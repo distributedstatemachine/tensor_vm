@@ -47,8 +47,9 @@ pub use network::{
     publish_validator_block_proposal,
 };
 pub use randomness_beacon::{
-    RandomnessBeaconMode, RandomnessBeaconRuntimeConfig, randomness_beacon_hash_label,
-    randomness_beacon_source_label, tick_randomness_beacon_once,
+    DrandBeaconClient, RandomnessBeaconMode, RandomnessBeaconRuntimeConfig,
+    randomness_beacon_hash_label, randomness_beacon_source_label, tick_randomness_beacon_once,
+    tick_randomness_beacon_once_with_client,
 };
 pub use role_services::RoleServiceRunner;
 pub use runtime_config::{

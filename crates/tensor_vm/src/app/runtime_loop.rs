@@ -3,10 +3,11 @@ use std::{thread, time::Duration};
 use crate::{NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService};
 
 use super::{
-    LocalProductionContext, LocalProductionSchedule, RuntimeP2pMetadata, RuntimeRole,
-    RuntimeServices, RuntimeStatusSnapshot, ServiceRuntimeConfig, format_role_runtime_report,
-    ingest_network_once as ingest_runtime_network_once, serve_rpc_once as serve_runtime_rpc_once,
-    start_runtime_services, tick_miner_role_work_once, tick_randomness_beacon_once,
+    DrandBeaconClient, LocalProductionContext, LocalProductionSchedule, RuntimeP2pMetadata,
+    RuntimeRole, RuntimeServices, RuntimeStatusSnapshot, ServiceRuntimeConfig,
+    format_role_runtime_report, ingest_network_once as ingest_runtime_network_once,
+    serve_rpc_once as serve_runtime_rpc_once, start_runtime_services, tick_miner_role_work_once,
+    tick_randomness_beacon_once, tick_randomness_beacon_once_with_client,
     tick_validator_role_work_once as tick_validator_role_worker_once, write_role_runtime_status,
 };
 
@@ -107,6 +108,23 @@ impl RoleRuntimeLoop {
             &mut self.server,
             &self.p2p_service,
             &mut self.runtime_state,
+        )? {
+            self.write_status()?;
+        }
+        Ok(())
+    }
+
+    pub fn tick_randomness_beacon_once_with_client(
+        &mut self,
+        drand_client: &dyn DrandBeaconClient,
+    ) -> std::result::Result<(), String> {
+        if tick_randomness_beacon_once_with_client(
+            &self.config.randomness_beacon,
+            &self.store,
+            &mut self.server,
+            &self.p2p_service,
+            &mut self.runtime_state,
+            drand_client,
         )? {
             self.write_status()?;
         }

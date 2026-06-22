@@ -74,6 +74,13 @@ pub enum ChainCommand {
         public_key: Vec<u8>,
         signature: Vec<u8>,
     },
+    SubmitVerifiedChainedDrandBeacon {
+        source_id: String,
+        beacon_round: u64,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
+        previous_signature: Vec<u8>,
+    },
     SubmitValidatorVrfReveal(ValidatorVrfRevealRecord),
     Transfer {
         from: Address,

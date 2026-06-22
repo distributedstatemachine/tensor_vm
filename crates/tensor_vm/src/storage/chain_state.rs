@@ -655,6 +655,22 @@ fn encode_external_randomness_beacon_proof(
             write_u64(out, *public_key_len);
             write_u64(out, *signature_len);
         }
+        ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 {
+            public_key_hash,
+            signature_hash,
+            previous_signature_hash,
+            public_key_len,
+            signature_len,
+            previous_signature_len,
+        } => {
+            out.push(2);
+            write_hash(out, public_key_hash);
+            write_hash(out, signature_hash);
+            write_hash(out, previous_signature_hash);
+            write_u64(out, *public_key_len);
+            write_u64(out, *signature_len);
+            write_u64(out, *previous_signature_len);
+        }
     }
 }
 
@@ -698,6 +714,14 @@ fn decode_external_randomness_beacon_proof(
             signature_hash: reader.read_hash()?,
             public_key_len: reader.read_u64()?,
             signature_len: reader.read_u64()?,
+        }),
+        2 => Ok(ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 {
+            public_key_hash: reader.read_hash()?,
+            signature_hash: reader.read_hash()?,
+            previous_signature_hash: reader.read_hash()?,
+            public_key_len: reader.read_u64()?,
+            signature_len: reader.read_u64()?,
+            previous_signature_len: reader.read_u64()?,
         }),
         _ => Err(TvmError::Storage(
             "unknown external randomness beacon proof tag",

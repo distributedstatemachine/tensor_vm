@@ -641,6 +641,14 @@ pub enum ExternalRandomnessBeaconProof {
         public_key_len: u64,
         signature_len: u64,
     },
+    DrandPedersenBlsChainedV1 {
+        public_key_hash: Hash,
+        signature_hash: Hash,
+        previous_signature_hash: Hash,
+        public_key_len: u64,
+        signature_len: u64,
+        previous_signature_len: u64,
+    },
 }
 
 impl ExternalRandomnessBeaconProof {
@@ -648,6 +656,7 @@ impl ExternalRandomnessBeaconProof {
         match self {
             Self::LocalDeterministicFixtureV1 => "local-deterministic-fixture-v1",
             Self::DrandPedersenBlsUnchainedV1 { .. } => "drand-pedersen-bls-unchained-v1",
+            Self::DrandPedersenBlsChainedV1 { .. } => "drand-pedersen-bls-chained-v1",
         }
     }
 }
