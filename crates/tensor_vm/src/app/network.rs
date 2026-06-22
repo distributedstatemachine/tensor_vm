@@ -3,6 +3,7 @@ use crate::{
     NetworkEventIngest, NodeStore, PendingNetworkPayloads, RpcHttpServer, Tensor,
     TensorVmLibp2pService,
     api::P2pMessage,
+    chain::ExternalRandomnessBeaconProof,
     decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
     encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
     encode_receipt_payload, encode_validator_audit_report_payload,
@@ -478,6 +479,12 @@ pub fn publish_new_chain_announcements(
         }
     }
     for (beacon_round, record) in chain.state().external_randomness_beacons() {
+        if !matches!(
+            record.proof,
+            ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1
+        ) {
+            continue;
+        }
         p2p_service
             .publish_gossip(P2pMessage::NewExternalRandomnessBeaconPayload {
                 source_id: record.source_id.clone(),

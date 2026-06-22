@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 145 complete - chain-owned delayed reward and restart convergence cleanup.
+- Active feature: Iteration 148 complete - verified drand network admission.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -48,8 +48,10 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   before positive validator receipt reward credit can release.
   Public evidence bundles now require a typed signed `randomness-beacon` supporting-record summary and
   artifact locator, and record-file derivation validates exact `randomness_beacon_record=` lines before
-  hashing. This creates a public evidence surface for drand/validator-VRF records without claiming live
-  production drand BLS verification yet. `Fixed32`
+  hashing. This creates a public evidence surface for drand/validator-VRF records. Chain and bounded
+  p2p/node ingest can now verify `pedersen-bls-unchained` drand signatures and store typed
+  `DrandPedersenBlsUnchainedV1` proof metadata, while live public drand fetching, round mapping, production
+  validator VRF signatures, and deployed lifecycle evidence remain open. `Fixed32`
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
@@ -67,14 +69,14 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue public/CUDA deployment runs, production drand/VRF verification, and full
-  interactive transcript disputes.
+- Next action: continue public/CUDA deployment runs, live public drand fetching/round mapping, production
+  validator VRF construction, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 21, 2026 for Iteration 140; post-edit rerun also passed | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | First command this iteration: `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 for Iteration 148; post-edit rerun also passed | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports `live_role_miner_receipts_submitted=402` | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -85,11 +87,68 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; bounded p2p messages relay beacon and validator reveal records through node ingest; status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, role applied counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add public drand verification, production validator VRF signatures, and deployed commit-reveal lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixture; bounded p2p messages relay fixture, verified drand, and validator reveal records through node ingest; chain and p2p/node paths verify `pedersen-bls-unchained` drand evidence and store typed proof metadata; status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, role applied counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add live public drand fetching/round mapping, production validator VRF signatures, and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, explicit pre-inclusion delayed receipt maturity, inclusion-started receipt reward maturity, explicit `AwaitingValidatorVrfReveal` validator receipt maturity, claim-owned spendability, validator receipt reward release gated by accepted reveal records, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 148: Verified Drand Network Admission
+
+Feature capability: verified drand beacon evidence moves over the bounded p2p/node runtime path and is
+admitted through `ChainCommand::SubmitVerifiedDrandBeacon`, so production drand network ingress no longer
+uses the local fixture `randomness + proof_hash` path.
+Readiness requirements covered: `upow.md` §10 external drand-style beacon verification, `mvp_spec.md`
+validation randomness cannot be influenced after receipt roots are committed, the shortcut ban against
+proof-hash-only evidence as production proof, and the readiness next action to replace deterministic local
+beacon fixtures with live public drand fetching/round mapping or validator VRF evidence.
+Files/modules likely touched: `crates/tensor_vm/src/api.rs`, `crates/tensor_vm/src/p2p/wire.rs`,
+`crates/tensor_vm/src/p2p.rs`, `crates/tensor_vm/src/lib.rs`,
+`crates/tensor_vm/src/node/message_ingest.rs`, `crates/tensor_vm/src/node/payload_application.rs`,
+randomness/network tests, and this execution plan.
+Parallel subagents to run: read-only p2p/runtime randomness mapper, test coverage explorer, and readiness
+checkpoint mapper. Parent owns all code edits.
+Parallelizable implementation workstreams: read-only mapping and test discovery run in parallel; parent
+owns wire, node, chain command routing, and docs edits because the codec tags and apply path must remain
+one coherent boundary.
+Tests/checkers/docs to add or update: p2p wire roundtrip/malformed coverage for verified drand payloads,
+node ingest coverage proving verified drand gossip advances finalized randomness through the verified chain
+command and rejects wrong signatures, focused chain proposer/randomness tests if needed, and readiness plan
+status text.
+Narrow validation commands: `cargo test -p tensor_vm p2p::wire --lib -- --nocapture`,
+`cargo test -p tensor_vm node::message_ingest --lib -- --nocapture`, and
+`cargo test -p tensor_vm chain::tests::proposers --lib -- --nocapture`.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo fmt --check --all`, and `git diff --check`.
+Expected observable evidence: a bounded `NewVerifiedDrandBeaconPayload` gossips source id, round, public
+key, and signature; decode rejects oversized, trailing, mismatched, and malformed payloads; node ingest
+applies valid drand evidence through `SubmitVerifiedDrandBeacon`; accepted records are stored with
+`DrandPedersenBlsUnchainedV1` proof metadata; invalid drand signatures increment invalid network events
+without advancing finalized randomness.
+Out of scope: live HTTP drand fetching, chained drand/quicknet/RFC schemes, production validator VRF key
+management, public/CUDA deployment evidence, and full deployed commit-reveal lifecycle.
+Split trigger: if the verified drand payload requires changing the public evidence manifest, local runtime
+fixture mode, or runtime env config, land the bounded p2p/node admission path first and keep those surfaces
+for a separate iteration.
+Canonical owner: chain validation owns BLS verification and randomness derivation; p2p/node adapters only
+decode bounded bytes and route to the chain command.
+Adapter callers: libp2p gossipsub decode, node message ingest, network payload application, status counters,
+and future public drand fetcher/publisher code.
+Old shortcut being removed: network-originated production drand no longer has to be represented as a
+caller-supplied randomness value plus `proof_hash`.
+Regression test that proves the shortcut is gone: node ingest test accepts a valid verified drand payload
+with no randomness field and rejects the same signature under the wrong round/signature before state
+mutation.
+Behavior with local synthetic block production disabled: inbound verified drand payloads apply through the
+same node ingest and chain command path regardless of producer policy.
+Behavior for producer and non-producer roles: any role can decode and apply the same verified drand gossip;
+production capability only affects outbound block creation, not randomness admission.
+Structured evidence source: external randomness beacon record proof metadata, finalized beacon round,
+network external-randomness applied/invalid counters, p2p codec tests, and chain state roots.
+Finality source: unchanged signed validator block votes; this feature only advances finalized randomness
+for future receipt anchors.
+Wire-size and codec boundary: add a bounded p2p payload with fixed 48-byte public key and 96-byte
+signature plus bounded source id; no unbounded length-prefixed allocation.
 
 ### Iteration 145: Chain-Owned Delayed Rewards And Restart Convergence Cleanup
 
@@ -683,6 +742,23 @@ cargo test -p tensor_vm chain::tests::proposers --lib -- --nocapture
 cargo test -p tensor_vm storage::chain_state --lib -- --nocapture
 cargo test -p tensor_vm app::randomness_beacon --lib -- --nocapture
 cargo test -p tensor_vm p2p::wire --lib -- --nocapture
+```
+
+Iteration 148 adds bounded network admission for verified drand evidence. `NewVerifiedDrandBeaconPayload`
+gossips the source id, beacon round, public key, and signature; node ingest routes valid payloads through
+`SubmitVerifiedDrandBeacon`; the verified drand source namespace is bound to the public-key hash; and the
+older local fixture payload is rejected for that namespace so production drand cannot downgrade to a
+caller-supplied randomness/proof hash.
+
+Iteration 148 validation checkpoint on June 22, 2026:
+
+```text
+cargo test -p tensor_vm local_testnet --release
+cargo test -p tensor_vm p2p::wire --lib -- --nocapture
+cargo test -p tensor_vm node::message_ingest --lib -- --nocapture
+cargo test -p tensor_vm chain::tests::proposers --lib -- --nocapture
+cargo fmt --check --all
+git diff --check
 ```
 
 ## Archive

@@ -6,7 +6,7 @@ use super::{
         apply_network_block_vote_payload, apply_network_external_randomness_beacon_payload,
         apply_network_job_payload, apply_network_observed_block_check_challenge_payload,
         apply_network_receipt_payload, apply_network_validator_audit_report_payload,
-        apply_network_validator_vrf_reveal_payload,
+        apply_network_validator_vrf_reveal_payload, apply_network_verified_drand_beacon_payload,
     },
     payload_processor,
 };
@@ -308,6 +308,34 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewVerifiedDrandBeaconPayload {
+                source_id,
+                beacon_round,
+                payload,
+            } => {
+                ingested.external_randomness_beacons =
+                    ingested.external_randomness_beacons.saturating_add(1);
+                if source_id.is_empty() || beacon_round == 0 {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_verified_drand_beacon_payload(
+                    context.chain(),
+                    &source_id,
+                    beacon_round,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.external_randomness_beacons_applied = ingested
+                            .external_randomness_beacons_applied
+                            .saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {}
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::NewValidatorVrfRevealPayload {
                 reveal_id,
                 receipt_id,
@@ -403,15 +431,16 @@ mod tests {
     use super::*;
     use crate::{
         chain::{
-            BlockVote, Chain, ChainCommand, ChainEngine, ChainParams, JobState,
-            ValidatorAuditReport,
+            BlockVote, Chain, ChainCommand, ChainEngine, ChainParams,
+            ExternalRandomnessBeaconProof, JobState, ValidatorAuditReport,
         },
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
+        node::verified_drand_source_id,
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload,
             encode_block_payload_with_selected_receipts, encode_external_randomness_beacon_payload,
             encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
-            encode_validator_vrf_reveal_payload,
+            encode_validator_vrf_reveal_payload, encode_verified_drand_beacon_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -421,6 +450,39 @@ mod tests {
             verify_tensor_op,
         },
     };
+
+    fn hex_bytes(input: &str) -> Vec<u8> {
+        assert_eq!(input.len() % 2, 0);
+        input
+            .as_bytes()
+            .chunks_exact(2)
+            .map(|pair| {
+                let high = (pair[0] as char).to_digit(16).expect("hex high nibble");
+                let low = (pair[1] as char).to_digit(16).expect("hex low nibble");
+                ((high << 4) | low) as u8
+            })
+            .collect()
+    }
+
+    fn verified_drand_vector() -> (String, u64, Vec<u8>, Vec<u8>, Hash) {
+        let public_key = hex_bytes(
+            "8200fc249deb0148eb918d6e213980c5d01acd7fc251900d9260136da3b54836ce125172399ddc69c4e3e11429b62c11",
+        );
+        let signature = hex_bytes(
+            "94f6b85df7cce7237e8e7df66d794ddad092de5d8bb6a791b97e905aa89852e506ac36a792eba7021e22eebf34891f8914bf9a8dd9233ea0a4c5ca00ef8404999f899073dd2eade61fe54077fee8168f83dcb61a758b6883b38904054e64a433",
+        );
+        let expected_randomness: Hash =
+            hex_bytes("f3d6adf1daa2c7877f90fb0f1a675ab0a42653a1e2a9b66fee0749d47a47bc57")
+                .try_into()
+                .unwrap();
+        (
+            verified_drand_source_id(&public_key),
+            223_344,
+            public_key,
+            signature,
+            expected_randomness,
+        )
+    }
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
         let mut testnet = LocalTestnet::new(
@@ -801,6 +863,104 @@ mod tests {
         .unwrap();
         assert_eq!(duplicate.external_randomness_beacons_applied, 1);
         assert_eq!(duplicate.invalid_events, 0);
+
+        let (verified_source_id, verified_round, _public_key, _signature, _expected_randomness) =
+            verified_drand_vector();
+        let downgraded_payload = encode_external_randomness_beacon_payload(
+            &verified_source_id,
+            verified_round,
+            &hash_bytes(b"test", &[b"downgraded-randomness"]),
+            &hash_bytes(b"test", &[b"downgraded-proof"]),
+        );
+        let downgraded = ingest_network_messages(
+            &mut TestNetworkEventContext::new(b"downgraded-verified-drand"),
+            vec![P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id: verified_source_id,
+                beacon_round: verified_round,
+                payload: downgraded_payload,
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(downgraded.external_randomness_beacons, 1);
+        assert_eq!(downgraded.external_randomness_beacons_applied, 0);
+        assert_eq!(downgraded.invalid_events, 1);
+    }
+
+    #[test]
+    fn network_event_driver_applies_verified_drand_beacon_payloads() {
+        let mut context = TestNetworkEventContext::new(b"verified-drand-beacon-payload");
+        let (source_id, beacon_round, public_key, signature, expected_randomness) =
+            verified_drand_vector();
+        let payload =
+            encode_verified_drand_beacon_payload(&source_id, beacon_round, &public_key, &signature);
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewVerifiedDrandBeaconPayload {
+                source_id: source_id.clone(),
+                beacon_round,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.events, 1);
+        assert_eq!(ingested.external_randomness_beacons, 1);
+        assert_eq!(ingested.external_randomness_beacons_applied, 1);
+        assert_eq!(ingested.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert_eq!(context.chain.state().finalized_beacon_round(), beacon_round);
+        assert_eq!(
+            context.chain.state().finalized_randomness(),
+            expected_randomness
+        );
+        let record = context
+            .chain
+            .state()
+            .external_randomness_beacons()
+            .get(&beacon_round)
+            .expect("verified drand beacon should be stored");
+        assert_eq!(record.randomness, expected_randomness);
+        assert!(matches!(
+            record.proof,
+            ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 { .. }
+        ));
+
+        let duplicate = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewVerifiedDrandBeaconPayload {
+                source_id: source_id.clone(),
+                beacon_round,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(duplicate.external_randomness_beacons_applied, 1);
+        assert_eq!(duplicate.invalid_events, 0);
+
+        let mut invalid_context = TestNetworkEventContext::new(b"verified-drand-invalid");
+        let invalid = ingest_network_messages(
+            &mut invalid_context,
+            vec![P2pMessage::NewVerifiedDrandBeaconPayload {
+                source_id,
+                beacon_round: beacon_round - 1,
+                payload,
+            }],
+            false,
+            &mut PendingNetworkPayloads::default(),
+        )
+        .unwrap();
+        assert_eq!(invalid.external_randomness_beacons, 1);
+        assert_eq!(invalid.external_randomness_beacons_applied, 0);
+        assert_eq!(invalid.invalid_events, 1);
+        assert_eq!(invalid_context.chain.state().finalized_beacon_round(), 0);
     }
 
     #[test]

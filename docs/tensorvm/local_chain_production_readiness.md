@@ -258,9 +258,11 @@ The local bundle is useful and should remain the first operational target:
   network-originated beacon payloads through the same chain command, submit chain-verified local validator
   VRF reveal records before validator receipt rewards can become spendable, relay/retry bounded reveal
   payloads through p2p/node ingest, and expose checker-gated role counters plus external-beacon
-  count/latest-round and validator-reveal count evidence; public drand verification and production
-  validator VRF signatures remain open. Deployed-run measured detection records and remaining fraud paths
-  remain open economics work.
+  count/latest-round and validator-reveal count evidence. Chain and p2p/node paths now admit bounded
+  `pedersen-bls-unchained` drand evidence through signature verification and typed proof metadata, while
+  live public drand fetching, round mapping, production validator VRF signatures, and deployed lifecycle
+  evidence remain open. Deployed-run measured detection records and remaining fraud paths remain open
+  economics work.
 
 That is enough for a useful local demonstration. It is not enough for a production-grade local chain.
 
@@ -338,8 +340,8 @@ it still does not prove public multi-operator deployment behavior or CUDA-backed
 Required fix:
 
 - Extend proposer, beacon, receipt, attestation, and reward evidence into public/CUDA deployment runs.
-- Replace deterministic local beacon fixtures with public drand verification, validator VRF construction,
-  or the deployed commit-reveal lifecycle selected for the public profile.
+- Replace deterministic local beacon fixtures with live public drand fetching/round mapping, validator VRF
+  construction, or the deployed commit-reveal lifecycle selected for the public profile.
 - Continue tightening protocol-level proposer eligibility with deployed evidence rather than runtime-only
   scheduling gates.
 
@@ -879,7 +881,8 @@ Keep this incremental:
 
 1. Broaden chain-cadence multi-proposer, delayed proposer reward evidence, and diagnostic block-check evidence from the local CPU proof into public/CUDA deployment
    runs.
-2. Replace deterministic local beacon fixtures with public drand verification or validator VRF evidence.
+2. Replace deterministic local beacon fixtures with live public drand fetching/round mapping or validator
+   VRF evidence.
 3. Continue full interactive transcript dispute work over the trace-opening path.
 
 This sequence keeps the local chain usable at every step while moving it toward the same base runtime that

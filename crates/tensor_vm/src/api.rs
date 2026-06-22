@@ -58,6 +58,11 @@ pub enum P2pMessage {
         beacon_round: u64,
         payload: Vec<u8>,
     },
+    NewVerifiedDrandBeaconPayload {
+        source_id: String,
+        beacon_round: u64,
+        payload: Vec<u8>,
+    },
     NewValidatorVrfRevealPayload {
         reveal_id: Hash,
         receipt_id: Hash,

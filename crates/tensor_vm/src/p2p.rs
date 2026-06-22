@@ -17,13 +17,14 @@ pub use wire::{
     decode_external_randomness_beacon_payload, decode_job_payload, decode_message,
     decode_receipt_payload, decode_tensor_payload, decode_trace_opening_payload,
     decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
-    encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
+    decode_verified_drand_beacon_payload, encode_attestation_payload,
+    encode_block_check_challenge_payload, encode_block_payload,
     encode_block_payload_with_selected_receipts, encode_block_vote_payload,
     encode_external_randomness_beacon_payload, encode_gossipsub_message, encode_job_payload,
     encode_message, encode_receipt_payload, encode_tensor_payload, encode_trace_opening_payload,
     encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
-    gossip_topic_for_message, gossipsub_ident_topic, request_response_protocol_for_message,
-    request_response_stream_protocol,
+    encode_verified_drand_beacon_payload, gossip_topic_for_message, gossipsub_ident_topic,
+    request_response_protocol_for_message, request_response_stream_protocol,
 };
 
 pub const LIBP2P_PROTOCOL_PREFIX: &str = "/tensorchain/1";

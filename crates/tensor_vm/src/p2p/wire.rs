@@ -41,6 +41,15 @@ const BLOCK_CHECK_CHALLENGE_PAYLOAD_LEN: usize = codec::BLOCK_CHECK_CHALLENGE_PA
 const EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES: usize = 96;
 const EXTERNAL_RANDOMNESS_BEACON_PAYLOAD_MAX_LEN: usize =
     8 + EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES + 8 + 32 + 32;
+const DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES: usize = 48;
+const DRAND_PEDERSEN_BLS_SIGNATURE_BYTES: usize = 96;
+const VERIFIED_DRAND_BEACON_PAYLOAD_MAX_LEN: usize = 8
+    + EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES
+    + 8
+    + 8
+    + DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES
+    + 8
+    + DRAND_PEDERSEN_BLS_SIGNATURE_BYTES;
 const VALIDATOR_VRF_REVEAL_PAYLOAD_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 32 + 32 + 32 + 8;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -49,6 +58,14 @@ pub struct ExternalRandomnessBeaconPayload {
     pub beacon_round: u64,
     pub randomness: Hash,
     pub proof_hash: Hash,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifiedDrandBeaconPayload {
+    pub source_id: String,
+    pub beacon_round: u64,
+    pub public_key: Vec<u8>,
+    pub signature: Vec<u8>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -74,7 +91,8 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         }
         P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. } => Some(GossipTopic::Attestations),
-        P2pMessage::NewExternalRandomnessBeaconPayload { .. } => Some(GossipTopic::Blocks),
+        P2pMessage::NewExternalRandomnessBeaconPayload { .. }
+        | P2pMessage::NewVerifiedDrandBeaconPayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewValidatorVrfRevealPayload { .. } => Some(GossipTopic::Attestations),
         P2pMessage::PeerInfo { .. } => Some(GossipTopic::Peers),
         P2pMessage::RequestTensorChunk { .. }
@@ -126,6 +144,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewValidatorAuditReport(_)
         | P2pMessage::NewValidatorAuditReportPayload { .. }
         | P2pMessage::NewExternalRandomnessBeaconPayload { .. }
+        | P2pMessage::NewVerifiedDrandBeaconPayload { .. }
         | P2pMessage::NewValidatorVrfRevealPayload { .. }
         | P2pMessage::PeerInfo { .. } => None,
     }
@@ -277,6 +296,16 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             payload,
         } => {
             out.push(27);
+            write_string(&mut out, source_id);
+            write_u64(&mut out, *beacon_round);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewVerifiedDrandBeaconPayload {
+            source_id,
+            beacon_round,
+            payload,
+        } => {
+            out.push(29);
             write_string(&mut out, source_id);
             write_u64(&mut out, *beacon_round);
             write_bytes(&mut out, payload);
@@ -517,6 +546,23 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 ));
             }
             P2pMessage::NewExternalRandomnessBeaconPayload {
+                source_id,
+                beacon_round,
+                payload,
+            }
+        }
+        29 => {
+            let source_id =
+                reader.read_string_with_max(EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES)?;
+            let beacon_round = reader.read_u64()?;
+            let payload = reader.read_bytes_with_max(VERIFIED_DRAND_BEACON_PAYLOAD_MAX_LEN)?;
+            let decoded = decode_verified_drand_beacon_payload(&payload)?;
+            if decoded.source_id != source_id || decoded.beacon_round != beacon_round {
+                return Err(TvmError::InvalidReceipt(
+                    "verified drand beacon payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewVerifiedDrandBeaconPayload {
                 source_id,
                 beacon_round,
                 payload,
@@ -859,6 +905,49 @@ pub fn decode_external_randomness_beacon_payload(
     })
 }
 
+pub fn encode_verified_drand_beacon_payload(
+    source_id: &str,
+    beacon_round: u64,
+    public_key: &[u8],
+    signature: &[u8],
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_string(&mut out, source_id);
+    write_u64(&mut out, beacon_round);
+    write_bytes(&mut out, public_key);
+    write_bytes(&mut out, signature);
+    out
+}
+
+pub fn decode_verified_drand_beacon_payload(input: &[u8]) -> TvmResult<VerifiedDrandBeaconPayload> {
+    let mut reader = Reader::new(input);
+    let source_id = reader.read_string_with_max(EXTERNAL_RANDOMNESS_BEACON_SOURCE_ID_MAX_BYTES)?;
+    let beacon_round = reader.read_u64()?;
+    let public_key = reader.read_bytes_with_max(DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES)?;
+    if public_key.len() != DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES {
+        return Err(TvmError::InvalidReceipt(
+            "verified drand public key length mismatch",
+        ));
+    }
+    let signature = reader.read_bytes_with_max(DRAND_PEDERSEN_BLS_SIGNATURE_BYTES)?;
+    if signature.len() != DRAND_PEDERSEN_BLS_SIGNATURE_BYTES {
+        return Err(TvmError::InvalidReceipt(
+            "verified drand signature length mismatch",
+        ));
+    }
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing verified drand beacon payload bytes",
+        ));
+    }
+    Ok(VerifiedDrandBeaconPayload {
+        source_id,
+        beacon_round,
+        public_key,
+        signature,
+    })
+}
+
 pub fn encode_validator_vrf_reveal_payload(reveal: &ValidatorVrfRevealRecord) -> Vec<u8> {
     let mut out = Vec::new();
     write_hash(&mut out, &reveal.reveal_id);
@@ -1074,6 +1163,16 @@ mod tests {
     use crate::types::{address, hash_bytes};
     use crate::verify::{AttestationStatement, ValidatorAttestation, VerificationResult};
 
+    fn verified_drand_payload_fixture() -> (String, u64, Vec<u8>, Vec<u8>, Vec<u8>) {
+        let source_id = "drand-pedersen-bls-unchained-v1:fixture".to_owned();
+        let beacon_round = 223_344;
+        let public_key = vec![3; DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES];
+        let signature = vec![4; DRAND_PEDERSEN_BLS_SIGNATURE_BYTES];
+        let payload =
+            encode_verified_drand_beacon_payload(&source_id, beacon_round, &public_key, &signature);
+        (source_id, beacon_round, public_key, signature, payload)
+    }
+
     #[test]
     fn p2p_messages_roundtrip() {
         let h = hash_bytes(b"test", &[b"h"]);
@@ -1166,6 +1265,13 @@ mod tests {
             &beacon_randomness,
             &beacon_proof_hash,
         );
+        let (
+            verified_drand_source,
+            verified_drand_round,
+            _verified_drand_public_key,
+            _verified_drand_signature,
+            verified_drand_payload,
+        ) = verified_drand_payload_fixture();
         let vrf_reveal = ValidatorVrfRevealRecord {
             reveal_id: hash_bytes(b"test", &[b"roundtrip-reveal-id"]),
             receipt_id: receipt.receipt_id(),
@@ -1234,6 +1340,11 @@ mod tests {
                 source_id: beacon_source,
                 beacon_round,
                 payload: beacon_payload,
+            },
+            P2pMessage::NewVerifiedDrandBeaconPayload {
+                source_id: verified_drand_source,
+                beacon_round: verified_drand_round,
+                payload: verified_drand_payload,
             },
             P2pMessage::NewValidatorVrfRevealPayload {
                 reveal_id: vrf_reveal.reveal_id,
@@ -1339,6 +1450,64 @@ mod tests {
 
         let mismatched = P2pMessage::NewExternalRandomnessBeaconPayload {
             source_id: source_id.to_owned(),
+            beacon_round: beacon_round + 1,
+            payload,
+        };
+        assert!(decode_message(&encode_message(&mismatched)).is_err());
+    }
+
+    #[test]
+    fn verified_drand_beacon_payloads_roundtrip_and_reject_malformed_edges() {
+        let (source_id, beacon_round, public_key, signature, payload) =
+            verified_drand_payload_fixture();
+        assert_eq!(
+            decode_verified_drand_beacon_payload(&payload).unwrap(),
+            VerifiedDrandBeaconPayload {
+                source_id: source_id.clone(),
+                beacon_round,
+                public_key: public_key.clone(),
+                signature: signature.clone(),
+            }
+        );
+        let message = P2pMessage::NewVerifiedDrandBeaconPayload {
+            source_id: source_id.clone(),
+            beacon_round,
+            payload: payload.clone(),
+        };
+        assert_eq!(decode_message(&encode_message(&message)).unwrap(), message);
+
+        let mut trailing = payload.clone();
+        trailing.push(0);
+        assert_eq!(
+            decode_verified_drand_beacon_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing verified drand beacon payload bytes"
+            ))
+        );
+
+        let short_public_key = encode_verified_drand_beacon_payload(
+            &source_id,
+            beacon_round,
+            &public_key[..DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES - 1],
+            &signature,
+        );
+        assert_eq!(
+            decode_verified_drand_beacon_payload(&short_public_key),
+            Err(TvmError::InvalidReceipt(
+                "verified drand public key length mismatch"
+            ))
+        );
+
+        let oversized_signature = encode_verified_drand_beacon_payload(
+            &source_id,
+            beacon_round,
+            &public_key,
+            &[0; DRAND_PEDERSEN_BLS_SIGNATURE_BYTES + 1],
+        );
+        assert!(decode_verified_drand_beacon_payload(&oversized_signature).is_err());
+
+        let mismatched = P2pMessage::NewVerifiedDrandBeaconPayload {
+            source_id,
             beacon_round: beacon_round + 1,
             payload,
         };
@@ -2056,6 +2225,21 @@ mod tests {
             Some(GossipTopic::Blocks)
         );
         assert_eq!(request_response_protocol_for_message(&beacon_message), None);
+        let (source_id, beacon_round, _public_key, _signature, payload) =
+            verified_drand_payload_fixture();
+        let verified_drand_message = P2pMessage::NewVerifiedDrandBeaconPayload {
+            source_id,
+            beacon_round,
+            payload,
+        };
+        assert_eq!(
+            gossip_topic_for_message(&verified_drand_message),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(
+            request_response_protocol_for_message(&verified_drand_message),
+            None
+        );
         let reveal_message = P2pMessage::NewValidatorVrfRevealPayload {
             reveal_id: h,
             receipt_id: hash_bytes(b"test", &[b"mapping-receipt"]),
