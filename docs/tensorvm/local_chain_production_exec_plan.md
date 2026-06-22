@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 197 committed locally; push pending: Public VRF Lifecycle Raw-Record Evidence Gate.
+- Active feature: Iteration 197 pushed: Public VRF Lifecycle Raw-Record Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -16,7 +16,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: push Iteration 197, then continue real public VRF/CUDA/deployed-run artifact work.
+- Next action: continue real public VRF/CUDA/deployed-run artifact work.
 
 ## Readiness Matrix
 
@@ -110,7 +110,7 @@ Validation evidence, June 22, 2026:
 - Coverage validation: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
   passed, 574 instrumented tests, 84.77% line coverage, 23329/27520 lines covered.
 - Commit: `f320a4b` (`Require raw VRF lifecycle evidence`).
-- Push: pending.
+- Push: `git push origin main` succeeded on June 22, 2026 (`8534c6b..b069b2b  main -> main`).
 
 ### Iteration 196: Public Detection Measurement Evidence Gate
 
