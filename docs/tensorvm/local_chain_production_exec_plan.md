@@ -60,7 +60,7 @@ checkpoint before edits.
 
 ### Iteration 163: Trace-Bisection Referee-Ready Openings And Verdicts
 
-Commit: `0487f77` (pending push).
+Commit: `0487f77` (pushed `main` -> `main`).
 
 Feature capability: isolated trace-bisection disputes should carry enough state-rooted evidence for a real
 one-op referee ruling: trace openings commit to the resolved input roots as well as output roots, isolated
