@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 189 complete pending commit/push: Public Evidence Raw Chain History Record Gate.
+- Active feature: Iteration 189 complete: Public Evidence Raw Chain History Record Gate.
 - Current status: full-spec public evidence evaluation now requires raw block-history and
   finality-history records whose aggregate roots match the signed public evidence summaries, in addition
   to the existing raw randomness and operational-record gates.
@@ -13,8 +13,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: commit and push the raw chain-history evidence gate, then continue CUDA/public deployment
-  evidence or remaining deployed-randomness/economic evidence.
+- Next action: continue CUDA/public deployment evidence or remaining deployed-randomness/economic evidence.
 
 ## Readiness Matrix
 
@@ -105,7 +104,8 @@ Validation evidence:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   566 instrumented tests and 84.78% line coverage, 23111/27259 lines covered.
-- Commit/push: pending.
+- Commit `8f84062` (`Require raw public chain history evidence`) pushed to `origin/main` on
+  June 22, 2026.
 
 ### Iteration 188: Public Evidence Raw Operational Record Gate
 
