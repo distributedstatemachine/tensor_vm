@@ -36,6 +36,42 @@ pub struct ValidatorRoleBlockProposalObservation {
     pub attested_receipts: BTreeSet<Hash>,
 }
 
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub struct ValidatorRoleVrfKeyRegistration {
+    pub vrf_public_key: Hash,
+    pub registered_new_key: bool,
+}
+
+pub fn ensure_validator_role_vrf_key(
+    node: &mut RpcNode,
+    validator: Address,
+    wallet_secret: Option<&str>,
+) -> std::result::Result<Option<ValidatorRoleVrfKeyRegistration>, String> {
+    let Some(secret) = wallet_secret else {
+        return Ok(None);
+    };
+    let Some(validator_state) = node.chain.state().validators().get(&validator) else {
+        return Ok(None);
+    };
+    let public_key = validator_vrf_ed25519_public_key_from_secret(secret);
+    if validator_state.vrf_public_key == Some(public_key) {
+        return Ok(Some(ValidatorRoleVrfKeyRegistration {
+            vrf_public_key: public_key,
+            registered_new_key: false,
+        }));
+    }
+    node.chain
+        .apply_command(ChainCommand::RegisterValidatorVrfKey {
+            validator,
+            vrf_public_key: public_key,
+        })
+        .map_err(|error| format!("validator role failed to register vrf key: {error}"))?;
+    Ok(Some(ValidatorRoleVrfKeyRegistration {
+        vrf_public_key: public_key,
+        registered_new_key: true,
+    }))
+}
+
 pub fn validator_role_work_observation(
     node: &RpcNode,
     validator: Address,
@@ -284,18 +320,7 @@ pub fn submit_validator_role_attestation(
         );
     }
     let reveal = if let Some(secret) = wallet_secret {
-        let public_key = validator_vrf_ed25519_public_key_from_secret(secret);
-        node.chain
-            .apply_command(ChainCommand::RegisterValidatorVrfKey {
-                validator,
-                vrf_public_key: public_key,
-            })
-            .map_err(|error| {
-                format!(
-                    "validator role failed to register vrf key {}: {error}",
-                    hex(&receipt_id)
-                )
-            })?;
+        ensure_validator_role_vrf_key(node, validator, wallet_secret)?;
         node.chain
             .validator_vrf_reveal_record_with_secret(receipt_id, validator, 0, secret)
             .map_err(|error| {

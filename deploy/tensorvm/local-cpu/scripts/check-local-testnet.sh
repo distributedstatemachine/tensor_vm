@@ -907,6 +907,8 @@ LIVE_ROLE_MINER_RECEIPTS_SUBMITTED=0
 LIVE_ROLE_MINER_TENSORS_INSERTED=0
 LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
 LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
+LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS=0
+LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS=0
 LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
 LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
 LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
@@ -935,6 +937,8 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   LIVE_ROLE_MINER_TENSORS_INSERTED=0
   LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT=0
   LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=0
+  LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS=0
+  LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS=0
   LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
   LIVE_ROLE_DELAYED_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
   LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT=0
@@ -999,6 +1003,9 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_VALIDATOR_REMOTE_FETCH_BYTES=$(status_value role_validator_remote_tensor_fetch_bytes "$STATUS")
     SERVICE_ROLE_VALIDATOR_REMOTE_TENSORS_INSERTED=$(status_value role_validator_remote_tensors_inserted "$STATUS")
     SERVICE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED=$(status_value role_validator_attestations_submitted "$STATUS")
+    SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTERED=$(status_value role_validator_vrf_key_registered "$STATUS")
+    SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTRATION_COUNT=$(status_value role_validator_vrf_key_registration_count "$STATUS")
+    SERVICE_ROLE_VALIDATOR_VRF_PUBLIC_KEY=$(status_value role_validator_vrf_public_key "$STATUS")
     SERVICE_ROLE_VALIDATOR_PROPOSER_WORK_READY=$(status_value role_validator_proposer_work_ready "$STATUS")
     SERVICE_ROLE_VALIDATOR_PROPOSER_SETTLED_RECEIPTS_SEEN=$(status_value role_validator_proposer_settled_receipts_seen "$STATUS")
     SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN=$(status_value role_validator_proposer_artifact_ready_receipts_seen "$STATUS")
@@ -1304,6 +1311,19 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
       miner-*) [ "$SERVICE_ROLE_WALLET_REGISTRATION" = "miner" ] || { STATUS_MISMATCH=true; continue; } ;;
       validator-*) [ "$SERVICE_ROLE_WALLET_REGISTRATION" = "validator" ] || { STATUS_MISMATCH=true; continue; } ;;
     esac
+    case "$service" in
+      validator-*)
+        [ "$SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTERED" = "true" ] || { STATUS_MISMATCH=true; continue; }
+        is_u64 "$SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTRATION_COUNT" || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_VRF_PUBLIC_KEY" != "none" ] || { STATUS_MISMATCH=true; continue; }
+        LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS=$((LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS + 1))
+        LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS=$((LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS + SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTRATION_COUNT))
+        ;;
+      miner-*)
+        [ "$SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTERED" = "false" ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_VALIDATOR_VRF_PUBLIC_KEY" = "none" ] || { STATUS_MISMATCH=true; continue; }
+        ;;
+    esac
     [ "$SERVICE_ROLE_LOOP_READY" = "true" ] || { STATUS_MISMATCH=true; continue; }
     case "$service" in
       validator-00)
@@ -1489,6 +1509,10 @@ if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
   [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
 fi
 [ "$LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT" -eq 1 ] || fail "expected exactly one local synthetic job producer"
+[ "$LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS" -eq "$EXPECTED_VALIDATOR_COUNT" ] || fail "not all validator roles registered production VRF keys"
+if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
+  [ "$LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS" -ge "$EXPECTED_VALIDATOR_COUNT" ] || fail "validator role VRF key registration total did not cover all validators"
+fi
 [ "$LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -ge 2 ] || fail "fewer than two validator role block proposers were enabled"
 [ "$LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -gt 1 ] || fail "no chain-cadence validator role block proposer competition was enabled"
 if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
@@ -1546,6 +1570,8 @@ live_pending_challenge_rewards=${LIVE_PENDING_CHALLENGE_REWARD_COUNT}
 live_delayed_challenge_reward_claims=${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS}
 live_external_randomness_beacon_records=${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS}
 live_validator_vrf_reveals=${LIVE_VALIDATOR_VRF_REVEAL_COUNT}
+live_role_validator_vrf_key_operators=${LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS}
+live_role_validator_vrf_key_registrations=${LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS}
 live_latest_external_randomness_beacon_round=${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND}
 live_randomness_current_block_hash_allowed=${LIVE_RANDOMNESS_CURRENT_BLOCK_HASH_ALLOWED}
 live_randomness_receipt_anchors_consistent=${LIVE_RANDOMNESS_RECEIPT_ANCHORS_CONSISTENT}

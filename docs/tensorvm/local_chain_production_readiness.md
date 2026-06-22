@@ -255,10 +255,11 @@ The local bundle is useful and should remain the first operational target:
   evidence for the implemented verifier and fraud mechanisms. Local CPU role runtimes now ingest the
   configured deterministic drand-style external beacon fixture through the shared chain command before
   network/role work, persist the accepted beacon record, relay it as a bounded p2p payload, apply
-  network-originated beacon payloads through the same chain command, submit chain-verified local validator
-  VRF reveal records before validator receipt rewards can become spendable, relay/retry bounded reveal
-  payloads through p2p/node ingest, and expose checker-gated role counters plus external-beacon
-  count/latest-round and validator-reveal count evidence. Chain admission now supports registered
+  network-originated beacon payloads through the same chain command, derive and register wallet-backed
+  validator reveal public keys before receipt work, submit chain-verified local validator VRF reveal records
+  before validator receipt rewards can become spendable, relay/retry bounded reveal payloads through
+  p2p/node ingest, and expose checker-gated role counters plus external-beacon count/latest-round,
+  validator-reveal count, and validator reveal key lifecycle evidence. Chain admission now supports registered
   validator reveal public keys and requires bounded Ed25519 proof bytes for keyed validators before
   releasing validator receipt rewards; unkeyed reveal records remain local fallback evidence only. Chain
   and p2p/node paths now admit bounded `pedersen-bls-unchained` drand evidence through signature
@@ -268,8 +269,7 @@ The local bundle is useful and should remain the first operational target:
   fetched rounds beyond the configured lag, and exposes status counters for
   attempts/successes/stale/failure backoff/freshness. Chain admission now anchors accepted chained drand
   rounds to deterministic epoch windows rooted in chain state and rejects later chained rounds outside the
-  current window. Deployed validator reveal key lifecycle/full VRF construction and deployed lifecycle
-  evidence remain open.
+  current window. Deployed full VRF construction and deployed lifecycle evidence remain open.
   Deployed-run measured detection records and remaining fraud paths remain open
   economics work.
 
@@ -350,7 +350,7 @@ Required fix:
 
 - Extend proposer, beacon, receipt, attestation, and reward evidence into public/CUDA deployment runs.
 - Replace deterministic local beacon fixtures in public evidence with deployed public-drand round mapping,
-  deployed validator reveal key lifecycle/full VRF construction, or the deployed commit-reveal lifecycle
+  deployed full VRF construction or the deployed commit-reveal lifecycle
   selected for the public profile.
 - Continue tightening protocol-level proposer eligibility with deployed evidence rather than runtime-only
   scheduling gates.
@@ -892,7 +892,7 @@ Keep this incremental:
 1. Broaden chain-cadence multi-proposer, delayed proposer reward evidence, and diagnostic block-check evidence from the local CPU proof into public/CUDA deployment
    runs.
 2. Replace deterministic local beacon fixtures in public deployment evidence with round-mapped public
-   drand polling or deployed validator reveal key lifecycle/full VRF evidence.
+   drand polling or deployed full VRF evidence.
 3. Continue full interactive transcript dispute work over the trace-opening path.
 
 This sequence keeps the local chain usable at every step while moving it toward the same base runtime that

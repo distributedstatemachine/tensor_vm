@@ -3,15 +3,15 @@ use crate::{
 };
 
 use super::{
-    ServiceRuntimeConfig, chain_announcement_checkpoint, fetch_validator_role_missing_tensors,
-    publish_block_payload_announcements, publish_block_vote_announcements,
-    publish_chain_payload_announcements, publish_new_chain_announcements,
-    publish_observed_block_check_challenge, publish_validator_block_proposal,
-    runtime_production::next_block_timestamp, runtime_role_wallet_registration,
-    submit_validator_role_attestation, submit_validator_role_audit_report,
-    submit_validator_role_block_proposal, submit_validator_role_block_vote,
-    validator_role_audit_observation, validator_role_block_proposal_observation,
-    validator_role_work_observation,
+    ServiceRuntimeConfig, chain_announcement_checkpoint, ensure_validator_role_vrf_key,
+    fetch_validator_role_missing_tensors, publish_block_payload_announcements,
+    publish_block_vote_announcements, publish_chain_payload_announcements,
+    publish_new_chain_announcements, publish_observed_block_check_challenge,
+    publish_validator_block_proposal, runtime_production::next_block_timestamp,
+    runtime_role_wallet_registration, submit_validator_role_attestation,
+    submit_validator_role_audit_report, submit_validator_role_block_proposal,
+    submit_validator_role_block_vote, validator_role_audit_observation,
+    validator_role_block_proposal_observation, validator_role_work_observation,
 };
 
 pub fn tick_validator_role_work_once(
@@ -32,10 +32,26 @@ pub fn tick_validator_role_work_once(
     {
         return Ok(false);
     }
+    let mut status_changed = false;
+    if let Some(registration) = ensure_validator_role_vrf_key(
+        &mut server.gateway_mut().node,
+        validator,
+        config.role_wallet_secret.as_deref(),
+    )? {
+        runtime_state.record_validator_vrf_key_observation(
+            registration.vrf_public_key,
+            registration.registered_new_key,
+        );
+        if registration.registered_new_key {
+            store
+                .persist_chain(&server.gateway().node.chain)
+                .map_err(|error| format!("failed to persist validator vrf key: {error}"))?;
+            status_changed = true;
+        }
+    }
     let observation = validator_role_work_observation(&server.gateway().node, validator);
     let receipt_to_fetch = observation.artifact_missing_receipts.iter().next().copied();
     let mut receipt_to_submit = observation.artifact_ready_receipts.iter().next().copied();
-    let mut status_changed = false;
     if runtime_state.record_validator_work_observation(
         observation.assigned_receipts,
         observation.unattested_receipts,

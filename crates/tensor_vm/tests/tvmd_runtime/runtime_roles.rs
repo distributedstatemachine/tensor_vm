@@ -7,6 +7,7 @@ use tensor_vm::app::{
     runtime_role_wallet_registered, runtime_role_wallet_registration, submit_miner_role_receipt,
     submit_validator_role_attestation, tick_validator_role_work_once,
 };
+use tensor_vm::chain::validator_vrf_ed25519_public_key_from_secret;
 
 #[test]
 fn runtime_role_policy_allows_only_validator_local_production() {
@@ -319,6 +320,7 @@ fn scheduled_local_production_publishes_jobs_without_producer_receipts_or_attest
 #[test]
 fn selected_validator_proposer_emits_idle_fallback_block() {
     let validator = address(b"idle-fallback-validator");
+    let wallet_secret = "test-validator-vrf";
     let mut chain = Chain::new(local_cpu_seed_beacon());
     register_validator(&mut chain, validator);
     let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
@@ -336,7 +338,7 @@ fn selected_validator_proposer_emits_idle_fallback_block() {
         runtime_command: "validator_run",
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
-        role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        role_wallet_secret: Some(wallet_secret.to_owned()),
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -357,6 +359,20 @@ fn selected_validator_proposer_emits_idle_fallback_block() {
     .unwrap();
 
     assert!(changed);
+    let expected_vrf_public_key = validator_vrf_ed25519_public_key_from_secret(wallet_secret);
+    assert_eq!(
+        server.gateway().node.chain.state().validators()[&validator].vrf_public_key,
+        Some(expected_vrf_public_key)
+    );
+    assert_eq!(runtime_state.validator_vrf_key_registration_count(), 1);
+    assert_eq!(
+        runtime_state.validator_vrf_key_public_key(),
+        expected_vrf_public_key
+    );
+    assert_eq!(
+        store.load_chain().unwrap().state().validators()[&validator].vrf_public_key,
+        Some(expected_vrf_public_key)
+    );
     assert_eq!(runtime_state.produced_blocks(), 1);
     assert_eq!(runtime_state.validator_blocks_proposed(), 1);
     assert_eq!(runtime_state.validator_useful_blocks_proposed(), 0);

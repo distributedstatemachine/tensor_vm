@@ -134,6 +134,8 @@ pub struct NodeRuntimeState {
     validator_proposer_attested_receipts_seen: BTreeSet<Hash>,
     validator_attestations_submitted: usize,
     validator_audit_reports_submitted: usize,
+    validator_vrf_key_public_key: Hash,
+    validator_vrf_key_registration_count: usize,
     validator_blocks_proposed: usize,
     validator_useful_blocks_proposed: usize,
     validator_fallback_blocks_proposed: usize,
@@ -273,6 +275,18 @@ impl NodeRuntimeState {
 
     pub fn validator_audit_reports_submitted(&self) -> usize {
         self.validator_audit_reports_submitted
+    }
+
+    pub fn validator_vrf_key_public_key(&self) -> Hash {
+        self.validator_vrf_key_public_key
+    }
+
+    pub fn validator_vrf_key_registration_count(&self) -> usize {
+        self.validator_vrf_key_registration_count
+    }
+
+    pub fn validator_vrf_key_registered(&self) -> bool {
+        self.validator_vrf_key_public_key != [0; 32]
     }
 
     pub fn validator_blocks_proposed(&self) -> usize {
@@ -508,6 +522,18 @@ impl NodeRuntimeState {
         self.validator_audit_reports_submitted = self
             .validator_audit_reports_submitted
             .saturating_add(audit_reports_submitted);
+    }
+
+    pub fn record_validator_vrf_key_observation(
+        &mut self,
+        vrf_public_key: Hash,
+        registered_new_key: bool,
+    ) {
+        self.validator_vrf_key_public_key = vrf_public_key;
+        if registered_new_key {
+            self.validator_vrf_key_registration_count =
+                self.validator_vrf_key_registration_count.saturating_add(1);
+        }
     }
 
     pub fn record_validator_block_proposal_submission(

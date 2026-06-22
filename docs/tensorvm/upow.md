@@ -453,7 +453,9 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > state-rooted local validator VRF reveal records. Validators with registered reveal public keys must now
 > provide bounded Ed25519 proof bytes over the committed receipt seed input; the chain verifies those proof
 > bytes against the registered key before releasing validator receipt rewards, while the old unkeyed helper
-> remains only as a local fallback for validators with no registered key. Local CPU role runtimes can now ingest a configured
+> remains only as a local fallback for validators with no registered key. Local CPU validator role runtimes
+> now derive and register wallet-backed reveal public keys before receipt work and expose checker-gated key
+> lifecycle evidence. Local CPU role runtimes can now ingest a configured
 > deterministic drand-style external beacon fixture through `ChainCommand::SubmitExternalRandomnessBeacon`,
 > persist the state-rooted beacon record, submit validator reveal records before validator reward release,
 > relay bounded reveal payloads over p2p/node ingest, retry out-of-order reveal payloads until receipt
@@ -468,8 +470,8 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > poll/backoff/freshness counters. Accepted chained drand records now anchor the current chain epoch to
 > a public drand round, reject later chained records outside the deterministic chain-owned epoch window,
 > and expose the rooted/persisted anchor plus current window through status and explorer evidence.
-> Deployed validator reveal key lifecycle/full VRF construction and deployed commit-reveal lifecycle
-> evidence remain TODO before claiming the full §10 construction.
+> Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain TODO before claiming
+> the full §10 construction.
 
 ---
 

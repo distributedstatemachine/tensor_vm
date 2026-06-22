@@ -1,6 +1,7 @@
 use super::{RuntimeRole, runtime_role_wallet_registered, runtime_role_wallet_registration};
 use crate::{
-    NetworkEventIngest, NodeRuntimeState, RpcHttpServer, TensorVmLibp2pService, types::Address,
+    NetworkEventIngest, NodeRuntimeState, RpcHttpServer, TensorVmLibp2pService,
+    types::{Address, Hash},
 };
 
 pub struct RuntimeStatusSnapshot {
@@ -73,6 +74,9 @@ pub struct RuntimeStatusSnapshot {
     pub(super) validator_audit_artifact_ready: usize,
     pub(super) validator_audit_artifact_missing: usize,
     pub(super) validator_audit_reports_submitted: usize,
+    pub(super) validator_vrf_key_registered: bool,
+    pub(super) validator_vrf_key_registration_count: usize,
+    pub(super) validator_vrf_key_public_key: Hash,
     pub(super) validator_proposer_work_ready: bool,
     pub(super) validator_proposer_settled_receipts_seen: usize,
     pub(super) validator_proposer_artifact_ready_receipts_seen: usize,
@@ -193,6 +197,9 @@ impl RuntimeStatusSnapshot {
             validator_audit_artifact_ready: state.validator_audit_artifact_ready(),
             validator_audit_artifact_missing: state.validator_audit_artifact_missing(),
             validator_audit_reports_submitted: state.validator_audit_reports_submitted(),
+            validator_vrf_key_registered: state.validator_vrf_key_registered(),
+            validator_vrf_key_registration_count: state.validator_vrf_key_registration_count(),
+            validator_vrf_key_public_key: state.validator_vrf_key_public_key(),
             validator_proposer_work_ready: state.validator_proposer_work_ready(),
             validator_proposer_settled_receipts_seen: state
                 .validator_proposer_settled_receipts_seen(),

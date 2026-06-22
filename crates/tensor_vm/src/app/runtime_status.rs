@@ -177,6 +177,21 @@ pub fn format_role_runtime_report(
         snapshot.validator_attestations_submitted,
     );
     report.field(
+        "validator_vrf_key_registered",
+        snapshot.validator_vrf_key_registered,
+    );
+    report.field(
+        "validator_vrf_key_registration_count",
+        snapshot.validator_vrf_key_registration_count,
+    );
+    report.field(
+        "validator_vrf_public_key",
+        validator_vrf_key_label(
+            snapshot.validator_vrf_key_registered,
+            &snapshot.validator_vrf_key_public_key,
+        ),
+    );
+    report.field(
         "validator_audit_work_ready",
         snapshot.validator_audit_work_ready,
     );
@@ -589,6 +604,21 @@ pub fn write_role_runtime_status(
         snapshot.validator_attestations_submitted,
     );
     report.field(
+        "role_validator_vrf_key_registered",
+        snapshot.validator_vrf_key_registered,
+    );
+    report.field(
+        "role_validator_vrf_key_registration_count",
+        snapshot.validator_vrf_key_registration_count,
+    );
+    report.field(
+        "role_validator_vrf_public_key",
+        validator_vrf_key_label(
+            snapshot.validator_vrf_key_registered,
+            &snapshot.validator_vrf_key_public_key,
+        ),
+    );
+    report.field(
         "role_validator_audit_work_ready",
         snapshot.validator_audit_work_ready,
     );
@@ -824,4 +854,12 @@ pub fn write_role_runtime_status(
 
 fn nonempty_status_label(value: &str) -> &str {
     if value.is_empty() { "none" } else { value }
+}
+
+fn validator_vrf_key_label(registered: bool, public_key: &[u8; 32]) -> String {
+    if registered {
+        hex(public_key)
+    } else {
+        "none".to_owned()
+    }
 }

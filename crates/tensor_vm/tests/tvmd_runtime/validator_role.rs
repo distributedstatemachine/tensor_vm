@@ -1,11 +1,11 @@
 use super::*;
 use std::collections::BTreeMap;
 use tensor_vm::app::{
-    ValidatorRemoteTensorResponse, fetch_validator_role_missing_tensors,
-    submit_validator_role_attestation, submit_validator_role_audit_report,
-    submit_validator_role_block_proposal, submit_validator_role_block_vote,
-    validator_remote_tensor_response, validator_role_audit_observation,
-    validator_role_work_observation,
+    ValidatorRemoteTensorResponse, ensure_validator_role_vrf_key,
+    fetch_validator_role_missing_tensors, submit_validator_role_attestation,
+    submit_validator_role_audit_report, submit_validator_role_block_proposal,
+    submit_validator_role_block_vote, validator_remote_tensor_response,
+    validator_role_audit_observation, validator_role_work_observation,
 };
 
 #[test]
@@ -174,6 +174,42 @@ fn validator_role_attestation_submission_skips_missing_unregistered_unassigned_a
     assert!(observation.unattested_receipts.is_empty());
     assert!(observation.artifact_ready_receipts.is_empty());
     assert!(observation.artifact_missing_receipts.is_empty());
+}
+
+#[test]
+fn validator_role_vrf_key_registration_is_keyed_and_idempotent() {
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"validator-vrf-key-lifecycle"]));
+    let validator = address(b"validator-vrf-key-lifecycle-validator");
+    register_validator(&mut chain, validator);
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let secret = "validator-vrf-key-lifecycle-secret";
+    let public_key = tensor_vm::chain::validator_vrf_ed25519_public_key_from_secret(secret);
+
+    assert_eq!(
+        ensure_validator_role_vrf_key(&mut node, address(b"unknown-validator"), Some(secret))
+            .unwrap(),
+        None
+    );
+    assert_eq!(
+        ensure_validator_role_vrf_key(&mut node, validator, None).unwrap(),
+        None
+    );
+
+    let registration = ensure_validator_role_vrf_key(&mut node, validator, Some(secret))
+        .unwrap()
+        .expect("registered validator with secret should register a vrf key");
+    assert_eq!(registration.vrf_public_key, public_key);
+    assert!(registration.registered_new_key);
+    assert_eq!(
+        node.chain.state().validators()[&validator].vrf_public_key,
+        Some(public_key)
+    );
+
+    let duplicate = ensure_validator_role_vrf_key(&mut node, validator, Some(secret))
+        .unwrap()
+        .expect("registered key should still be observed");
+    assert_eq!(duplicate.vrf_public_key, public_key);
+    assert!(!duplicate.registered_new_key);
 }
 
 #[test]

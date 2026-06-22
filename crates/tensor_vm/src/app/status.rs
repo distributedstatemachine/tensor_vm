@@ -78,6 +78,9 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_validator_remote_tensor_fetch_bytes",
     "role_validator_remote_tensors_inserted",
     "role_validator_attestations_submitted",
+    "role_validator_vrf_key_registered",
+    "role_validator_vrf_key_registration_count",
+    "role_validator_vrf_public_key",
     "role_randomness_beacon_mode",
     "role_randomness_beacon_configured",
     "role_randomness_beacon_configured_source",
@@ -1161,6 +1164,9 @@ role_randomness_public_drand_max_round_lag=3
 role_randomness_public_drand_rounds_per_chain_epoch=20
 role_randomness_public_drand_chain_epoch=7
 role_randomness_public_drand_fresh=true
+role_validator_vrf_key_registered=true
+role_validator_vrf_key_registration_count=1
+role_validator_vrf_public_key=1111111111111111111111111111111111111111111111111111111111111111
 ",
         )
         .unwrap();
@@ -1228,6 +1234,18 @@ role_randomness_public_drand_fresh=true
         assert_eq!(
             fields.value("role_randomness_public_drand_fresh"),
             Some("true")
+        );
+        assert_eq!(
+            fields.value("role_validator_vrf_key_registered"),
+            Some("true")
+        );
+        assert_eq!(
+            fields.value("role_validator_vrf_key_registration_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("role_validator_vrf_public_key"),
+            Some("1111111111111111111111111111111111111111111111111111111111111111")
         );
 
         let _ = std::fs::remove_dir_all(data_dir);

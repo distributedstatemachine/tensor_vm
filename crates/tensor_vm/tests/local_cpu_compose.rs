@@ -1148,6 +1148,18 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_network_validator_vrf_reveals_applied",
             ),
             (
+                "SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTERED",
+                "role_validator_vrf_key_registered",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_VRF_KEY_REGISTRATION_COUNT",
+                "role_validator_vrf_key_registration_count",
+            ),
+            (
+                "SERVICE_ROLE_VALIDATOR_VRF_PUBLIC_KEY",
+                "role_validator_vrf_public_key",
+            ),
+            (
                 "SERVICE_ROLE_NETWORK_INVALID_EVENTS",
                 "role_network_invalid_events",
             ),
@@ -1223,6 +1235,8 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             r#"all_operator_validator_attestation_status=true"#,
             r#"all_operator_validator_remote_tensor_fetch_status=true"#,
             r#"live_validator_vrf_reveals=${LIVE_VALIDATOR_VRF_REVEAL_COUNT}"#,
+            r#"live_role_validator_vrf_key_operators=${LIVE_ROLE_VALIDATOR_VRF_KEY_OPERATORS}"#,
+            r#"live_role_validator_vrf_key_registrations=${LIVE_ROLE_VALIDATOR_VRF_KEY_REGISTRATIONS}"#,
             r#"live_role_network_external_randomness_beacons_applied=${LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED}"#,
             r#"live_role_network_validator_vrf_reveals=${LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS}"#,
             r#"live_role_network_validator_vrf_reveals_applied=${LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED}"#,

@@ -81,8 +81,9 @@ pub use validator_role::{
     ValidatorRoleAttestationSubmission, ValidatorRoleAuditObservation,
     ValidatorRoleAuditReportSubmission, ValidatorRoleBlockProposal,
     ValidatorRoleBlockProposalObservation, ValidatorRoleBlockVoteSubmission,
-    ValidatorRoleWorkObservation, submit_validator_role_attestation,
-    submit_validator_role_audit_report, submit_validator_role_block_proposal,
-    submit_validator_role_block_vote, validator_role_audit_observation,
-    validator_role_block_proposal_observation, validator_role_work_observation,
+    ValidatorRoleVrfKeyRegistration, ValidatorRoleWorkObservation, ensure_validator_role_vrf_key,
+    submit_validator_role_attestation, submit_validator_role_audit_report,
+    submit_validator_role_block_proposal, submit_validator_role_block_vote,
+    validator_role_audit_observation, validator_role_block_proposal_observation,
+    validator_role_work_observation,
 };

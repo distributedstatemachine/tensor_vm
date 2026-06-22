@@ -275,13 +275,13 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   JSON. Local CPU role runtimes now ingest the configured deterministic drand-style fixture through that
   command before network/role work, persist accepted records, expose observed/applied/skipped/failure
   counters through role and node status, relay accepted beacon records as bounded p2p payloads, apply
-  network-originated beacon payloads idempotently through the same chain command, submit chain-verified
-  validator VRF reveal records before validator receipt rewards can become spendable, require keyed
-  validators to prove reveal bytes against their registered Ed25519 public key, relay/retry bounded
-  reveal payloads through the same p2p/node ingest path, and the local checker gates the external-beacon
-  record, validator-reveal record, network-applied beacon/reveal, and current-block-hash-ban evidence.
-  Deployed validator reveal key lifecycle/full VRF construction and deployed commit-reveal lifecycle
-  evidence remain open.
+  network-originated beacon payloads idempotently through the same chain command, derive and register
+  wallet-backed validator reveal public keys before receipt work, submit chain-verified validator VRF reveal
+  records before validator receipt rewards can become spendable, require keyed validators to prove reveal
+  bytes against their registered Ed25519 public key, relay/retry bounded reveal payloads through the same
+  p2p/node ingest path, and the local checker gates the external-beacon record, validator-reveal record,
+  validator reveal key lifecycle, network-applied beacon/reveal, and current-block-hash-ban evidence.
+  Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,
