@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 173 in progress: Reward Claim Boundary Regression Hardening.
+- Active feature: Iteration 173 complete: Reward Claim Boundary Regression Hardening.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Valid matured claims remain non-spendable until the beneficiary calls `ClaimReward`;
   direct maturity-sweep commands can prune only voided/unavailable matured claims and cannot credit live
@@ -14,8 +14,8 @@ archive commit anchors only.
   round generation, one-op referee verdicts, timeout settlement, slashing, and delayed challenger rewards.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: finish Iteration 173 commit/push, then continue trace-bisection DoS policy, automatic
-  referee witness generation, or public/CUDA deployment evidence.
+- Next action: continue trace-bisection DoS policy, automatic referee witness generation, or public/CUDA
+  deployment evidence.
 
 ## Readiness Matrix
 
@@ -90,7 +90,8 @@ Validation completed on June 22, 2026:
 - Manual verifier-style review: production reward commands already used pending claims; the new test locks
   the critical boundary that direct `ReleaseMatured*` commands cannot credit live matured claims, while
   `ClaimReward` remains the only spendability path.
-- Commit/push: pending.
+- Feature commit `919f77f` pushed to `main` on June 22, 2026:
+  `git push` returned `8b94508..919f77f  main -> main`.
 
 Out of scope: changing reward allocation formulas, adding new reward ledgers, trace-bisection DoS policy,
 automatic referee witness generation, and public/CUDA deployment evidence.
@@ -139,7 +140,7 @@ local-testnet, tarpaulin, and manual review. Feature commit `6901655` pushed to 
 
 - Iteration 173 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary and
   reward module tests; broad fmt/check/diff/lib (537 passed), release local-testnet, tarpaulin 84.52%, and
-  manual review. Commit/push pending.
+  manual review. Feature commit `919f77f` pushed to `main` (`8b94508..919f77f`).
 - Iteration 172 feature commit `bbb3d28` and metadata commit `8b94508` pushed to `main` on June 22, 2026.
 
 ## Archive
