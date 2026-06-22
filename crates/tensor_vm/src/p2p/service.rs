@@ -363,7 +363,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                     );
                 }
                 if !bootstrap_multiaddrs.is_empty()
-                    && peer_connections.is_empty()
+                    && peer_connections.len() < bootstrap_multiaddrs.len()
                     && Instant::now() >= next_bootstrap_dial
                 {
                     for address in &bootstrap_multiaddrs {

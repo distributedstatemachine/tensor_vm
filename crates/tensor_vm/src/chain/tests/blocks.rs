@@ -346,6 +346,166 @@ fn competing_useful_head_with_better_pow_replaces_unfinalized_head() {
 }
 
 #[test]
+fn competing_useful_head_uses_candidate_parent_snapshot() {
+    let beacon = hash_bytes(b"test", &[b"competing-candidate-parent-state"]);
+    let mut parent = Chain::new(beacon);
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("competing-candidate-parent-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        parent
+            .register_validator(*validator, parent.params().validator_min_stake)
+            .unwrap();
+    }
+    add_settled_test_receipt(&mut parent, &beacon, b"competing-candidate-parent-first");
+    let finalized_parent = parent
+        .produce_block_with_rewards(validators[0], 1_000, 400, 0)
+        .unwrap();
+    let finalized_parent_hash = finalized_parent.hash();
+
+    let mut local = parent.clone();
+    add_settled_test_receipt(&mut local, &beacon, b"competing-candidate-parent-second");
+    let local_child = local.produce_block(validators[1], 1_012).unwrap();
+    assert!(
+        !local
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&finalized_parent.height)
+    );
+
+    let mut network = parent;
+    for validator in &validators {
+        if network.is_block_finalized(&finalized_parent_hash) {
+            break;
+        }
+        network
+            .submit_block_vote(BlockVote::new(
+                *validator,
+                network.params().validator_min_stake,
+                &finalized_parent,
+            ))
+            .unwrap();
+    }
+    assert!(network.is_block_finalized(&finalized_parent_hash));
+    add_settled_test_receipt(&mut network, &beacon, b"competing-candidate-parent-second");
+    let network_child = network.produce_block(validators[2], 1_012).unwrap();
+    let network_child_hash = network_child.hash();
+    let network_parent_state = network
+        .block_parent_state_for_payload(&network_child_hash)
+        .cloned()
+        .expect("network child must retain its block parent snapshot");
+    assert!(
+        network_parent_state
+            .pending_proposer_rewards()
+            .contains_key(&finalized_parent.height)
+    );
+    assert_eq!(local_child.parent_hash, network_child.parent_hash);
+
+    local.set_block_parent_state_for_admission(network_child_hash, network_parent_state.clone());
+    let admission = local.admit_block(network_child.clone()).unwrap();
+    match admission {
+        BlockAdmission::Replaced { hash, .. } if hash == network_child_hash => {
+            assert_eq!(
+                local.block_parent_state_for_payload(&network_child_hash),
+                Some(&network_parent_state)
+            );
+            assert!(
+                local
+                    .state()
+                    .pending_proposer_rewards()
+                    .contains_key(&finalized_parent.height)
+            );
+        }
+        BlockAdmission::SideBranchStored { hash, .. } if hash == network_child_hash => {
+            assert_eq!(
+                local.block_parent_state_for_payload(&network_child_hash),
+                Some(&network_parent_state)
+            );
+            let branch_state = local
+                .side_branch_child_states()
+                .get(&network_child_hash)
+                .expect("stored side branch must retain child state");
+            assert!(
+                branch_state
+                    .pending_proposer_rewards()
+                    .contains_key(&finalized_parent.height)
+            );
+        }
+        other => panic!("unexpected competing child admission: {other:?}"),
+    }
+}
+
+#[test]
+fn finalized_useful_competitor_replaces_unfinalized_preferred_head() {
+    let beacon = hash_bytes(b"test", &[b"finalized-useful-competitor"]);
+    let mut parent = Chain::new(beacon);
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("finalized-useful-competitor-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        parent
+            .register_validator(*validator, parent.params().validator_min_stake)
+            .unwrap();
+    }
+    add_settled_test_receipt(&mut parent, &beacon, b"finalized-useful-competitor");
+
+    let mut branch_a = parent.clone();
+    let mut branch_b = parent.clone();
+    let block_a = branch_a.produce_block(validators[0], 1_000).unwrap();
+    let block_b = branch_b.produce_block(validators[1], 1_000).unwrap();
+    let (preferred, nonpreferred) = if useful_head_preference(&block_a, &block_b).is_lt() {
+        (block_a, block_b)
+    } else {
+        (block_b, block_a)
+    };
+
+    let mut peer = parent;
+    assert!(matches!(
+        peer.admit_block(preferred.clone()).unwrap(),
+        BlockAdmission::Applied { .. }
+    ));
+    assert_eq!(
+        peer.admit_block(nonpreferred.clone()).unwrap(),
+        BlockAdmission::SideBranchStored {
+            height: nonpreferred.height,
+            parent_hash: nonpreferred.parent_hash,
+            hash: nonpreferred.hash(),
+        }
+    );
+    assert!(peer.side_branch_blocks().contains_key(&nonpreferred.hash()));
+
+    peer.submit_block_vote(BlockVote::new(
+        validators[0],
+        peer.params().validator_min_stake,
+        &nonpreferred,
+    ))
+    .unwrap();
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(preferred.hash())
+    );
+    peer.submit_block_vote(BlockVote::new(
+        validators[1],
+        peer.params().validator_min_stake,
+        &nonpreferred,
+    ))
+    .unwrap();
+    peer.submit_block_vote(BlockVote::new(
+        validators[2],
+        peer.params().validator_min_stake,
+        &nonpreferred,
+    ))
+    .unwrap();
+    assert!(peer.is_block_finalized(&nonpreferred.hash()));
+    assert_eq!(
+        peer.blocks().last().map(TensorBlock::hash),
+        Some(nonpreferred.hash())
+    );
+    assert!(!peer.side_branch_blocks().contains_key(&nonpreferred.hash()));
+    assert!(peer.side_branch_blocks().contains_key(&preferred.hash()));
+}
+
+#[test]
 fn competing_head_does_not_replace_finalized_head() {
     let beacon = hash_bytes(b"test", &[b"finalized-competing-head"]);
     let mut parent = Chain::new(beacon);

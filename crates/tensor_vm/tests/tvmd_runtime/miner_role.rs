@@ -177,6 +177,48 @@ fn miner_role_receipt_submission_skips_duplicate_unregistered_and_unassigned_wor
 }
 
 #[test]
+fn miner_role_receipt_submission_skips_stale_deadline_work() {
+    let params = ChainParams {
+        replication_factor: 1,
+        receipt_submission_window: 1,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"miner-stale-deadline"]));
+    let miner = address(b"miner-stale-deadline-assigned");
+    let validator = address(b"miner-stale-deadline-validator");
+    register_miner(&mut chain, miner);
+    register_validator(&mut chain, validator);
+    let scheduler = JobScheduler::with_small_shape((2, 2, 2));
+    let job = scheduler.generate_small_matmul(
+        chain.state().epoch(),
+        chain.state().height(),
+        &chain.state().finalized_randomness(),
+        chain.state().height(),
+    );
+    let job_id = job.job_id;
+    chain
+        .apply_command(ChainCommand::SubmitJob(tensor_vm::JobState::TensorOp(job)))
+        .unwrap();
+    produce_block(&mut chain, validator, 1_000);
+    assert_eq!(chain.state().height(), 1);
+    assert_eq!(chain.job(&job_id).unwrap().deadline_block(), 0);
+    let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+
+    assert!(
+        submit_miner_role_receipt(&mut node, miner, job_id)
+            .unwrap()
+            .is_none()
+    );
+    assert_eq!(node.chain.state().receipts().len(), 0);
+    let response = node.handle(&tensor_vm::RpcRequest {
+        method: "GET".to_owned(),
+        path: "/tensor/latest".to_owned(),
+        body: Vec::new(),
+    });
+    assert_eq!(response.status, 404);
+}
+
+#[test]
 fn miner_role_fetches_remote_graph_inputs_and_const_blobs_before_execution() {
     let params = ChainParams {
         replication_factor: 1,

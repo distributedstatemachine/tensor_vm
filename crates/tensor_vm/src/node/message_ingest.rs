@@ -402,12 +402,16 @@ mod tests {
     };
     use super::*;
     use crate::{
-        chain::{Chain, ChainCommand, ChainEngine, ChainParams, JobState, ValidatorAuditReport},
+        chain::{
+            BlockVote, Chain, ChainCommand, ChainEngine, ChainParams, JobState,
+            ValidatorAuditReport,
+        },
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
         p2p::{
-            encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
-            encode_external_randomness_beacon_payload, encode_job_payload, encode_receipt_payload,
-            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
+            encode_attestation_payload, encode_block_check_challenge_payload,
+            encode_block_payload_with_selected_receipts, encode_external_randomness_beacon_payload,
+            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
+            encode_validator_vrf_reveal_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
@@ -553,6 +557,21 @@ mod tests {
         let block = chain
             .produce_block_with_rewards(proposer, 1_000, 900, 100)
             .unwrap();
+        let validators = chain
+            .state()
+            .validators()
+            .iter()
+            .map(|(address, validator)| (*address, validator.stake))
+            .collect::<Vec<_>>();
+        for (validator, stake) in validators {
+            if chain.is_block_finalized(&block.hash()) {
+                break;
+            }
+            chain
+                .submit_block_vote(BlockVote::new(validator, stake, &block))
+                .unwrap();
+        }
+        assert!(chain.is_block_finalized(&block.hash()));
         let diagnostic = chain
             .deterministic_bad_block_check_challenge(&block, challenger)
             .unwrap();
@@ -1100,7 +1119,8 @@ mod tests {
     }
 
     #[test]
-    fn network_event_driver_applies_observed_block_check_challenge_with_delayed_reward() {
+    fn network_event_driver_applies_observed_block_check_challenge_without_punishing_canonical_reward()
+     {
         let (chain, block, diagnostic, challenger) = rewarded_block_check_challenge_chain();
         let canonical_hash = block.hash();
         let mut context = TestNetworkEventContext {
@@ -1110,13 +1130,18 @@ mod tests {
         };
         let mut pending = PendingNetworkPayloads::default();
 
+        let observed_block_payload = encode_block_payload_with_selected_receipts(
+            &diagnostic.observed_block,
+            &diagnostic.selected_receipts,
+            &diagnostic.parent_state,
+        );
         let ingested = ingest_network_messages(
             &mut context,
             vec![P2pMessage::NewObservedBlockCheckChallengePayload {
                 challenge_id: diagnostic.challenge_id,
                 block_hash: diagnostic.challenge.block_hash,
                 challenger,
-                observed_block_payload: encode_block_payload(&diagnostic.observed_block),
+                observed_block_payload,
                 challenge_payload: encode_block_check_challenge_payload(&diagnostic.challenge),
             }],
             false,
@@ -1144,19 +1169,16 @@ mod tests {
                 .block_check_challenges()
                 .contains_key(&diagnostic.challenge_id)
         );
+        assert!(context.chain.state().pending_challenge_rewards().is_empty());
         assert!(
             context
                 .chain
                 .state()
-                .pending_challenge_rewards()
+                .pending_proposer_rewards()
                 .values()
-                .any(|reward| {
-                    reward.challenge_id == diagnostic.challenge_id
-                        && reward.challenger == challenger
-                        && reward.amount > 0
-                        && !reward.voided_by_challenge
-                })
+                .all(|reward| !reward.voided_by_challenge)
         );
+        assert!(context.chain.state().proposer_penalty_until().is_empty());
         assert_eq!(context.chain.state().rewards().balance(&challenger), 0);
     }
 }

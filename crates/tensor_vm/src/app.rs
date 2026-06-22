@@ -41,8 +41,10 @@ pub use network::{
     ChainAnnouncementCheckpoint, chain_announcement_checkpoint, ingest_network_events,
     persist_runtime_tensor, produce_and_publish_synthetic_job,
     produce_and_publish_synthetic_job_with_store, produce_and_publish_synthetic_round,
-    produce_and_publish_synthetic_work, publish_new_chain_announcements,
-    publish_observed_block_check_challenge, publish_validator_block_proposal,
+    produce_and_publish_synthetic_work, publish_block_payload_announcements,
+    publish_block_vote_announcements, publish_chain_payload_announcements,
+    publish_new_chain_announcements, publish_observed_block_check_challenge,
+    publish_validator_block_proposal,
 };
 pub use randomness_beacon::{
     RandomnessBeaconMode, RandomnessBeaconRuntimeConfig, randomness_beacon_hash_label,

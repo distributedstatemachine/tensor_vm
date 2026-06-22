@@ -87,6 +87,20 @@ pub(super) fn produce_block(
     chain.blocks().last().unwrap().clone()
 }
 
+pub(super) fn finalize_block_with_vote(
+    chain: &mut Chain,
+    validator: tensor_vm::Address,
+    block: &tensor_vm::chain::TensorBlock,
+) {
+    let stake = chain.params().validator_min_stake;
+    chain
+        .apply_command(ChainCommand::SubmitBlockVote(BlockVote::new(
+            validator, stake, block,
+        )))
+        .unwrap();
+    assert!(chain.is_block_finalized(&block.hash()));
+}
+
 pub(super) fn unique_temp_data_dir(name: &str) -> std::path::PathBuf {
     let now = std::time::SystemTime::now()
         .duration_since(std::time::UNIX_EPOCH)

@@ -14,6 +14,7 @@ pub struct RuntimeStatusSnapshot {
     pub(super) proposer_cooldown_blocks: u64,
     pub(super) proposer_cadence_ready: bool,
     pub(super) proposer_cadence_remaining_blocks: u64,
+    pub(super) proposer_challenge_throttle_ready: bool,
     pub(super) latest_height: u64,
     pub(super) p2p_connected_peers: usize,
     pub(super) p2p_observed_blocks: usize,
@@ -101,6 +102,10 @@ impl RuntimeStatusSnapshot {
             proposer_cadence_remaining_blocks: match role_wallet_address {
                 Some(address) => chain.proposer_cadence_remaining_blocks(address),
                 None => 0,
+            },
+            proposer_challenge_throttle_ready: match role_wallet_address {
+                Some(address) => chain.proposer_challenge_throttle_ready(address),
+                None => true,
             },
             latest_height: server.gateway().node.chain.state().height(),
             p2p_connected_peers: p2p_service.connected_peer_count(),

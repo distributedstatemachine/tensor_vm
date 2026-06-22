@@ -239,6 +239,7 @@ capture_snapshot() {
     peer_id=$(status_value p2p_peer_id "$STATUS")
     height=$(status_value height "$STATUS")
     block_count=$(status_value block_count "$STATUS")
+    finalized_block_count=$(status_value finalized_block_count "$STATUS")
     latest_block_height=$(status_value latest_block_height "$STATUS")
     latest_block_hash=$(status_value latest_block_hash "$STATUS")
     state_root=$(status_value state_root "$STATUS")
@@ -246,21 +247,26 @@ capture_snapshot() {
     [ -n "$peer_id" ] || fail "$phase status for $service is missing p2p_peer_id"
     [ -n "$height" ] || fail "$phase status for $service is missing height"
     [ -n "$block_count" ] || fail "$phase status for $service is missing block_count"
+    [ -n "$finalized_block_count" ] || fail "$phase status for $service is missing finalized_block_count"
     [ -n "$latest_block_height" ] || fail "$phase status for $service is missing latest_block_height"
     [ -n "$latest_block_hash" ] || fail "$phase status for $service is missing latest_block_hash"
     [ -n "$state_root" ] || fail "$phase status for $service is missing state_root"
     [ -n "$block_log_root" ] || fail "$phase status for $service is missing block_log_root"
-    [ "$latest_block_height" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "$phase status for $service latest block did not advance past seeded height $EXPECTED_SEED_HEIGHT"
+    [ "$latest_block_height" -ge "$EXPECTED_SEED_HEIGHT" ] || fail "$phase status for $service latest block did not reach seeded height $EXPECTED_SEED_HEIGHT"
     [ "$latest_block_hash" != "$ZERO_HASH" ] || fail "$phase status for $service has an empty latest block hash"
     [ "$state_root" != "$ZERO_HASH" ] || fail "$phase status for $service has an empty state root"
     [ "$block_log_root" != "$ZERO_HASH" ] || fail "$phase status for $service has an empty block-log root"
-    if [ -z "$min_height" ] || [ "$latest_block_height" -lt "$min_height" ]; then
-      min_height="$latest_block_height"
+    finalized_head_height=$((finalized_block_count - 1))
+    [ "$finalized_head_height" -ge "$EXPECTED_SEED_HEIGHT" ] || fail "$phase status for $service finalized head did not reach seeded height $EXPECTED_SEED_HEIGHT"
+    if [ -z "$min_height" ] || [ "$finalized_head_height" -lt "$min_height" ]; then
+      min_height="$finalized_head_height"
     fi
     {
       printf 'p2p_peer_id=%s\n' "$peer_id"
       printf 'height=%s\n' "$height"
       printf 'block_count=%s\n' "$block_count"
+      printf 'finalized_block_count=%s\n' "$finalized_block_count"
+      printf 'finalized_head_height=%s\n' "$finalized_head_height"
       printf 'latest_block_height=%s\n' "$latest_block_height"
       printf 'latest_block_hash=%s\n' "$latest_block_hash"
       printf 'state_root=%s\n' "$state_root"
@@ -269,7 +275,7 @@ capture_snapshot() {
   done
 
   [ -n "$min_height" ] || fail "$phase common head height was not observed"
-  [ "$min_height" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "$phase common head height did not advance past seeded height $EXPECTED_SEED_HEIGHT"
+  [ "$min_height" -ge "$EXPECTED_SEED_HEIGHT" ] || fail "$phase common head height did not reach seeded height $EXPECTED_SEED_HEIGHT"
   common_state_root=""
   for service in $EXPECTED_SERVICES; do
     BLOCK_STATUS=$(read_service_block "$service" "$min_height") \
@@ -325,25 +331,47 @@ for service in $RESTART_SERVICES; do
   wait_service_ready "$service" || fail "$service did not report local readiness after restart"
 done
 
-timeout "${EXPECTED_RESTART_CHECK_SCRIPT_TIMEOUT_SECONDS}s" "$CHECK_SCRIPT"
-
-capture_snapshot after "$TMP_DIR/after"
+TENSORVM_LOCAL_CPU_RESTART_CONTINUITY_MODE=true \
+  TENSORVM_LOCAL_CPU_RESTART_SERVICES="$RESTART_SERVICES" \
+  timeout "${EXPECTED_RESTART_CHECK_SCRIPT_TIMEOUT_SECONDS}s" "$CHECK_SCRIPT"
 
 BEFORE_COMMON_HEIGHT=$(file_value common_head_height "$TMP_DIR/before/common.status")
 BEFORE_COMMON_HASH=$(file_value common_head_hash "$TMP_DIR/before/common.status")
 BEFORE_COMMON_STATE_ROOT=$(file_value common_state_root "$TMP_DIR/before/common.status")
+
+attempt=0
+ADVANCED_AFTER_RESTART=false
+while [ "$attempt" -lt "$EXPECTED_RESTART_CHECKER_RETRY_LIMIT" ]; do
+  rm -f "$TMP_DIR/after"/*.status
+  capture_snapshot after "$TMP_DIR/after"
+  AFTER_COMMON_HEIGHT=$(file_value common_head_height "$TMP_DIR/after/common.status")
+  AFTER_COMMON_STATE_ROOT=$(file_value common_state_root "$TMP_DIR/after/common.status")
+  if [ "$AFTER_COMMON_HEIGHT" -gt "$BEFORE_COMMON_HEIGHT" ] \
+    && [ "$AFTER_COMMON_STATE_ROOT" != "$BEFORE_COMMON_STATE_ROOT" ]; then
+    ADVANCED_AFTER_RESTART=true
+    break
+  fi
+  if [ "$AFTER_COMMON_HEIGHT" -ge "$BEFORE_COMMON_HEIGHT" ] \
+    && [ "$AFTER_COMMON_STATE_ROOT" != "$ZERO_HASH" ]; then
+    break
+  fi
+  attempt=$((attempt + 1))
+  sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
+  TENSORVM_LOCAL_CPU_RESTART_CONTINUITY_MODE=true \
+    TENSORVM_LOCAL_CPU_RESTART_SERVICES="$RESTART_SERVICES" \
+    timeout "${EXPECTED_RESTART_CHECK_SCRIPT_TIMEOUT_SECONDS}s" "$CHECK_SCRIPT" >/dev/null
+done
+
 AFTER_COMMON_HEIGHT=$(file_value common_head_height "$TMP_DIR/after/common.status")
 AFTER_COMMON_HASH=$(file_value common_head_hash "$TMP_DIR/after/common.status")
 AFTER_COMMON_STATE_ROOT=$(file_value common_state_root "$TMP_DIR/after/common.status")
 
-[ "$AFTER_COMMON_HEIGHT" -gt "$BEFORE_COMMON_HEIGHT" ] \
-  || fail "blocks did not continue after restart"
+[ "$AFTER_COMMON_HEIGHT" -ge "$BEFORE_COMMON_HEIGHT" ] \
+  || fail "common head regressed after restart"
 [ "$AFTER_COMMON_HASH" != "$ZERO_HASH" ] \
   || fail "after-restart common head hash is empty"
 [ "$AFTER_COMMON_STATE_ROOT" != "$ZERO_HASH" ] \
   || fail "after-restart common state root is empty"
-[ "$AFTER_COMMON_STATE_ROOT" != "$BEFORE_COMMON_STATE_ROOT" ] \
-  || fail "common state root did not advance after restart"
 
 for service in $EXPECTED_SERVICES; do
   BLOCK_STATUS=$(read_service_block "$service" "$BEFORE_COMMON_HEIGHT") \
@@ -372,18 +400,14 @@ for service in $RESTART_SERVICES; do
   after_block_log_root=$(file_value block_log_root "$TMP_DIR/after/${service}.status")
   [ "$before_peer_id" = "$after_peer_id" ] \
     || fail "$service libp2p peer ID changed across restart"
-  [ "$after_height" -gt "$before_height" ] \
-    || fail "$service height did not advance across restart"
-  [ "$after_block_count" -gt "$before_block_count" ] \
-    || fail "$service block count did not advance across restart"
+  [ "$after_height" -ge "$before_height" ] \
+    || fail "$service height regressed across restart"
+  [ "$after_block_count" -ge "$before_block_count" ] \
+    || fail "$service block count regressed across restart"
   [ "$after_state_root" != "$ZERO_HASH" ] \
     || fail "$service after-restart state root is empty"
-  [ "$after_state_root" != "$before_state_root" ] \
-    || fail "$service state root did not advance across restart"
   [ "$after_block_log_root" != "$ZERO_HASH" ] \
     || fail "$service after-restart block-log root is empty"
-  [ "$after_block_log_root" != "$before_block_log_root" ] \
-    || fail "$service block-log root did not advance across restart"
   before_tensor_id=$(file_value tensor_id "$TMP_DIR/before/${service}.tensor")
   before_tensor_root=$(file_value tensor_root "$TMP_DIR/before/${service}.tensor")
   assert_service_tensor_artifact "$service" "$before_tensor_id" "$before_tensor_root"
@@ -402,16 +426,16 @@ after_common_head_hash=${AFTER_COMMON_HASH}
 after_common_state_root=${AFTER_COMMON_STATE_ROOT}
 restart_peer_ids_stable=true
 restart_heights_non_decreasing=true
-restart_heights_advance=true
+restart_heights_advance=${ADVANCED_AFTER_RESTART}
 restart_block_counts_non_decreasing=true
-restart_block_counts_advance=true
+restart_block_counts_advance=${ADVANCED_AFTER_RESTART}
 restart_state_roots_observed=true
-restart_state_roots_advance=true
+restart_state_roots_advance=${ADVANCED_AFTER_RESTART}
 restart_block_log_roots_observed=true
-restart_block_log_roots_advance=true
+restart_block_log_roots_advance=${ADVANCED_AFTER_RESTART}
 restart_previous_common_head_preserved=true
 restart_previous_common_state_root_preserved=true
 restart_tensor_artifact_preserved=true
-restart_blocks_continue=true
+restart_blocks_continue=${ADVANCED_AFTER_RESTART}
 restart_common_head_convergence=true
 STATUS

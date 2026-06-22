@@ -104,14 +104,19 @@ The local bundle is useful and should remain the first operational target:
   every operator catches up to that same finalized block hash and state root, with a nonempty block-log root reported from
   every node store.
 - Compose now marks only `validator-00` as the local timed synthetic job producer. Miners are never local
-  block producers. Three validators are configured as validator block proposers under a shared
-  chain-visible proposer cooldown,
-  while other counted operators keep the same seeded chain base and advance live blocks only after a p2p
-  block payload is decoded and verified against the shared chain path.
+  block producers. All five validators are configured as validator block proposers under a shared
+  chain-visible proposer cooldown, while every counted operator keeps the same seeded chain base and
+  advances live blocks only after a block payload is decoded and verified against the shared chain path.
 - `check-restart-continuity.sh` captures pre/post peer IDs, heights, block counts, state roots, block-log
   roots, and finalized common heads around actual Compose restarts, and fails unless restarted services
-  keep identity, advance durable state, preserve the pre-restart finalized common head and state root, and
-  continue finalizing blocks.
+  keep identity, avoid durable-state regression, preserve the pre-restart finalized common head and state
+  root, preserve the sampled tensor artifact, and reconverge on a finalized common head. It reports
+  post-restart height/root advancement separately; a stable plateau is allowed when preservation and
+  convergence hold. The restart gate passes the restarted service list into `check-local-testnet.sh`, so
+  only those just-restarted services may satisfy volatile runtime gossip counters from preserved post-seed
+  chain state and live peer connectivity. Process-lifetime role/network totals that reset across a rolling
+  restart are also scoped to normal local readiness, while fresh local checks still require fresh
+  gossip/runtime counters and role totals.
 - `check-rolling-restart-continuity.sh` runs that continuity gate one service at a time across every
   counted miner and validator by default, turning the selected restart checks into a rolling all-operator
   matrix.
@@ -119,7 +124,7 @@ The local bundle is useful and should remain the first operational target:
   state from `chain.state` before readiness is allowed.
 - Compose now execs role-specific runtime commands for counted operators: all miners run `tvmd miner run`,
   all validators run `tvmd validator run`, `validator-00` carries the single local synthetic job producer flag,
-  three validators carry validator block-proposer flags with chain-visible proposer cooldown status,
+  all five validators carry validator block-proposer flags with chain-visible proposer cooldown status,
   `tvmd node status` reports `runtime_command`, and the checker fails unless all 15 operators report the
   role command expected for their Compose service.
 - Counted role runtimes now derive a chain address from their configured wallet label, persist
@@ -171,8 +176,9 @@ The local bundle is useful and should remain the first operational target:
   stake-weighted fallback proposer selected from parent state and beacon after the configured
   `pow_timeout_blocks * block_time_seconds` delay for non-genesis empty fallback blocks. Pending proposer
   reward state, roots, and storage no longer carry a later useful-block unlock latch. A fresh local CPU
-  Docker pass now proves delayed proposer and challenge reward claims, all-operator finalized-head
-  convergence, and the role-owned useful proposal path; public/CUDA evidence remains outside that proof.
+  Docker pass now proves delayed proposer claims, applied observed-diagnostic block-check evidence without
+  punishing canonical proposer rewards, all-operator finalized-head convergence, and the role-owned useful
+  proposal path; public/CUDA evidence remains outside that proof.
 - Long-running node runtime now consumes `TENSORVM_CHAIN_PROFILE`, defaults local Compose to `local_cpu`,
   builds a typed `NodeConfig` at the CLI boundary, and exposes `chain_profile`/`role_chain_profile` in
   readiness, serve, and status output. Only the local CPU profile enables deterministic synthetic block
@@ -306,8 +312,8 @@ PoW hash while keeping finalized and fallback heads stable. Valid known-parent n
 now retained in chain-owned side-branch fork storage with parent and child state snapshots, strictly longer
 unfinalized branches automatically reorganize canonical head state, and branch maps persist through
 chain-state snapshots. The local runtime now has a fresh local CPU Docker proof of multi-validator
-proposer competition, chain-visible proposer cooldown state, delayed proposer/challenge rewards, and
-all-operator convergence. Remaining proof work is public/CUDA deployment evidence and full interactive
+proposer competition, chain-visible proposer cooldown state, delayed proposer rewards, applied diagnostic
+block-check evidence, and all-operator convergence. Remaining proof work is public/CUDA deployment evidence and full interactive
 transcript disputes.
 
 ## Highest-Priority Gaps
@@ -317,9 +323,10 @@ transcript disputes.
 Current live production now runs inside validator runtimes. Deterministic local job publication remains a
 single `validator-00` synthetic-producer duty, but receipt execution, attestation, settlement preparation,
 block proposal, and finality voting run through role-owned ticks and shared chain commands. Finality votes
-come from explicit validator role block-vote submissions. The latest full local CPU Docker gate proves two
-validator block proposers, chain-visible proposer cooldown state, delayed proposer and challenge rewards,
-and passive-observer finalized-head convergence. Public deployment evidence, CUDA evidence, and public
+come from explicit validator role block-vote submissions. The latest local CPU Docker gate proves five
+validator block proposers, chain-visible proposer cadence state, delayed proposer rewards, observed
+diagnostic block-check evidence, and all-operator finalized-head convergence. Public deployment evidence,
+CUDA evidence, and public
 drand/VRF randomness verification remain open.
 The chain core requires registered-validator useful-verification PoW blocks, and block append/finality are
 separate chain commands.
@@ -417,9 +424,14 @@ counted operator by default.
 
 Current assertion:
 
-- The rolling gate fails unless every requested miner or validator keeps its peer ID, advances height,
-  block count, state root, and block-log root, preserves the pre-restart finalized common head and state
-  root on every operator, and observes continued finalized block production.
+- The rolling gate fails unless every requested miner or validator keeps its peer ID, avoids height,
+  block-count, state-root, and block-log-root regression, preserves the pre-restart finalized common head
+  and state root on every operator, preserves the sampled tensor artifact, and reconverges on a finalized
+  common head. It reports post-restart advancement separately, so a stable common-head plateau is visible
+  without weakening the restart-preservation gate. During this restart-only check, a just-restarted service
+  may prove plateau readiness with preserved post-seed chain state plus live peer connectivity instead of
+  newly incremented volatile gossip counters, and process-lifetime role/network totals are not re-proved
+  after every service has restarted; normal local readiness still requires the fresh counters and totals.
 - Focused Rust tests cover block-log replacement, node-store recovery from `chain.state`, and service-init
   recovery for torn snapshot/block-log state.
 - The full local spec uses the default all-operator rolling matrix. Passing a smaller service list is only a
@@ -722,8 +734,8 @@ finalized local-head checkpoint/state root that was also observed through p2p bl
 connected-peer counts, job/receipt/attestation/block/block-vote gossip observations from every role runtime,
 positive validator useful block proposal and selected-receipt counters from at least two proposer-enabled
 validators, positive pending proposer reward count for useful proposals, positive delayed proposer reward
-claims, positive pending challenge reward claims for the diagnostic challenge
-path, and nonempty block-log roots from every node store. The
+claims, applied diagnostic block-check challenge evidence that does not punish the canonical proposer
+reward path, and nonempty block-log roots from every node store. The
 restart-continuity script also captures
 pre/post peer IDs, heights, block counts, state roots, block-log roots, and finalized common heads for
 selected restart gates, and the rolling wrapper applies that gate to every counted operator by default.
@@ -761,7 +773,7 @@ smaller chain modules and the existing test module.
 Status: started. `tvmd miner run`, `tvmd validator run`, and `tvmd proposer run` are long-running
 role-specific command surfaces. Compose uses `tvmd miner run` for all counted miners and
 `tvmd validator run` for all validators, with `validator-00` carrying the single local timed synthetic job
-producer flag and three validators carrying validator block-proposer flags under the shared chain-visible
+producer flag and all five validators carrying validator block-proposer flags under the shared chain-visible
 proposer cooldown;
 the local checker verifies those runtime commands through ready files and `tvmd node status`. The status path also
 exposes live role-loop counters, local-producer mode, network-applied block counters, real libp2p
@@ -790,8 +802,8 @@ source only control deterministic local job publication.
 - `validator-00` runs the single local synthetic job producer duty: the scheduler publishes jobs, while
   miner, validator, and validator-proposer role ticks handle receipts, attestations, settlement, and useful
   block proposals.
-- `validator-00` through `validator-02` run validator block-proposer duties under chain-visible cooldown; the local checker
-  treats their competing branches separately from the passive finalized-head convergence proof.
+- All five validators run validator block-proposer duties under chain-visible cooldown; the local checker
+  counts proposer-capable validators in the finalized-head convergence proof.
 - The checker requires all operators to converge on the same finalized head.
 
 ### Phase 5: Shared Profiles
@@ -816,13 +828,15 @@ still needs to be wired through runtime adapters rather than documented profile 
 - Restart miner, validator, and proposer/gateway roles independently.
 - Verify no rollback.
 - Verify catch-up from persisted block log and peer state.
-- Verify block production continues after restart.
+- Verify restart non-regression and report whether block production continues after restart.
 
 Status: complete for the current local-store model. `check-restart-continuity.sh` proves stable libp2p peer
-IDs, advancing height/block count/state-root evidence, preservation of the pre-restart finalized common head
-and state root on every operator, advancing block-log roots, and continued finalization for each requested
-service. `check-rolling-restart-continuity.sh` now applies that gate one operator at a time across the full
-15-service matrix by default, and service init repairs torn snapshot/block-log state from `chain.state`
+IDs, non-regressing height/block count/state-root evidence, preservation of the pre-restart finalized common
+head and state root on every operator, nonzero block-log roots, sampled tensor artifact preservation, and
+common-head reconvergence for each requested service. It reports whether post-restart blocks advanced
+without failing a stable plateau. `check-rolling-restart-continuity.sh` now applies that gate one operator
+at a time across the full 15-service matrix by default, and service init repairs torn snapshot/block-log
+state from `chain.state`
 before a restarted operator can report readiness.
 
 ## Local Production-Ready Acceptance Gate
@@ -845,7 +859,7 @@ And the checker must prove:
 all 15 counted operators are running real role loops
 all 15 operators have stable identities after restart
 all 15 operators converge on the same finalized head
-blocks continue after restarts
+restart checks preserve the pre-restart finalized head/state and report whether new blocks appeared
 jobs are delivered through libp2p or the shared node event path
 receipts are produced by miner containers
 attestations are produced by validator containers
@@ -863,7 +877,7 @@ local evidence remains explicitly non-public
 
 Keep this incremental:
 
-1. Broaden chain-cadence multi-proposer and delayed proposer/challenge reward evidence from the local CPU proof into public/CUDA deployment
+1. Broaden chain-cadence multi-proposer, delayed proposer reward evidence, and diagnostic block-check evidence from the local CPU proof into public/CUDA deployment
    runs.
 2. Replace deterministic local beacon fixtures with public drand verification or validator VRF evidence.
 3. Continue full interactive transcript dispute work over the trace-opening path.

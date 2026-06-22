@@ -20,6 +20,8 @@ use std::collections::BTreeSet;
 
 use super::validator_fetch::fetch_graph_program_body_if_missing;
 
+const RECENT_BLOCK_PAYLOAD_REBROADCAST_LIMIT: usize = 16;
+
 pub fn ingest_network_events(
     server: &mut RpcHttpServer,
     p2p_service: &TensorVmLibp2pService,
@@ -492,6 +494,111 @@ pub fn publish_new_chain_announcements(
             })?;
     }
     Ok(())
+}
+
+pub fn publish_block_vote_announcements(
+    p2p_service: &TensorVmLibp2pService,
+    chain: &Chain,
+) -> std::result::Result<usize, String> {
+    let mut published = 0_usize;
+    for (block_hash, votes) in chain.state().block_votes() {
+        for vote in votes {
+            p2p_service
+                .publish_gossip(P2pMessage::NewBlockVotePayload {
+                    block_hash: *block_hash,
+                    validator: vote.validator,
+                    payload: encode_block_vote_payload(vote),
+                })
+                .map_err(|error| format!("failed to publish block vote payload gossip: {error}"))?;
+            published = published.saturating_add(1);
+        }
+    }
+    Ok(published)
+}
+
+pub fn publish_block_payload_announcements(
+    p2p_service: &TensorVmLibp2pService,
+    chain: &Chain,
+) -> std::result::Result<usize, String> {
+    let mut published = 0_usize;
+    for block in chain
+        .blocks()
+        .iter()
+        .rev()
+        .take(RECENT_BLOCK_PAYLOAD_REBROADCAST_LIMIT)
+        .rev()
+    {
+        let block_hash = block.hash();
+        let Some(parent_state) = chain.block_parent_state_for_payload(&block_hash) else {
+            continue;
+        };
+        let selected_receipts = chain.selected_receipts_for_block(block);
+        publish_block_announcements(p2p_service, block, &selected_receipts, parent_state)?;
+        published = published.saturating_add(1);
+    }
+    Ok(published)
+}
+
+pub fn publish_chain_payload_announcements(
+    p2p_service: &TensorVmLibp2pService,
+    chain: &Chain,
+) -> std::result::Result<usize, String> {
+    let mut published = 0_usize;
+    if let Some((job_id, job)) = chain.state().jobs().iter().next() {
+        let program_hash = job.program_hash();
+        if let Some(program_body) = chain.state().program_body(&program_hash) {
+            p2p_service.register_program(program_hash, program_body.to_vec());
+        }
+        p2p_service
+            .publish_gossip(P2pMessage::NewJobPayload {
+                job_id: *job_id,
+                payload: encode_job_payload(job),
+            })
+            .map_err(|error| format!("failed to publish job payload gossip: {error}"))?;
+        p2p_service
+            .publish_gossip(P2pMessage::NewJob(*job_id))
+            .map_err(|error| format!("failed to publish job gossip: {error}"))?;
+        published = published.saturating_add(1);
+    }
+    if let Some((receipt_id, receipt)) = chain.state().receipts().iter().next() {
+        if let Some(messages) = receipt_dependency_job_messages(chain, receipt) {
+            for message in messages {
+                p2p_service.publish_gossip(message).map_err(|error| {
+                    format!("failed to publish receipt dependency job gossip: {error}")
+                })?;
+            }
+        }
+        p2p_service
+            .publish_gossip(P2pMessage::NewReceiptPayload {
+                receipt_id: *receipt_id,
+                payload: encode_receipt_payload(receipt),
+            })
+            .map_err(|error| format!("failed to publish receipt payload gossip: {error}"))?;
+        p2p_service
+            .publish_gossip(P2pMessage::NewReceipt(*receipt_id))
+            .map_err(|error| format!("failed to publish receipt gossip: {error}"))?;
+        published = published.saturating_add(1);
+    }
+    if let Some(attestation) = chain
+        .state()
+        .attestations()
+        .values()
+        .flat_map(|attestations| attestations.iter())
+        .next()
+    {
+        let attestation_id = attestation_announcement_hash(attestation);
+        p2p_service
+            .publish_gossip(P2pMessage::NewAttestationPayload {
+                attestation_id,
+                payload: encode_attestation_payload(attestation),
+            })
+            .map_err(|error| format!("failed to publish attestation payload gossip: {error}"))?;
+        p2p_service
+            .publish_gossip(P2pMessage::NewAttestation(attestation_id))
+            .map_err(|error| format!("failed to publish attestation gossip: {error}"))?;
+        published = published.saturating_add(1);
+    }
+    Ok(published)
 }
 
 fn receipt_dependency_job_messages(

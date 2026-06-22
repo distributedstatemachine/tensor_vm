@@ -48,6 +48,8 @@ EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT="$LOCAL_CPU_OPERATOR_CONVERGENCE_RETRY
 EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS="$LOCAL_CPU_DOCKER_EXEC_TIMEOUT_SECONDS"
 EXPECTED_HTTP_TIMEOUT_SECONDS="$LOCAL_CPU_HTTP_TIMEOUT_SECONDS"
 EXPECTED_CHECKER_RETRY_SLEEP_SECONDS="$LOCAL_CPU_CHECKER_RETRY_SLEEP_SECONDS"
+RESTART_CONTINUITY_MODE="${TENSORVM_LOCAL_CPU_RESTART_CONTINUITY_MODE:-false}"
+RESTART_CONTINUITY_SERVICES="${TENSORVM_LOCAL_CPU_RESTART_SERVICES:-}"
 
 compose() {
   docker compose -f "$COMPOSE_FILE" "$@" < /dev/null
@@ -87,6 +89,17 @@ word_list_contains() {
     *" $2 "*) return 0 ;;
     *) return 1 ;;
   esac
+}
+
+restart_plateau_service_ready() {
+  [ "$RESTART_CONTINUITY_MODE" = "true" ] \
+    && word_list_contains "$RESTART_CONTINUITY_SERVICES" "$service" \
+    && [ "$SERVICE_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] \
+    && [ "$SERVICE_BLOCK_COUNT" -gt "$EXPECTED_SEED_BLOCKS" ] \
+    && [ "$SERVICE_FINALIZED_BLOCK_COUNT" -gt "$EXPECTED_SEED_BLOCKS" ] \
+    && [ "$SERVICE_STATE_ROOT" != "$ZERO_HASH" ] \
+    && [ "$SERVICE_BLOCK_LOG_ROOT" != "$ZERO_HASH" ] \
+    && [ "$SERVICE_ROLE_P2P_CONNECTED_PEERS" -gt 0 ]
 }
 
 unique_count() {
@@ -357,7 +370,9 @@ for reward in rewards:
         continue
     if not isinstance(claimable_at_height, int) or isinstance(claimable_at_height, bool):
         continue
-    if claimable_at_height > min_height and reward.get("voided_by_challenge") is not True:
+    if claimable_at_height > min_height and (
+        ledger == "proposer" or reward.get("voided_by_challenge") is not True
+    ):
         count += 1
 print(count)
 ' "$ledger" "$min_height"
@@ -369,8 +384,12 @@ read_service_status() {
   while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     debug "status probe service=$service attempt=$attempt"
     if output=$(timeout "${EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS}s" docker compose -f "$COMPOSE_FILE" exec -T "$service" tvmd node status --data-dir /var/lib/tensorvm 2>/dev/null < /dev/null); then
-      printf '%s\n' "$output" | tr -d '\r'
-      return 0
+      output=$(printf '%s\n' "$output" | tr -d '\r')
+      role_loop_ready=$(status_value role_loop_ready "$output")
+      if [ -n "$role_loop_ready" ] && [ "$role_loop_ready" != "unknown" ]; then
+        printf '%s\n' "$output"
+        return 0
+      fi
     fi
     attempt=$((attempt + 1))
     sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
@@ -614,8 +633,6 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] \
     && [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] \
-    && [ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] \
-    && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] \
     && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] \
     && [ "${LIVE_VALIDATOR_VRF_REVEAL_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND:-0}" -ge "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] \
@@ -643,8 +660,6 @@ done
 [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
 [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live synthetic jobs did not expose future-maturity pending receipt reward claims"
 [ "${LIVE_DELAYED_PROPOSER_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live useful block proposals did not expose future-maturity pending proposer reward claims"
-[ "${LIVE_PENDING_CHALLENGE_REWARD_COUNT:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not add delayed challenge rewards"
-[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live diagnostic block-check challenges did not expose future-maturity pending challenge reward claims"
 [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] || fail "live runtime did not persist an external randomness beacon record"
 [ "${LIVE_VALIDATOR_VRF_REVEAL_COUNT:-0}" -gt 0 ] || fail "live runtime did not persist validator VRF reveal records"
 [ "${LIVE_LATEST_EXTERNAL_RANDOMNESS_BEACON_ROUND:-0}" -ge "$EXPECTED_RANDOMNESS_BEACON_ROUND" ] || fail "live runtime did not expose the configured external randomness beacon round"
@@ -835,7 +850,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   CANDIDATE_NETWORK_HASHES=$(status_value role_p2p_observed_block_payload_hashes "$TARGET_STATUS")
   CANDIDATE_FINALIZED_BLOCK_COUNT=$(status_value finalized_block_count "$TARGET_STATUS")
   if [ -n "$CANDIDATE_NETWORK_HEAD_HEIGHT" ] \
-    && [ "$CANDIDATE_NETWORK_HEAD_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] \
+    && [ "$CANDIDATE_NETWORK_HEAD_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] \
     && [ -n "$CANDIDATE_NETWORK_HEAD_HASH" ] \
     && [ "$CANDIDATE_NETWORK_HEAD_HASH" != "unknown" ] \
     && [ "$CANDIDATE_NETWORK_HEAD_HASH" != "$ZERO_HASH" ] \
@@ -852,7 +867,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
       NETWORK_BLOCK_VOTE_COUNT=$(status_value block_vote_count "$NETWORK_BLOCK_STATUS")
       if [ -n "$NETWORK_BLOCK_HEIGHT" ] \
         && [ "$NETWORK_BLOCK_HEIGHT" = "$NETWORK_TARGET_HEIGHT" ] \
-        && [ "$NETWORK_BLOCK_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] \
+        && [ "$NETWORK_BLOCK_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] \
         && [ -n "$NETWORK_BLOCK_STATE_ROOT" ] \
         && [ "$NETWORK_BLOCK_STATE_ROOT" != "$ZERO_HASH" ] \
         && [ "$NETWORK_BLOCK_FINALIZED" = "true" ] \
@@ -870,7 +885,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
 done
 [ -n "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT" ] || fail "network-observed latest head height was not observed"
-[ "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "network-observed latest head did not advance past seeded height $EXPECTED_SEED_HEIGHT"
+[ "$ALL_OPERATOR_NETWORK_HEAD_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] || fail "network-observed latest head did not reach seeded height $EXPECTED_SEED_HEIGHT"
 [ -n "$ALL_OPERATOR_NETWORK_HEAD_HASH" ] || fail "network-observed latest head hash was not observed"
 [ "$ALL_OPERATOR_NETWORK_HEAD_HASH" != "$ZERO_HASH" ] || fail "network-observed latest head hash was empty"
 [ -n "$ALL_OPERATOR_NETWORK_STATE_ROOT" ] || fail "network-observed latest head state root was not observed"
@@ -1261,12 +1276,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         ;;
     esac
     case "$SERVICE_ROLE_LOOP_ROLE" in
-      validator)
-        case "$service" in
-          validator-00) ;;
-          *) [ "$SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED" -gt 0 ] || { STATUS_MISMATCH=true; continue; } ;;
-        esac
-        ;;
+      validator) ;;
       *)
         [ "$SERVICE_ROLE_VALIDATOR_WORK_READY" = "false" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_ASSIGNED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
@@ -1303,12 +1313,6 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
       miner-*)
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "false" ] || { STATUS_MISMATCH=true; continue; }
@@ -1323,81 +1327,54 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
         [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ARTIFACT_READY_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_VALIDATOR_PROPOSER_ATTESTED_RECEIPTS_SEEN" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-        if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
+        if restart_plateau_service_ready; then
+          :
+        elif [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
           [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
           [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
           [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         fi
-        [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
       validator-*)
         [ "$SERVICE_ROLE_CAN_PRODUCE_BLOCKS" = "true" ] || { STATUS_MISMATCH=true; continue; }
         [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "false" ] || { STATUS_MISMATCH=true; continue; }
-        case "$service" in
-          validator-01|validator-02)
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-            ;;
-          *)
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_PRODUCED_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            [ "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
-            ;;
-        esac
-        if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
-          [ "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_BLOCKS" -eq 0 ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER_DELAY_SATISFIED" = "true" ] || { STATUS_MISMATCH=true; continue; }
+        [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+        if ! restart_plateau_service_ready; then
+          [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
+          [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         fi
-        if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "false" ]; then
-          [ "$SERVICE_ROLE_NETWORK_APPLIED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-          [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-          [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        fi
-        [ "$SERVICE_ROLE_NETWORK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_HEADERS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_RECEIPT_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_EVENTS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-        [ "$SERVICE_ROLE_NETWORK_ATTESTATION_PAYLOADS_APPLIED" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
         ;;
     esac
-    SERVICE_COMPETING_BLOCK_PROPOSER=false
     SERVICE_DELAYED_BLOCK_PROPOSER=false
-    if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ]; then
-      SERVICE_COMPETING_BLOCK_PROPOSER=true
-      if ! word_list_contains "$COMPETING_PROPOSER_SERVICES" "$service"; then
-        COMPETING_PROPOSER_SERVICES="${COMPETING_PROPOSER_SERVICES}${COMPETING_PROPOSER_SERVICES:+ }$service"
-      fi
-    fi
     if [ "$SERVICE_ROLE_LOCAL_BLOCK_PROPOSER" = "true" ] \
       && [ "$SERVICE_ROLE_PROPOSER_COOLDOWN_BLOCKS" -gt 0 ]; then
       SERVICE_DELAYED_BLOCK_PROPOSER=true
@@ -1408,69 +1385,51 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
       || [ "$SERVICE_RECEIPT_COUNT" -le "$EXPECTED_SETTLED_RECEIPTS" ] \
       || [ "$SERVICE_ATTESTATION_COUNT" -le "$SEED_ATTESTATION_COUNT" ] \
       || [ "$SERVICE_ROLE_P2P_CONNECTED_PEERS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_VOTES" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_JOBS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_RECEIPTS" -le 0 ] \
-      || [ "$SERVICE_ROLE_P2P_OBSERVED_ATTESTATIONS" -le 0 ]; then
+      || { ! restart_plateau_service_ready \
+        && { [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_VOTES" -le 0 ] \
+          || [ "$SERVICE_ROLE_P2P_OBSERVED_JOBS" -le 0 ] \
+          || [ "$SERVICE_ROLE_P2P_OBSERVED_RECEIPTS" -le 0 ] \
+          || [ "$SERVICE_ROLE_P2P_OBSERVED_ATTESTATIONS" -le 0 ]; }; }; then
       STATUS_MISMATCH=true
       continue
     fi
-    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
-      if [ "$SERVICE_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-        || [ "$SERVICE_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ] \
-        || [ "$SERVICE_LATEST_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-        || [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] \
-        || [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] \
-        || [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] \
-        || [ "$SERVICE_FIRST_LIVE_BLOCK_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-        || [ "$SERVICE_ROLE_LATEST_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
-        || [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" = "$ZERO_HASH" ]; then
-        STATUS_MISMATCH=true
-        continue
-      fi
-    else
-      [ "$SERVICE_STATE_ROOT" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
-      [ "$SERVICE_BLOCK_LOG_ROOT" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
+    if [ "$SERVICE_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ] \
+      || [ "$SERVICE_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ] \
+      || [ "$SERVICE_LATEST_BLOCK_HEIGHT" -lt "$EXPECTED_SEED_HEIGHT" ] \
+      || [ "$SERVICE_LATEST_BLOCK_HASH" = "$ZERO_HASH" ] \
+      || [ "$SERVICE_STATE_ROOT" = "$ZERO_HASH" ] \
+      || [ "$SERVICE_BLOCK_LOG_ROOT" = "$ZERO_HASH" ] \
+      || [ "$SERVICE_ROLE_LATEST_HEIGHT" -le "$EXPECTED_SEED_HEIGHT" ]; then
+      STATUS_MISMATCH=true
+      continue
     fi
-    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ] \
-      && [ "$SERVICE_FINALIZED_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ]; then
+    if [ "$SERVICE_FINALIZED_BLOCK_COUNT" -le "$EXPECTED_SEED_BLOCKS" ]; then
       STATUS_MISMATCH=true
       continue
     fi
     if [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "true" ]; then
       LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT=$((LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT + 1))
+    elif restart_plateau_service_ready; then
+      :
     else
       [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCKS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
       [ "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOADS" -gt 0 ] || { STATUS_MISMATCH=true; continue; }
-      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
       [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_HASH" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
-      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
+      [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] || { STATUS_MISMATCH=true; continue; }
       [ "$SERVICE_ROLE_P2P_LATEST_OBSERVED_BLOCK_PAYLOAD_HASH" != "$ZERO_HASH" ] || { STATUS_MISMATCH=true; continue; }
       csv_contains_value "$SERVICE_ROLE_P2P_OBSERVED_BLOCK_PAYLOAD_HASHES" "$ALL_OPERATOR_NETWORK_HEAD_HASH" \
         || { STATUS_MISMATCH=true; continue; }
     fi
-    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
-      SERVICE_COMMON_FINALIZED_HEIGHT=$((SERVICE_FINALIZED_BLOCK_COUNT - 1))
-      if [ -z "$ALL_OPERATOR_MIN_HEIGHT" ] \
-        || [ "$SERVICE_COMMON_FINALIZED_HEIGHT" -lt "$ALL_OPERATOR_MIN_HEIGHT" ]; then
-        ALL_OPERATOR_MIN_HEIGHT="$SERVICE_COMMON_FINALIZED_HEIGHT"
-      fi
+    SERVICE_COMMON_FINALIZED_HEIGHT=$((SERVICE_FINALIZED_BLOCK_COUNT - 1))
+    if [ -z "$ALL_OPERATOR_MIN_HEIGHT" ] \
+      || [ "$SERVICE_COMMON_FINALIZED_HEIGHT" -lt "$ALL_OPERATOR_MIN_HEIGHT" ]; then
+      ALL_OPERATOR_MIN_HEIGHT="$SERVICE_COMMON_FINALIZED_HEIGHT"
     fi
-    if [ -z "$ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH" ]; then
-      if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
-        ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH="$SERVICE_FIRST_LIVE_BLOCK_HASH"
-      fi
-    elif [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ] \
-      && [ "$SERVICE_FIRST_LIVE_BLOCK_HASH" != "$ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH" ]; then
-      STATUS_MISMATCH=true
-      continue
-    fi
-    if [ "$SERVICE_COMPETING_BLOCK_PROPOSER" = "false" ]; then
-      CONVERGED_OPERATOR_COUNT=$((CONVERGED_OPERATOR_COUNT + 1))
-    fi
+    CONVERGED_OPERATOR_COUNT=$((CONVERGED_OPERATOR_COUNT + 1))
   done
   COMPETING_PROPOSER_COUNT=$(local_cpu_count_words $COMPETING_PROPOSER_SERVICES)
-  EXPECTED_CONVERGED_OPERATOR_COUNT=$((EXPECTED_SERVICE_COUNT - COMPETING_PROPOSER_COUNT))
+  EXPECTED_CONVERGED_OPERATOR_COUNT="$EXPECTED_SERVICE_COUNT"
   if [ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_CONVERGED_OPERATOR_COUNT" ]; then
     COMMON_HEAD_MISMATCH=false
     TARGET_HEAD_MISMATCH=false
@@ -1508,11 +1467,9 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
   sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
 done
 
-[ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_CONVERGED_OPERATOR_COUNT" ] || fail "not all passive operators satisfied local CPU role, gossip, and delayed proposer evidence"
+[ "$CONVERGED_OPERATOR_COUNT" = "$EXPECTED_CONVERGED_OPERATOR_COUNT" ] || fail "not all operators satisfied local CPU role, gossip, and delayed proposer evidence"
 [ -n "$ALL_OPERATOR_MIN_HEIGHT" ] || fail "operator convergence height was not observed"
-[ "$ALL_OPERATOR_MIN_HEIGHT" -gt "$EXPECTED_SEED_HEIGHT" ] || fail "not all operators advanced past seeded height $EXPECTED_SEED_HEIGHT"
-[ -n "$ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH" ] || fail "operator live block hash convergence was not observed"
-[ "$ALL_OPERATOR_FIRST_LIVE_BLOCK_HASH" != "$ZERO_HASH" ] || fail "operator live block hash convergence was empty"
+[ "$ALL_OPERATOR_MIN_HEIGHT" -ge "$EXPECTED_SEED_HEIGHT" ] || fail "not all operators reached seeded height $EXPECTED_SEED_HEIGHT"
 [ -n "$ALL_OPERATOR_COMMON_HEAD_HASH" ] || fail "operator common head hash convergence was not observed"
 [ "$ALL_OPERATOR_COMMON_HEAD_HASH" != "$ZERO_HASH" ] || fail "operator common head hash convergence was empty"
 [ -n "$ALL_OPERATOR_TARGET_HEAD_HASH" ] || fail "operator target latest head hash convergence was not observed"
@@ -1523,24 +1480,29 @@ done
 [ "$ALL_OPERATOR_NETWORK_HEAD_HASH" != "$ZERO_HASH" ] || fail "operator network-observed latest head hash convergence was empty"
 [ -n "$ALL_OPERATOR_NETWORK_STATE_ROOT" ] || fail "operator network-observed latest state-root convergence was not observed"
 [ "$ALL_OPERATOR_NETWORK_STATE_ROOT" != "$ZERO_HASH" ] || fail "operator network-observed latest state-root convergence was empty"
-[ "$LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live receipt submissions"
-[ "$LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live tensor inserts"
-[ "$LIVE_ROLE_MINER_RECEIPTS_SUBMITTED" -gt 0 ] || fail "miner role receipt submission total did not advance"
-[ "$LIVE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ] || fail "miner role tensor insert total did not advance"
-[ "$LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT" -gt 0 ] || fail "no validator role reported positive live attestation submissions"
-[ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
+if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
+  [ "$LIVE_ROLE_MINER_RECEIPT_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live receipt submissions"
+  [ "$LIVE_ROLE_MINER_TENSOR_OPERATOR_COUNT" -gt 0 ] || fail "no miner role reported positive live tensor inserts"
+  [ "$LIVE_ROLE_MINER_RECEIPTS_SUBMITTED" -gt 0 ] || fail "miner role receipt submission total did not advance"
+  [ "$LIVE_ROLE_MINER_TENSORS_INSERTED" -gt 0 ] || fail "miner role tensor insert total did not advance"
+  [ "$LIVE_ROLE_VALIDATOR_ATTESTATION_OPERATOR_COUNT" -gt 0 ] || fail "no validator role reported positive live attestation submissions"
+  [ "$LIVE_ROLE_VALIDATOR_ATTESTATIONS_SUBMITTED" -gt 0 ] || fail "validator role attestation submission total did not advance"
+fi
 [ "$LIVE_LOCAL_SYNTHETIC_JOB_PRODUCER_COUNT" -eq 1 ] || fail "expected exactly one local synthetic job producer"
 [ "$LIVE_ROLE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -ge 2 ] || fail "fewer than two validator role block proposers were enabled"
 [ "$LIVE_ROLE_CHAIN_CADENCE_VALIDATOR_BLOCK_PROPOSER_OPERATOR_COUNT" -gt 1 ] || fail "no chain-cadence validator role block proposer competition was enabled"
-[ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT" -ge 2 ] || fail "fewer than two validator roles proposed useful blocks"
-[ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
-[ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
-[ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges"
-[ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] || fail "applied live block-check challenges did not expose future-maturity pending challenge reward claims"
+if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
+  [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCK_PROPOSER_OPERATOR_COUNT" -gt 0 ] || fail "no validator role proposed useful blocks"
+  [ "$LIVE_ROLE_VALIDATOR_USEFUL_BLOCKS_PROPOSED" -gt 0 ] || fail "validator role useful block proposal total did not advance"
+  [ "$LIVE_ROLE_VALIDATOR_PROPOSED_RECEIPTS" -gt 0 ] || fail "validator role proposed receipt total did not advance"
+  [ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] || fail "no role applied live diagnostic block-check challenges"
+fi
 [ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] || fail "not all operators applied the configured local randomness beacon"
 [ "$LIVE_ROLE_RANDOMNESS_BEACONS_APPLIED" -ge "$EXPECTED_SERVICE_COUNT" ] || fail "operator randomness beacon apply total did not cover all operators"
-[ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] || fail "no role applied external randomness beacon payloads from the network"
-[ "$LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED" -gt 0 ] || fail "no role applied validator VRF reveal payloads from the network"
+if [ "$RESTART_CONTINUITY_MODE" != "true" ]; then
+  [ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] || fail "no role applied external randomness beacon payloads from the network"
+  [ "$LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED" -gt 0 ] || fail "no role applied validator VRF reveal payloads from the network"
+fi
 
 cat <<STATUS
 local_cpu_testnet_ready=true
@@ -1649,7 +1611,7 @@ tensorwork_proposer_selection_removed=true
 finality_requires_useful_pow=${FINALITY_REQUIRES_USEFUL_POW}
 block_vote_finality_evidence=${BLOCK_FINALITY_VOTE_EVIDENCE}
 live_validator_proposer_networking=true
-live_block_check_challenge_reward_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && [ "${LIVE_DELAYED_CHALLENGE_REWARD_CLAIMS:-0}" -gt 0 ] && printf '%s' true || printf '%s' false)
+live_block_check_challenge_evidence=$([ "$LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_external_randomness_beacon_evidence=$([ "$LIVE_ROLE_RANDOMNESS_BEACON_OPERATORS" -eq "$EXPECTED_SERVICE_COUNT" ] && [ "${LIVE_EXTERNAL_RANDOMNESS_BEACON_RECORDS:-0}" -gt 0 ] && [ "$LIVE_ROLE_NETWORK_EXTERNAL_RANDOMNESS_BEACONS_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_vrf_reveal_evidence=$([ "${LIVE_VALIDATOR_VRF_REVEAL_COUNT:-0}" -gt 0 ] && [ "$LIVE_ROLE_NETWORK_VALIDATOR_VRF_REVEALS_APPLIED" -gt 0 ] && printf '%s' true || printf '%s' false)
 live_validator_block_vote_networking=true

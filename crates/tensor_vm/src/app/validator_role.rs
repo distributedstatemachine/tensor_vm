@@ -1,4 +1,7 @@
-use std::collections::{BTreeMap, BTreeSet};
+use std::{
+    cmp::Ordering,
+    collections::{BTreeMap, BTreeSet},
+};
 
 use crate::{
     BlockVote, Chain, ChainCommand, ChainEngine, JobScheduler, JobState, ReceiptState, RpcNode,
@@ -406,18 +409,25 @@ pub fn submit_validator_role_block_vote(
         return Ok(None);
     };
     let validator_stake = validator_state.stake;
-    let Some(block) = node
+    let Some((block, _canonical)) = node
         .chain
         .blocks()
         .iter()
-        .rev()
-        .find(|block| {
+        .map(|block| (block, true))
+        .chain(
+            node.chain
+                .side_branch_blocks()
+                .values()
+                .map(|block| (block, false)),
+        )
+        .filter(|(block, _canonical)| {
             let block_hash = block.hash();
             !node.chain.is_block_finalized(&block_hash)
                 && !validator_has_block_vote(&node.chain, validator, block_hash)
                 && node.chain.validate_block(block).is_ok()
         })
-        .cloned()
+        .min_by(|left, right| validator_vote_candidate_order(left, right))
+        .map(|(block, canonical)| (block.clone(), canonical))
     else {
         return Ok(None);
     };
@@ -441,6 +451,33 @@ fn validator_has_block_vote(chain: &Chain, validator: Address, block_hash: Hash)
         .block_votes()
         .get(&block_hash)
         .is_some_and(|votes| votes.iter().any(|vote| vote.validator == validator))
+}
+
+fn validator_vote_candidate_order(
+    left: &(&crate::chain::TensorBlock, bool),
+    right: &(&crate::chain::TensorBlock, bool),
+) -> Ordering {
+    let (left_block, left_canonical) = left;
+    let (right_block, right_canonical) = right;
+    left_block
+        .height
+        .cmp(&right_block.height)
+        .then_with(|| useful_pow_vote_order(left_block, right_block))
+        .then_with(|| right_canonical.cmp(left_canonical))
+        .then_with(|| left_block.hash().cmp(&right_block.hash()))
+}
+
+fn useful_pow_vote_order(
+    left: &crate::chain::TensorBlock,
+    right: &crate::chain::TensorBlock,
+) -> Ordering {
+    if left.production_kind.requires_pow() && right.production_kind.requires_pow() {
+        left.pow_hash()
+            .cmp(&right.pow_hash())
+            .then_with(|| left.hash().cmp(&right.hash()))
+    } else {
+        Ordering::Equal
+    }
 }
 
 fn role_receipt_bundle_from_local_tensors(
@@ -548,10 +585,94 @@ mod tests {
     use crate::{
         ChainParams, RpcNode,
         app::miner_role::submit_miner_role_receipt,
+        jobs::{MatmulJob, TensorOpReceipt},
         scheduler::SyntheticLocalJobSource,
         types::{address, hash_bytes},
         verify::FreivaldsParams,
     };
+
+    #[test]
+    fn validator_role_votes_valid_side_branch_after_canonical_vote() {
+        let seed = hash_bytes(b"test", &[b"validator-role-side-branch-vote"]);
+        let validators = [
+            address(b"side-vote-validator-0"),
+            address(b"side-vote-validator-1"),
+            address(b"side-vote-validator-2"),
+            address(b"side-vote-validator-3"),
+            address(b"side-vote-validator-4"),
+        ];
+        let voter = validators[0];
+        let mut chain = Chain::new(seed);
+        for validator in validators {
+            chain
+                .apply_command(ChainCommand::RegisterValidator {
+                    address: validator,
+                    stake: chain.params().validator_min_stake,
+                })
+                .unwrap();
+        }
+        let miner = address(b"side-vote-miner");
+        chain
+            .apply_command(ChainCommand::RegisterMiner {
+                address: miner,
+                stake: chain.params().miner_min_stake,
+            })
+            .unwrap();
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &seed, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        let receipt_id = receipt.receipt_id;
+        chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt));
+        chain.mark_receipt_settled_for_testing(receipt_id);
+
+        let mut branch_a = chain.clone();
+        let mut branch_b = chain.clone();
+        let block_a = branch_a.produce_block(validators[1], 1_000).unwrap();
+        let block_b = branch_b.produce_block(validators[2], 1_000).unwrap();
+        let (preferred, nonpreferred) = if block_a
+            .pow_hash()
+            .cmp(&block_b.pow_hash())
+            .then_with(|| block_a.hash().cmp(&block_b.hash()))
+            .is_lt()
+        {
+            (block_a, block_b)
+        } else {
+            (block_b, block_a)
+        };
+        chain.admit_block(preferred).unwrap();
+        chain.admit_block(nonpreferred).unwrap();
+        let side_hash = chain
+            .side_branch_blocks()
+            .keys()
+            .copied()
+            .next()
+            .expect("competing block should be stored as a side branch");
+        let side_block = chain.side_branch_blocks().get(&side_hash).unwrap().clone();
+        let canonical = chain.blocks().last().unwrap().clone();
+        assert_ne!(side_hash, canonical.hash());
+
+        let voter_stake = chain.state().validators().get(&voter).unwrap().stake;
+        chain
+            .apply_command(ChainCommand::SubmitBlockVote(BlockVote::new(
+                voter,
+                voter_stake,
+                &canonical,
+            )))
+            .unwrap();
+        assert!(!chain.is_block_finalized(&canonical.hash()));
+
+        let mut node = RpcNode::new(chain);
+        let submission = submit_validator_role_block_vote(&mut node, voter)
+            .unwrap()
+            .expect("validator role should vote for a valid side branch");
+
+        assert_eq!(submission.block_votes_submitted, 1);
+        assert!(validator_has_block_vote(&node.chain, voter, side_hash));
+        assert!(!node.chain.is_block_finalized(&side_hash));
+        assert_eq!(
+            node.chain.side_branch_blocks().get(&side_hash),
+            Some(&side_block)
+        );
+    }
 
     #[test]
     fn role_runtime_submits_and_attests_graph_execution_from_local_artifacts() {

@@ -5,11 +5,11 @@ use std::{
     time::{Duration, Instant},
 };
 use tensor_vm::{
-    Chain, ChainCommand, ChainEngine, ChainNetworkPayloadProcessor, ChainParams, ChainProfile,
-    Faucet, FreivaldsParams, JobScheduler, Libp2pControlPlaneConfig, NetworkEventIngest,
-    NetworkPayloadApply, NodeConfig, NodeRuntimeState, NodeStore, PendingNetworkPayloads,
-    ReceiptState, RpcGateway, RpcHttpServer, RpcNode, RpcPolicy, Tensor, TensorVmLibp2pService,
-    ValidatorAttestation, VerificationResult,
+    BlockVote, Chain, ChainCommand, ChainEngine, ChainNetworkPayloadProcessor, ChainParams,
+    ChainProfile, Faucet, FreivaldsParams, JobScheduler, Libp2pControlPlaneConfig,
+    NetworkEventIngest, NetworkPayloadApply, NodeConfig, NodeRuntimeState, NodeStore,
+    PendingNetworkPayloads, ReceiptState, RpcGateway, RpcHttpServer, RpcNode, RpcPolicy, Tensor,
+    TensorVmLibp2pService, ValidatorAttestation, VerificationResult,
     api::P2pMessage,
     app::{
         RandomnessBeaconRuntimeConfig, RoleRuntimeLoop, RuntimeRole, ServiceRuntimeConfig,
@@ -53,9 +53,10 @@ mod report_fields;
 #[path = "tvmd_runtime/support.rs"]
 mod support;
 use support::{
-    assert_tensor_count, file_modified_at, free_tcp_port, http_status_line, insert_bundle_tensors,
-    produce_block, register_miner, register_validator, report_field, report_u64, send_http_request,
-    test_service_runtime_config, unique_temp_data_dir, wait_for_connected_role_services,
+    assert_tensor_count, file_modified_at, finalize_block_with_vote, free_tcp_port,
+    http_status_line, insert_bundle_tensors, produce_block, register_miner, register_validator,
+    report_field, report_u64, send_http_request, test_service_runtime_config, unique_temp_data_dir,
+    wait_for_connected_role_services,
 };
 
 #[path = "tvmd_runtime/validator_role.rs"]

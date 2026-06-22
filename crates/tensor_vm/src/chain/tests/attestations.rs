@@ -384,10 +384,8 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         })
         .expect("validator reward should remain pending through audit deadline");
     assert_eq!(
-        delayed_validator_claim
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity"),
-        1
+        delayed_validator_claim.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(1)
     );
     assert!(!delayed_validator_claim.voided_by_challenge);
     assert!(chain.state().validator_audit_slashes().is_empty());
@@ -428,13 +426,12 @@ fn mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply() {
         })
         .expect("slashed validator reward should remain pending through appeal deadline");
     assert!(voided_validator_claim.voided_by_challenge);
+    let expected_voided_claimable_at_height = slash
+        .slashed_at_height
+        .saturating_add(chain.params().validator_audit_window_blocks.max(1));
     assert_eq!(
-        voided_validator_claim
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity"),
-        slash
-            .slashed_at_height
-            .saturating_add(chain.params().validator_audit_window_blocks.max(1))
+        voided_validator_claim.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(expected_voided_claimable_at_height)
     );
     let release_events = chain.release_matured_receipt_rewards().unwrap();
     assert!(!release_events.iter().any(|event| matches!(
@@ -610,10 +607,8 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         })
         .expect("audited validator reward should be delayed by assignment");
     assert_eq!(
-        delayed_validator_claim
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity"),
-        3
+        delayed_validator_claim.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(3)
     );
     assert!(!delayed_validator_claim.voided_by_challenge);
 
@@ -771,17 +766,14 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         })
         .expect("contradicted validator reward should stay pending until release");
     assert!(voided_validator_claim.voided_by_challenge);
+    let expected_voided_claimable_at_height = slash
+        .slashed_at_height
+        .saturating_add(chain.params().validator_audit_window_blocks.max(1));
     assert_eq!(
-        voided_validator_claim
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity"),
-        slash
-            .slashed_at_height
-            .saturating_add(chain.params().validator_audit_window_blocks.max(1))
+        voided_validator_claim.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(expected_voided_claimable_at_height)
     );
-    let claimable_at_height = voided_validator_claim
-        .claimable_at_height()
-        .expect("receipt reward should have inclusion-derived maturity");
+    let claimable_at_height = expected_voided_claimable_at_height;
     let mut upheld_chain = chain.clone();
     let upheld_events = upheld_chain
         .resolve_validator_audit_appeal(audit_id, ValidatorAuditAppealResolution::UpholdSlash)
@@ -877,10 +869,8 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         .expect("reversed appeal should keep the delayed validator reward claim pending");
     assert!(!reinstated_validator_claim.voided_by_challenge);
     assert_eq!(
-        reinstated_validator_claim
-            .claimable_at_height()
-            .expect("receipt reward should have inclusion-derived maturity"),
-        claimable_at_height
+        reinstated_validator_claim.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(claimable_at_height)
     );
     assert_eq!(chain.state().rewards().balance(&audited), 0);
     chain.set_position_for_testing(claimable_at_height.saturating_sub(1), 0);
@@ -894,6 +884,11 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         } if *event_receipt_id == receipt.receipt_id && *beneficiary == audited
     )));
     assert_eq!(chain.state().rewards().balance(&audited), 0);
+    let reveal = validation::validator_vrf_reveal_record(&chain, receipt.receipt_id, audited, 0)
+        .expect("reinstated validator reward should retain its randomness anchor");
+    chain
+        .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
+        .unwrap();
     assert_eq!(
         chain.submit_validator_audit_report(ValidatorAuditReport::new(
             audit_id,

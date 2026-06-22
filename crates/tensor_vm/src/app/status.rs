@@ -3,8 +3,9 @@ use std::{collections::BTreeMap, path::Path};
 use super::{KeyValueReport, KeyValueReportWriter};
 use crate::{
     Chain, NodeStore,
-    chain::{RewardClaimKey, RewardClaimLedger},
+    chain::{RewardClaimKey, RewardClaimLedger, TensorBlock},
     hash::hex,
+    types::Hash,
 };
 
 pub fn hex_hash_list(hashes: &[[u8; 32]]) -> String {
@@ -112,6 +113,7 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_proposer_cooldown_blocks",
     "role_proposer_cadence_ready",
     "role_proposer_cadence_remaining_blocks",
+    "role_proposer_challenge_throttle_ready",
     "role_served_requests",
     "role_produced_blocks",
     "role_network_applied_blocks",
@@ -175,7 +177,7 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         .iter()
         .filter(|block| chain.is_block_finalized(&block.hash()))
         .count();
-    let first_live_block = chain.blocks().iter().find(|block| block.height > 2);
+    let first_live_block = first_canonical_live_block(chain.blocks());
     let first_live_block_height = first_live_block
         .map(|block| block.height)
         .unwrap_or_default();
@@ -512,6 +514,26 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
     Ok(report.finish())
 }
 
+fn first_canonical_live_block(blocks: &[TensorBlock]) -> Option<&TensorBlock> {
+    let mut by_hash = BTreeMap::<Hash, &TensorBlock>::new();
+    for block in blocks {
+        by_hash.insert(block.hash(), block);
+    }
+    let mut canonical = Vec::<&TensorBlock>::new();
+    let mut current = blocks.last()?;
+    loop {
+        canonical.push(current);
+        if current.parent_hash == [0; 32] {
+            break;
+        }
+        let Some(parent) = by_hash.get(&current.parent_hash).copied() else {
+            break;
+        };
+        current = parent;
+    }
+    canonical.into_iter().rev().find(|block| block.height > 2)
+}
+
 fn pending_proposer_reward_claims(chain: &Chain, limit: usize) -> String {
     let claims = chain
         .state()
@@ -634,7 +656,7 @@ fn claim_key_label(key: RewardClaimKey) -> String {
 mod tests {
     use super::*;
     use crate::chain::{
-        ASSIGNMENT_SEED_DOMAIN, ChainCommand, ChainEngine, ChainParams, JobState,
+        ASSIGNMENT_SEED_DOMAIN, BlockVote, ChainCommand, ChainEngine, ChainParams, JobState,
         PendingChallengeReward, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE,
         RANDOMNESS_DRAND_ROUND_MAPPING, RANDOMNESS_VRF_CONSTRUCTION, ReceiptRewardKind,
         ReceiptRewardMaturity, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
@@ -662,8 +684,15 @@ mod tests {
         chain
             .register_validator(proposer, chain.params().validator_min_stake)
             .unwrap();
-        chain
+        let block = chain
             .produce_block_with_rewards(proposer, 1_000, 40, 10)
+            .unwrap();
+        chain
+            .submit_block_vote(BlockVote::new(
+                proposer,
+                chain.params().validator_min_stake,
+                &block,
+            ))
             .unwrap();
         let receipt_claim = hash_bytes(b"test", &[b"status-receipt-claim"]);
         chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
@@ -748,6 +777,14 @@ mod tests {
             .unwrap();
         chain
             .produce_block_with_rewards(proposer, 1_000, 400, 100)
+            .unwrap();
+        let block = chain.blocks().last().unwrap().clone();
+        chain
+            .submit_block_vote(BlockVote::new(
+                proposer,
+                chain.params().validator_min_stake,
+                &block,
+            ))
             .unwrap();
         chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
             0, 0, 32, 8, 16, &beacon, 20,

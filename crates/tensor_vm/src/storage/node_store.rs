@@ -160,7 +160,13 @@ impl NodeStore {
     }
 
     pub fn persist_chain(&self, chain: &Chain) -> Result<NodeStoreStatus> {
-        let blocks = self.block_log_store.sync_chain(chain)?;
+        let blocks = match self.block_log_store.sync_chain(chain) {
+            Ok(blocks) => blocks,
+            Err(TvmError::Storage("block log chain mismatch" | "block log ahead of chain")) => {
+                self.block_log_store.replace_chain(chain)?
+            }
+            Err(error) => return Err(error),
+        };
         self.chain_state_store.save_chain(chain)?;
         let snapshot = self.snapshot_store.save_chain(chain)?;
         self.validate_parts(snapshot, blocks)

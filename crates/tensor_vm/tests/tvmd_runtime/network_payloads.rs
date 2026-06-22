@@ -283,15 +283,30 @@ fn network_applied_receipt_and_attestation_make_validator_proposal_useful() {
     assert_eq!(proposal.useful_blocks_proposed, 1);
     assert_eq!(proposal.fallback_blocks_proposed, 0);
     assert_eq!(proposal.selected_receipts, vec![receipt_id]);
-    let block = server.gateway().node.chain.blocks().last().unwrap();
+    let block = server.gateway().node.chain.blocks().last().unwrap().clone();
     assert_eq!(block.proposer, attestation.validator);
     assert_eq!(
         server
             .gateway()
             .node
             .chain
-            .selected_receipts_for_block(block),
+            .selected_receipts_for_block(&block),
         vec![receipt_id]
+    );
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block.height)
+            .is_none()
+    );
+    finalize_block_with_vote(
+        &mut server.gateway_mut().node.chain,
+        attestation.validator,
+        &block,
     );
     assert!(
         server

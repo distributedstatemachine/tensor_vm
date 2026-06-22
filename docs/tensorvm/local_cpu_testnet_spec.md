@@ -168,7 +168,7 @@ load its stable wallet and libp2p identity
 seed the bootstrap peer book, except for miner-00
 start the mandatory libp2p control plane
 start its role command as `tvmd miner run` or `tvmd validator run`; `validator-00` is the only service
-with the local timed synthetic job producer flag, and three validators are validator block proposers under
+with the local timed synthetic job producer flag, and all five validators are validator block proposers under
 the shared chain-visible proposer cooldown
 report readiness only after the role process and libp2p runtime are live
 ```
@@ -258,7 +258,7 @@ deployment:
 0 CUDA-required miners
 all miner operators report `runtime_command=miner_run`
 all validator operators report `runtime_command=validator_run`
-`validator-00` reports local timed synthetic job production, three validators report local validator
+`validator-00` reports local timed synthetic job production, all five validators report local validator
 block-proposer mode and chain-visible proposer cooldown status, and every miner reports no
 block-production capability
 all operators report `chain_profile=local_cpu` / `role_chain_profile=local_cpu`
@@ -280,7 +280,7 @@ standalone explorer page configured to poll the TensorVM `/explorer/ws` endpoint
 all 15 operator node stores advanced past the seed, reported role status and live chain counters, and
 reported the same first live finalized block hash plus the same finalized common-head block hash at the
 bounded convergence height
-only validator-00 reported local timed synthetic job production, three validators reported local validator
+only validator-00 reported local timed synthetic job production, all five validators reported local validator
 block-proposer mode and chain-visible proposer cooldown status, miners reported no local block-production capability, and
 every other counted operator reported network-applied block progress from decoded p2p block payloads
 every non-producer reported decoded network-event ingestion for block headers, jobs, receipts, and

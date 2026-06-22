@@ -706,10 +706,17 @@ pub fn submit_block_vote(chain: &mut Chain, vote: BlockVote) -> Result<()> {
     if !vote.verify_signature() {
         return Err(TvmError::InvalidReceipt("bad block vote signature"));
     }
+    let side_branch_vote = chain.side_branch_blocks.contains_key(&vote.block_hash);
     let Some(block) = chain
         .blocks
         .iter()
         .find(|block| block.height == vote.block_height && block.hash() == vote.block_hash)
+        .or_else(|| {
+            chain
+                .side_branch_blocks
+                .get(&vote.block_hash)
+                .filter(|block| block.height == vote.block_height)
+        })
         .cloned()
     else {
         return Err(TvmError::InvalidReceipt("unknown block"));
@@ -727,7 +734,6 @@ pub fn submit_block_vote(chain: &mut Chain, vote: BlockVote) -> Result<()> {
     {
         return Err(TvmError::InvalidReceipt("duplicate block vote"));
     }
-
     let block_hash = vote.block_hash;
     chain
         .state
@@ -737,6 +743,20 @@ pub fn submit_block_vote(chain: &mut Chain, vote: BlockVote) -> Result<()> {
         .push(vote);
     if has_block_finality(chain, &block_hash) {
         chain.state.finalized_blocks.insert(block_hash);
+        if side_branch_vote {
+            blocks::try_promote_side_branch_or_descendant(chain, block_hash);
+        }
+        if chain
+            .blocks
+            .last()
+            .is_some_and(|block| block.hash() == block_hash)
+        {
+            blocks::materialize_finalized_proposer_rewards(
+                &mut chain.state,
+                &chain.blocks,
+                &chain.params,
+            );
+        }
     }
     Ok(())
 }

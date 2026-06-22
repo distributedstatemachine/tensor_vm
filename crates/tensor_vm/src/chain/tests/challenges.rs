@@ -1,5 +1,23 @@
 use super::*;
 
+fn finalize_challenge_test_block(chain: &mut Chain, block: &TensorBlock) {
+    let validators = chain
+        .state()
+        .validators()
+        .iter()
+        .map(|(address, validator)| (*address, validator.stake))
+        .collect::<Vec<_>>();
+    for (validator, stake) in validators {
+        if chain.is_block_finalized(&block.hash()) {
+            break;
+        }
+        chain
+            .submit_block_vote(BlockVote::new(validator, stake, block))
+            .unwrap();
+    }
+    assert!(chain.is_block_finalized(&block.hash()));
+}
+
 #[test]
 fn challenge_outcome_slashes_miner_and_credits_treasury() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -35,7 +53,7 @@ fn challenge_outcome_slashes_miner_and_credits_treasury() {
 }
 
 #[test]
-fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
+fn observed_block_check_challenge_records_evidence_without_punishing_canonical_proposer() {
     let beacon = hash_bytes(b"test", &[b"block-check-challenge-beacon"]);
     let params = ChainParams {
         agreement_quorum: 1,
@@ -101,6 +119,8 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 900, 100)
         .unwrap();
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    finalize_challenge_test_block(&mut chain, &block);
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
     assert_eq!(
         chain
@@ -136,40 +156,27 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
         .submit_block_check_challenge(diagnostic.challenge.clone())
         .unwrap();
 
-    assert_eq!(events.len(), 2);
+    assert_eq!(events.len(), 1);
     assert!(matches!(
         &events[0],
         ChainEvent::BlockCheckChallengeProven {
             proposer: event_proposer,
             challenger: event_challenger,
-            proposer_reward_clawback: 1000,
-            challenger_reward: 500,
+            proposer_reward_clawback: 0,
+            challenger_reward: 0,
             ..
         } if *event_proposer == proposer && *event_challenger == challenger
     ));
-    let ChainEvent::ChallengeRewardPending {
-        claim_id,
-        challenge_id,
-        block_hash,
-        receipt_id,
-        challenger: pending_challenger,
-        amount,
-        claimable_at_height,
-    } = events[1]
-    else {
-        panic!("expected pending challenge reward event");
-    };
-    assert_eq!(block_hash, diagnostic.observed_block.hash());
-    assert_eq!(receipt_id, receipt.receipt_id);
-    assert_eq!(pending_challenger, challenger);
-    assert_eq!(amount, 500);
-    assert_eq!(
-        claimable_at_height,
-        chain
-            .state()
-            .height()
-            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    let challenge_id = crate::chain::challenges::block_check_challenge_id(
+        &diagnostic.observed_block.hash(),
+        &receipt.receipt_id,
     );
+    let claimable_at_height = chain
+        .state()
+        .height()
+        .saturating_add(chain.params().reward_maturity_delay_blocks());
+    let block_hash = diagnostic.observed_block.hash();
+    assert_eq!(block_hash, diagnostic.observed_block.hash());
     assert_eq!(
         chain
             .state()
@@ -179,19 +186,8 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .challenger,
         challenger
     );
-    assert!(matches!(
-        chain.state().pending_challenge_rewards().get(&claim_id),
-        Some(reward)
-            if reward.challenge_id == challenge_id
-                && reward.block_hash == diagnostic.observed_block.hash()
-                && reward.receipt_id == receipt.receipt_id
-                && reward.challenger == challenger
-                && reward.amount == 500
-                && reward.claimable_at_height == claimable_at_height
-                && !reward.voided_by_challenge
-    ));
     assert!(
-        chain
+        !chain
             .state()
             .pending_proposer_rewards()
             .get(&block.height)
@@ -204,20 +200,12 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .pending_receipt_rewards()
             .values()
             .filter(|reward| reward.receipt_id == receipt.receipt_id)
-            .all(|reward| {
-                reward.voided_by_challenge
-                    && matches!(
-                        reward.maturity,
-                        ReceiptRewardMaturity::ClaimableAt(height)
-                            | ReceiptRewardMaturity::AwaitingValidatorVrfReveal(height)
-                            if height == claimable_at_height
-                    )
-            })
+            .all(|reward| !reward.voided_by_challenge)
     );
     assert_eq!(chain.state().rewards().balance(&challenger), 0);
-    assert_eq!(chain.state().rewards().treasury(), 500);
+    assert_eq!(chain.state().rewards().treasury(), 0);
     assert!(
-        chain
+        !chain
             .state()
             .challenged_receipts()
             .contains(&receipt.receipt_id)
@@ -228,14 +216,8 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
             .settled_receipts()
             .contains(&receipt.receipt_id)
     );
-    assert_eq!(
-        chain.state().proposer_penalty_until().get(&proposer),
-        Some(&5)
-    );
-    assert_eq!(
-        chain.produce_block(proposer, 1_006),
-        Err(TvmError::InvalidReceipt("proposer is challenge-throttled"))
-    );
+    assert_eq!(chain.state().proposer_penalty_until().get(&proposer), None);
+    assert!(chain.proposer_challenge_throttle_ready(proposer));
     assert!(
         chain
             .release_matured_challenge_rewards()
@@ -245,49 +227,22 @@ fn block_check_challenge_voids_pending_reward_and_throttles_proposer() {
     assert_eq!(chain.state().rewards().balance(&challenger), 0);
     chain.set_position_for_testing(claimable_at_height, 1);
     let release_events = chain.release_matured_challenge_rewards().unwrap();
-    assert!(
-        release_events.contains(&ChainEvent::ChallengeRewardReleased {
-            claim_id,
-            challenge_id,
-            challenger,
-            amount: 500,
-        })
-    );
-    assert!(release_events.contains(&ChainEvent::RewardCredited {
-        address: challenger,
-        amount: 500,
-    }));
-    assert_eq!(chain.state().rewards().balance(&challenger), 500);
-    assert!(
-        chain
-            .state()
-            .pending_challenge_rewards()
-            .get(&claim_id)
-            .is_none()
-    );
+    assert!(release_events.is_empty());
+    assert!(chain.state().pending_challenge_rewards().is_empty());
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
     assert!(
         chain
             .release_matured_challenge_rewards()
             .unwrap()
             .is_empty()
     );
-    chain.set_position_for_testing(claimable_at_height.saturating_sub(1), 0);
-    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert!(
         chain
             .state()
             .pending_receipt_rewards()
             .values()
-            .any(|reward| reward.receipt_id == receipt.receipt_id)
-    );
-    chain.set_position_for_testing(claimable_at_height, 0);
-    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
-    assert!(
-        chain
-            .state()
-            .pending_receipt_rewards()
-            .values()
-            .all(|reward| reward.receipt_id != receipt.receipt_id)
+            .filter(|reward| reward.receipt_id == receipt.receipt_id)
+            .all(|reward| !reward.voided_by_challenge)
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
@@ -314,6 +269,8 @@ fn matured_proposer_reward_releases_after_full_maturity_delay() {
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    finalize_challenge_test_block(&mut chain, &block);
     let pending = chain
         .state()
         .pending_proposer_rewards()
@@ -344,5 +301,80 @@ fn matured_proposer_reward_releases_after_full_maturity_delay() {
             .pending_proposer_rewards()
             .get(&block.height)
             .is_none()
+    );
+}
+
+#[test]
+fn diagnostic_block_check_challenge_uses_full_observed_check_tree() {
+    let beacon = hash_bytes(b"test", &[b"multi-block-check-challenge-beacon"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        challenge_window_epochs: 1,
+        epoch_length: 4,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"multi-block-check-challenge-miner");
+    let proposer = address(b"multi-block-check-challenge-proposer");
+    let challenger = address(b"multi-block-check-challenge-watcher");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(proposer, 10_000).unwrap();
+    chain.register_validator(challenger, 10_000).unwrap();
+
+    for label in [
+        b"first".as_slice(),
+        b"second".as_slice(),
+        b"third".as_slice(),
+    ] {
+        let job = MatmulJob::synthetic(0, label[0] as u64, 2, 2, 2, &beacon, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+        chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    }
+
+    let block = chain
+        .produce_block_with_rewards(proposer, 1_000, 900, 100)
+        .unwrap();
+    let outcome = chain.block_apply_outcome(&block).unwrap();
+    assert_eq!(outcome.selected_openings.len(), 3);
+    finalize_challenge_test_block(&mut chain, &block);
+
+    let diagnostic = chain
+        .deterministic_bad_block_check_challenge(&block, challenger)
+        .unwrap();
+    assert_ne!(diagnostic.observed_block.checks_root, block.checks_root);
+    assert_eq!(
+        diagnostic.challenge.check_leaf_proof.leaf_index,
+        diagnostic.challenge.check_leaf_index
+    );
+    assert!(verify_proof(
+        &diagnostic.observed_block.checks_root,
+        diagnostic.challenge.observed_check_leaf,
+        &diagnostic.challenge.check_leaf_proof,
+    ));
+
+    chain
+        .install_diagnostic_observed_block(&diagnostic)
+        .unwrap();
+    let events = chain
+        .submit_block_check_challenge(diagnostic.challenge.clone())
+        .unwrap();
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ChainEvent::BlockCheckChallengeProven {
+            block_hash,
+            receipt_id,
+            challenger: event_challenger,
+            proposer_reward_clawback: 0,
+            challenger_reward: 0,
+            ..
+        } if *block_hash == diagnostic.challenge.block_hash
+            && *receipt_id == diagnostic.challenge.receipt_id
+            && *event_challenger == challenger
+    )));
+    assert!(
+        events
+            .iter()
+            .all(|event| !matches!(event, ChainEvent::ChallengeRewardPending { .. }))
     );
 }

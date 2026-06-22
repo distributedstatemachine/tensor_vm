@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 144 complete - typed public randomness evidence records.
+- Active feature: Iteration 145 complete - chain-owned delayed reward and restart convergence cleanup.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -90,6 +90,77 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 145: Chain-Owned Delayed Rewards And Restart Convergence Cleanup
+
+Feature capability: delayed rewards are enforced by canonical chain state instead of checker/runtime
+workarounds. Receipt rewards stay pending until block inclusion starts the maturity clock, validator
+receipt rewards stay reveal-held until `SubmitValidatorVrfReveal`, proposer rewards materialize only after
+the proposed block reaches finality, and finalized side branches promote through the same block-vote path
+so restarted/passive operators converge without synthetic reward or fork compensation.
+Readiness requirements covered: `upow.md` §11 finality-separated block admission, `upow.md` §12 reward
+escrow/challenge-window economics, `mvp_spec.md` §§20.3/20.4/25.5 delayed spendability, local CPU restart
+continuity, and the shortcut ban against checker-only reward/fork readiness evidence.
+Files/modules touched: `crates/tensor_vm/src/chain/blocks.rs`,
+`crates/tensor_vm/src/chain/validation.rs`, `crates/tensor_vm/src/chain/challenges.rs`,
+`crates/tensor_vm/src/chain/receipts.rs`, reward/finality/audit/block tests, node/runtime restart status
+surfaces, local CPU checker scripts, local CPU Compose spec tests, and readiness docs.
+Parallel subagents run: reward/finality mapper, runtime/restart counter explorer, and test-coverage
+explorer from the prior delayed-reward/restart pass; parent owned the final integration edits.
+Parallelizable implementation workstreams: read-only mapping and focused validation ran in parallel; parent
+owned consensus, checker, and docs edits because reward roots, finality, and restart gates must remain
+one coherent transition.
+Tests/checkers/docs added or updated: proposer reward finality-delay coverage, receipt reward
+inclusion-started maturity coverage, validator VRF reveal-held reward coverage, finalized useful side-branch
+promotion coverage, audit appeal reward-delay assertions, restart plateau checker shape, rolling restart
+script-shape coverage, and readiness/local CPU docs.
+Narrow validation commands: `cargo test -p tensor_vm chain::tests::blocks --lib -- --nocapture`,
+`cargo test -p tensor_vm chain::tests::attestations --lib -- --nocapture`,
+`cargo test -p tensor_vm chain::tests::rewards --lib -- --nocapture`, and
+`cargo test -p tensor_vm chain::tests::settlement --lib -- --nocapture`.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo test -p tensor_vm --test local_cpu_compose -- --nocapture`, `cargo fmt --check --all`, and
+`git diff --check`.
+Expected observable evidence: producing or admitting a block does not create a spendable proposer reward
+until signed votes finalize that block; included receipt rewards derive maturity from inclusion height;
+validator rewards remain pending with `AwaitingValidatorVrfReveal` until a verified reveal is accepted;
+finality votes for a stored useful side branch can promote it and preserve vote/finality/reward state; and
+restart checks preserve finalized common head/state while reporting plateau versus fresh advancement.
+Out of scope: public/CUDA deployment evidence, production drand/BLS verification, production validator VRF
+key management, and full interactive trace disputes.
+Split trigger: if the delayed reward root changes had required a storage schema migration or public
+evidence format change, land chain reward timing first and defer adapters; no split was required.
+Canonical owner: chain block application, block-vote finality, pending reward ledgers, and node-store
+restart recovery. Checkers only observe structured state.
+Adapter callers: validator proposer ticks, p2p block/vote ingest, restart and rolling-restart checkers,
+status/explorer pending-claim views, and local CPU Compose evidence tests.
+Old shortcut removed: adapters no longer need to compensate for proposer rewards appearing before finality,
+receipt rewards becoming claimable before block inclusion/reveal, or restart gates requiring fresh block
+advancement when all operators already preserve and reconverge on a finalized common head.
+Regression test that proves the shortcut is gone: block/reward tests assert no proposer pending claim before
+finality and materialization after finality, receipt rewards preserve inclusion/reveal holds, audit appeal
+reversal does not bypass VRF reveal, and finalized side-branch votes promote through chain state.
+Behavior with local synthetic block production disabled: reward maturity and side-branch finality are
+chain-state rules driven by submitted blocks/votes/reveals; they do not depend on local synthetic job
+production.
+Behavior for producer and non-producer roles: producers and passive observers ingest the same block,
+vote, and reveal payloads and derive the same pending reward/finality state.
+Structured evidence source: finalized block set, block votes, pending proposer/receipt/challenge reward
+ledgers, reward roots, node-store block-log roots, role runtime status, and local CPU checker output.
+Finality source: unchanged signed validator block-vote threshold; no runtime vote synthesis.
+Wire-size and codec boundary: no new p2p payloads or unbounded wire reads; existing block, vote, challenge,
+and reveal codecs carry the evidence.
+
+Latest validation evidence: `cargo test -p tensor_vm chain::tests::blocks --lib -- --nocapture`,
+`cargo test -p tensor_vm chain::tests::attestations --lib -- --nocapture`,
+`cargo test -p tensor_vm chain::tests::rewards --lib -- --nocapture`, and
+`cargo test -p tensor_vm chain::tests::settlement --lib -- --nocapture` passed on June 22, 2026 after the
+final reward/finality assertions. `cargo fmt --check --all`, `git diff --check`, and
+`cargo test -p tensor_vm local_testnet --release` also passed on June 22, 2026. After aligning runtime
+tests with finality-delayed reward materialization, `cargo test -p tensor_vm --test tvmd_runtime -- --nocapture`
+and `cargo test -p tensor_vm --test local_cpu_compose -- --nocapture` also passed on June 22, 2026.
+Docker full local CPU and rolling-restart evidence remains the previously recorded local proof unless
+rerun before this commit.
 
 ### Iteration 144: Typed Public Randomness Evidence Records
 

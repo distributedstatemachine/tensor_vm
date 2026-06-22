@@ -64,9 +64,9 @@ wire/node path; focused p2p, chain, node payload, and pending-retry tests cover 
 malformed block without replacing the canonical block list and resolving the challenge through delayed
 pending challenger rewards.
 Iteration 77 added live validator-proposer diagnostic challenge emission and hardened the local checker to
-require applied diagnostic challenges plus future-maturity pending challenge reward claims. Focused
-app/network, node ingest, and compose contract tests cover the emitted bounded payload, noncanonical
-observed-block application, and delayed reward evidence.
+require applied diagnostic challenge evidence. Focused app/network, node ingest, and compose contract tests
+cover the emitted bounded payload, noncanonical observed-block application, and the invariant that observed
+diagnostics do not punish the canonical proposer reward path.
 Iteration 79 added durable block-parent `ChainState` snapshots for replay-stable historical
 `BlockApplyOutcome` evidence. Focused chain and storage tests cover old useful-block apply outcomes after
 future receipts/blocks and after chain-state save/load.

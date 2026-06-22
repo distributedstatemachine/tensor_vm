@@ -26,7 +26,7 @@ Every operator container initializes a durable node store, starts with a stable 
 distinct data volume, derives a stable libp2p identity seed from that operator ID, runs the mandatory
 libp2p readiness path, and then execs its role command: all miners run `tvmd miner run`, all validators
 run `tvmd validator run`, `validator-00` carries the single local timed synthetic job producer flag, and
-three validators carry validator block-proposer flags under a shared chain-visible proposer cooldown.
+all five validators carry validator block-proposer flags under a shared chain-visible proposer cooldown.
 Miner containers also run the CPU miner readiness command with `--device cpu`; validators run the validator
 readiness command. Every operator seeds the same deterministic local CPU chain and keeps producing live
 synthetic CPU jobs from that shared base, while `miner-00` exposes the host-facing gateway routes.
@@ -87,8 +87,10 @@ The rolling restart script invokes the restart-continuity gate once per counted 
 pass captures all operator peer IDs, heights, block counts, state roots, block-log roots, and a finalized
 common head before restarting one requested service. After the restart and local-testnet check, it fails
 unless the restarted service keeps its libp2p peer ID, height, block count, state root, and block-log root
-advance, the pre-restart finalized common head and state root are still present on every operator, and new
-finalized blocks are observed. Pass explicit service names to run a smaller smoke subset.
+non-regressing, the pre-restart finalized common head and state root are still present on every operator,
+and every operator reconverges on a finalized common head. The gate reports whether additional finalized
+blocks were observed after the restart; a stable plateau is allowed when the pre-restart common head and
+state root remain preserved. Pass explicit service names to run a smaller smoke subset.
 
 On restart, `tvmd node init` validates the complete node store. If a previous write left the snapshot and
 block log out of sync, the service rewrites them from the persisted `chain.state` file before reporting

@@ -4,12 +4,14 @@ use crate::{
 
 use super::{
     ServiceRuntimeConfig, chain_announcement_checkpoint, fetch_validator_role_missing_tensors,
-    publish_new_chain_announcements, publish_observed_block_check_challenge,
-    publish_validator_block_proposal, runtime_production::next_block_timestamp,
-    runtime_role_wallet_registration, submit_validator_role_attestation,
-    submit_validator_role_audit_report, submit_validator_role_block_proposal,
-    submit_validator_role_block_vote, validator_role_audit_observation,
-    validator_role_block_proposal_observation, validator_role_work_observation,
+    publish_block_payload_announcements, publish_block_vote_announcements,
+    publish_chain_payload_announcements, publish_new_chain_announcements,
+    publish_observed_block_check_challenge, publish_validator_block_proposal,
+    runtime_production::next_block_timestamp, runtime_role_wallet_registration,
+    submit_validator_role_attestation, submit_validator_role_audit_report,
+    submit_validator_role_block_proposal, submit_validator_role_block_vote,
+    validator_role_audit_observation, validator_role_block_proposal_observation,
+    validator_role_work_observation,
 };
 
 pub fn tick_validator_role_work_once(
@@ -161,6 +163,18 @@ pub fn tick_validator_role_work_once(
         runtime_state.record_validator_block_vote_submission(submission.block_votes_submitted);
         status_changed = true;
     }
+    if publish_block_vote_announcements(p2p_service, &server.gateway().node.chain)? > 0 {
+        status_changed = true;
+    }
+    if publish_block_payload_announcements(p2p_service, &server.gateway().node.chain)? > 0 {
+        status_changed = true;
+    }
+    if publish_chain_payload_announcements(p2p_service, &server.gateway().node.chain)? > 0 {
+        status_changed = true;
+    }
+    if publish_pending_proposer_reward_diagnostic(&server.gateway().node.chain, p2p_service)? {
+        status_changed = true;
+    }
     let local_block_proposer_delay_satisfied = config
         .node
         .local_block_proposer_delay_satisfied(server.gateway().node.chain.state().height());
@@ -179,7 +193,6 @@ pub fn tick_validator_role_work_once(
         && proposer_cadence_ready
         && proposer_challenge_throttle_ready
     {
-        let parent_state_root_before = server.gateway().node.chain.state_root();
         server
             .gateway_mut()
             .node
@@ -188,19 +201,22 @@ pub fn tick_validator_role_work_once(
             .map_err(|error| {
                 format!("validator proposer failed to prepare parent state: {error}")
             })?;
-        let parent_state_changed =
-            server.gateway().node.chain.state_root() != parent_state_root_before;
         let observation =
             validator_role_block_proposal_observation(&server.gateway().node, validator);
-        let state_carry_fallback = parent_state_changed
-            && observation.settled_receipts.is_empty()
-            && fallback_proposer_selected(&server.gateway().node.chain, validator);
-        let timestamp = if state_carry_fallback {
+        let selected_useful_proposer =
+            useful_proposer_selected(&server.gateway().node.chain, validator);
+        let selected_local_proposer =
+            fallback_proposer_selected(&server.gateway().node.chain, validator);
+        let fallback_work_ready =
+            observation.settled_receipts.is_empty() && selected_local_proposer;
+        let timestamp = if fallback_work_ready {
             fallback_block_timestamp(&server.gateway().node.chain)
         } else {
             next_block_timestamp(server)
         };
-        let proposer_work_ready = !observation.settled_receipts.is_empty() || state_carry_fallback;
+        let proposer_work_ready = (!observation.settled_receipts.is_empty()
+            && selected_useful_proposer)
+            || fallback_work_ready;
         if runtime_state.record_validator_block_proposal_observation(
             observation.settled_receipts,
             observation.artifact_ready_receipts,
@@ -218,9 +234,20 @@ pub fn tick_validator_role_work_once(
             let Some(block) = server.gateway().node.chain.blocks().last() else {
                 return Ok(status_changed);
             };
-            let diagnostic = if block.production_kind.requires_pow() {
-                diagnostic_block_check_challenger(&server.gateway().node.chain, block.proposer)
+            let diagnostic = {
+                let diagnostic_block =
+                    diagnostic_block_with_pending_proposer_reward(&server.gateway().node.chain);
+                diagnostic_block
+                    .as_ref()
+                    .and_then(|block| {
+                        diagnostic_block_check_challenger(
+                            &server.gateway().node.chain,
+                            block.proposer,
+                        )
+                        .map(|challenger| (block, challenger))
+                    })
                     .map(|challenger| {
+                        let (block, challenger) = challenger;
                         server
                             .gateway()
                             .node
@@ -231,8 +258,15 @@ pub fn tick_validator_role_work_once(
                     .map_err(|error| {
                         format!("failed to build live diagnostic block-check challenge: {error}")
                     })?
-            } else {
-                None
+                    .filter(|diagnostic| {
+                        !server
+                            .gateway()
+                            .node
+                            .chain
+                            .state()
+                            .block_check_challenges()
+                            .contains_key(&diagnostic.challenge_id)
+                    })
             };
             let block_hash = block.hash();
             let parent_state = server
@@ -276,6 +310,56 @@ fn diagnostic_block_check_challenger(chain: &Chain, proposer: Address) -> Option
         .or_else(|| chain.state().validators().keys().copied().next())
 }
 
+fn publish_pending_proposer_reward_diagnostic(
+    chain: &Chain,
+    p2p_service: &TensorVmLibp2pService,
+) -> std::result::Result<bool, String> {
+    if !chain.state().pending_challenge_rewards().is_empty() {
+        return Ok(false);
+    }
+    let Some(block) = diagnostic_block_with_pending_proposer_reward(chain) else {
+        return Ok(false);
+    };
+    let Some(challenger) = diagnostic_block_check_challenger(chain, block.proposer) else {
+        return Ok(false);
+    };
+    let diagnostic = chain
+        .deterministic_bad_block_check_challenge(&block, challenger)
+        .map_err(|error| {
+            format!("failed to build live diagnostic block-check challenge: {error}")
+        })?;
+    if chain
+        .state()
+        .block_check_challenges()
+        .contains_key(&diagnostic.challenge_id)
+    {
+        return Ok(false);
+    }
+    publish_observed_block_check_challenge(p2p_service, &diagnostic)?;
+    Ok(true)
+}
+
+fn diagnostic_block_with_pending_proposer_reward(
+    chain: &Chain,
+) -> Option<crate::chain::TensorBlock> {
+    chain
+        .state()
+        .pending_proposer_rewards()
+        .values()
+        .find_map(|reward| {
+            chain
+                .blocks()
+                .iter()
+                .find(|block| {
+                    block.height == reward.block_height
+                        && block.proposer == reward.proposer
+                        && block.production_kind.requires_pow()
+                        && chain.is_block_finalized(&block.hash())
+                })
+                .cloned()
+        })
+}
+
 fn fallback_block_timestamp(chain: &Chain) -> u64 {
     let Some(parent) = chain.blocks().last() else {
         return 0;
@@ -290,4 +374,17 @@ fn fallback_block_timestamp(chain: &Chain) -> u64 {
 
 fn fallback_proposer_selected(chain: &Chain, validator: Address) -> bool {
     chain.proposer_for_next_epoch(&chain.state().finalized_randomness()) == Some(validator)
+}
+
+fn useful_proposer_selected(chain: &Chain, validator: Address) -> bool {
+    chain
+        .state()
+        .validators()
+        .keys()
+        .copied()
+        .find(|candidate| {
+            chain.proposer_cadence_ready(*candidate)
+                && chain.proposer_challenge_throttle_ready(*candidate)
+        })
+        == Some(validator)
 }

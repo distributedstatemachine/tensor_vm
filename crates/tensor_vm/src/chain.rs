@@ -255,6 +255,10 @@ impl Chain {
         self.apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
     }
 
+    pub(crate) fn materialize_finalized_proposer_rewards(&mut self) {
+        blocks::materialize_finalized_proposer_rewards(&mut self.state, &self.blocks, &self.params);
+    }
+
     pub fn deterministic_bad_block_check_challenge(
         &self,
         block: &TensorBlock,
@@ -469,6 +473,10 @@ impl Chain {
         parent_state: &ChainState,
     ) -> bool {
         blocks::parent_state_matches_known_parent(self, block, parent_state)
+    }
+
+    pub(crate) fn known_parent_state_for_block(&self, block: &TensorBlock) -> Option<ChainState> {
+        blocks::known_parent_child_state(self, &block.parent_hash)
     }
 
     pub fn expected_difficulty_target(&self, height: u64) -> Hash {

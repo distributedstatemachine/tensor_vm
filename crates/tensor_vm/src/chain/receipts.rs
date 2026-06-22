@@ -56,8 +56,13 @@ pub fn submit_tensor_op(chain: &mut Chain, receipt: TensorOpReceipt) -> Result<(
     if !chain.state.miners.contains_key(&receipt.miner) {
         return Err(TvmError::UnknownMiner);
     }
-    if !chain.state.jobs.contains_key(&receipt.job_id) {
-        return Err(TvmError::InvalidReceipt("unknown job"));
+    let job = match chain.state.jobs.get(&receipt.job_id) {
+        Some(JobState::TensorOp(job)) => job,
+        Some(_) => return Err(TvmError::InvalidReceipt("job primitive mismatch")),
+        None => return Err(TvmError::InvalidReceipt("unknown job")),
+    };
+    if receipt.submitted_at_block > job.deadline_block {
+        return Err(TvmError::InvalidReceipt("receipt submitted after deadline"));
     }
     if chain.state.receipts.contains_key(&receipt.receipt_id) {
         return Err(TvmError::InvalidReceipt("duplicate receipt"));
@@ -78,8 +83,13 @@ pub fn submit_linear_training_step(
     if !chain.state.miners.contains_key(&receipt.miner) {
         return Err(TvmError::UnknownMiner);
     }
-    if !chain.state.jobs.contains_key(&receipt.job_id) {
-        return Err(TvmError::InvalidReceipt("unknown job"));
+    let job = match chain.state.jobs.get(&receipt.job_id) {
+        Some(JobState::LinearTrainingStep(job)) => job,
+        Some(_) => return Err(TvmError::InvalidReceipt("job primitive mismatch")),
+        None => return Err(TvmError::InvalidReceipt("unknown job")),
+    };
+    if receipt.submitted_at_block > job.deadline_block {
+        return Err(TvmError::InvalidReceipt("receipt submitted after deadline"));
     }
     if chain.state.receipts.contains_key(&receipt.receipt_id) {
         return Err(TvmError::InvalidReceipt("duplicate receipt"));

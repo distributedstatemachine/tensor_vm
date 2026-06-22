@@ -346,9 +346,16 @@ impl NodeRuntimeState {
     }
 
     pub fn record_network_ingest(&mut self, ingested: NetworkEventIngest) {
+        let applied_block_evidence = if ingested.applied_blocks > 0 {
+            ingested.applied_blocks
+        } else if ingested.block_payloads_applied > 0 {
+            1
+        } else {
+            0
+        };
         self.network_applied_blocks = self
             .network_applied_blocks
-            .saturating_add(ingested.applied_blocks);
+            .saturating_add(applied_block_evidence);
         self.network_events.accumulate(ingested);
     }
 

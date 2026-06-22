@@ -3,6 +3,7 @@ use std::collections::{BTreeMap, BTreeSet};
 use crate::{
     Chain, ChainCommand, ChainEngine, JobScheduler, JobState, NodeRuntimeState, NodeStore,
     RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
+    error::TvmError,
     hash::hex,
     roles::CpuReferenceMinerRole,
     types::{Address, Hash, parse_hash_hex},
@@ -75,14 +76,21 @@ pub fn submit_miner_role_receipt(
         return Err("miner role produced receipt for the wrong job or miner".to_owned());
     }
     let served_tensors = bundle.served_tensors();
-    node.chain
+    if let Err(error) = node
+        .chain
         .apply_command(ChainCommand::SubmitReceipt(bundle.receipt))
-        .map_err(|error| {
-            format!(
-                "miner role failed to submit receipt {}: {error}",
-                hex(&job_id)
-            )
-        })?;
+    {
+        if matches!(
+            error,
+            TvmError::InvalidReceipt("receipt submitted after deadline")
+        ) {
+            return Ok(None);
+        }
+        return Err(format!(
+            "miner role failed to submit receipt {}: {error}",
+            hex(&job_id)
+        ));
+    }
     let mut tensors_inserted = 0usize;
     for tensor in &served_tensors {
         node.insert_tensor(tensor.clone());

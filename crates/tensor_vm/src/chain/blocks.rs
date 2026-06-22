@@ -109,7 +109,7 @@ fn produce_inner(
         super::BlockProductionKind::UsefulVerificationPow
     };
     let difficulty_target = expected_difficulty_target(chain, chain.state.height);
-    let child_state = apply_block_to_parent_state(
+    let mut child_state = apply_block_to_parent_state(
         &chain.state,
         chain.params.epoch_length,
         beacon_round,
@@ -131,6 +131,7 @@ fn produce_inner(
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
+    materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
     let chain_state_root = state_root(&child_state);
     let reward_root = reward_root(&child_state);
     let mut block = TensorBlock {
@@ -271,6 +272,7 @@ pub(super) fn admit(chain: &mut Chain, block: TensorBlock) -> Result<BlockAdmiss
     child_state
         .block_selected_receipts
         .insert(block_hash, outcome.selected_receipt_ids.clone());
+    materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
     chain.state = child_state;
     Ok(BlockAdmission::Applied {
         height,
@@ -334,13 +336,14 @@ fn admit_side_branch(
     child_state
         .block_selected_receipts
         .insert(block_hash, outcome.selected_receipt_ids);
+    materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
     chain.block_parent_states.insert(block_hash, parent_state);
     let parent_hash = block.parent_hash;
     chain
         .side_branch_child_states
         .insert(block_hash, child_state);
     chain.side_branch_blocks.insert(block_hash, block);
-    if let Some(admission) = try_promote_side_branch(chain, block_hash) {
+    if let Some(admission) = try_promote_side_branch_or_descendant(chain, block_hash) {
         return Ok(admission);
     }
     Ok(BlockAdmission::SideBranchStored {
@@ -350,9 +353,10 @@ fn admit_side_branch(
     })
 }
 
-fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdmission> {
+pub(super) fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdmission> {
     let tip = chain.side_branch_blocks.get(&tip_hash)?.clone();
-    if tip.height.saturating_add(1) <= chain.state.height {
+    let finalized_tip = chain.state.finalized_blocks.contains(&tip_hash);
+    if tip.height.saturating_add(1) <= chain.state.height && !finalized_tip {
         return None;
     }
 
@@ -383,6 +387,16 @@ fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdm
     }
 
     path.reverse();
+    let promoted_hashes = path.iter().map(TensorBlock::hash).collect::<BTreeSet<_>>();
+    let promoted_votes = promoted_hashes
+        .iter()
+        .filter_map(|hash| Some((*hash, chain.state.block_votes.get(hash)?.clone())))
+        .collect::<Vec<_>>();
+    let promoted_finalized = promoted_hashes
+        .iter()
+        .filter(|hash| chain.state.finalized_blocks.contains(*hash))
+        .copied()
+        .collect::<Vec<_>>();
     let old_head = chain
         .blocks
         .last()
@@ -417,6 +431,18 @@ fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdm
         .side_branch_child_states
         .remove(&new_head_hash)
         .unwrap_or_else(|| known_parent_child_state(chain, &new_head_hash).unwrap());
+    for (hash, votes) in promoted_votes {
+        chain.state.block_votes.insert(hash, votes);
+    }
+    for hash in promoted_finalized {
+        chain.state.finalized_blocks.insert(hash);
+    }
+    for hash in &promoted_hashes {
+        if super::validation::has_block_finality(chain, hash) {
+            chain.state.finalized_blocks.insert(*hash);
+        }
+    }
+    materialize_finalized_proposer_rewards(&mut chain.state, &chain.blocks, &chain.params);
     for block in &path {
         chain.side_branch_child_states.remove(&block.hash());
     }
@@ -447,6 +473,45 @@ fn try_promote_side_branch(chain: &mut Chain, tip_hash: Hash) -> Option<BlockAdm
         old_head,
         hash: new_head_hash,
     })
+}
+
+pub(super) fn try_promote_side_branch_or_descendant(
+    chain: &mut Chain,
+    tip_hash: Hash,
+) -> Option<BlockAdmission> {
+    let mut candidates = chain
+        .side_branch_blocks
+        .values()
+        .filter(|block| {
+            block.hash() == tip_hash || side_branch_descends_from(chain, block, tip_hash)
+        })
+        .map(|block| (block.height, block.hash()))
+        .collect::<Vec<_>>();
+    candidates.sort_by(|(left_height, left_hash), (right_height, right_hash)| {
+        right_height
+            .cmp(left_height)
+            .then_with(|| right_hash.cmp(left_hash))
+    });
+    for (_, candidate_hash) in candidates {
+        if let Some(admission) = try_promote_side_branch(chain, candidate_hash) {
+            return Some(admission);
+        }
+    }
+    None
+}
+
+fn side_branch_descends_from(chain: &Chain, block: &TensorBlock, ancestor_hash: Hash) -> bool {
+    let mut cursor = block.parent_hash;
+    while cursor != [0; 32] {
+        if cursor == ancestor_hash {
+            return true;
+        }
+        let Some(parent) = chain.side_branch_blocks.get(&cursor) else {
+            return false;
+        };
+        cursor = parent.parent_hash;
+    }
+    false
 }
 
 fn admit_competing_head(
@@ -480,17 +545,70 @@ fn admit_competing_head(
             reason: BlockInvalidReason::ConflictingHeight,
         });
     }
-    let parent_state = chain
+    let existing_parent_state = chain
         .block_parent_states
         .get(&existing_hash)
         .cloned()
         .unwrap_or_else(|| parent_state_for_validation(chain, &existing));
+    let candidate_parent_state = chain
+        .block_parent_states
+        .get(&block_hash)
+        .cloned()
+        .unwrap_or_else(|| existing_parent_state.clone());
     let mut validation_chain = chain.clone();
     validation_chain
         .block_parent_states
-        .insert(block_hash, parent_state.clone());
+        .insert(block_hash, candidate_parent_state.clone());
     validate(&validation_chain, &block, true)?;
+    let outcome = apply_outcome(&validation_chain, &block)?;
     if !competing_head_preferred(&block, &existing) {
+        if block.production_kind == super::BlockProductionKind::UsefulVerificationPow
+            && existing.production_kind == super::BlockProductionKind::UsefulVerificationPow
+        {
+            let mut child_state = apply_block_to_parent_state(
+                &candidate_parent_state,
+                chain.params.epoch_length,
+                block.beacon_round,
+                &block.beacon,
+                height,
+                &outcome.selected_receipt_ids,
+                BlockRewardContext {
+                    proposer: block.proposer,
+                    proposer_reward: block.proposer_reward,
+                    reward_settlement_delay_epochs: chain.params.reward_settlement_delay_epochs,
+                    challenge_window_epochs: chain.params.challenge_window_epochs,
+                    proposer_reward_hold_epochs: chain.params.proposer_reward_hold_epochs,
+                    data_unavailability_miner_slash_amount: chain
+                        .params
+                        .data_unavailability_miner_slash_amount,
+                    validator_audit_sample_numerator: chain.params.validator_audit_sample_numerator,
+                    validator_audit_sample_denominator: chain
+                        .params
+                        .validator_audit_sample_denominator,
+                    validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
+                    validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
+                },
+            );
+            child_state
+                .block_selected_receipts
+                .insert(block_hash, outcome.selected_receipt_ids);
+            materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
+            chain
+                .block_parent_states
+                .insert(block_hash, candidate_parent_state);
+            chain
+                .side_branch_child_states
+                .insert(block_hash, child_state);
+            chain.side_branch_blocks.insert(block_hash, block);
+            if let Some(admission) = try_promote_side_branch_or_descendant(chain, block_hash) {
+                return Ok(admission);
+            }
+            return Ok(BlockAdmission::SideBranchStored {
+                height,
+                parent_hash: existing.parent_hash,
+                hash: block_hash,
+            });
+        }
         return Ok(BlockAdmission::Invalid {
             height,
             hash: block_hash,
@@ -498,10 +616,9 @@ fn admit_competing_head(
         });
     }
 
-    let mut parent_state = parent_state;
+    let mut parent_state = candidate_parent_state;
     parent_state.block_selected_receipts.remove(&existing_hash);
     parent_state.block_selected_receipts.remove(&block_hash);
-    let outcome = apply_outcome(&validation_chain, &block)?;
     chain.blocks[existing_index] = block.clone();
     chain.block_parent_states.remove(&existing_hash);
     chain
@@ -529,6 +646,7 @@ fn admit_competing_head(
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
+    materialize_finalized_proposer_rewards(&mut chain.state, &chain.blocks, &chain.params);
     chain
         .state
         .block_selected_receipts
@@ -882,7 +1000,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
         &block.beacon,
         &block.parent_hash,
     );
-    let child_state = apply_block_to_parent_state(
+    let mut child_state = apply_block_to_parent_state(
         &parent_state,
         chain.params.epoch_length,
         block.beacon_round,
@@ -904,6 +1022,7 @@ pub(super) fn apply_outcome(chain: &Chain, block: &TensorBlock) -> Result<BlockA
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
     );
+    materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
     let selected_openings = selected_receipt_openings(
         &parent_state,
         chain.params.tensor_retention_window_blocks(),
@@ -1026,7 +1145,7 @@ fn parent_state_for_validation(chain: &Chain, block: &TensorBlock) -> ChainState
     parent_state
 }
 
-fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainState> {
+pub(super) fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainState> {
     if *parent_hash == [0; 32] {
         let mut genesis_parent = chain.state.clone();
         genesis_parent.height = 0;
@@ -1050,7 +1169,7 @@ fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainSt
         .iter()
         .find(|candidate| candidate.hash() == *parent_hash)?;
     let parent_parent_state = chain.block_parent_states.get(parent_hash)?;
-    Some(apply_block_to_parent_state(
+    let mut child_state = apply_block_to_parent_state(
         parent_parent_state,
         chain.params.epoch_length,
         parent.beacon_round,
@@ -1071,7 +1190,9 @@ fn known_parent_child_state(chain: &Chain, parent_hash: &Hash) -> Option<ChainSt
             validator_audit_window_blocks: chain.params.validator_audit_window_blocks,
             validator_audit_slash_amount: chain.params.validator_audit_slash_amount,
         },
-    ))
+    );
+    materialize_finalized_proposer_rewards(&mut child_state, &chain.blocks, &chain.params);
+    Some(child_state)
 }
 
 pub(super) fn parent_state_matches_known_parent(
@@ -1204,25 +1325,55 @@ fn apply_block_to_parent_state(
         next_finalized_beacon(beacon_round, beacon, child_state.height, child_state.epoch);
     child_state.finalized_beacon_round = next_round;
     child_state.finalized_randomness = next_beacon;
-    if reward_context.proposer_reward > 0 {
-        child_state.pending_proposer_rewards.insert(
-            block_height,
-            PendingProposerReward {
-                block_height,
-                proposer: reward_context.proposer,
-                amount: reward_context.proposer_reward,
-                claimable_at_height: reward_context
-                    .proposer_claimable_at_height(block_height, epoch_length),
-                voided_by_challenge: false,
-            },
-        );
-    }
     if reward_context.proposer != [0; 32] {
         child_state
             .proposer_cadence_last_proposed
             .insert(reward_context.proposer, block_height);
     }
     child_state
+}
+
+pub(super) fn materialize_finalized_proposer_rewards(
+    state: &mut ChainState,
+    blocks: &[TensorBlock],
+    params: &super::ChainParams,
+) {
+    for block in blocks {
+        let block_hash = block.hash();
+        if block.proposer_reward == 0
+            || !state.finalized_blocks.contains(&block_hash)
+            || state.pending_proposer_rewards.contains_key(&block.height)
+        {
+            continue;
+        }
+        let reward_context = BlockRewardContext {
+            proposer: block.proposer,
+            proposer_reward: block.proposer_reward,
+            reward_settlement_delay_epochs: params.reward_settlement_delay_epochs,
+            challenge_window_epochs: params.challenge_window_epochs,
+            proposer_reward_hold_epochs: params.proposer_reward_hold_epochs,
+            data_unavailability_miner_slash_amount: params.data_unavailability_miner_slash_amount,
+            validator_audit_sample_numerator: params.validator_audit_sample_numerator,
+            validator_audit_sample_denominator: params.validator_audit_sample_denominator,
+            validator_audit_window_blocks: params.validator_audit_window_blocks,
+            validator_audit_slash_amount: params.validator_audit_slash_amount,
+        };
+        let claimable_at_height =
+            reward_context.proposer_claimable_at_height(block.height, params.epoch_length);
+        if state.height > claimable_at_height {
+            continue;
+        }
+        state.pending_proposer_rewards.insert(
+            block.height,
+            PendingProposerReward {
+                block_height: block.height,
+                proposer: block.proposer,
+                amount: block.proposer_reward,
+                claimable_at_height,
+                voided_by_challenge: false,
+            },
+        );
+    }
 }
 
 fn apply_selected_linear_model_transitions(

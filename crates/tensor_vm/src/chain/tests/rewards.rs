@@ -21,6 +21,24 @@ fn mine_reward_test_block(block: &mut TensorBlock) {
     unreachable!("nonzero proof target must have a solution")
 }
 
+fn finalize_reward_test_block(chain: &mut Chain, block: &TensorBlock) {
+    let validators = chain
+        .state()
+        .validators()
+        .iter()
+        .map(|(address, validator)| (*address, validator.stake))
+        .collect::<Vec<_>>();
+    for (validator, stake) in validators {
+        if chain.is_block_finalized(&block.hash()) {
+            break;
+        }
+        chain
+            .submit_block_vote(BlockVote::new(validator, stake, block))
+            .unwrap();
+    }
+    assert!(chain.is_block_finalized(&block.hash()));
+}
+
 fn add_pending_receipt_reward(chain: &mut Chain, beacon: &Hash) -> Hash {
     let miner = address(b"reward-root-miner");
     let validator = address(b"reward-root-validator");
@@ -180,6 +198,9 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    assert_eq!(block.reward_root, reward_root(chain.state()));
+    finalize_reward_test_block(&mut chain, &block);
     assert_eq!(
         chain
             .state()
@@ -189,9 +210,8 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
             .amount,
         500
     );
-    assert_eq!(block.reward_root, reward_root(chain.state()));
     assert_ne!(
-        block.reward_root,
+        reward_root(chain.state()),
         spendable_reward_root(chain.state().rewards())
     );
 
@@ -418,9 +438,10 @@ fn reward_root_commits_to_all_pending_reward_ledgers() {
         .unwrap();
 
     let fallback_proposer = chain.proposer_for_next_epoch(&beacon).unwrap();
-    chain
+    let block = chain
         .produce_block_with_rewards(fallback_proposer, 1_000, 400, 100)
         .unwrap();
+    finalize_reward_test_block(&mut chain, &block);
     add_pending_receipt_reward(&mut chain, &beacon);
     chain
         .apply_command(ChainCommand::CreditReward {
@@ -516,9 +537,10 @@ fn pending_reward_claim_view_covers_all_ledgers() {
     chain
         .register_validator(proposer, chain.params().validator_min_stake)
         .unwrap();
-    chain
+    let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    finalize_reward_test_block(&mut chain, &block);
     let receipt_id = add_pending_receipt_reward(&mut chain, &beacon);
     chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
         claim_id: hash_bytes(b"test", &[b"claim-view-challenge-claim"]),
@@ -679,9 +701,10 @@ fn fraud_path_economic_calibration_covers_pending_reward_fraud_paths() {
     chain
         .register_validator(proposer, chain.params().validator_min_stake)
         .unwrap();
-    chain
+    let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    finalize_reward_test_block(&mut chain, &block);
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
         claim_id: hash_bytes(b"test", &[b"fraud-path-miner-claim"]),
         receipt_id: hash_bytes(b"test", &[b"fraud-path-miner-receipt"]),
@@ -857,6 +880,8 @@ fn block_transition_preserves_matured_rewards_until_claim() {
     let block0 = producer
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    assert!(producer.state().pending_proposer_rewards().is_empty());
+    finalize_reward_test_block(&mut producer, &block0);
     let block0_claim = producer
         .state()
         .pending_proposer_rewards()
@@ -875,8 +900,9 @@ fn block_transition_preserves_matured_rewards_until_claim() {
     peer.register_validator(proposer, peer.params().validator_min_stake)
         .unwrap();
     add_settled_receipt_for_blockspace(&mut peer, &beacon);
-    peer.apply_command(ChainCommand::SubmitBlock(block0))
+    peer.apply_command(ChainCommand::SubmitBlock(block0.clone()))
         .unwrap();
+    finalize_reward_test_block(&mut peer, &block0);
     assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(peer.state().pending_proposer_rewards().contains_key(&0));
 
@@ -885,6 +911,8 @@ fn block_transition_preserves_matured_rewards_until_claim() {
     let block1 = producer
         .produce_block_with_rewards(proposer, 1_012, 80, 20)
         .unwrap();
+    assert_eq!(block1.reward_root, reward_root(producer.state()));
+    finalize_reward_test_block(&mut producer, &block1);
     assert_eq!(producer.state().rewards().balance(&proposer), 0);
     assert!(producer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(
@@ -896,10 +924,10 @@ fn block_transition_preserves_matured_rewards_until_claim() {
             .amount,
         100
     );
-    assert_eq!(block1.reward_root, reward_root(producer.state()));
 
-    peer.apply_command(ChainCommand::SubmitBlock(block1))
+    peer.apply_command(ChainCommand::SubmitBlock(block1.clone()))
         .unwrap();
+    finalize_reward_test_block(&mut peer, &block1);
     assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
@@ -909,12 +937,14 @@ fn block_transition_preserves_matured_rewards_until_claim() {
     let block2 = producer
         .produce_block_with_rewards(proposer, 1_024, 80, 20)
         .unwrap();
+    assert_eq!(block2.reward_root, reward_root(producer.state()));
+    finalize_reward_test_block(&mut producer, &block2);
     assert_eq!(producer.state().rewards().balance(&proposer), 0);
     assert!(producer.state().pending_proposer_rewards().contains_key(&0));
-    assert_eq!(block2.reward_root, reward_root(producer.state()));
 
-    peer.apply_command(ChainCommand::SubmitBlock(block2))
+    peer.apply_command(ChainCommand::SubmitBlock(block2.clone()))
         .unwrap();
+    finalize_reward_test_block(&mut peer, &block2);
     assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
@@ -945,12 +975,14 @@ fn block_transition_preserves_matured_rewards_until_claim() {
     let block3 = producer
         .produce_block_with_rewards(proposer, 1_036, 80, 20)
         .unwrap();
+    assert_eq!(block3.reward_root, reward_root(producer.state()));
+    finalize_reward_test_block(&mut producer, &block3);
     assert_eq!(producer.state().rewards().balance(&proposer), 0);
     assert!(!producer.state().pending_proposer_rewards().contains_key(&0));
-    assert_eq!(block3.reward_root, reward_root(producer.state()));
 
-    peer.apply_command(ChainCommand::SubmitBlock(block3))
+    peer.apply_command(ChainCommand::SubmitBlock(block3.clone()))
         .unwrap();
+    finalize_reward_test_block(&mut peer, &block3);
     assert_eq!(peer.state().rewards().balance(&proposer), 0);
     assert!(!peer.state().pending_proposer_rewards().contains_key(&0));
     assert_eq!(peer.state(), producer.state());
@@ -1094,6 +1126,7 @@ fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
     let block = chain
         .produce_block_with_rewards(proposer, 1_000, 400, 100)
         .unwrap();
+    finalize_reward_test_block(&mut chain, &block);
     chain
         .state
         .pending_proposer_rewards
@@ -1125,6 +1158,8 @@ fn fallback_proposer_reward_uses_explicit_maturity_delay() {
     let fallback = chain
         .produce_block_with_rewards(proposer, 1_000, 40, 10)
         .unwrap();
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    finalize_reward_test_block(&mut chain, &fallback);
     let fallback_reward = chain
         .state()
         .pending_proposer_rewards()

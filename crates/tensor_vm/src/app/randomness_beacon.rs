@@ -1,6 +1,7 @@
 use crate::{
     ChainCommand, ChainEngine, NodeRuntimeState, NodeStore, RpcHttpServer, TensorVmLibp2pService,
     api::P2pMessage,
+    chain::ExternalRandomnessBeaconRecord,
     hash::hex,
     p2p::encode_external_randomness_beacon_payload,
     types::{Hash, hash_bytes, parse_hash_hex},
@@ -156,12 +157,23 @@ pub fn tick_randomness_beacon_once(
     }
     runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
     let chain = &mut server.gateway_mut().node.chain;
-    if config.beacon_round <= chain.state().finalized_beacon_round()
-        || chain
-            .state()
-            .external_randomness_beacons()
-            .contains_key(&config.beacon_round)
+    if let Some(record) = chain
+        .state()
+        .external_randomness_beacons()
+        .get(&config.beacon_round)
     {
+        if external_randomness_beacon_matches_config(record, config) {
+            runtime_state.record_randomness_beacon_applied(&config.source_id, config.beacon_round);
+        } else {
+            runtime_state.record_randomness_beacon_failure(
+                &config.source_id,
+                config.beacon_round,
+                "configured external randomness beacon conflicts with stored chain record",
+            );
+        }
+        return Ok(true);
+    }
+    if config.beacon_round <= chain.state().finalized_beacon_round() {
         runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
         return Ok(true);
     }
@@ -196,6 +208,16 @@ pub fn tick_randomness_beacon_once(
             Ok(true)
         }
     }
+}
+
+fn external_randomness_beacon_matches_config(
+    record: &ExternalRandomnessBeaconRecord,
+    config: &RandomnessBeaconRuntimeConfig,
+) -> bool {
+    record.source_id == config.source_id
+        && record.beacon_round == config.beacon_round
+        && record.randomness == config.randomness
+        && record.proof_hash == config.proof_hash
 }
 
 pub fn external_randomness_beacon_message(config: &RandomnessBeaconRuntimeConfig) -> P2pMessage {
@@ -267,5 +289,23 @@ mod tests {
         assert_eq!(decoded.beacon_round, beacon_round);
         assert_eq!(decoded.randomness, config.randomness);
         assert_eq!(decoded.proof_hash, config.proof_hash);
+    }
+
+    #[test]
+    fn stored_external_randomness_beacon_matches_configured_record() {
+        let config = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 7);
+        let record = ExternalRandomnessBeaconRecord {
+            source_id: config.source_id.clone(),
+            beacon_round: config.beacon_round,
+            randomness: config.randomness,
+            proof_hash: config.proof_hash,
+            observed_at_height: 3,
+        };
+        assert!(external_randomness_beacon_matches_config(&record, &config));
+
+        let changed = RandomnessBeaconRuntimeConfig::local_deterministic("fixture", 8);
+        assert!(!external_randomness_beacon_matches_config(
+            &record, &changed
+        ));
     }
 }

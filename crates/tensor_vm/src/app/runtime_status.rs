@@ -211,6 +211,10 @@ pub fn format_role_runtime_report(
         "proposer_cadence_remaining_blocks",
         snapshot.proposer_cadence_remaining_blocks,
     );
+    report.field(
+        "proposer_challenge_throttle_ready",
+        snapshot.proposer_challenge_throttle_ready,
+    );
     report.field("listen", &network.rpc_listen);
     report.field("p2p_listen", &network.p2p_listen);
     report.field("p2p_runtime", "libp2p");
@@ -577,6 +581,10 @@ pub fn write_role_runtime_status(
     report.field(
         "role_proposer_cadence_remaining_blocks",
         snapshot.proposer_cadence_remaining_blocks,
+    );
+    report.field(
+        "role_proposer_challenge_throttle_ready",
+        snapshot.proposer_challenge_throttle_ready,
     );
     report.field("role_served_requests", snapshot.served_requests);
     report.field("role_produced_blocks", snapshot.produced_blocks);

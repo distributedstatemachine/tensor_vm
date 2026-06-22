@@ -107,8 +107,12 @@ pub fn apply_network_block_payload(
     }
 
     let mut candidate = chain.clone();
+    let has_payload_parent_state = parent_state.is_some();
     if let Some(parent_state) = parent_state {
         if !candidate.block_parent_state_matches_known_parent(&block, &parent_state) {
+            if parent_known {
+                return NetworkBlockPayloadApply::Pending;
+            }
             return NetworkBlockPayloadApply::Invalid;
         }
         candidate.set_block_parent_state_for_admission(block_hash, parent_state);
@@ -118,6 +122,7 @@ pub fn apply_network_block_payload(
     }
     if !current_head_competitor
         && block.parent_hash == expected_parent
+        && !has_payload_parent_state
         && candidate.prepare_block_parent_state().is_err()
     {
         return NetworkBlockPayloadApply::Invalid;
@@ -171,6 +176,10 @@ pub fn apply_network_block_vote_payload(
         .blocks
         .iter()
         .any(|block| block.height == vote.block_height && block.hash() == block_hash)
+        && !chain
+            .side_branch_blocks()
+            .get(&block_hash)
+            .is_some_and(|block| block.height == vote.block_height)
     {
         return NetworkPayloadApply::Pending;
     }
@@ -429,7 +438,7 @@ pub fn apply_network_block_check_challenge_payload(
     let Some(challenged_block) = challenged_block else {
         return NetworkPayloadApply::Pending;
     };
-    if !block_check_challenge_reward_ready(chain, &challenged_block) {
+    if !prepare_block_check_challenge_reward(chain, &challenged_block) {
         return NetworkPayloadApply::Pending;
     }
     chain
@@ -449,7 +458,7 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if challenge_id == [0; 32] || block_hash == [0; 32] || challenger == [0; 32] {
         return NetworkPayloadApply::Invalid;
     }
-    let Ok((observed_block, selected_receipts, parent_state)) =
+    let Ok((observed_block, selected_receipts, mut parent_state)) =
         decode_block_payload_with_selected_receipts(observed_block_payload)
     else {
         return NetworkPayloadApply::Invalid;
@@ -490,10 +499,12 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if !parent_known {
         return NetworkPayloadApply::Pending;
     }
-    if let Some(parent_state) = parent_state.as_ref()
-        && !chain.block_parent_state_matches_known_parent(&observed_block, parent_state)
+    if let Some(supplied_parent_state) = parent_state.as_ref()
+        && !chain.block_parent_state_matches_known_parent(&observed_block, supplied_parent_state)
+        && (supplied_parent_state.height() != observed_block.height
+            || supplied_parent_state.epoch() != observed_block.epoch)
     {
-        return NetworkPayloadApply::Invalid;
+        parent_state = chain.known_parent_state_for_block(&observed_block);
     }
     if !chain.observed_invalid_blocks.contains_key(&block_hash)
         && let Err(_error) = chain.cache_observed_invalid_block(observed_block)
@@ -506,10 +517,10 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if let Some(parent_state) = parent_state {
         chain.set_block_parent_state_for_admission(block_hash, parent_state);
     }
-    let Some(observed_block) = chain.observed_invalid_blocks.get(&block_hash) else {
+    let Some(observed_block) = chain.observed_invalid_blocks.get(&block_hash).cloned() else {
         return NetworkPayloadApply::Pending;
     };
-    if !block_check_challenge_reward_ready(chain, observed_block) {
+    if !prepare_block_check_challenge_reward(chain, &observed_block) {
         return NetworkPayloadApply::Pending;
     }
     apply_network_block_check_challenge_payload(
@@ -527,6 +538,21 @@ fn block_check_challenge_reward_ready(chain: &Chain, block: &crate::chain::Tenso
         .pending_proposer_rewards()
         .get(&block.height)
         .is_some_and(|reward| reward.proposer == block.proposer && !reward.voided_by_challenge)
+}
+
+fn prepare_block_check_challenge_reward(
+    chain: &mut Chain,
+    block: &crate::chain::TensorBlock,
+) -> bool {
+    if !chain
+        .blocks()
+        .iter()
+        .any(|stored| stored.hash() == block.hash())
+    {
+        return true;
+    }
+    chain.materialize_finalized_proposer_rewards();
+    block_check_challenge_reward_ready(chain, block)
 }
 
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
@@ -548,17 +574,22 @@ mod tests {
     use super::*;
     use crate::{
         chain::{
-            BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainEvent, ChainParams,
-            JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
+            BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainParams, JobState,
+            ReceiptState, TensorBlock, ValidatorAuditReport,
         },
         challenge::{BlockCheckChallenge, block_check_challenge_id},
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
+        localnet::{
+            finalize_local_cpu_block, produce_synthetic_cpu_round,
+            produce_synthetic_cpu_work_with_profile,
+        },
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_payload_with_selected_receipts, encode_block_vote_payload,
             encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
             encode_validator_vrf_reveal_payload,
         },
+        profile::ChainProfile,
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         testnet::{LocalTestnet, TestnetConfig},
         types::{address, sign},
@@ -880,6 +911,118 @@ mod tests {
         assert_eq!(
             consumer.blocks().last().map(TensorBlock::hash),
             Some(better.hash())
+        );
+    }
+
+    #[test]
+    fn block_vote_payload_finalizes_and_promotes_useful_side_branch() {
+        let seed = hash_bytes(b"test", &[b"network-finalized-side-branch"]);
+        let mut parent = Chain::new(seed);
+        let validators: Vec<_> = (0..3)
+            .map(|i| address(format!("network-finalized-side-branch-validator-{i}").as_bytes()))
+            .collect();
+        let miner = address(b"network-finalized-side-branch-miner");
+        parent.register_miner(miner, 100).unwrap();
+        for validator in &validators {
+            parent
+                .register_validator(*validator, parent.params().validator_min_stake)
+                .unwrap();
+        }
+        let base_proposer = parent
+            .proposer_for_next_epoch(&parent.state().finalized_randomness())
+            .expect("registered validators should select a fallback proposer");
+        parent.produce_block(base_proposer, 1_000).unwrap();
+        let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &seed, 10);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+        parent.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+        parent.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+        let mut branch_a = parent.clone();
+        let mut branch_b = parent.clone();
+        let block_a = branch_a.produce_block(validators[0], 1_012).unwrap();
+        let block_b = branch_b.produce_block(validators[1], 1_012).unwrap();
+        let (preferred, preferred_source, nonpreferred, nonpreferred_source) = if block_a
+            .pow_hash()
+            .cmp(&block_b.pow_hash())
+            .then_with(|| block_a.hash().cmp(&block_b.hash()))
+            .is_lt()
+        {
+            (block_a, branch_a, block_b, branch_b)
+        } else {
+            (block_b, branch_b, block_a, branch_a)
+        };
+        let preferred_hash = preferred.hash();
+        let nonpreferred_hash = nonpreferred.hash();
+        let preferred_payload = encode_block_payload_with_selected_receipts(
+            &preferred,
+            &preferred_source.selected_receipts_for_block(&preferred),
+            preferred_source
+                .block_parent_state_for_payload(&preferred_hash)
+                .expect("preferred block must retain parent payload state"),
+        );
+        let nonpreferred_payload = encode_block_payload_with_selected_receipts(
+            &nonpreferred,
+            &nonpreferred_source.selected_receipts_for_block(&nonpreferred),
+            nonpreferred_source
+                .block_parent_state_for_payload(&nonpreferred_hash)
+                .expect("nonpreferred block must retain parent payload state"),
+        );
+
+        let mut consumer = parent;
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                preferred.height,
+                preferred_hash,
+                &preferred_payload,
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            apply_network_block_payload(
+                &mut consumer,
+                nonpreferred.height,
+                nonpreferred_hash,
+                &nonpreferred_payload,
+            ),
+            NetworkBlockPayloadApply::Applied { appended: 1 }
+        );
+        assert_eq!(
+            consumer.blocks().last().map(TensorBlock::hash),
+            Some(preferred_hash)
+        );
+        assert!(
+            consumer
+                .side_branch_blocks()
+                .contains_key(&nonpreferred_hash)
+        );
+
+        for validator in &validators {
+            let vote = BlockVote::new(
+                *validator,
+                consumer.params().validator_min_stake,
+                &nonpreferred,
+            );
+            assert_eq!(
+                apply_network_block_vote_payload(
+                    &mut consumer,
+                    nonpreferred_hash,
+                    *validator,
+                    &encode_block_vote_payload(&vote),
+                ),
+                NetworkPayloadApply::Applied
+            );
+        }
+
+        assert!(!consumer.is_block_finalized(&nonpreferred_hash));
+        assert_eq!(
+            consumer.blocks().last().map(TensorBlock::hash),
+            Some(preferred_hash)
+        );
+        assert!(
+            consumer
+                .side_branch_blocks()
+                .contains_key(&nonpreferred_hash)
         );
     }
 
@@ -1309,6 +1452,12 @@ mod tests {
         let block = chain
             .produce_block_with_rewards(proposer, 1_000, 900, 100)
             .unwrap();
+        chain
+            .submit_block_vote(BlockVote::new(proposer, 10_000, &block))
+            .unwrap();
+        chain
+            .submit_block_vote(BlockVote::new(challenger, 10_000, &block))
+            .unwrap();
         let diagnostic = chain
             .deterministic_bad_block_check_challenge(&block, challenger)
             .unwrap();
@@ -1369,27 +1518,15 @@ mod tests {
                 .block_check_challenges()
                 .contains_key(&challenge_id)
         );
-        let pending_reward = apply_chain
-            .state()
-            .pending_challenge_rewards()
-            .values()
-            .find(|reward| {
-                reward.challenge_id == challenge_id
-                    && reward.block_hash == challenge.block_hash
-                    && reward.receipt_id == challenge.receipt_id
-                    && reward.challenger == challenge.challenger
-            })
-            .expect("accepted network challenge should delay challenger reward");
-        assert_eq!(pending_reward.amount, 500);
-        assert_eq!(
-            pending_reward.claimable_at_height,
+        assert!(apply_chain.state().pending_challenge_rewards().is_empty());
+        assert!(
             apply_chain
                 .state()
-                .height()
-                .saturating_add(apply_chain.params().reward_maturity_delay_blocks())
+                .pending_proposer_rewards()
+                .values()
+                .all(|reward| !reward.voided_by_challenge)
         );
-        let challenge_reward_claimable_at_height = pending_reward.claimable_at_height;
-        let challenge_reward_claim_id = pending_reward.claim_id;
+        assert!(apply_chain.state().proposer_penalty_until().is_empty());
         assert_eq!(
             apply_chain.state().rewards().balance(&challenge.challenger),
             0
@@ -1403,33 +1540,6 @@ mod tests {
         assert_eq!(
             apply_chain.state().rewards().balance(&challenge.challenger),
             0
-        );
-        apply_chain.set_position_for_testing(challenge_reward_claimable_at_height, 1);
-        let claim_events = apply_chain
-            .apply_command(ChainCommand::ClaimReward(challenge.challenger))
-            .unwrap();
-        assert!(claim_events.contains(&ChainEvent::ChallengeRewardReleased {
-            claim_id: challenge_reward_claim_id,
-            challenge_id,
-            challenger: challenge.challenger,
-            amount: 500,
-        }));
-        assert!(claim_events.contains(&ChainEvent::RewardClaimed {
-            address: challenge.challenger,
-            amount: 500,
-        }));
-        assert_eq!(
-            apply_chain.state().rewards().balance(&challenge.challenger),
-            0
-        );
-        assert_eq!(
-            apply_chain
-                .state()
-                .accounts()
-                .get(&challenge.challenger)
-                .unwrap()
-                .balance,
-            500
         );
         assert_eq!(
             apply_network_block_check_challenge_payload(
@@ -1552,6 +1662,83 @@ mod tests {
                 &challenge_payload,
             ),
             NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn observed_block_check_challenge_payload_applies_for_local_cpu_graph_block() {
+        let beacon = hash_bytes(b"test", &[b"network-block-check-local-cpu"]);
+        let mut testnet = LocalTestnet::from_profile(&ChainProfile::local_cpu(), beacon);
+        let mut chain = &mut testnet.chain;
+        for _ in 0..2 {
+            produce_synthetic_cpu_round(&mut chain).unwrap();
+            let block = chain.blocks().last().unwrap().clone();
+            finalize_local_cpu_block(&mut chain, &block).unwrap();
+        }
+        let profile = ChainProfile::local_cpu();
+        produce_synthetic_cpu_work_with_profile(&mut chain, &profile)
+            .unwrap()
+            .expect("third local CPU work round should produce graph work");
+        let proposer = chain
+            .proposer_for_next_epoch(&chain.state().finalized_randomness())
+            .unwrap();
+        let timestamp = chain
+            .blocks()
+            .last()
+            .map(|block| {
+                block
+                    .timestamp
+                    .saturating_add(chain.params().block_time_seconds)
+            })
+            .unwrap_or(1_000);
+        let block = chain
+            .produce_block_with_rewards(proposer, timestamp, 400, 100)
+            .unwrap();
+        finalize_local_cpu_block(&mut chain, &block).unwrap();
+        let block = chain
+            .blocks()
+            .last()
+            .expect("local CPU rounds should produce a graph block")
+            .clone();
+        let outcome = chain.block_apply_outcome(&block).unwrap();
+        assert_eq!(block.height, 2);
+        assert!(outcome.selected_openings.len() > 1);
+        assert!(chain.state().pending_proposer_rewards().contains_key(&2));
+        let challenger = chain
+            .state()
+            .validators()
+            .keys()
+            .copied()
+            .find(|validator| *validator != block.proposer)
+            .unwrap();
+        let diagnostic = chain
+            .deterministic_bad_block_check_challenge(&block, challenger)
+            .unwrap();
+        let challenge_payload = encode_block_check_challenge_payload(&diagnostic.challenge);
+        let observed_block_payload = encode_block_payload_with_selected_receipts(
+            &diagnostic.observed_block,
+            &diagnostic.selected_receipts,
+            &diagnostic.parent_state,
+        );
+        let mut apply_chain = chain.clone();
+        apply_chain.observed_invalid_blocks.clear();
+
+        assert_eq!(
+            apply_network_observed_block_check_challenge_payload(
+                &mut apply_chain,
+                diagnostic.challenge_id,
+                diagnostic.challenge.block_hash,
+                diagnostic.challenge.challenger,
+                &observed_block_payload,
+                &challenge_payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert!(
+            apply_chain
+                .state()
+                .block_check_challenges()
+                .contains_key(&diagnostic.challenge_id)
         );
     }
 

@@ -16,7 +16,7 @@ BOOTSTRAP_PEER_ID="${TENSORVM_BOOTSTRAP_PEER_ID:?TENSORVM_BOOTSTRAP_PEER_ID is r
 BOOTSTRAP_ADDRESS="${TENSORVM_BOOTSTRAP_ADDRESS:-/dns4/miner-00/tcp/4001}"
 IS_BOOTSTRAP="${TENSORVM_IS_BOOTSTRAP:-false}"
 IDENTITY_SEED="${TENSORVM_LIBP2P_IDENTITY_SEED:-$OPERATOR_ID}"
-SEED_LOCAL_TESTNET="${TENSORVM_SEED_LOCAL_TESTNET:-false}"
+SEED_LOCAL_TESTNET="${TENSORVM_SEED_LOCAL_TESTNET:-true}"
 LOCAL_CPU_SYNTHETIC_JOB_PRODUCER="${TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER:-false}"
 LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER="${TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER:-false}"
 LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS="${TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS:-0}"
@@ -40,16 +40,46 @@ if [ "$IS_BOOTSTRAP" != "true" ]; then
     --address "$BOOTSTRAP_ADDRESS" > "$DATA_DIR/service-peer-add.out"
 fi
 
+if [ "${TENSORVM_LOCAL_CPU_STATIC_PEERS:-true}" = "true" ] && [ "$ROLE" = "validator" ]; then
+  : > "$DATA_DIR/service-static-peers.out"
+  while IFS='|' read -r peer_name peer_id peer_address; do
+    [ -n "$peer_name" ] || continue
+    [ "$peer_name" != "$OPERATOR_NAME" ] || continue
+    tvmd node peer add \
+      --data-dir "$DATA_DIR" \
+      --peer-id "$peer_id" \
+      --address "$peer_address" >> "$DATA_DIR/service-static-peers.out"
+  done <<'PEERS'
+validator-00|12D3KooWRCv6vs5HDE3ee5cesp61EisVgqEKZKzkKjaWbi18fCnJ|/dns4/validator-00/tcp/4001
+validator-01|12D3KooWLhS5Dca2goQNapVtGib812k1RTA8XtJfCLpBAVsf5FGG|/dns4/validator-01/tcp/4001
+validator-02|12D3KooWSYoDSK9eiELBNxJPdXWvt1FjHKoYETUCGTnZrQgLY4yU|/dns4/validator-02/tcp/4001
+validator-03|12D3KooWARmdpZJdnFBZ6UwJXFx6rHfmxg33jYefT2jBBtwZkPSU|/dns4/validator-03/tcp/4001
+validator-04|12D3KooWPWbHcg784TUAzyaWm3WD1tFGPSY2XnbXJGxHwG1y3JhU|/dns4/validator-04/tcp/4001
+PEERS
+fi
+
+if [ "$SEED_LOCAL_TESTNET" = "true" ] && [ ! -f "$DATA_DIR/local-testnet-seed.out" ]; then
+  tvmd localnet seed --data-dir "$DATA_DIR" > "$DATA_DIR/local-testnet-seed.out"
+fi
+
 case "$ROLE" in
   miner)
-    tvmd miner register --stake "$MINER_STAKE" > "$DATA_DIR/role-register.out"
+    if [ "$SEED_LOCAL_TESTNET" = "true" ]; then
+      echo "role_registration=seeded_local_testnet" > "$DATA_DIR/role-register.out"
+    else
+      tvmd miner register --stake "$MINER_STAKE" > "$DATA_DIR/role-register.out"
+    fi
     tvmd miner check \
       --wallet "$WALLET" \
       --device cpu \
       --node "$NODE_MULTIADDR" > "$DATA_DIR/role-start.out"
     ;;
   validator)
-    tvmd validator register --stake "$VALIDATOR_STAKE" > "$DATA_DIR/role-register.out"
+    if [ "$SEED_LOCAL_TESTNET" = "true" ]; then
+      echo "role_registration=seeded_local_testnet" > "$DATA_DIR/role-register.out"
+    else
+      tvmd validator register --stake "$VALIDATOR_STAKE" > "$DATA_DIR/role-register.out"
+    fi
     tvmd validator check \
       --wallet "$WALLET" \
       --node "$NODE_MULTIADDR" > "$DATA_DIR/role-start.out"
@@ -59,10 +89,6 @@ case "$ROLE" in
     exit 2
     ;;
 esac
-
-if [ "$SEED_LOCAL_TESTNET" = "true" ] && [ ! -f "$DATA_DIR/local-testnet-seed.out" ]; then
-  tvmd localnet seed --data-dir "$DATA_DIR" > "$DATA_DIR/local-testnet-seed.out"
-fi
 
 tvmd node check \
   --p2p-listen "$P2P_LISTEN" \

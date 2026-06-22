@@ -317,6 +317,165 @@ fn scheduled_local_production_publishes_jobs_without_producer_receipts_or_attest
 }
 
 #[test]
+fn selected_validator_proposer_emits_idle_fallback_block() {
+    let validator = address(b"idle-fallback-validator");
+    let mut chain = Chain::new(local_cpu_seed_beacon());
+    register_validator(&mut chain, validator);
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([36; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    let data_dir = unique_temp_data_dir("idle-fallback-validator-proposal");
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&server.gateway().node.chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(validator),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_local_validator_block_proposer(true),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
+    };
+    let mut runtime_state = NodeRuntimeState::default();
+
+    let changed = tick_validator_role_work_once(
+        &config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+
+    assert!(changed);
+    assert_eq!(runtime_state.produced_blocks(), 1);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_useful_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 1);
+    assert_eq!(runtime_state.validator_receipts_proposed(), 0);
+    assert_eq!(server.gateway().node.chain.blocks().len(), 1);
+    let block = server.gateway().node.chain.blocks().last().unwrap();
+    assert_eq!(block.proposer, validator);
+    assert!(!block.production_kind.requires_pow());
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .selected_receipts_for_block(block)
+            .is_empty()
+    );
+
+    drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn nonselected_validator_proposer_observes_settled_work_without_racing_useful_block() {
+    let params = ChainParams {
+        replication_factor: 2,
+        agreement_quorum: 2,
+        freivalds: FreivaldsParams {
+            validators_per_job: 2,
+            minimum_validators: 2,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let validators = [
+        address(b"nonselected-useful-proposer-a"),
+        address(b"nonselected-useful-proposer-b"),
+    ];
+    let mut chain = Chain::with_params(params, local_cpu_seed_beacon());
+    for index in 0..2 {
+        register_miner(
+            &mut chain,
+            address(format!("nonselected-useful-miner-{index}").as_bytes()),
+        );
+    }
+    for validator in validators {
+        register_validator(&mut chain, validator);
+    }
+    tensor_vm::localnet::produce_synthetic_cpu_work_with_profile(
+        &mut chain,
+        &ChainProfile::local_cpu(),
+    )
+    .unwrap()
+    .expect("synthetic work should settle before validator proposal");
+    assert!(!chain.state().settled_receipts().is_empty());
+    let settled_receipts = chain.state().settled_receipts().len();
+    let selected = chain
+        .state()
+        .validators()
+        .keys()
+        .copied()
+        .find(|validator| {
+            chain.proposer_cadence_ready(*validator)
+                && chain.proposer_challenge_throttle_ready(*validator)
+        })
+        .expect("registered validators should yield a selected useful proposer");
+    let nonselected = validators
+        .into_iter()
+        .find(|validator| *validator != selected)
+        .expect("test must include a nonselected validator");
+    let node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    let gateway = RpcGateway::new(node, RpcPolicy::default());
+    let mut server = RpcHttpServer::bind("127.0.0.1:0", gateway).unwrap();
+    let p2p_service = spawn_libp2p_service(Libp2pControlPlaneConfig {
+        identity_seed: Some([37; 32]),
+        ..Libp2pControlPlaneConfig::default()
+    })
+    .unwrap();
+    let data_dir = unique_temp_data_dir("nonselected-useful-validator-proposal");
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&server.gateway().node.chain).unwrap();
+    let config = ServiceRuntimeConfig {
+        runtime_command: "validator_run",
+        role: RuntimeRole::Validator,
+        role_wallet_address: Some(nonselected),
+        node: NodeConfig::new(
+            ChainProfile::local_cpu(),
+            RuntimeRole::Validator.node_role(),
+            data_dir.clone(),
+        )
+        .with_local_validator_block_proposer(true),
+        randomness_beacon: RandomnessBeaconRuntimeConfig::off(),
+    };
+    let mut runtime_state = NodeRuntimeState::default();
+
+    let changed = tick_validator_role_work_once(
+        &config,
+        &store,
+        &mut server,
+        &p2p_service,
+        &mut runtime_state,
+    )
+    .unwrap();
+
+    assert!(changed);
+    assert_eq!(runtime_state.produced_blocks(), 0);
+    assert_eq!(runtime_state.validator_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_useful_blocks_proposed(), 0);
+    assert_eq!(runtime_state.validator_fallback_blocks_proposed(), 0);
+    assert_eq!(
+        runtime_state.validator_proposer_settled_receipts_seen(),
+        settled_receipts
+    );
+    assert_eq!(server.gateway().node.chain.blocks().len(), 0);
+
+    drop(p2p_service);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
 fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
     let params = ChainParams {
         replication_factor: 1,
@@ -463,10 +622,21 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
     assert_eq!(runtime_state.validator_proposer_attested_receipts_seen(), 1);
     assert!(runtime_state.validator_proposer_work_ready());
     assert_eq!(server.gateway().node.chain.blocks().len(), 1);
-    let block = server.gateway().node.chain.blocks().last().unwrap();
+    let block = server.gateway().node.chain.blocks().last().unwrap().clone();
     let block_height = block.height;
     assert_eq!(block.proposer, validator);
     assert_eq!(block.proposer_reward, 500);
+    assert!(
+        server
+            .gateway()
+            .node
+            .chain
+            .state()
+            .pending_proposer_rewards()
+            .get(&block_height)
+            .is_none()
+    );
+    finalize_block_with_vote(&mut server.gateway_mut().node.chain, validator, &block);
     let pending_proposer_reward = server
         .gateway()
         .node
@@ -493,7 +663,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .gateway()
             .node
             .chain
-            .selected_receipts_for_block(block),
+            .selected_receipts_for_block(&block),
         vec![receipt.receipt_id()]
     );
 
@@ -697,7 +867,7 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
             .chain
             .state()
             .pending_proposer_rewards()
-            .contains_key(&block.height)
+            .is_empty()
     );
 
     drop(p2p_service);
@@ -857,8 +1027,9 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
     assert_eq!(runtime_state.produced_blocks(), 1);
     assert_eq!(server.gateway().node.chain.blocks().len(), 1);
     let block = server.gateway().node.chain.blocks().last().unwrap();
+    assert!(block.proposer_reward > 0);
     assert!(
-        server
+        !server
             .gateway()
             .node
             .chain
