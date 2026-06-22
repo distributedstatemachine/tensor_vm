@@ -1266,6 +1266,152 @@ fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
 }
 
 #[test]
+fn reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim() {
+    let beacon = hash_bytes(b"test", &[b"reward-claim-boundary"]);
+    let mut chain = Chain::new(beacon);
+    let beneficiary = address(b"reward-claim-boundary-beneficiary");
+    let receipt_id = hash_bytes(b"test", &[b"reward-claim-boundary-receipt"]);
+    let receipt_claim = hash_bytes(b"test", &[b"reward-claim-boundary-receipt-claim"]);
+    let challenge_id = hash_bytes(b"test", &[b"reward-claim-boundary-challenge"]);
+    let challenge_claim = hash_bytes(b"test", &[b"reward-claim-boundary-challenge-claim"]);
+    let credit_claim = hash_bytes(b"test", &[b"reward-claim-boundary-credit-claim"]);
+
+    chain.set_position_for_testing(20, 0);
+    chain.state.pending_proposer_rewards.insert(
+        3,
+        PendingProposerReward {
+            block_height: 3,
+            proposer: beneficiary,
+            amount: 11,
+            claimable_at_height: 5,
+            voided_by_challenge: false,
+        },
+    );
+    chain.state.included_receipts.insert(receipt_id);
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: receipt_claim,
+        receipt_id,
+        beneficiary,
+        amount: 13,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::ClaimableAt(5),
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+        claim_id: challenge_claim,
+        challenge_id,
+        block_hash: hash_bytes(b"test", &[b"reward-claim-boundary-block"]),
+        receipt_id,
+        challenger: beneficiary,
+        amount: 17,
+        claimable_at_height: 5,
+        voided_by_challenge: false,
+    });
+    chain.state.pending_credit_rewards.insert(
+        credit_claim,
+        PendingCreditReward {
+            claim_id: credit_claim,
+            beneficiary,
+            amount: 19,
+            claimable_at_height: 5,
+        },
+    );
+
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedProposerRewards)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedReceiptRewards)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedChallengeRewards)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(
+        chain
+            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+            .unwrap()
+            .is_empty()
+    );
+    assert!(chain.state().pending_proposer_rewards().contains_key(&3));
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .contains_key(&receipt_claim)
+    );
+    assert!(
+        chain
+            .state()
+            .pending_challenge_rewards()
+            .contains_key(&challenge_claim)
+    );
+    assert!(
+        chain
+            .state()
+            .pending_credit_rewards()
+            .contains_key(&credit_claim)
+    );
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 0);
+    assert_eq!(
+        chain
+            .state()
+            .accounts()
+            .get(&beneficiary)
+            .map(|account| account.balance)
+            .unwrap_or_default(),
+        0
+    );
+
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(beneficiary))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::ProposerRewardReleased {
+        block_height: 3,
+        proposer: beneficiary,
+        amount: 11,
+    }));
+    assert!(claim_events.contains(&ChainEvent::ReceiptRewardReleased {
+        claim_id: receipt_claim,
+        receipt_id,
+        beneficiary,
+        amount: 13,
+    }));
+    assert!(claim_events.contains(&ChainEvent::ChallengeRewardReleased {
+        claim_id: challenge_claim,
+        challenge_id,
+        challenger: beneficiary,
+        amount: 17,
+    }));
+    assert!(claim_events.contains(&ChainEvent::CreditRewardReleased {
+        claim_id: credit_claim,
+        beneficiary,
+        amount: 19,
+    }));
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: beneficiary,
+        amount: 60,
+    }));
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    assert!(chain.state().pending_receipt_rewards().is_empty());
+    assert!(chain.state().pending_challenge_rewards().is_empty());
+    assert!(chain.state().pending_credit_rewards().is_empty());
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 0);
+    assert_eq!(
+        chain.state().accounts().get(&beneficiary).unwrap().balance,
+        60
+    );
+}
+
+#[test]
 fn fallback_proposer_reward_uses_explicit_maturity_delay() {
     let beacon = hash_bytes(b"test", &[b"fallback-reward-delay"]);
     let params = ChainParams {
