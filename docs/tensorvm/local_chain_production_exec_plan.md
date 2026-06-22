@@ -53,7 +53,7 @@ checkpoint before edits.
 
 ### Iteration 160: Trace-Bisection P2P Wire Payloads
 
-Commit: pending.
+Commit: `2662d5a` (pushed `main` -> `main`).
 
 Feature capability: signed `TraceBisectionRound` values can cross node boundaries as bounded shared-codec
 gossip payloads with message-level identity checks for receipt, trace root, parties, and transcript leaf.
@@ -242,6 +242,22 @@ Coverage command remained environmentally blocked:
   `cargo test -p tensor_vm --lib` (517 passed); and final
   `cargo test -p tensor_vm local_testnet --release`.
 - Iteration 159 coverage command remained environmentally blocked on June 22, 2026:
+  `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+- Iteration 160 first executable command passed before code edits on June 22, 2026:
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 160 feature commit `2662d5a` pushed to `main` on June 22, 2026:
+  `git push` returned `0c98e71..2662d5a  main -> main`.
+- Iteration 160 focused validation passed on June 22, 2026:
+  `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`;
+  `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`;
+  `cargo test -p tensor_vm p2p_messages_roundtrip --lib -- --nocapture`;
+  `cargo test -p tensor_vm libp2p_mapping_separates_gossip_and_request_response --lib -- --nocapture`;
+  and `cargo test -p tensor_vm network_ingest_order_applies_payload_dependencies_before_blocks --lib -- --nocapture`.
+- Iteration 160 broad validation passed on June 22, 2026:
+  `cargo fmt --check --all`; `cargo check -p tensor_vm --tests`; `git diff --check`;
+  `cargo test -p tensor_vm --lib` (518 passed); and final
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 160 coverage command remained environmentally blocked on June 22, 2026:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
 ## Archive
