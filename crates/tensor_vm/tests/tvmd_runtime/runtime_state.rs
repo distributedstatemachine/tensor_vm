@@ -12,6 +12,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         block_votes_applied: 1,
         block_check_challenges: 1,
         block_check_challenges_applied: 1,
+        trace_bisection_rounds: 1,
+        trace_bisection_rounds_applied: 1,
         jobs: 1,
         job_payloads: 1,
         job_payloads_applied: 1,
@@ -41,6 +43,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         block_votes_applied: 2,
         block_check_challenges: 2,
         block_check_challenges_applied: 2,
+        trace_bisection_rounds: 2,
+        trace_bisection_rounds_applied: 2,
         jobs: 0,
         job_payloads: 2,
         job_payloads_applied: 2,
@@ -71,6 +75,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
     assert_eq!(cumulative.block_votes_applied, 3);
     assert_eq!(cumulative.block_check_challenges, 3);
     assert_eq!(cumulative.block_check_challenges_applied, 3);
+    assert_eq!(cumulative.trace_bisection_rounds, 3);
+    assert_eq!(cumulative.trace_bisection_rounds_applied, 3);
     assert_eq!(cumulative.jobs, 1);
     assert_eq!(cumulative.job_payloads, 3);
     assert_eq!(cumulative.job_payloads_applied, 3);

@@ -4,13 +4,14 @@ use crate::{
         BlockAdmission, Chain, ChainCommand, ChainEngine, JobState,
         verified_chained_drand_source_id, verified_drand_source_id,
     },
-    challenge::block_check_challenge_id,
+    challenge::{block_check_challenge_id, trace_bisection_challenge_id},
     p2p::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
-        decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
-        decode_verified_chained_drand_beacon_payload, decode_verified_drand_beacon_payload,
+        decode_trace_bisection_round_payload, decode_validator_audit_report_payload,
+        decode_validator_vrf_reveal_payload, decode_verified_chained_drand_beacon_payload,
+        decode_verified_drand_beacon_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -615,6 +616,52 @@ pub fn apply_network_observed_block_check_challenge_payload(
     )
 }
 
+pub fn apply_network_trace_bisection_round_payload(
+    chain: &mut Chain,
+    receipt_id: Hash,
+    trace_root: Hash,
+    challenger: Hash,
+    responder: Hash,
+    transcript_leaf: Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if receipt_id == [0; 32]
+        || trace_root == [0; 32]
+        || challenger == [0; 32]
+        || responder == [0; 32]
+        || transcript_leaf == [0; 32]
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(round) = decode_trace_bisection_round_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if round.receipt_id != receipt_id
+        || round.trace_root != trace_root
+        || round.challenger != challenger
+        || round.responder != responder
+        || round.transcript_leaf() != transcript_leaf
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let challenge_id =
+        trace_bisection_challenge_id(&receipt_id, &trace_root, &challenger, &responder);
+    let Some(existing) = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+    else {
+        return NetworkPayloadApply::Pending;
+    };
+    if existing.last_round_leaf == Some(transcript_leaf) {
+        return NetworkPayloadApply::Applied;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {
     hash_bytes(
         b"tensor-vm-attestation-announcement-v1",
@@ -633,12 +680,16 @@ mod tests {
     use super::super::{NetworkBlockPayloadApply, NetworkPayloadApply};
     use super::*;
     use crate::{
+        canonical_linear_training_step_graph,
         chain::{
             BlockProductionKind, BlockVote, ChainCommand, ChainEngine, ChainParams, JobState,
             ReceiptState, TensorBlock, ValidatorAuditReport,
         },
-        challenge::{BlockCheckChallenge, block_check_challenge_id},
-        jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
+        challenge::{
+            BlockCheckChallenge, TraceBisectionConfig, TraceBisectionRound,
+            block_check_challenge_id,
+        },
+        jobs::{GraphJob, GraphReceipt, MatmulJob, PrimitiveType, TensorOpReceipt},
         localnet::{
             finalize_local_cpu_block, produce_synthetic_cpu_round,
             produce_synthetic_cpu_work_with_profile,
@@ -646,11 +697,12 @@ mod tests {
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_payload_with_selected_receipts, encode_block_vote_payload,
-            encode_job_payload, encode_receipt_payload, encode_validator_audit_report_payload,
-            encode_validator_vrf_reveal_payload,
+            encode_job_payload, encode_receipt_payload, encode_trace_bisection_round_payload,
+            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
         },
         profile::ChainProfile,
         scheduler::{JobScheduler, SyntheticLocalJobSource},
+        tensor::{DType, Tensor},
         testnet::{LocalTestnet, TestnetConfig},
         types::{address, sign},
         verify::{
@@ -658,6 +710,7 @@ mod tests {
             verify_tensor_op,
         },
     };
+    use std::collections::BTreeMap;
 
     fn local_matmul_round(seed_label: &[u8]) -> LocalTestnet {
         let mut testnet = LocalTestnet::new(
@@ -1576,6 +1629,91 @@ mod tests {
         (chain, challenge, challenge_id, observed_block_payload)
     }
 
+    fn trace_bisection_round_chain() -> (Chain, TraceBisectionConfig, TraceBisectionRound, Vec<u8>)
+    {
+        let beacon = hash_bytes(b"test", &[b"network-trace-bisection"]);
+        let mut chain = Chain::new(beacon);
+        let miner = address(b"network-trace-bisection-miner");
+        let challenger = address(b"network-trace-bisection-challenger");
+        chain.register_miner(miner, 100).unwrap();
+
+        let graph =
+            canonical_linear_training_step_graph(&[2, 2], &[2, 2], &[2, 2], DType::FieldElement);
+        let graph_id = graph.validate_for_consensus().unwrap();
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        let inputs = BTreeMap::from([
+            (
+                "target".to_owned(),
+                Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 1, 1, 1]).unwrap(),
+            ),
+            (
+                "w".to_owned(),
+                Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap(),
+            ),
+            (
+                "x".to_owned(),
+                Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap(),
+            ),
+        ]);
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(
+            0,
+            graph_id,
+            input_roots,
+            BTreeMap::from([("lr".to_owned(), 1)]),
+            10,
+            1,
+            16,
+        );
+        let (receipt, _) =
+            GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+        let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(job)))
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+                receipt.clone(),
+            )))
+            .unwrap();
+        let unopened_chain = chain.clone();
+        let config = TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        };
+        chain
+            .apply_command(ChainCommand::OpenTraceBisection(config.clone()))
+            .unwrap();
+        let state = chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("trace bisection session should exist")
+            .state
+            .clone();
+        let opening = execution.trace_opening(state.midpoint()).unwrap();
+        let round =
+            TraceBisectionRound::new(&state, opening.op_trace.output_roots.clone(), opening)
+                .unwrap();
+        let payload = encode_trace_bisection_round_payload(&round);
+        (unopened_chain, config, round, payload)
+    }
+
     #[test]
     fn block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges() {
         let (chain, challenge, challenge_id, _observed_block_payload) =
@@ -1695,6 +1833,127 @@ mod tests {
                 challenge.block_hash,
                 challenge.challenger,
                 &encode_block_check_challenge_payload(&conflicting),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn trace_bisection_round_payload_application_reports_pending_applied_and_invalid_edges() {
+        let (chain, config, round, payload) = trace_bisection_round_chain();
+        let transcript_leaf = round.transcript_leaf();
+        let mut missing_session = chain.clone();
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut missing_session,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+
+        let mut apply_chain = chain.clone();
+        apply_chain
+            .apply_command(ChainCommand::OpenTraceBisection(config))
+            .unwrap();
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        let record = apply_chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("applied round should keep a trace bisection record");
+        assert_eq!(record.last_round_leaf, Some(transcript_leaf));
+        assert_eq!(record.opened_rounds, 1);
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                [0; 32],
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                hash_bytes(b"test", &[b"wrong-trace-root"]),
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                hash_bytes(b"test", &[b"wrong-transcript-leaf"]),
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                round.receipt_id,
+                round.trace_root,
+                round.challenger,
+                round.responder,
+                transcript_leaf,
+                &[1, 2, 3],
+            ),
+            NetworkPayloadApply::Invalid
+        );
+
+        let mut conflicting = round.clone();
+        conflicting.expected_output_roots =
+            vec![hash_bytes(b"test", &[b"conflicting-trace-bisection-root"])];
+        let conflicting_payload = encode_trace_bisection_round_payload(&conflicting);
+        assert_eq!(
+            apply_network_trace_bisection_round_payload(
+                &mut apply_chain,
+                conflicting.receipt_id,
+                conflicting.trace_root,
+                conflicting.challenger,
+                conflicting.responder,
+                conflicting.transcript_leaf(),
+                &conflicting_payload,
             ),
             NetworkPayloadApply::Invalid
         );

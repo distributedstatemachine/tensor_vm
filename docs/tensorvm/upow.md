@@ -689,11 +689,13 @@ This section is non-normative guidance on how the spec components partition into
   bond envelope fields. Bounded p2p round payloads now reuse the trace-opening codec, verify responder
   signatures, and reject announcement/payload mismatches before gossip delivery. Chain command admission
   now records trace-bisection sessions, signed midpoint rounds, transcript-root advancement, isolated-op
-  outcomes, and responder timeouts in state-rooted challenge records. Focused tests prove midpoint
-  narrowing, final-op isolation, timeout reporting, tamper rejection, malformed wire edges, duplicate
-  rejection, and snapshot persistence. Referee one-op re-execution, slashing, challenger bounty settlement,
-  runtime challenge generation, p2p pending-queue application counters, and multi-round DoS policy remain
-  TODO (§8.2).
+  outcomes, and responder timeouts in state-rooted challenge records. Node payload application now routes
+  bounded trace-bisection round gossip through the shared pending queue and canonical
+  `ChainCommand::SubmitTraceBisectionRound` path, with status counters for ingested/applied rounds. Focused
+  tests prove midpoint narrowing, final-op isolation, timeout reporting, tamper rejection, malformed wire
+  edges, duplicate rejection, pending retry, and snapshot persistence. Referee one-op re-execution,
+  slashing, challenger bounty settlement, runtime challenge generation, session-open gossip, and
+  multi-round DoS policy remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.
