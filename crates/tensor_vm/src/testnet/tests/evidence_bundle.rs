@@ -1044,6 +1044,50 @@ fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() 
 }
 
 #[test]
+fn public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(full_spec_report.run_evidence.public_criterion_met);
+    assert!(full_spec_report.independently_checkable);
+    assert!(full_spec_report.has_cuda_graph_execution_evidence);
+    assert!(full_spec_report.full_spec_evidence_met);
+
+    let mut missing_graph_execution = full_spec_bundle.clone();
+    missing_graph_execution.run.cuda_graph_execution_receipts = 0;
+    let missing_graph_report =
+        missing_graph_execution.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(missing_graph_report.run_evidence.public_criterion_met);
+    assert!(missing_graph_report.independently_checkable);
+    assert!(!missing_graph_report.has_cuda_graph_execution_evidence);
+    assert!(!missing_graph_report.full_spec_evidence_met);
+
+    let mut overcounted_graph_execution = full_spec_bundle.clone();
+    overcounted_graph_execution
+        .run
+        .cuda_graph_execution_receipts = overcounted_graph_execution
+        .run
+        .checked_receipts
+        .saturating_add(1);
+    let overcounted_checked_report =
+        overcounted_graph_execution.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(overcounted_checked_report.run_evidence.public_criterion_met);
+    assert!(overcounted_checked_report.independently_checkable);
+    assert!(!overcounted_checked_report.has_cuda_graph_execution_evidence);
+    assert!(!overcounted_checked_report.full_spec_evidence_met);
+
+    let mut unavailable_graph_execution = full_spec_bundle;
+    unavailable_graph_execution.run.available_receipts = 0;
+    let unavailable_graph_report =
+        unavailable_graph_execution.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(!unavailable_graph_report.run_evidence.public_criterion_met);
+    assert!(unavailable_graph_report.independently_checkable);
+    assert!(!unavailable_graph_report.has_cuda_graph_execution_evidence);
+    assert!(!unavailable_graph_report.full_spec_evidence_met);
+}
+
+#[test]
 fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = ChainParams::default().block_time_seconds;

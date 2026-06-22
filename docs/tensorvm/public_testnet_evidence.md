@@ -237,6 +237,8 @@ reward_settlement_records=1
 reward_settlement_root=<reward-settlement-root-hex>
 reward_settlement_signature=<reward-settlement-signature-hex>
 reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<observed-block>
+cuda_verified_miner_count=<counted-public-miners>
+cuda_graph_execution_receipts=<cuda-graph-receipt-count>
 node=miner,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
 node=validator,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
 service=rpc,<endpoint-id-hex>,https://rpc.tensorvm.net/health,/health,0,100799,<reachable-count>,<signed-health-check-count>,<health-signature-hex>
@@ -529,6 +531,8 @@ Whitespace-padded record lines and empty fields are rejected.
 
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
 public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
+`cuda_verified_miner_count` covering the counted public miners, positive `cuda_graph_execution_receipts`
+that do not exceed checked or available receipt counts,
 the signed randomness-beacon summary count to equal `observed_blocks`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
 manifest-level raw `block_history_record=...`, `finality_history_record=...`,
@@ -557,6 +561,8 @@ data_availability_measurements=true
 signed_invalid_work_rejection_records=true
 signed_reward_settlement_records=true
 supporting_record_artifacts=true
+cuda_verified_miners=true
+cuda_graph_execution_evidence=true
 miners=2
 validators=1
 run_started_at_unix_seconds=1700000000
@@ -571,6 +577,8 @@ invalid_receipts_submitted=1
 invalid_receipts_rejected=1
 invalid_work_rejection_rate_bps=10000
 reward_settlement_records=1
+cuda_verified_miner_count=2
+cuda_graph_execution_receipts=1
 external_operator_evidence=true
 required_miners=false
 required_validators=false
@@ -580,6 +588,8 @@ required_finality=true
 required_data_availability=true
 invalid_work_rejection_evidence=true
 reward_settlement_evidence=true
+cuda_miner_evidence=true
+cuda_graph_execution_receipt_evidence=true
 production_libp2p_runtime=true
 deployed_rpc_service=true
 deployed_explorer_service=true

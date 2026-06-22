@@ -32,6 +32,7 @@ fn public_testnet_run_evidence_requires_independent_external_operators() {
         invalid_receipts_rejected: 2,
         reward_settlement_records: 3,
         cuda_verified_miner_count: 2,
+        cuda_graph_execution_receipts: 1,
     };
 
     let insufficient = run.evaluate(&criteria, 6, true);
@@ -295,6 +296,7 @@ fn public_testnet_run_evidence_filters_unsigned_and_short_lived_nodes() {
         invalid_receipts_rejected: 0,
         reward_settlement_records: 0,
         cuda_verified_miner_count: 0,
+        cuda_graph_execution_receipts: 0,
     };
 
     assert!(run.nodes[0].covers_run(0));

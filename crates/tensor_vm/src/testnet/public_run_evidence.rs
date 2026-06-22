@@ -56,6 +56,9 @@ impl PublicTestnetRunEvidence {
             self.reward_settlement_records >= criteria.min_reward_settlement_records;
         let has_cuda_verified_miners =
             miner_count > 0 && self.cuda_verified_miner_count >= miner_count as u64;
+        let has_cuda_graph_execution_evidence = self.cuda_graph_execution_receipts > 0
+            && self.cuda_graph_execution_receipts <= self.checked_receipts
+            && self.cuda_graph_execution_receipts <= self.available_receipts;
         let external_operator_evidence =
             external_operator_evidence && miner_count > 0 && validator_count > 0;
         let has_production_libp2p_runtime = self.network_runtime.has_production_libp2p_runtime();
@@ -131,6 +134,8 @@ impl PublicTestnetRunEvidence {
             has_reward_settlement_records,
             cuda_verified_miner_count: self.cuda_verified_miner_count,
             has_cuda_verified_miners,
+            cuda_graph_execution_receipts: self.cuda_graph_execution_receipts,
+            has_cuda_graph_execution_evidence,
             public_criterion_met,
         }
     }

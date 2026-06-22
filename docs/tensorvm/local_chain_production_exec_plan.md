@@ -5,16 +5,17 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 192 complete and pushed: Public Randomness Run Coverage Gate.
+- Active feature: Iteration 193 in progress: Public CUDA Graph Execution Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
-  miners before a bundle can report `public_evidence_full_spec=true`, and signed randomness-beacon summary
-  evidence now requires an explicit run-coverage count match so an undercounted or overcounted beacon
-  record set cannot satisfy independently checkable public evidence.
+  miners and `cuda_graph_execution_receipts` to prove positive CUDA graph receipt coverage before a bundle
+  can report `public_evidence_full_spec=true`; signed randomness-beacon summary evidence also requires an
+  explicit run-coverage count match so an undercounted or overcounted beacon record set cannot satisfy
+  independently checkable public evidence.
 - Current blockers:
-  - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-  - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
-    execution evidence remain open.
-- Next action: continue deployed public/CUDA evidence work.
+  - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
+    local CPU proof.
+  - Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain open.
+- Next action: validate and push the public CUDA graph evidence gate.
 
 ## Readiness Matrix
 
@@ -33,6 +34,90 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 193: Public CUDA Graph Execution Evidence Gate
+
+Feature capability: require full-spec public evidence to include positive CUDA graph-execution receipt
+coverage that does not overclaim beyond checked or available public-run receipts.
+
+Readiness requirements covered: `upow.md` and `mvp_spec.md` keep CUDA/deployed graph execution as a
+full-spec blocker; public evidence must not promote a public run with CUDA-capable miners but no CUDA graph
+receipt coverage to `public_evidence_full_spec=true`.
+
+Canonical owner: `testnet::PublicTestnetEvidenceBundle::evaluate` owns public-run evidence admission;
+`PublicTestnetRunEvidence::evaluate` owns run-level consistency checks; the manifest parser owns only
+syntactic decoding of the new scalar.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment runbooks, and docs
+consume the bundle report.
+
+Old shortcut being removed: an otherwise complete public evidence bundle with CUDA-verified miners could
+still satisfy `public_evidence_full_spec=true` without proving any CUDA-backed graph-execution receipt was
+checked and available during the public run.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec` proves missing, zero, or
+overcounted CUDA graph receipt evidence keeps otherwise complete evidence non-full-spec.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: `cuda_graph_execution_receipts`, `checked_receipts`, `available_receipts`, and
+the `tvmd public evidence validate` report fields `cuda_graph_execution_evidence` and
+`cuda_graph_execution_receipt_evidence`.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; public evidence manifest gains one scalar
+field.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation,
+and this is a single-writer public evidence/test/docs slice.
+
+Parallelizable implementation workstreams: single-writer slice across public evidence structs/parser,
+focused tests, report output, fixtures, and docs/status.
+
+Tests/checkers/docs to add or update: public evidence bundle/manifest/report tests, checked evidence
+manifests, public evidence docs/status/coverage/tarpaulin docs, and this exec plan.
+
+Narrow validation commands:
+`cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec --lib`,
+`cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+`cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`,
+`cargo test --workspace --release`, `cargo clippy --workspace --all-targets -- -D warnings`, and tarpaulin
+because public evidence tests/reportable coverage change.
+
+Expected observable evidence: otherwise complete full-spec public evidence passes only when
+`cuda_graph_execution_receipts > 0` and the count does not exceed checked or available receipts; missing,
+zero, malformed, or overcounted graph evidence keeps `public_evidence_full_spec=false`.
+
+Out of scope: generating real CUDA deployment artifacts, implementing CUDA kernels, or claiming a 7-day
+public run in this workspace.
+
+Split trigger: split if the manifest shape change requires unrelated CLI generation refactors or broad
+tests expose existing fixture drift outside this evidence gate.
+
+Validation evidence so far:
+
+- Required first executable on this resume, before implementation:
+  `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026.
+- Focused evidence passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+- Broad gates passed:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Tarpaulin passed:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  571 instrumented tests and 84.81% line coverage, 23169/27318 lines covered.
 
 ### Iteration 192: Public Randomness Run Coverage Gate
 

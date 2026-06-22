@@ -554,6 +554,7 @@ available_receipts=19
 invalid_receipts_submitted=1
 invalid_receipts_rejected=1
 cuda_verified_miner_count=2
+cuda_graph_execution_receipts=1
 {}
 {}
 {}

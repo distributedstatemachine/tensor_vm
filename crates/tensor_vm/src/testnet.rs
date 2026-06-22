@@ -217,6 +217,8 @@ pub struct PublicTestnetEvidence {
     pub has_reward_settlement_records: bool,
     pub cuda_verified_miner_count: u64,
     pub has_cuda_verified_miners: bool,
+    pub cuda_graph_execution_receipts: u64,
+    pub has_cuda_graph_execution_evidence: bool,
     pub public_criterion_met: bool,
 }
 
@@ -236,6 +238,7 @@ pub struct PublicTestnetRunEvidence {
     pub invalid_receipts_rejected: u64,
     pub reward_settlement_records: u64,
     pub cuda_verified_miner_count: u64,
+    pub cuda_graph_execution_receipts: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -310,6 +313,7 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_reward_settlement_record_summary: bool,
     pub has_public_supporting_record_artifacts: bool,
     pub has_cuda_verified_miners: bool,
+    pub has_cuda_graph_execution_evidence: bool,
     pub independently_checkable: bool,
     pub full_spec_evidence_met: bool,
 }

@@ -179,6 +179,7 @@ pub(super) fn complete_public_run_evidence() -> PublicTestnetRunEvidence {
         invalid_receipts_rejected: 1,
         reward_settlement_records: 1,
         cuda_verified_miner_count: 2,
+        cuda_graph_execution_receipts: 1,
     }
 }
 
@@ -294,6 +295,7 @@ pub(super) fn full_spec_public_evidence_bundle(
         invalid_receipts_rejected: 1,
         reward_settlement_records: 1,
         cuda_verified_miner_count: criteria.min_miners as u64,
+        cuda_graph_execution_receipts: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
     let block_history_raw_records = full_spec_block_history_records(observed_blocks);
