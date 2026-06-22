@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 193 in progress: Public CUDA Graph Execution Evidence Gate.
+- Active feature: Iteration 193 complete and pushed: Public CUDA Graph Execution Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners and `cuda_graph_execution_receipts` to prove positive CUDA graph receipt coverage before a bundle
   can report `public_evidence_full_spec=true`; signed randomness-beacon summary evidence also requires an
@@ -15,7 +15,8 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain open.
-- Next action: validate and push the public CUDA graph evidence gate.
+- Next action: continue deployed public/CUDA evidence work, especially deployed VRF/commit-reveal lifecycle
+  evidence.
 
 ## Readiness Matrix
 
@@ -118,6 +119,8 @@ Validation evidence so far:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   571 instrumented tests and 84.81% line coverage, 23169/27318 lines covered.
+- Commit `a56a2c2` (`Require CUDA graph evidence for full spec`) pushed to `origin/main` on
+  June 22, 2026.
 
 ### Iteration 192: Public Randomness Run Coverage Gate
 
@@ -361,6 +364,8 @@ Validation evidence:
 
 ## Recent Completed Iterations
 
+- Iteration 193: Public CUDA Graph Execution Evidence Gate. Commit `a56a2c2`
+  (`Require CUDA graph evidence for full spec`) pushed to `origin/main` on June 22, 2026.
 - Iteration 192: Public Randomness Run Coverage Gate. Commit `6a50ad6`
   (`Require full-run randomness evidence`) pushed to `origin/main` on June 22, 2026.
 - Iteration 191: Public Evidence CUDA Miner Gate. Commit `a0697dc`
@@ -392,6 +397,19 @@ Validation evidence:
 
 ## Validation Evidence
 
+- Current Iteration 193 first executable Gate 0 passed on June 22, 2026.
+- Current Iteration 193 focused validation passed on June 22, 2026:
+  `public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec`,
+  `public_testnet_evidence_manifest_parses_into_bundle`, and
+  `validate_public_evidence_manifest_reports_default_criteria_status`.
+- Current Iteration 193 broad validation passed on June 22, 2026:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Current Iteration 193 tarpaulin passed on June 22, 2026:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  571 instrumented tests and 84.81% line coverage, 23169/27318 lines covered.
+- Commit `a56a2c2` pushed to `origin/main` on June 22, 2026.
 - Current Iteration 192 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 192 focused validation passed on June 22, 2026:
   `public_testnet_evidence_bundle_requires_randomness_records_for_full_run`,
