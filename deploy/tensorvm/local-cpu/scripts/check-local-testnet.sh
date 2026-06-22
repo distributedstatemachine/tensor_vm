@@ -579,6 +579,7 @@ LIVE_RECEIPTS=""
 LIVE_ATTESTED_RECEIPT_COUNT=0
 LIVE_TENSOR_OP_RECEIPT_COUNT=0
 LIVE_LINEAR_TRAINING_RECEIPT_COUNT=0
+LIVE_GRAPH_EXECUTION_RECEIPT_COUNT=0
 LIVE_MODEL_STEP_TOTAL=0
 LIVE_PENDING_PROPOSER_REWARD_COUNT=0
 LIVE_DELAYED_RECEIPT_REWARD_CLAIMS=0
@@ -618,6 +619,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_ATTESTED_RECEIPT_COUNT=$(json_positive_field_count attestation_count "$LIVE_RECEIPTS")
   LIVE_TENSOR_OP_RECEIPT_COUNT=$(json_string_field_count primitive_type tensor_op "$LIVE_RECEIPTS")
   LIVE_LINEAR_TRAINING_RECEIPT_COUNT=$(json_string_field_count primitive_type linear_training_step "$LIVE_RECEIPTS")
+  LIVE_GRAPH_EXECUTION_RECEIPT_COUNT=$(json_string_field_count primitive_type graph_execution "$LIVE_RECEIPTS")
   if [ "${LIVE_HEIGHT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] \
     && [ "${LIVE_BLOCK_COUNT:-0}" -gt "$EXPECTED_SEED_BLOCKS" ] \
     && [ "${LIVE_JOB_COUNT:-0}" -gt "$EXPECTED_SEED_HEIGHT" ] \
@@ -629,6 +631,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
+    && [ "${LIVE_GRAPH_EXECUTION_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] \
     && [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] \
@@ -656,6 +659,7 @@ done
 [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "live receipt details did not include validator attestations"
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
+[ "${LIVE_GRAPH_EXECUTION_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed GraphExecution receipts"
 [ "${LIVE_PENDING_RECEIPT_REWARD_COUNT:-0}" -gt "$SEED_PENDING_RECEIPT_REWARDS" ] || fail "live synthetic jobs did not add pending receipt rewards"
 [ "${LIVE_PENDING_PROPOSER_REWARD_COUNT:-0}" -gt 0 ] || fail "live useful block proposals did not add delayed proposer rewards"
 [ "${LIVE_DELAYED_RECEIPT_REWARD_CLAIMS:-0}" -gt 0 ] || fail "live synthetic jobs did not expose future-maturity pending receipt reward claims"
@@ -693,6 +697,8 @@ LIVE_TENSOR_OP_BLOCK_HEIGHT=-1
 LIVE_TENSOR_OP_BLOCK_RECEIPTS=0
 LIVE_LINEAR_TRAINING_BLOCK_HEIGHT=0
 LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS=0
+LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT=0
+LIVE_GRAPH_EXECUTION_BLOCK_RECEIPTS=0
 USEFUL_POW_BLOCK_EVIDENCE=false
 CANONICAL_BLOCKSPACE_EVIDENCE=false
 BLOCK_CHECKS_ROOT_EVIDENCE=false
@@ -705,6 +711,8 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_TENSOR_OP_BLOCK_RECEIPTS=0
   LIVE_LINEAR_TRAINING_BLOCK_HEIGHT=0
   LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS=0
+  LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT=0
+  LIVE_GRAPH_EXECUTION_BLOCK_RECEIPTS=0
   USEFUL_POW_BLOCK_EVIDENCE=false
   CANONICAL_BLOCKSPACE_EVIDENCE=false
   BLOCK_CHECKS_ROOT_EVIDENCE=false
@@ -727,6 +735,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     BLOCK_RECEIPT_IDS=$(status_value receipt_ids "$BLOCK_STATUS")
     BLOCK_TENSOR_OP_RECEIPTS=$(status_value tensor_op_receipt_count "$BLOCK_STATUS")
     BLOCK_LINEAR_TRAINING_RECEIPTS=$(status_value linear_training_receipt_count "$BLOCK_STATUS")
+    BLOCK_GRAPH_EXECUTION_RECEIPTS=$(status_value graph_execution_receipt_count "$BLOCK_STATUS")
     BLOCK_VALIDATION=$(status_value block_validation "$BLOCK_STATUS")
     BLOCK_POW_VALID=$(status_value pow_valid "$BLOCK_STATUS")
     BLOCK_CANONICAL_BLOCKSPACE_VALID=$(status_value canonical_blockspace_valid "$BLOCK_STATUS")
@@ -797,8 +806,16 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
       LIVE_LINEAR_TRAINING_BLOCK_HEIGHT="$BLOCK_SCAN_HEIGHT"
       LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS="$BLOCK_LINEAR_TRAINING_RECEIPTS"
     fi
+    if [ "$BLOCK_FINALIZED" = "true" ] \
+      && [ -n "$BLOCK_RECEIPT_IDS" ] \
+      && [ "$BLOCK_RECEIPT_IDS" != "none" ] \
+      && [ "${BLOCK_GRAPH_EXECUTION_RECEIPTS:-0}" -gt 0 ]; then
+      LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT="$BLOCK_SCAN_HEIGHT"
+      LIVE_GRAPH_EXECUTION_BLOCK_RECEIPTS="$BLOCK_GRAPH_EXECUTION_RECEIPTS"
+    fi
     if [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] \
       && [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] \
+      && [ "$LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT" -gt 0 ] \
       && [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] \
       && [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] \
       && [ "$BLOCK_CHECKS_ROOT_EVIDENCE" = "true" ] \
@@ -809,12 +826,13 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     fi
   fi
   if [ $((BLOCK_SCAN_HEIGHT % 20)) -eq 0 ]; then
-    debug "block scan height=$BLOCK_SCAN_HEIGHT tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
+    debug "block scan height=$BLOCK_SCAN_HEIGHT tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT graph=$LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
   fi
   BLOCK_SCAN_HEIGHT=$((BLOCK_SCAN_HEIGHT + 1))
   done
   if [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] \
     && [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] \
+    && [ "$LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT" -gt 0 ] \
     && [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] \
     && [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] \
     && [ "$BLOCK_CHECKS_ROOT_EVIDENCE" = "true" ] \
@@ -823,13 +841,14 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "$BLOCK_FINALITY_VOTE_EVIDENCE" = "true" ]; then
     break
   fi
-  debug "block scan attempt=$attempt start=$BLOCK_SCAN_START end=$BLOCK_SCAN_END tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
+  debug "block scan attempt=$attempt start=$BLOCK_SCAN_START end=$BLOCK_SCAN_END tensor_op=$LIVE_TENSOR_OP_BLOCK_HEIGHT linear=$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT graph=$LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT useful=$USEFUL_POW_BLOCK_EVIDENCE canonical=$CANONICAL_BLOCKSPACE_EVIDENCE checks_root=$BLOCK_CHECKS_ROOT_EVIDENCE proposer=$VALIDATOR_PROPOSER_EVIDENCE finality_pow=$FINALITY_REQUIRES_USEFUL_POW votes=$BLOCK_FINALITY_VOTE_EVIDENCE"
   attempt=$((attempt + 1))
   sleep "$EXPECTED_CHECKER_RETRY_SLEEP_SECONDS"
 done
 
 [ "$LIVE_TENSOR_OP_BLOCK_HEIGHT" -ge 0 ] || fail "service block view did not expose finalized live TensorOp receipt evidence"
 [ "$LIVE_LINEAR_TRAINING_BLOCK_HEIGHT" -gt 0 ] || fail "service block view did not expose finalized live LinearTrainingStep receipt evidence"
+[ "$LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT" -gt 0 ] || fail "service block view did not expose finalized live GraphExecution receipt evidence"
 [ "$USEFUL_POW_BLOCK_EVIDENCE" = "true" ] || fail "service block view did not expose finalized useful-verification PoW evidence"
 [ "$CANONICAL_BLOCKSPACE_EVIDENCE" = "true" ] || fail "service block view did not expose finalized canonical blockspace evidence"
 [ "$BLOCK_CHECKS_ROOT_EVIDENCE" = "true" ] || fail "service block view did not expose finalized block checks-root evidence"
@@ -1570,12 +1589,17 @@ live_attestations=true
 live_receipt_attestations=true
 live_tensor_op_receipts=true
 live_linear_training_receipts=true
+live_graph_execution_receipts=true
+live_graph_execution_receipt_count=${LIVE_GRAPH_EXECUTION_RECEIPT_COUNT}
 live_tensor_op_block_evidence=true
 live_tensor_op_block_height=${LIVE_TENSOR_OP_BLOCK_HEIGHT}
 live_tensor_op_block_receipts=${LIVE_TENSOR_OP_BLOCK_RECEIPTS}
 live_linear_training_block_evidence=true
 live_linear_training_block_height=${LIVE_LINEAR_TRAINING_BLOCK_HEIGHT}
 live_linear_training_block_receipts=${LIVE_LINEAR_TRAINING_BLOCK_RECEIPTS}
+live_graph_execution_block_evidence=true
+live_graph_execution_block_height=${LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT}
+live_graph_execution_block_receipts=${LIVE_GRAPH_EXECUTION_BLOCK_RECEIPTS}
 live_tensor_fetch=true
 live_rewards=true
 live_pending_proposer_rewards=${LIVE_PENDING_PROPOSER_REWARD_COUNT}

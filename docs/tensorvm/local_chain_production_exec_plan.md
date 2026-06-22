@@ -5,10 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 179 complete: Graph Verifier Admitted-Op Receipt Coverage.
-- Current status: graph execution verifier receipt scenarios now include arithmetic, reduction, transpose,
+- Active feature: Iteration 180 complete: Local GraphExecution Checker Evidence.
+- Current status: the local CPU checker now requires live generic GraphExecution receipt
+  and finalized block evidence from the existing graph job runtime path. Graph receipt verification test
+  scenarios now include arithmetic, reduction, transpose,
   unary sign/absolute, and cast coverage for admitted IR ops, with a frozen-registry drift test that fails
-  when a consensus-admitted op lacks graph-verifier receipt scenario coverage. Network graph receipt
+  when a consensus-admitted op lacks graph receipt verification scenario coverage. Network graph receipt
   payloads now wait on missing canonical program bodies instead of
   being misclassified as invalid when the graph job is already known through a direct/local state path.
   Pre-inclusion voided receipt rewards now prune directly after their explicit delayed hold even when the
@@ -29,8 +31,8 @@ archive commit anchors only.
   verdicts, timeout settlement, slashing, and delayed challenger rewards.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue generic arbitrary-IR role/network evidence, CUDA/public deployment evidence, or
-  remaining v0 verifier coverage without treating roadmap trace-bisection work as a v0 blocker.
+- Next action: continue CUDA/public deployment evidence or remaining deployed-randomness/economic evidence
+  without treating roadmap trace-bisection work as a v0 blocker.
 
 ## Readiness Matrix
 
@@ -42,7 +44,7 @@ archive commit anchors only.
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection expectations/rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof or remaining fraud-proof DoS policy |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, graph-verifier receipt scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, and automatic runtime trace-bisection referee witnesses when isolated-opening roots match local replay | Continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, graph-verifier receipt scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, and automatic runtime trace-bisection referee witnesses when isolated-opening roots match local replay | Require local checker evidence for live GraphExecution receipts/blocks; continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops, and graph-verifier receipt scenario drift coverage for every admitted op; default CUDA non-admission | Add CUDA conformance evidence and deployed CUDA profile evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -50,6 +52,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 180: Local GraphExecution Checker Evidence
+
+Feature capability: the local CPU readiness checker must fail unless the live post-startup runtime exposes
+generic GraphExecution evidence through the same explorer receipt and block-status surfaces already used for
+TensorOp and LinearTrainingStep. This turns the existing role-owned graph job path into a local acceptance
+gate instead of leaving it as indirect unit/p2p evidence.
+
+Readiness requirements covered: `goal.md`/`upow.md` content-addressed Tensor IR graph language, generic
+GraphExecution role/network evidence, and `mvp_spec.md` local checker evidence for live post-startup work.
+
+Canonical owner: existing chain/RPC/block-status surfaces already own graph receipt/block data. This
+iteration changes only the checker gate and status docs.
+
+Adapter callers: `deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh` consumes
+`/explorer/receipts/latest` and `tvmd node block` graph fields.
+
+Old shortcut being removed: local readiness could pass while only proving live TensorOp and
+LinearTrainingStep primitive evidence, even though generic GraphExecution jobs are part of the current IR
+runtime.
+
+Regression test that proves the shortcut is gone: targeted shell/static checks plus focused local-testnet
+tests must show the checker names `graph_execution` receipt and block evidence.
+
+Behavior with local synthetic block production disabled: unchanged. This checker evidence applies only to
+the local CPU profile where the deterministic synthetic graph job source is enabled.
+
+Behavior for producer and non-producer roles: unchanged. Producers and non-producers continue to rely on
+the same chain/RPC block status and explorer receipt data.
+
+Structured evidence source: `/explorer/receipts/latest/*` `primitive_type=graph_execution`,
+`tvmd node block` `graph_execution_receipt_count`, checker output fields, and this exec plan.
+
+Finality source: unchanged; finalized graph block evidence is read from `tvmd node block`.
+
+Wire-size and codec boundary: unchanged; no p2p, RPC, storage, or consensus payload formats change.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; checker/docs-only acceptance evidence slice.
+
+Tests/checkers/docs to add or update: local CPU checker, topology defaults if needed, deployment-doc tests
+if a static checker assertion exists, and exec plan/readiness wording.
+
+Narrow validation commands: `sh -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh`; targeted
+Rust deployment-doc/local-testnet checker tests if discoverable.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin unless the change remains shell/docs-only with no Rust coverage impact.
+
+Expected observable evidence: checker output includes `live_graph_execution_receipts=true`,
+`live_graph_execution_block_evidence=true`, graph receipt counts, and finalized graph block height/receipt
+counts.
+
+Out of scope: changing graph execution semantics, CUDA graph evidence, public deployment evidence, and new
+standalone verifier binaries.
+
+Split trigger: split if the existing local graph runtime does not produce live graph receipts reliably and
+requires runtime scheduling changes beyond checker evidence.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo tarpaulin --version` passed: `cargo-tarpaulin-tarpaulin 0.35.5`.
+- `sh -n deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh` passed.
+- `cargo test -p tensor_vm local_cpu_checker_requires_live_graph_execution_evidence --lib` passed: 1
+  targeted deployment-doc test.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 546 library tests.
+- Post-change release gate `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 561
+  instrumented tests, 84.54% line coverage, 22603/26736 lines covered.
+- No standalone verifier binary was used or added; validation used shell checks, Rust tests, clippy, and
+  tarpaulin.
 
 ### Iteration 179: Graph Verifier Admitted-Op Receipt Coverage
 

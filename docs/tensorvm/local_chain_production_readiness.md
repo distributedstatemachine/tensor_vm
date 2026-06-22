@@ -212,12 +212,12 @@ The local bundle is useful and should remain the first operational target:
   `live_role_miner_tensors_inserted`, `live_role_validator_attestation_operators`, and
   `live_role_validator_attestations_submitted`, `live_role_validator_useful_blocks_proposed`, and
   `live_role_validator_proposed_receipts` evidence fields after convergence.
-- The checker now requires `/explorer/receipts/latest/500` to name more than the seeded count of both
-  `tensor_op` and `linear_training_step` receipts, so live post-startup primitive evidence is visible by
-  receipt type instead of only by aggregate model-count growth.
-- `tvmd node block` now exposes per-height receipt IDs, settled receipt IDs, and TensorOp versus
-  LinearTrainingStep receipt counts, and the checker fails unless finalized live blocks expose both
-  primitive types through that block view.
+- The checker now requires `/explorer/receipts/latest/500` to name more than the seeded count of
+  `tensor_op`, `linear_training_step`, and `graph_execution` receipts, so live post-startup primitive and
+  generic-IR evidence is visible by receipt type instead of only by aggregate model-count growth.
+- `tvmd node block` now exposes per-height receipt IDs, settled receipt IDs, and TensorOp,
+  LinearTrainingStep, and GraphExecution receipt counts, and the checker fails unless finalized live blocks
+  expose all three paths through that block view.
 - Chain state now records data-unavailability miner bond slashes: an unavailable-data attestation marks the
   receipt non-finalizable, and canonical block application slashes the receipt miner once, credits treasury,
   commits the slash record in the state root, and persists/exposes slashing counts. Mandatory validator audit
@@ -452,22 +452,24 @@ Current assertion:
 ### 6. Live Primitive Coverage Needs Stronger Evidence
 
 The seed covers both TensorOp and LinearTrainingStep. Live post-startup production now uses
-`SyntheticLocalJobSource` for both matmul and LinearTrainingStep jobs, and the checker requires
-`model_count` to advance past the seeded baseline plus receipt details to name more than the seeded count
-of both primitive types. The service block view now reports per-height receipt IDs and primitive counts, and
-the local checker requires finalized live TensorOp and LinearTrainingStep block evidence near the current
-head.
+`SyntheticLocalJobSource` for matmul, LinearTrainingStep, and generic GraphExecution jobs, and the checker
+requires `model_count` to advance past the seeded baseline plus receipt details to name more than the
+seeded count of all three live paths. The service block view now reports per-height receipt IDs and
+primitive counts, and the local checker requires finalized live TensorOp, LinearTrainingStep, and
+GraphExecution block evidence near the current head.
 
 Required fix:
 
 - Keep the deterministic local `JobSource` emitting both:
   - TensorOp matmul jobs
   - LinearTrainingStep jobs
-- Extend this from per-receipt primitive evidence to per-block primitive evidence once block views expose
-  included receipt IDs by block.
+- Keep the deterministic local `JobSource` emitting generic GraphExecution jobs from registered graph
+  program bodies.
+- Keep per-receipt and per-block primitive evidence wired through the checker for all three live paths.
 
 Status: complete for the current local block view. Receipt ownership is still not role-owned end to end,
-but block-height receipt evidence is now queryable and gated.
+but block-height TensorOp, LinearTrainingStep, and GraphExecution receipt evidence is now queryable and
+gated.
 
 ### 7. The Checker Does Not Prove All Local-Spec Acceptance Items
 

@@ -269,6 +269,36 @@ fn codex_local_chain_workflow_records_required_iteration_flow() {
 }
 
 #[test]
+fn local_cpu_checker_requires_live_graph_execution_evidence() {
+    let checker =
+        include_str!("../../../../../deploy/tensorvm/local-cpu/scripts/check-local-testnet.sh");
+
+    for phrase in [
+        "json_string_field_count primitive_type graph_execution",
+        "graph_execution_receipt_count",
+        "live receipt details did not include post-seed GraphExecution receipts",
+        "service block view did not expose finalized live GraphExecution receipt evidence",
+    ] {
+        assert!(
+            checker.contains(phrase),
+            "local CPU checker should require GraphExecution evidence phrase {phrase:?}"
+        );
+    }
+
+    assert_trimmed_lines(
+        checker,
+        &[
+            "live_graph_execution_receipts=true",
+            "live_graph_execution_receipt_count=${LIVE_GRAPH_EXECUTION_RECEIPT_COUNT}",
+            "live_graph_execution_block_evidence=true",
+            "live_graph_execution_block_height=${LIVE_GRAPH_EXECUTION_BLOCK_HEIGHT}",
+            "live_graph_execution_block_receipts=${LIVE_GRAPH_EXECUTION_BLOCK_RECEIPTS}",
+        ],
+        "local CPU checker GraphExecution output",
+    );
+}
+
+#[test]
 fn local_status_docs_do_not_preserve_stale_health_blocker() {
     for (label, document) in [
         (
