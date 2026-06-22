@@ -269,7 +269,7 @@ that otherwise complete full-spec public evidence remains non-full-spec unless s
 `validator_vrf_lifecycle_records` exactly cover checked receipts, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`
 proves the full-spec gate also requires raw revealed lifecycle records that aggregate to the signed
-lifecycle summary root.
+lifecycle summary root and cannot repeat receipt roots to pad checked-receipt coverage.
 `testnet::tests::public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`
 now proves that otherwise complete full-spec public evidence remains non-full-spec unless it has positive
 signed deployed detection-measurement records and raw detection records that aggregate to the signed

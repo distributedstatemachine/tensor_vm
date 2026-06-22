@@ -570,6 +570,14 @@ impl PublicTestnetEvidenceBundle {
         {
             return false;
         }
+        let mut receipt_roots = BTreeSet::new();
+        if self
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .any(|record| !receipt_roots.insert(record.receipt_root))
+        {
+            return false;
+        }
         self.raw_operational_records_match(
             PublicEvidenceRecordKind::ValidatorVrfLifecycle,
             self.validator_vrf_lifecycle_records,

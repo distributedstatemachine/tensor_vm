@@ -554,13 +554,14 @@ public-testnet criteria or stricter criteria, `public_criterion=true`, `independ
 `cuda_verified_miner_count` covering the counted public miners, positive `cuda_graph_execution_receipts`
 that do not exceed checked or available receipt counts,
 signed `validator_vrf_lifecycle_records` with raw `validator_vrf_lifecycle=...` lines covering every
-checked receipt's deployed commit-to-reveal lifecycle and aggregating to the signed lifecycle root,
+checked receipt's deployed commit-to-reveal lifecycle, using distinct nonzero receipt roots, and
+aggregating to the signed lifecycle root,
 positive signed deployed `detection_measurement_records`,
 the signed randomness-beacon summary count to equal `observed_blocks`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
 manifest-level raw `block_history_record=...`, `finality_history_record=...`,
 `data_availability_measurement=...`, `invalid_work_rejection=...`, `reward_settlement=...`, and
-`detection_measurement=...` lines, plus raw `validator_vrf_lifecycle=...` lines whose aggregate roots
+`detection_measurement=...` lines, plus raw `validator_vrf_lifecycle=...` lines with distinct receipt roots whose aggregate roots
 match the signed chain-history and operational summaries. Full-spec randomness
 records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
 `local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public randomness
