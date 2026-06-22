@@ -83,6 +83,8 @@ in-progress compile gap before the new record-kind CLI argument was wired; after
 
 Tarpaulin passed with 573 instrumented tests and 84.81% line coverage, 23261/27428 lines covered.
 
+Commit `a65f247` (`Require deployed detection evidence for full spec`) prepared on June 22, 2026.
+
 ### Iteration 195: Reward Delay Spec Alignment
 
 Feature capability: remove the stale miner reward-curve wording from `upow.md` and state the implemented
@@ -244,6 +246,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 - Current Iteration 196 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   573 instrumented tests and 84.81% line coverage, 23261/27428 lines covered.
+- Current Iteration 196 feature commit `a65f247`
+  (`Require deployed detection evidence for full spec`) prepared on June 22, 2026.
 
 ## Archive
 
