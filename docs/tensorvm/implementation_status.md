@@ -135,6 +135,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   randomness grindability, data withholding, operator-aware collusion thresholds, TensorWork concentration,
   verification cost, the strict expected-slash-cost versus reward-from-fraud economic invariant, and
   zero-work liveness fallback
+- Chain-owned verifier bandwidth evidence derived from live job and receipt shapes, including estimated
+  verification bytes, per-validator bandwidth, and verification-to-execution bps by primitive through
+  `tvmd node status` and explorer overview JSON. CUDA and public deployed bandwidth measurements remain
+  deployment-gated.
 - LinearTrainingStep execution and verification
 - Random-linear checks for `dY = Y - T` and `W_next = W - lr * grad_W`, backed by registry-level
   verifier classification that distinguishes random-linear relations from exact replay and deferred

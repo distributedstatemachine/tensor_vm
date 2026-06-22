@@ -877,6 +877,87 @@ fn detection_probability_evidence_uses_live_jobs_and_params() {
 }
 
 #[test]
+fn verifier_bandwidth_evidence_uses_live_job_and_receipt_shapes() {
+    let beacon = hash_bytes(b"test", &[b"verifier-bandwidth-evidence"]);
+    let params = ChainParams {
+        freivalds: FreivaldsParams {
+            full_rounds: 1,
+            audit_rows: 16,
+            validators_per_job: 2,
+            minimum_validators: 1,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"verifier-bandwidth-miner");
+    let validator_a = address(b"verifier-bandwidth-validator-a");
+    let validator_b = address(b"verifier-bandwidth-validator-b");
+    chain.register_miner(miner, 100).unwrap();
+    chain
+        .register_validator(validator_a, chain.params().validator_min_stake)
+        .unwrap();
+    chain
+        .register_validator(validator_b, chain.params().validator_min_stake)
+        .unwrap();
+
+    let tensor_job = MatmulJob::synthetic(0, 0, 32, 8, 16, &beacon, 20);
+    let (tensor_receipt, _a, _b, _c) = TensorOpReceipt::from_job(&tensor_job, miner, 0, 1).unwrap();
+    chain.submit_job(JobState::TensorOp(tensor_job));
+    chain.submit_tensor_op_receipt(tensor_receipt).unwrap();
+
+    let weights = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let linear_job = LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+        model_id: hash_bytes(b"test", &[b"verifier-bandwidth-model"]),
+        step: 0,
+        batch_seed: hash_bytes(b"test", &[b"verifier-bandwidth-batch"]),
+        weight_root_before: weights.commitment_root(),
+        input_shape: vec![2, 2],
+        weight_shape: vec![2, 2],
+        target_shape: vec![2, 2],
+        lr: 1,
+        deadline_block: 20,
+    });
+    let (linear_receipt, _) =
+        LinearTrainingStepReceipt::from_job(&linear_job, miner, &weights, 0, 1).unwrap();
+    chain.submit_job(JobState::LinearTrainingStep(linear_job));
+    chain.submit_linear_receipt(linear_receipt).unwrap();
+
+    let evidence = chain.state().verifier_bandwidth_evidence(chain.params());
+    assert_eq!(evidence.record_count, 3);
+    assert_eq!(evidence.live_job_count, 2);
+    assert_eq!(evidence.live_receipt_count, 2);
+    assert!(evidence.has_live_bounded_evidence);
+    assert_eq!(
+        evidence.estimated_bandwidth_per_validator_bytes,
+        evidence.estimated_total_verification_bytes / 2
+    );
+
+    let tensor = evidence
+        .records
+        .iter()
+        .find(|record| record.primitive == "tensor_op")
+        .unwrap();
+    assert_eq!(tensor.live_job_count, 1);
+    assert_eq!(tensor.live_receipt_count, 1);
+    assert_eq!(tensor.max_execution_ops, 8192);
+    assert_eq!(tensor.max_verification_ops, 896);
+    assert!(tensor.max_verification_bytes_per_receipt > 0);
+    assert!(tensor.max_verification_to_execution_bps < 2_000);
+
+    let linear = evidence
+        .records
+        .iter()
+        .find(|record| record.primitive == "linear_training_step")
+        .unwrap();
+    assert_eq!(linear.live_job_count, 1);
+    assert_eq!(linear.live_receipt_count, 1);
+    assert!(linear.max_verification_bytes_per_receipt > 0);
+    assert!(linear.max_verification_to_execution_bps > 0);
+}
+
+#[test]
 fn block_transition_preserves_matured_rewards_until_claim() {
     let beacon = hash_bytes(b"test", &[b"reward-block-transition-release"]);
     let params = ChainParams {

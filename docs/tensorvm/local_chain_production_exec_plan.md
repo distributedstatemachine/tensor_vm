@@ -5,11 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 186 complete: Public Randomness Evidence Raw-Record Gate.
-- Current status: full-spec public evidence now requires manifest-level raw accepted public randomness
-  records whose aggregate root matches the signed randomness summary. Summary-only randomness evidence and
-  local deterministic fixture records remain parseable/testable but cannot satisfy the full-spec public
-  randomness gate.
+- Active feature: Iteration 187 complete: Chain-Owned Verifier Bandwidth Evidence.
+- Current status: chain status and explorer overview now expose verifier bandwidth evidence derived from
+  live job and receipt shapes, including estimated verification bytes, per-validator bandwidth, and
+  verification-to-execution ratios by primitive.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
@@ -30,10 +29,91 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops, receipt verification scenario drift coverage for every admitted op; default CUDA non-admission | Add CUDA conformance evidence and deployed CUDA profile evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates from live job/receipt shapes | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 187: Chain-Owned Verifier Bandwidth Evidence
+
+Feature capability: report verifier bandwidth and verification-to-execution evidence from live job and
+receipt shapes through the chain-owned status/explorer surfaces.
+
+Readiness requirements covered: `goal.md`/`mvp_spec.md` bounded verifier bandwidth per job shape,
+Acceptance Criterion 11 cheaper-than-recompute evidence, and local telemetry evidence for active verifier
+bandwidth.
+
+Canonical owner: `ChainState` owns the computed verifier-bandwidth summary; service status and explorer RPC
+only render it.
+
+Adapter callers: `tvmd node status`, explorer overview JSON/WebSocket, and local/public readiness checkers
+may consume the rendered fields but must not recompute protocol evidence independently.
+
+Old shortcut being removed: verifier bandwidth was available only as telemetry estimates and study tests,
+not as a chain-owned evidence summary tied to live job and receipt shapes.
+
+Regression tests that prove the shortcut is gone:
+`verifier_bandwidth_evidence_uses_live_job_and_receipt_shapes`,
+`service_status_exports_validator_audit_economic_calibration`,
+`explorer_overview_exports_validator_audit_economic_calibration`, and
+`tensor_vm_explorer::tests::explorer_json_and_shell_include_live_websocket_contract`.
+
+Behavior with local synthetic block production disabled: unchanged; the evidence is derived from chain
+state after jobs/receipts are admitted.
+
+Behavior for producer and non-producer roles: unchanged; all nodes rendering the same chain state report
+the same verifier-bandwidth evidence.
+
+Structured evidence source: `ChainState::verifier_bandwidth_evidence`, status key-value fields, and
+explorer overview JSON.
+
+Finality source: unchanged; this is verifier-cost evidence, not block finality logic.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC payload codec changes.
+
+Parallel subagents to run: none. The slice is confined to chain evidence, status/explorer rendering, tests,
+and docs.
+
+Parallelizable implementation workstreams: not split; one writer owns the state/status/explorer type
+surface.
+
+Tests/checkers/docs to add or update: chain/status/RPC/explorer tests, `coverage_matrix.md`,
+`implementation_status.md`, `tarpaulin_report.md` if coverage changes, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm verifier_bandwidth_evidence_uses_live_job_and_receipt_shapes --lib`,
+`cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --lib`,
+`cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --lib`, and
+`cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because coverage and explorer JSON changed.
+
+Expected observable evidence: status and explorer overview expose live job/receipt counts, estimated
+verification bytes, estimated per-validator bandwidth, and verification-to-execution bps for TensorOp,
+LinearTrainingStep, and GraphExecution.
+
+Out of scope: CUDA performance evidence, public deployed bandwidth measurements, changing verifier
+semantics, or claiming full-spec public evidence.
+
+Split trigger: split only if verifier bandwidth needs to become a signed public evidence record format.
+
+Validation evidence on June 22, 2026:
+- First executable Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused checks passed: `cargo test -p tensor_vm verifier_bandwidth_evidence_uses_live_job_and_receipt_shapes --lib`,
+  `cargo test -p tensor_vm service_status_exports_validator_audit_economic_calibration --lib`,
+  `cargo test -p tensor_vm explorer_overview_exports_validator_audit_economic_calibration --lib`, and
+  `cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract --lib`.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 549 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release library local-testnet tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 564
+  instrumented tests, 84.74% workspace line coverage, 22957/27091 lines covered.
+- Manual ownership-boundary review: verifier bandwidth evidence is computed in `ChainState` and only
+  rendered by status/RPC adapters; no verifier semantics, p2p/storage codec, CUDA path, or public evidence
+  claim changed.
 
 ### Iteration 186: Public Randomness Evidence Raw-Record Gate
 

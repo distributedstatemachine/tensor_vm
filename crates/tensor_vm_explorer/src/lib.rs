@@ -234,6 +234,64 @@ impl ExplorerDetectionProbabilityEvidenceSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerVerifierBandwidthEvidence {
+    pub primitive: String,
+    pub source: String,
+    pub live_job_count: usize,
+    pub live_receipt_count: usize,
+    pub max_execution_ops: u64,
+    pub max_verification_ops: u64,
+    pub max_verification_bytes_per_receipt: u64,
+    pub estimated_total_verification_bytes: u64,
+    pub max_verification_to_execution_bps: u64,
+}
+
+impl ExplorerVerifierBandwidthEvidence {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"primitive\":\"{}\",\"source\":\"{}\",\"live_job_count\":{},\"live_receipt_count\":{},\"max_execution_ops\":{},\"max_verification_ops\":{},\"max_verification_bytes_per_receipt\":{},\"estimated_total_verification_bytes\":{},\"max_verification_to_execution_bps\":{}}}",
+            escape_json(&self.primitive),
+            escape_json(&self.source),
+            self.live_job_count,
+            self.live_receipt_count,
+            self.max_execution_ops,
+            self.max_verification_ops,
+            self.max_verification_bytes_per_receipt,
+            self.estimated_total_verification_bytes,
+            self.max_verification_to_execution_bps
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct ExplorerVerifierBandwidthEvidenceSummary {
+    pub record_count: usize,
+    pub live_job_count: usize,
+    pub live_receipt_count: usize,
+    pub estimated_total_verification_bytes: u64,
+    pub estimated_bandwidth_per_validator_bytes: u64,
+    pub max_verification_to_execution_bps: u64,
+    pub has_live_bounded_evidence: bool,
+    pub records: Vec<ExplorerVerifierBandwidthEvidence>,
+}
+
+impl ExplorerVerifierBandwidthEvidenceSummary {
+    pub fn to_json(&self) -> String {
+        format!(
+            "{{\"record_count\":{},\"live_job_count\":{},\"live_receipt_count\":{},\"estimated_total_verification_bytes\":{},\"estimated_bandwidth_per_validator_bytes\":{},\"max_verification_to_execution_bps\":{},\"has_live_bounded_evidence\":{},\"records\":{}}}",
+            self.record_count,
+            self.live_job_count,
+            self.live_receipt_count,
+            self.estimated_total_verification_bytes,
+            self.estimated_bandwidth_per_validator_bytes,
+            self.max_verification_to_execution_bps,
+            self.has_live_bounded_evidence,
+            json_array(&self.records, ExplorerVerifierBandwidthEvidence::to_json)
+        )
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExplorerBlock {
     pub height: u64,
     pub epoch: u64,
@@ -466,6 +524,7 @@ pub struct ExplorerOverview {
     pub validator_audit_economic_calibration: ExplorerValidatorAuditEconomicCalibration,
     pub fraud_path_economic_calibration: ExplorerFraudPathEconomicCalibrationSummary,
     pub detection_probability_evidence: ExplorerDetectionProbabilityEvidenceSummary,
+    pub verifier_bandwidth_evidence: ExplorerVerifierBandwidthEvidenceSummary,
     pub randomness_binding_evidence: ExplorerRandomnessBindingEvidence,
     pub jobs: Vec<ExplorerJob>,
 }
@@ -473,7 +532,7 @@ pub struct ExplorerOverview {
 impl ExplorerOverview {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"detection_probability_evidence\":{},\"randomness_binding_evidence\":{},\"jobs\":{}}}",
+            "{{\"type\":\"overview\",\"summary\":{},\"blocks\":{},\"miners\":{},\"validators\":{},\"receipts\":{},\"pending_rewards\":{},\"validator_audit_economic_calibration\":{},\"fraud_path_economic_calibration\":{},\"detection_probability_evidence\":{},\"verifier_bandwidth_evidence\":{},\"randomness_binding_evidence\":{},\"jobs\":{}}}",
             self.summary.to_json(),
             json_array(&self.blocks, ExplorerBlock::to_json),
             json_array(&self.miners, ExplorerMiner::to_json),
@@ -483,6 +542,7 @@ impl ExplorerOverview {
             self.validator_audit_economic_calibration.to_json(),
             self.fraud_path_economic_calibration.to_json(),
             self.detection_probability_evidence.to_json(),
+            self.verifier_bandwidth_evidence.to_json(),
             self.randomness_binding_evidence.to_json(),
             json_array(&self.jobs, ExplorerJob::to_json)
         )
@@ -930,6 +990,37 @@ mod tests {
             detection
                 .to_json()
                 .contains("\"false_accept_probability_bps\":5000")
+        );
+        let bandwidth = ExplorerVerifierBandwidthEvidenceSummary {
+            record_count: 1,
+            live_job_count: 1,
+            live_receipt_count: 1,
+            estimated_total_verification_bytes: 1024,
+            estimated_bandwidth_per_validator_bytes: 512,
+            max_verification_to_execution_bps: 2500,
+            has_live_bounded_evidence: true,
+            records: vec![ExplorerVerifierBandwidthEvidence {
+                primitive: "tensor_op".to_owned(),
+                source: "live_tensorop_job_shapes".to_owned(),
+                live_job_count: 1,
+                live_receipt_count: 1,
+                max_execution_ops: 4096,
+                max_verification_ops: 1024,
+                max_verification_bytes_per_receipt: 1024,
+                estimated_total_verification_bytes: 1024,
+                max_verification_to_execution_bps: 2500,
+            }],
+        };
+        assert!(
+            bandwidth
+                .to_json()
+                .contains("\"has_live_bounded_evidence\":true")
+        );
+        assert!(bandwidth.to_json().contains("\"primitive\":\"tensor_op\""));
+        assert!(
+            bandwidth
+                .to_json()
+                .contains("\"max_verification_to_execution_bps\":2500")
         );
         let randomness = ExplorerRandomnessBindingEvidence {
             beacon_source: "local_finalized_chain_beacon_v1".to_owned(),

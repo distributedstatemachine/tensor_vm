@@ -749,7 +749,8 @@ This section is non-normative guidance on how the spec components partition into
   block-check/proposer clawback paths, required slashable bonds, aggregate worst-required-bond, and
   pass/fail invariants. Reward maturity includes an explicit fraud-window hold before spendability;
   status/explorer now expose structured detection-probability evidence for implemented verifier and fraud
-  mechanisms. Deployed-run measurements and remaining fraud paths remain open (§12.2).
+  mechanisms plus verifier-bandwidth evidence derived from live job and receipt shapes. Deployed-run
+  measurements, CUDA bandwidth evidence, and remaining fraud paths remain open (§12.2).
 - [~] Reward concentration / TensorWork activation delay: the local reference now keeps newly settled miner
   TensorWork pending until the matching delayed miner receipt reward survives inclusion, challenge windows,
   and maturity. Receipt rewards now store awaiting-inclusion and claimable-height maturity as explicit

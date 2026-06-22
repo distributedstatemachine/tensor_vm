@@ -518,9 +518,12 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         ))
         .unwrap();
     assert!(chain.is_block_finalized(&block.hash()));
-    chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
-        0, 0, 32, 8, 16, &beacon, 20,
-    )));
+    let miner = address(b"rpc-verifier-bandwidth-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let job = MatmulJob::synthetic(0, 0, 32, 8, 16, &beacon, 20);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 1).unwrap();
+    chain.submit_job(JobState::TensorOp(job));
+    chain.submit_tensor_op_receipt(receipt).unwrap();
     chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
         claim_id: hash_bytes(b"test", &[b"rpc-audit-validator-claim"]),
         receipt_id: hash_bytes(b"test", &[b"rpc-audit-receipt"]),
@@ -649,6 +652,19 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         validator_audit["detection_probability_bps"].as_u64(),
         Some(2_000)
     );
+    let bandwidth = &overview["verifier_bandwidth_evidence"];
+    assert_eq!(bandwidth["record_count"].as_u64(), Some(3));
+    assert_eq!(bandwidth["live_job_count"].as_u64(), Some(1));
+    assert_eq!(bandwidth["live_receipt_count"].as_u64(), Some(1));
+    assert_eq!(bandwidth["has_live_bounded_evidence"].as_bool(), Some(true));
+    let bandwidth_records = bandwidth["records"].as_array().unwrap();
+    let tensor_bandwidth = bandwidth_records
+        .iter()
+        .find(|record| record["primitive"].as_str() == Some("tensor_op"))
+        .unwrap();
+    assert_eq!(tensor_bandwidth["live_job_count"].as_u64(), Some(1));
+    assert_eq!(tensor_bandwidth["live_receipt_count"].as_u64(), Some(1));
+    assert_eq!(tensor_bandwidth["max_verification_ops"].as_u64(), Some(896));
 
     let randomness = &overview["randomness_binding_evidence"];
     assert_eq!(
@@ -687,12 +703,12 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         randomness["current_block_hash_randomness_allowed"].as_bool(),
         Some(false)
     );
-    assert_eq!(randomness["receipt_anchor_count"].as_u64(), Some(0));
+    assert_eq!(randomness["receipt_anchor_count"].as_u64(), Some(1));
     assert_eq!(
         randomness["finalized_beacon_round_mapping_count"].as_u64(),
-        Some(0)
+        Some(1)
     );
-    assert_eq!(randomness["validator_vrf_seed_count"].as_u64(), Some(0));
+    assert_eq!(randomness["validator_vrf_seed_count"].as_u64(), Some(1));
     assert_eq!(
         randomness["validator_vrf_registered_key_count"].as_u64(),
         Some(0)

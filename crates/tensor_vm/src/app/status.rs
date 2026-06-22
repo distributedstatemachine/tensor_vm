@@ -419,6 +419,64 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
             mechanism.live_subject_count,
         );
     }
+    let verifier_bandwidth = chain.state().verifier_bandwidth_evidence(chain.params());
+    report.field(
+        "verifier_bandwidth_record_count",
+        verifier_bandwidth.record_count,
+    );
+    report.field(
+        "verifier_bandwidth_live_job_count",
+        verifier_bandwidth.live_job_count,
+    );
+    report.field(
+        "verifier_bandwidth_live_receipt_count",
+        verifier_bandwidth.live_receipt_count,
+    );
+    report.field(
+        "verifier_bandwidth_estimated_total_bytes",
+        verifier_bandwidth.estimated_total_verification_bytes,
+    );
+    report.field(
+        "verifier_bandwidth_estimated_per_validator_bytes",
+        verifier_bandwidth.estimated_bandwidth_per_validator_bytes,
+    );
+    report.field(
+        "verifier_bandwidth_max_verification_to_execution_bps",
+        verifier_bandwidth.max_verification_to_execution_bps,
+    );
+    report.field(
+        "verifier_bandwidth_has_live_bounded_evidence",
+        verifier_bandwidth.has_live_bounded_evidence,
+    );
+    for record in verifier_bandwidth.records {
+        let prefix = format!("verifier_bandwidth_{}", record.primitive);
+        report.field(&format!("{prefix}_source"), record.source);
+        report.field(&format!("{prefix}_live_job_count"), record.live_job_count);
+        report.field(
+            &format!("{prefix}_live_receipt_count"),
+            record.live_receipt_count,
+        );
+        report.field(
+            &format!("{prefix}_max_execution_ops"),
+            record.max_execution_ops,
+        );
+        report.field(
+            &format!("{prefix}_max_verification_ops"),
+            record.max_verification_ops,
+        );
+        report.field(
+            &format!("{prefix}_max_verification_bytes_per_receipt"),
+            record.max_verification_bytes_per_receipt,
+        );
+        report.field(
+            &format!("{prefix}_estimated_total_verification_bytes"),
+            record.estimated_total_verification_bytes,
+        );
+        report.field(
+            &format!("{prefix}_max_verification_to_execution_bps"),
+            record.max_verification_to_execution_bps,
+        );
+    }
     let randomness = chain
         .state()
         .randomness_binding_evidence_for_params(chain.params());
@@ -846,9 +904,12 @@ mod tests {
                 &block,
             ))
             .unwrap();
-        chain.submit_job(JobState::TensorOp(MatmulJob::synthetic(
-            0, 0, 32, 8, 16, &beacon, 20,
-        )));
+        let miner = address(b"status-verifier-bandwidth-miner");
+        chain.register_miner(miner, 100).unwrap();
+        let job = MatmulJob::synthetic(0, 0, 32, 8, 16, &beacon, 20);
+        let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 0, 1).unwrap();
+        chain.submit_job(JobState::TensorOp(job));
+        chain.submit_tensor_op_receipt(receipt).unwrap();
         chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
             claim_id: hash_bytes(b"test", &[b"status-audit-validator-claim"]),
             receipt_id: hash_bytes(b"test", &[b"status-audit-receipt"]),
@@ -970,6 +1031,32 @@ mod tests {
         assert_eq!(
             fields.value("detection_probability_data_unavailability_detection_probability_bps"),
             Some("10000")
+        );
+        assert_eq!(fields.value("verifier_bandwidth_record_count"), Some("3"));
+        assert_eq!(fields.value("verifier_bandwidth_live_job_count"), Some("1"));
+        assert_eq!(
+            fields.value("verifier_bandwidth_live_receipt_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("verifier_bandwidth_has_live_bounded_evidence"),
+            Some("true")
+        );
+        assert_eq!(
+            fields.value("verifier_bandwidth_tensor_op_live_job_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("verifier_bandwidth_tensor_op_live_receipt_count"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("verifier_bandwidth_tensor_op_max_execution_ops"),
+            Some("8192")
+        );
+        assert_eq!(
+            fields.value("verifier_bandwidth_tensor_op_max_verification_ops"),
+            Some("896")
         );
 
         let _ = std::fs::remove_dir_all(data_dir);

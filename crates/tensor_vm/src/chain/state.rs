@@ -657,6 +657,31 @@ pub struct DetectionProbabilityEvidenceSummary {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifierBandwidthEvidence {
+    pub primitive: &'static str,
+    pub source: &'static str,
+    pub live_job_count: usize,
+    pub live_receipt_count: usize,
+    pub max_execution_ops: u64,
+    pub max_verification_ops: u64,
+    pub max_verification_bytes_per_receipt: u64,
+    pub estimated_total_verification_bytes: u64,
+    pub max_verification_to_execution_bps: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct VerifierBandwidthEvidenceSummary {
+    pub records: Vec<VerifierBandwidthEvidence>,
+    pub record_count: usize,
+    pub live_job_count: usize,
+    pub live_receipt_count: usize,
+    pub estimated_total_verification_bytes: u64,
+    pub estimated_bandwidth_per_validator_bytes: u64,
+    pub max_verification_to_execution_bps: u64,
+    pub has_live_bounded_evidence: bool,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct RandomnessBindingEvidence {
     pub beacon_source: &'static str,
     pub drand_round_mapping: &'static str,
@@ -2170,6 +2195,237 @@ impl ChainState {
         }
     }
 
+    pub fn verifier_bandwidth_evidence(
+        &self,
+        params: &ChainParams,
+    ) -> VerifierBandwidthEvidenceSummary {
+        let elem_bytes = std::mem::size_of::<field::Elem>() as u64;
+        let tensor_jobs = self
+            .jobs
+            .values()
+            .filter_map(|job| match job {
+                JobState::TensorOp(job) => Some(job),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let linear_jobs = self
+            .jobs
+            .values()
+            .filter_map(|job| match job {
+                JobState::LinearTrainingStep(job) => Some(job),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let graph_jobs = self
+            .jobs
+            .values()
+            .filter(|job| matches!(job, JobState::GraphExecution(_)))
+            .count();
+
+        let tensor_receipts = self
+            .receipts
+            .values()
+            .filter_map(|receipt| match receipt {
+                ReceiptState::TensorOp(receipt) => Some(receipt),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let linear_receipts = self
+            .receipts
+            .values()
+            .filter_map(|receipt| match receipt {
+                ReceiptState::LinearTrainingStep(receipt) => Some(receipt),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+        let graph_receipts = self
+            .receipts
+            .values()
+            .filter_map(|receipt| match receipt {
+                ReceiptState::GraphExecution(receipt) => Some(receipt),
+                _ => None,
+            })
+            .collect::<Vec<_>>();
+
+        let tensor_max_execution_ops = tensor_jobs
+            .iter()
+            .map(|job| matmul_execution_ops(job.m as u64, job.k as u64, job.n as u64))
+            .max()
+            .unwrap_or_default();
+        let tensor_max_verification_ops = tensor_jobs
+            .iter()
+            .map(|job| {
+                matmul_verification_ops(job.m as u64, job.k as u64, job.n as u64)
+                    .saturating_mul(params.freivalds.full_rounds.max(1) as u64)
+            })
+            .max()
+            .unwrap_or_default();
+        let tensor_max_bytes = tensor_jobs
+            .iter()
+            .map(|job| {
+                matmul_verification_bytes(job.m as u64, job.k as u64, job.n as u64, elem_bytes)
+            })
+            .max()
+            .unwrap_or_default();
+        let tensor_total_bytes = tensor_receipts
+            .iter()
+            .map(|receipt| {
+                self.jobs
+                    .get(&receipt.job_id)
+                    .and_then(|job| match job {
+                        JobState::TensorOp(job) => Some(matmul_verification_bytes(
+                            job.m as u64,
+                            job.k as u64,
+                            job.n as u64,
+                            elem_bytes,
+                        )),
+                        _ => None,
+                    })
+                    .unwrap_or_default()
+            })
+            .sum::<u64>();
+
+        let linear_max_execution_ops = linear_jobs
+            .iter()
+            .map(|job| {
+                linear_training_execution_ops(
+                    &job.input_shape,
+                    &job.weight_shape,
+                    &job.target_shape,
+                )
+            })
+            .max()
+            .unwrap_or_default();
+        let linear_max_verification_ops = linear_jobs
+            .iter()
+            .map(|job| {
+                linear_training_verification_ops(
+                    &job.input_shape,
+                    &job.weight_shape,
+                    &job.target_shape,
+                )
+            })
+            .max()
+            .unwrap_or_default();
+        let linear_max_bytes = linear_jobs
+            .iter()
+            .map(|job| {
+                linear_training_verification_bytes(
+                    &job.input_shape,
+                    &job.weight_shape,
+                    &job.target_shape,
+                    elem_bytes,
+                )
+            })
+            .max()
+            .unwrap_or_default();
+        let linear_total_bytes = linear_receipts
+            .iter()
+            .map(|receipt| {
+                self.jobs
+                    .get(&receipt.job_id)
+                    .and_then(|job| match job {
+                        JobState::LinearTrainingStep(job) => {
+                            Some(linear_training_verification_bytes(
+                                &job.input_shape,
+                                &job.weight_shape,
+                                &job.target_shape,
+                                elem_bytes,
+                            ))
+                        }
+                        _ => None,
+                    })
+                    .unwrap_or_default()
+            })
+            .sum::<u64>();
+
+        let graph_max_ops = graph_receipts
+            .iter()
+            .map(|receipt| receipt.tensor_work_units)
+            .max()
+            .unwrap_or_default();
+        let graph_total_bytes = graph_receipts
+            .iter()
+            .map(|receipt| receipt.tensor_work_units.saturating_mul(elem_bytes))
+            .sum::<u64>();
+        let graph_max_bytes = graph_max_ops.saturating_mul(elem_bytes);
+
+        let records = vec![
+            VerifierBandwidthEvidence {
+                primitive: "tensor_op",
+                source: "live_tensorop_job_shapes+receipts+full_freivalds",
+                live_job_count: tensor_jobs.len(),
+                live_receipt_count: tensor_receipts.len(),
+                max_execution_ops: tensor_max_execution_ops,
+                max_verification_ops: tensor_max_verification_ops,
+                max_verification_bytes_per_receipt: tensor_max_bytes,
+                estimated_total_verification_bytes: tensor_total_bytes,
+                max_verification_to_execution_bps: bps_from_ratio(
+                    tensor_max_verification_ops,
+                    tensor_max_execution_ops,
+                ),
+            },
+            VerifierBandwidthEvidence {
+                primitive: "linear_training_step",
+                source: "live_linear_training_shapes+receipts+freivalds_random_linear",
+                live_job_count: linear_jobs.len(),
+                live_receipt_count: linear_receipts.len(),
+                max_execution_ops: linear_max_execution_ops,
+                max_verification_ops: linear_max_verification_ops,
+                max_verification_bytes_per_receipt: linear_max_bytes,
+                estimated_total_verification_bytes: linear_total_bytes,
+                max_verification_to_execution_bps: bps_from_ratio(
+                    linear_max_verification_ops,
+                    linear_max_execution_ops,
+                ),
+            },
+            VerifierBandwidthEvidence {
+                primitive: "graph_execution",
+                source: "live_graph_receipts+exact_replay_twu_bound",
+                live_job_count: graph_jobs,
+                live_receipt_count: graph_receipts.len(),
+                max_execution_ops: graph_max_ops,
+                max_verification_ops: graph_max_ops,
+                max_verification_bytes_per_receipt: graph_max_bytes,
+                estimated_total_verification_bytes: graph_total_bytes,
+                max_verification_to_execution_bps: bps_from_ratio(graph_max_ops, graph_max_ops),
+            },
+        ];
+        let record_count = records.len();
+        let live_job_count = records.iter().map(|record| record.live_job_count).sum();
+        let live_receipt_count = records.iter().map(|record| record.live_receipt_count).sum();
+        let estimated_total_verification_bytes = records
+            .iter()
+            .map(|record| record.estimated_total_verification_bytes)
+            .sum::<u64>()
+            .saturating_mul(params.freivalds.validators_per_job as u64);
+        let estimated_bandwidth_per_validator_bytes =
+            estimated_total_verification_bytes / self.validators.len().max(1) as u64;
+        let max_verification_to_execution_bps = records
+            .iter()
+            .map(|record| record.max_verification_to_execution_bps)
+            .max()
+            .unwrap_or_default();
+        let has_live_bounded_evidence = live_job_count > 0
+            && live_receipt_count > 0
+            && records.iter().any(|record| {
+                record.live_receipt_count > 0
+                    && record.max_verification_bytes_per_receipt > 0
+                    && record.max_execution_ops > 0
+                    && record.max_verification_ops > 0
+            });
+        VerifierBandwidthEvidenceSummary {
+            records,
+            record_count,
+            live_job_count,
+            live_receipt_count,
+            estimated_total_verification_bytes,
+            estimated_bandwidth_per_validator_bytes,
+            max_verification_to_execution_bps,
+            has_live_bounded_evidence,
+        }
+    }
+
     pub fn model_states(&self) -> &BTreeMap<Hash, ModelState> {
         &self.model_states
     }
@@ -2195,6 +2451,73 @@ fn freivalds_false_accept_bps(rounds: usize) -> u64 {
         denominator = denominator.saturating_mul(field::MODULUS as u128);
     }
     (10_000_u128 / denominator).min(u64::MAX as u128) as u64
+}
+
+fn shape_elements(shape: &[usize]) -> u64 {
+    shape
+        .iter()
+        .fold(1_u64, |acc, value| acc.saturating_mul(*value as u64))
+}
+
+fn matmul_execution_ops(m: u64, k: u64, n: u64) -> u64 {
+    m.saturating_mul(k).saturating_mul(n).saturating_mul(2)
+}
+
+fn matmul_verification_ops(m: u64, k: u64, n: u64) -> u64 {
+    k.saturating_mul(n)
+        .saturating_add(m.saturating_mul(k))
+        .saturating_add(m.saturating_mul(n))
+}
+
+fn matmul_verification_bytes(m: u64, k: u64, n: u64, elem_bytes: u64) -> u64 {
+    m.saturating_mul(k)
+        .saturating_add(k.saturating_mul(n))
+        .saturating_add(m.saturating_mul(n))
+        .saturating_mul(elem_bytes)
+}
+
+fn linear_training_execution_ops(
+    input_shape: &[usize],
+    weight_shape: &[usize],
+    target_shape: &[usize],
+) -> u64 {
+    let batch = input_shape.first().copied().unwrap_or_default() as u64;
+    let input_width = input_shape.get(1).copied().unwrap_or_default() as u64;
+    let output_width = weight_shape.get(1).copied().unwrap_or_default() as u64;
+    let target_elements = shape_elements(target_shape);
+    matmul_execution_ops(batch, input_width, output_width)
+        .saturating_mul(2)
+        .saturating_add(target_elements.saturating_mul(2))
+}
+
+fn linear_training_verification_ops(
+    input_shape: &[usize],
+    weight_shape: &[usize],
+    target_shape: &[usize],
+) -> u64 {
+    let batch = input_shape.first().copied().unwrap_or_default() as u64;
+    let input_width = input_shape.get(1).copied().unwrap_or_default() as u64;
+    let output_width = weight_shape.get(1).copied().unwrap_or_default() as u64;
+    let target_elements = shape_elements(target_shape);
+    matmul_verification_ops(batch, input_width, output_width)
+        .saturating_mul(2)
+        .saturating_add(target_elements.saturating_mul(2))
+}
+
+fn linear_training_verification_bytes(
+    input_shape: &[usize],
+    weight_shape: &[usize],
+    target_shape: &[usize],
+    elem_bytes: u64,
+) -> u64 {
+    let inputs = shape_elements(input_shape);
+    let weights = shape_elements(weight_shape);
+    let targets = shape_elements(target_shape);
+    inputs
+        .saturating_add(targets)
+        .saturating_add(weights.saturating_mul(3))
+        .saturating_add(targets.saturating_mul(2))
+        .saturating_mul(elem_bytes)
 }
 
 fn replication_availability_bps(replicas: usize, per_replica_availability_bps: u64) -> u64 {

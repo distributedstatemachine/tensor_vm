@@ -8,6 +8,7 @@ use tensor_vm_explorer::{
     ExplorerFraudPathEconomicCalibrationSummary, ExplorerJob, ExplorerMiner, ExplorerOverview,
     ExplorerPendingReward, ExplorerRandomnessBindingEvidence, ExplorerReceipt, ExplorerSummary,
     ExplorerValidator, ExplorerValidatorAuditEconomicCalibration,
+    ExplorerVerifierBandwidthEvidence, ExplorerVerifierBandwidthEvidenceSummary,
 };
 
 pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
@@ -316,6 +317,36 @@ pub(super) fn explorer_detection_probability_evidence(
     }
 }
 
+pub(super) fn explorer_verifier_bandwidth_evidence(
+    chain: &Chain,
+) -> ExplorerVerifierBandwidthEvidenceSummary {
+    let evidence = chain.state().verifier_bandwidth_evidence(chain.params());
+    ExplorerVerifierBandwidthEvidenceSummary {
+        record_count: evidence.record_count,
+        live_job_count: evidence.live_job_count,
+        live_receipt_count: evidence.live_receipt_count,
+        estimated_total_verification_bytes: evidence.estimated_total_verification_bytes,
+        estimated_bandwidth_per_validator_bytes: evidence.estimated_bandwidth_per_validator_bytes,
+        max_verification_to_execution_bps: evidence.max_verification_to_execution_bps,
+        has_live_bounded_evidence: evidence.has_live_bounded_evidence,
+        records: evidence
+            .records
+            .into_iter()
+            .map(|record| ExplorerVerifierBandwidthEvidence {
+                primitive: record.primitive.to_owned(),
+                source: record.source.to_owned(),
+                live_job_count: record.live_job_count,
+                live_receipt_count: record.live_receipt_count,
+                max_execution_ops: record.max_execution_ops,
+                max_verification_ops: record.max_verification_ops,
+                max_verification_bytes_per_receipt: record.max_verification_bytes_per_receipt,
+                estimated_total_verification_bytes: record.estimated_total_verification_bytes,
+                max_verification_to_execution_bps: record.max_verification_to_execution_bps,
+            })
+            .collect(),
+    }
+}
+
 pub(super) fn explorer_randomness_binding_evidence(
     chain: &Chain,
 ) -> ExplorerRandomnessBindingEvidence {
@@ -411,6 +442,7 @@ pub(super) fn explorer_overview(
         validator_audit_economic_calibration: explorer_validator_audit_economic_calibration(chain),
         fraud_path_economic_calibration: explorer_fraud_path_economic_calibration(chain),
         detection_probability_evidence: explorer_detection_probability_evidence(chain),
+        verifier_bandwidth_evidence: explorer_verifier_bandwidth_evidence(chain),
         randomness_binding_evidence: explorer_randomness_binding_evidence(chain),
         jobs: explorer_jobs(chain, job_limit),
     }
