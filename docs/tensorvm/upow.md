@@ -542,7 +542,9 @@ TensorBlock {
   availability.
 - Successful block-check challenger bounties are also pending consensus claims before spendability. The
   challenge record proves the dispute, while the pending challenger reward claim is state-rooted, persisted,
-  and claimable only after its maturity height.
+  and claimable only after its maturity height. Canonical block-check challenge admission materializes any
+  missing finalized proposer reward claim before computing the clawback and bounty, so p2p/node payload
+  adapters do not pre-release or otherwise prepare rewards as a workaround.
 - Proposer rewards use an additional proposer-specific hold after the normal reward maturity delay. This
   keeps block rewards escrowed past the block-check fraud window so a disproven block voids the pending
   proposer claim before it can become spendable.

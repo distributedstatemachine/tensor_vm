@@ -1,4 +1,9 @@
 use super::*;
+use crate::{
+    challenge::{BlockCheckChallenge, BlockCheckChallengeInput},
+    merkle::{build_proof, merkle_root},
+    types::sign,
+};
 
 fn finalize_challenge_test_block(chain: &mut Chain, block: &TensorBlock) {
     let validators = chain
@@ -246,6 +251,154 @@ fn observed_block_check_challenge_records_evidence_without_punishing_canonical_p
     );
     assert_eq!(chain.state().rewards().balance(&miner), 0);
     assert_eq!(chain.state().rewards().balance(&proposer), 0);
+}
+
+#[test]
+fn canonical_block_check_challenge_materializes_and_delays_reward_in_chain() {
+    let beacon = hash_bytes(b"test", &[b"canonical-block-check-delay-beacon"]);
+    let params = ChainParams {
+        agreement_quorum: 1,
+        challenge_window_epochs: 1,
+        epoch_length: 4,
+        freivalds: FreivaldsParams {
+            minimum_validators: 1,
+            validators_per_job: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"canonical-block-check-miner");
+    let proposer = address(b"canonical-block-check-proposer");
+    let challenger = address(b"canonical-block-check-watcher");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(proposer, 10_000).unwrap();
+    chain.register_validator(challenger, 10_000).unwrap();
+
+    let job = MatmulJob::synthetic(0, 0, 2, 2, 2, &beacon, 10);
+    let (receipt, _a, _b, _c) = TensorOpReceipt::from_job(&job, miner, 1, 5).unwrap();
+    chain.insert_receipt_for_testing(ReceiptState::TensorOp(receipt.clone()));
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+
+    let good_block = chain
+        .produce_block_with_rewards(proposer, 1_000, 900, 100)
+        .unwrap();
+    let parent_state = chain
+        .block_parent_state_for_payload(&good_block.hash())
+        .unwrap()
+        .clone();
+    let outcome = chain.block_apply_outcome(&good_block).unwrap();
+    let opening = outcome.selected_openings.first().unwrap();
+    let mut observed_leaves = outcome
+        .selected_openings
+        .iter()
+        .map(|opening| opening.check_leaf)
+        .collect::<Vec<_>>();
+    let observed_check_leaf = hash_bytes(
+        b"test",
+        &[
+            b"canonical-block-check-observed-leaf",
+            &good_block.hash(),
+            &opening.receipt_id,
+        ],
+    );
+    observed_leaves[opening.check_leaf_index as usize] = observed_check_leaf;
+
+    chain.pop_block_for_testing();
+    let mut bad_block = good_block.clone();
+    bad_block.checks_root = merkle_root(&observed_leaves);
+    let bad_hash = bad_block.hash();
+    bad_block.proposer_signature = sign(&bad_block.proposer, &bad_hash);
+    bad_block.validator_signature_aggregate =
+        hash_bytes(b"tensor-vm-validator-aggregate", &[&bad_hash]);
+    chain.push_block_for_testing(bad_block.clone());
+    chain.set_block_parent_state_for_admission(bad_hash, parent_state);
+    chain.set_block_selected_receipts_for_admission(bad_hash, outcome.selected_receipt_ids.clone());
+    chain.state.finalized_blocks.insert(bad_hash);
+    assert!(
+        !chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&bad_block.height)
+    );
+
+    let challenge = BlockCheckChallenge::new(BlockCheckChallengeInput {
+        challenger,
+        block_hash: bad_hash,
+        receipt_id: opening.receipt_id,
+        expected_check_leaf: opening.check_leaf,
+        observed_check_leaf,
+        check_leaf_index: opening.check_leaf_index,
+        check_leaf_proof: build_proof(&observed_leaves, opening.check_leaf_index).unwrap(),
+        recomputed_checks_root: outcome.checks_root,
+    });
+    let events = chain.submit_block_check_challenge(challenge).unwrap();
+
+    let challenger_reward = 500;
+    assert!(events.iter().any(|event| matches!(
+        event,
+        ChainEvent::BlockCheckChallengeProven {
+            block_hash,
+            receipt_id,
+            proposer: event_proposer,
+            challenger: event_challenger,
+            proposer_reward_clawback: 1_000,
+            challenger_reward: event_reward,
+            ..
+        } if *block_hash == bad_hash
+            && *receipt_id == receipt.receipt_id
+            && *event_proposer == proposer
+            && *event_challenger == challenger
+            && *event_reward == challenger_reward
+    )));
+    let pending_proposer = chain
+        .state()
+        .pending_proposer_rewards()
+        .get(&bad_block.height)
+        .unwrap();
+    assert!(pending_proposer.voided_by_challenge);
+    assert_eq!(pending_proposer.amount, 1_000);
+    let pending_challenge = chain
+        .state()
+        .pending_challenge_rewards()
+        .values()
+        .next()
+        .unwrap();
+    assert_eq!(pending_challenge.amount, challenger_reward);
+    assert_eq!(pending_challenge.challenger, challenger);
+    let challenge_claimable_at_height = pending_challenge.claimable_at_height;
+    assert_eq!(
+        challenge_claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+
+    chain.set_position_for_testing(challenge_claimable_at_height, 1);
+    assert!(
+        chain
+            .release_matured_challenge_rewards()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(challenger))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ChallengeRewardReleased {
+            challenger: event_challenger,
+            amount,
+            ..
+        } if *event_challenger == challenger && *amount == challenger_reward
+    )));
+    assert_eq!(
+        chain.state().accounts().get(&challenger).unwrap().balance,
+        challenger_reward
+    );
 }
 
 #[test]

@@ -524,10 +524,7 @@ pub fn apply_network_block_check_challenge_payload(
                 .get(&challenge.block_hash)
                 .cloned()
         });
-    let Some(challenged_block) = challenged_block else {
-        return NetworkPayloadApply::Pending;
-    };
-    if !prepare_block_check_challenge_reward(chain, &challenged_block) {
+    if challenged_block.is_none() {
         return NetworkPayloadApply::Pending;
     }
     chain
@@ -606,10 +603,7 @@ pub fn apply_network_observed_block_check_challenge_payload(
     if let Some(parent_state) = parent_state {
         chain.set_block_parent_state_for_admission(block_hash, parent_state);
     }
-    let Some(observed_block) = chain.observed_invalid_blocks.get(&block_hash).cloned() else {
-        return NetworkPayloadApply::Pending;
-    };
-    if !prepare_block_check_challenge_reward(chain, &observed_block) {
+    if !chain.observed_invalid_blocks.contains_key(&block_hash) {
         return NetworkPayloadApply::Pending;
     }
     apply_network_block_check_challenge_payload(
@@ -619,29 +613,6 @@ pub fn apply_network_observed_block_check_challenge_payload(
         challenger,
         challenge_payload,
     )
-}
-
-fn block_check_challenge_reward_ready(chain: &Chain, block: &crate::chain::TensorBlock) -> bool {
-    chain
-        .state()
-        .pending_proposer_rewards()
-        .get(&block.height)
-        .is_some_and(|reward| reward.proposer == block.proposer && !reward.voided_by_challenge)
-}
-
-fn prepare_block_check_challenge_reward(
-    chain: &mut Chain,
-    block: &crate::chain::TensorBlock,
-) -> bool {
-    if !chain
-        .blocks()
-        .iter()
-        .any(|stored| stored.hash() == block.hash())
-    {
-        return true;
-    }
-    chain.materialize_finalized_proposer_rewards();
-    block_check_challenge_reward_ready(chain, block)
 }
 
 pub fn attestation_announcement_hash(attestation: &ValidatorAttestation) -> Hash {

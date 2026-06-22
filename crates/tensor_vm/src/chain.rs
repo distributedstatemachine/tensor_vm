@@ -266,10 +266,6 @@ impl Chain {
         self.apply_command(ChainCommand::SubmitBlockCheckChallenge(challenge))
     }
 
-    pub(crate) fn materialize_finalized_proposer_rewards(&mut self) {
-        blocks::materialize_finalized_proposer_rewards(&mut self.state, &self.blocks, &self.params);
-    }
-
     pub fn deterministic_bad_block_check_challenge(
         &self,
         block: &TensorBlock,

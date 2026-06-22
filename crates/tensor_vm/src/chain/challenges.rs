@@ -1,5 +1,5 @@
 use super::state::{BlockCheckChallengeRecord, ChainState, PendingChallengeReward, TensorBlock};
-use super::{Chain, settlement};
+use super::{Chain, blocks, settlement};
 use crate::challenge::{BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome};
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
@@ -247,6 +247,13 @@ pub fn submit_block_check(
         .blocks
         .iter()
         .any(|canonical| canonical.hash() == challenge.block_hash);
+    if canonical_block {
+        blocks::materialize_finalized_proposer_rewards(
+            &mut chain.state,
+            &chain.blocks,
+            &chain.params,
+        );
+    }
     let pending_amount = if canonical_block {
         chain
             .state

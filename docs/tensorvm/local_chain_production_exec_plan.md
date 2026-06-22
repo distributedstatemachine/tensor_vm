@@ -51,6 +51,51 @@ checkpoint before edits.
 
 ## Recent Iterations
 
+### Iteration 159: Chain-Owned Delayed Challenge Rewards
+
+Commit: pending.
+
+Feature capability: `SubmitBlockCheckChallenge` should create or consume the canonical delayed proposer
+reward claim before resolving a canonical block-check challenge, so challenger bounty accounting is a
+state-rooted delayed claim instead of a node/network adapter workaround.
+
+Requirements covered: `mvp_spec.md` reward settlement and block-check challenge sections require challenge
+rewards to release only after maturity; `local_chain_production_readiness.md` requires chain-owned full
+reward-maturity delay for challenge bounties; `goal.md` forbids working around incomplete protocol behavior
+in adapter code.
+
+Canonical owner: chain challenge admission owns delayed reward materialization and voiding. Node payload
+application remains a bounded decode/idempotency adapter and must not force reward materialization as a
+precondition.
+
+Shortcut being removed: `node::payload_application::prepare_block_check_challenge_reward` currently calls
+`materialize_finalized_proposer_rewards()` to make network challenge application succeed. This iteration
+moves that behavior into the chain command path.
+
+Files/modules touched: `crates/tensor_vm/src/chain/challenges.rs`,
+`crates/tensor_vm/src/node/payload_application.rs`, `crates/tensor_vm/src/chain.rs`,
+`crates/tensor_vm/src/chain/tests/challenges.rs`, `docs/tensorvm/upow.md`, and this execution plan.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm canonical_block_check_challenge_materializes_and_delays_reward_in_chain --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm block_check_challenge_payload_application_reports_pending_applied_and_invalid_edges --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm block_check_challenge --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm reward --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm payload_application::tests::block_check --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (517 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+
+Out of scope: trace-bisection p2p wire payloads, interactive dispute chain admission, stake slashing beyond
+the already implemented block-check path, public/CUDA evidence, and any immediate spendable challenge
+credit.
+
 ### Iteration 158: Trace Bisection Dispute Protocol Core
 
 Commit: `6f6344a` (pushed `main` -> `main`).
