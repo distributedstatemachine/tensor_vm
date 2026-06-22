@@ -48,6 +48,7 @@ pub use chain::{
     AccountState, BlockVote, BlockspaceCaps, BlockspaceSelection, Chain, ChainCommand, ChainEngine,
     ChainEvent, ChainParams, ChainState, DeterministicBlockCheckChallenge, HardwareClass, JobState,
     MinerState, ReceiptState, RewardAllocation, RewardState, ValidatorState,
+    verified_drand_beacon_record, verified_drand_source_id,
 };
 pub use challenge::{ChallengeOutcome, FraudChallenge, TensorOpChallengeInput, TraceStep};
 pub use cli::{

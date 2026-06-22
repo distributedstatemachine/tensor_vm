@@ -1,7 +1,6 @@
 use super::{NetworkBlockPayloadApply, NetworkPayloadApply};
-use crate::hash::hex;
 use crate::{
-    chain::{BlockAdmission, Chain, ChainCommand, ChainEngine, JobState},
+    chain::{BlockAdmission, Chain, ChainCommand, ChainEngine, JobState, verified_drand_source_id},
     challenge::block_check_challenge_id,
     p2p::{
         decode_attestation_payload, decode_block_check_challenge_payload,
@@ -395,14 +394,6 @@ pub fn apply_network_verified_drand_beacon_payload(
         })
         .map(|_| NetworkPayloadApply::Applied)
         .unwrap_or(NetworkPayloadApply::Invalid)
-}
-
-pub fn verified_drand_source_id(public_key: &[u8]) -> String {
-    let public_key_hash = hash_bytes(
-        b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
-        &[public_key],
-    );
-    format!("{}{}", VERIFIED_DRAND_SOURCE_PREFIX, hex(&public_key_hash))
 }
 
 pub fn apply_network_validator_vrf_reveal_payload(

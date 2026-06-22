@@ -433,9 +433,9 @@ mod tests {
         chain::{
             BlockVote, Chain, ChainCommand, ChainEngine, ChainParams,
             ExternalRandomnessBeaconProof, JobState, ValidatorAuditReport,
+            verified_drand_source_id,
         },
         jobs::{MatmulJob, PrimitiveType, TensorOpReceipt},
-        node::verified_drand_source_id,
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload,
             encode_block_payload_with_selected_receipts, encode_external_randomness_beacon_payload,

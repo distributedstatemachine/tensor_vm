@@ -1,5 +1,33 @@
 use super::*;
 
+const VERIFIED_DRAND_PUBLIC_KEY_HEX: &str = "8200fc249deb0148eb918d6e213980c5d01acd7fc251900d9260136da3b54836ce125172399ddc69c4e3e11429b62c11";
+const VERIFIED_DRAND_SIGNATURE_HEX: &str = "94f6b85df7cce7237e8e7df66d794ddad092de5d8bb6a791b97e905aa89852e506ac36a792eba7021e22eebf34891f8914bf9a8dd9233ea0a4c5ca00ef8404999f899073dd2eade61fe54077fee8168f83dcb61a758b6883b38904054e64a433";
+const VERIFIED_DRAND_WRONG_SIGNATURE_HEX: &str = "86ecea71376e78abd19aaf0ad52f462a6483626563b1023bd04815a7b953da888c74f5bf6ee672a5688603ab310026230522898f33f23a7de363c66f90ffd49ec77ebf7f6c1478a9ecd6e714b4d532ab43d044da0a16fed13b4791d7fc999e2b";
+
+fn hex_bytes(input: &str) -> Vec<u8> {
+    assert_eq!(input.len() % 2, 0);
+    input
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16).expect("hex high nibble");
+            let low = (pair[1] as char).to_digit(16).expect("hex low nibble");
+            ((high << 4) | low) as u8
+        })
+        .collect()
+}
+
+fn verified_drand_vector() -> (u64, Vec<u8>, Vec<u8>, tensor_vm::types::Hash) {
+    (
+        223_344,
+        hex_bytes(VERIFIED_DRAND_PUBLIC_KEY_HEX),
+        hex_bytes(VERIFIED_DRAND_SIGNATURE_HEX),
+        hex_bytes("f3d6adf1daa2c7877f90fb0f1a675ab0a42653a1e2a9b66fee0749d47a47bc57")
+            .try_into()
+            .unwrap(),
+    )
+}
+
 #[test]
 fn role_runtime_read_only_rpc_does_not_persist_chain() {
     let data_dir = unique_temp_data_dir("role-runtime-read-only-rpc");
@@ -126,6 +154,110 @@ fn role_runtime_external_randomness_beacon_tick_persists_chain_and_status() {
     assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
     assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
     assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 0);
+
+    drop(runtime);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn role_runtime_verified_drand_beacon_tick_persists_chain_and_status() {
+    let data_dir = unique_temp_data_dir("role-runtime-verified-drand");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let mut config = test_service_runtime_config(&data_dir, "secret");
+    let (round, public_key, signature, expected_randomness) = verified_drand_vector();
+    config.randomness_beacon =
+        RandomnessBeaconRuntimeConfig::verified_drand(round, public_key, signature).unwrap();
+    let expected_source_id = config.randomness_beacon.source_id.clone();
+    let expected_proof_hash = config.randomness_beacon.proof_hash;
+    let chain = config
+        .node
+        .build_chain(hash_bytes(b"test", &[b"runtime-verified-drand"]));
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+
+    let mut runtime = RoleRuntimeLoop::start(config).unwrap();
+    runtime.tick_randomness_beacon_once().unwrap();
+    let persisted = store.load_chain().unwrap();
+    assert_eq!(persisted.state().finalized_beacon_round(), round);
+    assert_eq!(
+        persisted.state().finalized_randomness(),
+        expected_randomness
+    );
+    let record = persisted
+        .state()
+        .external_randomness_beacons()
+        .get(&round)
+        .expect("verified drand record must be persisted");
+    assert_eq!(record.source_id, expected_source_id);
+    assert_eq!(record.randomness, expected_randomness);
+    assert_eq!(record.proof_hash, expected_proof_hash);
+    assert!(matches!(
+        record.proof,
+        tensor_vm::chain::ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 { .. }
+    ));
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(
+        report_field(&status, "role_randomness_beacon_mode"),
+        "verified_drand"
+    );
+    assert_eq!(
+        report_field(&status, "role_randomness_latest_source_id"),
+        expected_source_id
+    );
+    assert_eq!(report_u64(&status, "role_randomness_latest_round"), round);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 0);
+    assert_eq!(report_u64(&status, "role_randomness_beacon_failures"), 0);
+
+    runtime.tick_randomness_beacon_once().unwrap();
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 0);
+
+    drop(runtime);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn role_runtime_verified_drand_beacon_tick_records_invalid_signature_failure() {
+    let data_dir = unique_temp_data_dir("role-runtime-verified-drand-invalid");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let mut config = test_service_runtime_config(&data_dir, "secret");
+    let (round, public_key, signature, _) = verified_drand_vector();
+    config.randomness_beacon =
+        RandomnessBeaconRuntimeConfig::verified_drand(round, public_key, signature).unwrap();
+    config.randomness_beacon.drand_signature = hex_bytes(VERIFIED_DRAND_WRONG_SIGNATURE_HEX);
+    let chain = config
+        .node
+        .build_chain(hash_bytes(b"test", &[b"runtime-verified-drand-invalid"]));
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+
+    let mut runtime = RoleRuntimeLoop::start(config).unwrap();
+    runtime.tick_randomness_beacon_once().unwrap();
+    let persisted = store.load_chain().unwrap();
+    assert_eq!(persisted.state().finalized_beacon_round(), 0);
+    assert!(
+        persisted
+            .state()
+            .external_randomness_beacons()
+            .get(&round)
+            .is_none()
+    );
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(
+        report_field(&status, "role_randomness_beacon_mode"),
+        "verified_drand"
+    );
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 0);
+    assert_eq!(report_u64(&status, "role_randomness_beacon_failures"), 1);
+    assert!(
+        report_field(&status, "role_randomness_last_error")
+            .contains("drand signature verification failed")
+    );
 
     drop(runtime);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");

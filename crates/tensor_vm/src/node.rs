@@ -11,7 +11,6 @@ pub use payload_application::{
     apply_network_job_payload, apply_network_receipt_payload,
     apply_network_validator_audit_report_payload, apply_network_validator_vrf_reveal_payload,
     apply_network_verified_drand_beacon_payload, attestation_announcement_hash,
-    verified_drand_source_id,
 };
 pub use payload_processor::{
     ChainNetworkPayloadProcessor, NetworkBlockPayloadApply, NetworkEventContext,

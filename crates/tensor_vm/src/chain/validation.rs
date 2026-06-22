@@ -5,6 +5,7 @@ use super::{
     ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorVrfRevealRecord, blocks, settlement,
 };
 use crate::error::{Result, TvmError};
+use crate::hash::hex;
 use crate::scheduler::JobScheduler;
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use crate::verify::{ValidatorAttestation, VerificationResult};
@@ -51,6 +52,30 @@ pub fn submit_verified_drand_beacon(
     public_key: Vec<u8>,
     signature: Vec<u8>,
 ) -> Result<ExternalRandomnessBeaconRecord> {
+    let record = verified_drand_beacon_record(
+        source_id,
+        beacon_round,
+        &public_key,
+        &signature,
+        chain.state.height,
+    )?;
+    record_external_randomness_beacon(
+        chain,
+        record.source_id,
+        record.beacon_round,
+        record.randomness,
+        record.proof_hash,
+        record.proof,
+    )
+}
+
+pub fn verified_drand_beacon_record(
+    source_id: String,
+    beacon_round: u64,
+    public_key: &[u8],
+    signature: &[u8],
+    observed_at_height: u64,
+) -> Result<ExternalRandomnessBeaconRecord> {
     if public_key.len() != DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES {
         return Err(TvmError::InvalidReceipt("drand public key length mismatch"));
     }
@@ -88,19 +113,27 @@ pub fn submit_verified_drand_beacon(
             &randomness,
         ],
     );
-    record_external_randomness_beacon(
-        chain,
+    Ok(ExternalRandomnessBeaconRecord {
         source_id,
         beacon_round,
         randomness,
         proof_hash,
-        ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+        proof: ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
             public_key_hash,
             signature_hash,
             public_key_len: DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES as u64,
             signature_len: DRAND_PEDERSEN_BLS_SIGNATURE_BYTES as u64,
         },
-    )
+        observed_at_height,
+    })
+}
+
+pub fn verified_drand_source_id(public_key: &[u8]) -> String {
+    let public_key_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
+        &[public_key],
+    );
+    format!("drand-pedersen-bls-unchained-v1:{}", hex(&public_key_hash))
 }
 
 fn record_external_randomness_beacon(
