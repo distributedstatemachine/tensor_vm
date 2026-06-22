@@ -565,6 +565,7 @@ fn claim_matured_rewards_for_beneficiary(
         true,
         Some(beneficiary),
         false,
+        false,
     ));
     events.extend(release_matured_challenge_rewards_for_beneficiary(
         state,
@@ -582,6 +583,9 @@ fn prune_matured_voided_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     events.extend(release_matured_proposer_rewards_for_beneficiary(
         state, None, true,
+    ));
+    events.extend(release_matured_receipt_rewards_with_policy(
+        state, true, true, None, true, true,
     ));
     events.extend(release_matured_challenge_rewards_for_beneficiary(
         state, None, true,
@@ -636,7 +640,7 @@ fn release_matured_proposer_rewards_for_beneficiary(
 }
 
 fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
-    release_matured_receipt_rewards_with_policy(state, true, false, None, true)
+    release_matured_receipt_rewards_with_policy(state, true, false, None, true, false)
 }
 
 fn release_matured_receipt_rewards_with_policy(
@@ -645,6 +649,7 @@ fn release_matured_receipt_rewards_with_policy(
     hold_unresolved_validator_audits: bool,
     beneficiary_filter: Option<Address>,
     prunable_only: bool,
+    automatic_prunable_only: bool,
 ) -> Vec<ChainEvent> {
     let mut events = Vec::new();
     let matured = state
@@ -653,12 +658,19 @@ fn release_matured_receipt_rewards_with_policy(
         .filter(|(_, reward)| {
             let prunable_without_credit =
                 receipt_reward_can_be_pruned_without_credit(state, reward);
+            let automatically_prunable_without_credit =
+                receipt_reward_can_be_automatically_pruned_without_credit(state, reward);
             (reward.is_mature_at(state.height)
                 || (prunable_without_credit && reward.hold_mature_at(state.height)))
                 && state.included_receipts.contains(&reward.receipt_id)
                 && (prunable_without_credit
                     || validator_receipt_reward_has_vrf_reveal(state, reward))
-                && (!prunable_only || prunable_without_credit)
+                && (!prunable_only
+                    || if automatic_prunable_only {
+                        automatically_prunable_without_credit
+                    } else {
+                        prunable_without_credit
+                    })
                 && (prune_voided || !reward.voided_by_challenge)
                 && !(hold_unresolved_validator_audits
                     && unresolved_validator_audit_blocks_reward_release(state, reward))
@@ -709,6 +721,14 @@ fn receipt_reward_can_be_pruned_without_credit(
     reward: &PendingReceiptReward,
 ) -> bool {
     reward.voided_by_challenge || state.data_unavailable_receipts.contains(&reward.receipt_id)
+}
+
+fn receipt_reward_can_be_automatically_pruned_without_credit(
+    state: &ChainState,
+    reward: &PendingReceiptReward,
+) -> bool {
+    state.data_unavailable_receipts.contains(&reward.receipt_id)
+        || (reward.kind == ReceiptRewardKind::Miner && reward.voided_by_challenge)
 }
 
 fn validator_receipt_reward_has_vrf_reveal(

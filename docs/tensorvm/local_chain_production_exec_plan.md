@@ -5,8 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 175 complete: Admitted-Op Conformance Identity Guard.
-- Current status: deterministic `F_p` conformance vectors now have unique identity checks, every
+- Active feature: Iteration 176 complete: Direct Voided Receipt Reward Pruning.
+- Current status: automatic block-state reward pruning now uses the receipt reward maturity policy for
+  auto-prunable verifier-dependent receipt claims: voided miner claims and unavailable-data claims. Valid
+  matured claims remain non-spendable pending claims until beneficiary `ClaimReward`, and voided validator
+  audit claims stay on the explicit appeal-aware release path. Deterministic `F_p` conformance vectors now
+  have unique identity checks, every
   consensus-admitted frozen registry op must have vector and CPU profile evidence, and any non-registry
   conformance vector/profile entry must be explicitly marked as an auxiliary verifier vector. Delayed
   proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
@@ -26,7 +30,7 @@ archive commit anchors only.
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 173 first command and pre-commit rerun of `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 176 first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -40,6 +44,68 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 176: Direct Voided Receipt Reward Pruning
+
+Feature capability: automatic block-state matured-reward pruning now directly covers auto-prunable
+receipt reward claims without using spendable-balance release as a workaround. Voided miner receipt claims
+and data-unavailable receipt claims can be pruned without credit during block projection; valid matured
+proposer, receipt, challenge, and generic credit claims remain non-spendable until the beneficiary calls
+`ClaimReward`; voided validator-audit receipt claims remain on the explicit appeal-aware release path.
+
+Readiness requirements covered: `upow.md` reward-finality delay and `mvp_spec.md` delayed-reward state:
+verifier-dependent receipt rewards stay pending through the challenge/audit window, invalidated claims are
+voided before release, and matured voided claims are pruned without spendable credit.
+
+Canonical owner: `crates/tensor_vm/src/chain/commands.rs` owns the shared reward claim/prune policy.
+Block projection calls the shared automatic prune helper after advancing height; explicit beneficiary
+claims remain the only live-reward credit path.
+
+Adapter callers: `blocks.rs` calls `release_all_matured_rewards` during child-state projection.
+Transaction/RPC callers still use `ChainCommand::ClaimReward` or the explicit release commands.
+
+Old shortcut being removed: automatic matured-reward pruning skipped receipt claims that were already
+safe to prune without credit, leaving voided miner/data-unavailable receipt claim cleanup to explicit
+release/claim paths rather than the shared consensus projection helper.
+
+Regression test that proves the shortcut is gone:
+`chain::tests::rewards::automatic_matured_reward_prune_removes_only_auto_prunable_receipt_claims`.
+
+Behavior with local synthetic block production disabled: unchanged; this is a chain-state reward
+lifecycle rule used by both local and network block validation.
+
+Behavior for producer and non-producer roles: unchanged; both roles validate projected state through the
+same chain transition and reward root.
+
+Structured evidence source: focused reward regression, reward module tests, release local-testnet gate,
+and this exec plan.
+
+Finality source: unchanged; delayed claims remain state-rooted until maturity and beneficiary claim, while
+auto-prunable voided/unavailable receipt rewards are removed only after their hold matures.
+
+Wire-size and codec boundary: unchanged; no p2p/RPC/storage codec changes.
+
+Tests/checkers/docs to add or update: focused reward regression and exec plan.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm chain::tests::rewards --lib` passed: 18 reward lifecycle tests.
+- `cargo test -p tensor_vm mandatory_validator_audit_assignment_missed_slashes_once_on_block_apply --lib`
+  passed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 541 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered
+  `tvmd_cli` local-testnet gateway test.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 556
+  instrumented tests, 84.48% workspace line coverage, 22580/26727 lines covered.
+- Manual verifier-style review: no standalone verifier binary was used or added; the change stays inside
+  chain reward-prune policy, preserves `ClaimReward` as the only live-reward credit path, and keeps
+  validator-audit voided claims on the existing appeal-aware explicit release path.
+
+Out of scope: public deployment evidence, CUDA evidence, new verifier binaries, and changing challenge
+economics.
 
 ### Iteration 175: Admitted-Op Conformance Identity Guard
 

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 175 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 176 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,23 +9,24 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-555 tests passed under instrumentation:
+556 tests passed under instrumentation:
 - 14 experiments library tests
-- 540 tensor_vm library tests
+- 541 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.48% workspace line coverage
-22570/26717 workspace lines covered
+22580/26727 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
-Iteration 175 coverage-changing work added conformance identity guard tests for unique vector IDs,
-registry-derived admitted-op coverage, and explicit auxiliary non-registry vector/profile boundaries. The
-line-coverage percentage remains lower than the old May 23, 2026 report because the current workspace
-includes substantially more runtime, deployment, public-evidence, and libp2p surface area in the
-denominator.
+Iteration 176 coverage-changing work added automatic matured reward-prune coverage for auto-prunable
+receipt claims: live matured receipt rewards remain pending until `ClaimReward`, voided miner receipt
+claims are pruned without credit, and voided validator-audit claims stay on the appeal-aware explicit
+release path. The line-coverage percentage remains lower than the old May 23, 2026 report because the
+current workspace includes substantially more runtime, deployment, public-evidence, and libp2p surface
+area in the denominator.
 
 Historical report:
 
@@ -189,6 +190,10 @@ decode validation, exact replay, and unchanged conformance vectors.
 Iteration 175 strengthens admitted-op conformance identity evidence. Focused conformance tests now require
 unique vector IDs, registry-derived coverage for every consensus-admitted frozen op, and an explicit
 auxiliary boundary for non-registry verifier vectors such as LinearTrainingStep `mse_loss`.
+Iteration 176 strengthens direct delayed-reward pruning evidence. Focused reward and validator-audit tests
+cover automatic pruning of voided miner receipt claims without spendable credit, preservation of live
+matured receipt claims until beneficiary `ClaimReward`, and preservation of voided validator-audit claims
+for the explicit appeal-aware release path.
 Iteration 117 adds external graph artifact propagation evidence. Focused node and libp2p tests cover
 valid graph job payloads staying pending while their graph body is missing, runtime retry after program
 registration, and loopback request-response fetching of graph program plus input tensor artifacts before

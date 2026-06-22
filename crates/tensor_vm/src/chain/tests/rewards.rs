@@ -1266,6 +1266,83 @@ fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
 }
 
 #[test]
+fn automatic_matured_reward_prune_removes_only_auto_prunable_receipt_claims() {
+    let beacon = hash_bytes(b"test", &[b"reward-voided-receipt-auto-prune"]);
+    let mut chain = Chain::new(beacon);
+    let beneficiary = address(b"reward-voided-receipt-auto-prune-beneficiary");
+    let live_receipt_id = hash_bytes(b"test", &[b"reward-live-receipt"]);
+    let voided_miner_receipt_id = hash_bytes(b"test", &[b"reward-voided-miner-receipt"]);
+    let voided_validator_receipt_id = hash_bytes(b"test", &[b"reward-voided-validator-receipt"]);
+    let live_claim_id = hash_bytes(b"test", &[b"reward-live-receipt-claim"]);
+    let voided_miner_claim_id = hash_bytes(b"test", &[b"reward-voided-miner-receipt-claim"]);
+    let voided_validator_claim_id =
+        hash_bytes(b"test", &[b"reward-voided-validator-receipt-claim"]);
+
+    chain.set_position_for_testing(20, 0);
+    chain.state.included_receipts.insert(live_receipt_id);
+    chain
+        .state
+        .included_receipts
+        .insert(voided_miner_receipt_id);
+    chain
+        .state
+        .included_receipts
+        .insert(voided_validator_receipt_id);
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: live_claim_id,
+        receipt_id: live_receipt_id,
+        beneficiary,
+        amount: 13,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::ClaimableAt(5),
+        voided_by_challenge: false,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: voided_miner_claim_id,
+        receipt_id: voided_miner_receipt_id,
+        beneficiary,
+        amount: 17,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::ClaimableAt(5),
+        voided_by_challenge: true,
+    });
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: voided_validator_claim_id,
+        receipt_id: voided_validator_receipt_id,
+        beneficiary,
+        amount: 19,
+        kind: ReceiptRewardKind::Validator,
+        maturity: ReceiptRewardMaturity::AwaitingValidatorVrfReveal(5),
+        voided_by_challenge: true,
+    });
+
+    let events = crate::chain::commands::release_all_matured_rewards(&mut chain.state);
+    assert!(events.is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .contains_key(&live_claim_id),
+        "live matured verifier-dependent rewards stay pending until ClaimReward"
+    );
+    assert!(
+        !chain
+            .state()
+            .pending_receipt_rewards()
+            .contains_key(&voided_miner_claim_id),
+        "voided matured miner receipt rewards are pruned without credit"
+    );
+    assert!(
+        chain
+            .state()
+            .pending_receipt_rewards()
+            .contains_key(&voided_validator_claim_id),
+        "voided validator receipt rewards keep their appeal-aware explicit release path"
+    );
+    assert_eq!(chain.state().rewards().balance(&beneficiary), 0);
+}
+
+#[test]
 fn reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim() {
     let beacon = hash_bytes(b"test", &[b"reward-claim-boundary"]);
     let mut chain = Chain::new(beacon);
