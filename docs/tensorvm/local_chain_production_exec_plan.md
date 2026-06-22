@@ -5,8 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 176 complete: Direct Voided Receipt Reward Pruning.
-- Current status: automatic block-state reward pruning now uses the receipt reward maturity policy for
+- Active feature: Iteration 177 complete: Graph Receipt Pending Program Boundary.
+- Current status: network graph receipt payloads now wait on missing canonical program bodies instead of
+  being misclassified as invalid when the graph job is already known through a direct/local state path.
+  Automatic block-state reward pruning uses the receipt reward maturity policy for
   auto-prunable verifier-dependent receipt claims: voided miner claims and unavailable-data claims. Valid
   matured claims remain non-spendable pending claims until beneficiary `ClaimReward`, and voided validator
   audit claims stay on the explicit appeal-aware release path. Deterministic `F_p` conformance vectors now
@@ -22,15 +24,14 @@ archive commit anchors only.
   verdicts, timeout settlement, slashing, and delayed challenger rewards.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue CUDA/public deployment evidence, generic arbitrary-IR job admission and role
-  execution, or remaining trace-dispute hardening without treating roadmap trace-bisection work as a v0
-  blocker.
+- Next action: continue generic arbitrary-IR role/network evidence, CUDA/public deployment evidence, or
+  remaining v0 verifier coverage without treating roadmap trace-bisection work as a v0 blocker.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 176 first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 177 first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -44,6 +45,69 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 177: Graph Receipt Pending Program Boundary
+
+Feature capability: network graph receipt payloads become order-tolerant at the same canonical program
+boundary as graph job payloads. If a `GraphExecution` receipt arrives after the job/miner are known but
+before the registered `program_body`, node payload application returns `Pending` so existing program-fetch
+and pending-retry paths can admit the receipt once the canonical graph body is available.
+
+Readiness requirements covered: `upow.md` §4.5-§4.6 content-addressed Tensor IR graph admission and
+`mvp_spec.md` canonical runtime/transition boundary for jobs, receipts, and p2p/node ingestion.
+
+Canonical owner: chain admission remains `ChainCommand::SubmitReceipt` and `chain::receipts` validation;
+node payload application only classifies missing dependencies as pending before submitting to the chain.
+
+Adapter callers: p2p/node event ingestion, pending-payload retry, and runtime graph artifact fetch paths
+call `apply_network_receipt_payload`.
+
+Old shortcut being removed: graph receipt payloads could be rejected as invalid merely because the
+canonical graph body had not arrived yet, even though graph job payloads already used a pending dependency
+boundary for the same missing program body.
+
+Regression test that proves the shortcut is gone: add a node payload-application test where a graph job is
+known, the graph receipt payload arrives first and returns `Pending`, registering the graph body makes the
+same payload `Applied`, and conflicting payloads still reject.
+
+Behavior with local synthetic block production disabled: unchanged; this is inbound network dependency
+classification and applies regardless of producer capability.
+
+Behavior for producer and non-producer roles: both producers and non-producers share the same node payload
+application path and pending retry semantics.
+
+Structured evidence source: focused node payload-application test, existing graph job pending-program
+test, exec plan, and tarpaulin report after validation.
+
+Finality source: unchanged; no block/finality mutation.
+
+Wire-size and codec boundary: unchanged; no new p2p message or codec. Existing bounded receipt payloads
+are decoded before dependency classification.
+
+Tests/checkers/docs to add or update: focused node payload application test, exec plan, and tarpaulin
+report if coverage changes.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm graph_receipt_payload_waits_for_registered_program_body --lib -- --nocapture`
+  passed.
+- `cargo test -p tensor_vm node::payload_application --lib` passed: 19 node payload tests.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 542 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered
+  `tvmd_cli` local-testnet gateway test.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 557
+  instrumented tests, 84.49% workspace line coverage, 22588/26736 lines covered.
+- Manual verifier-style review: no standalone verifier binary was used or added; the change stays in node
+  dependency classification, uses existing bounded receipt payload decoding, preserves
+  `ChainCommand::SubmitReceipt` as canonical graph receipt admission, and adds no new wire format.
+
+Out of scope: new graph-program gossip message, CUDA graph execution evidence, public deployment evidence,
+and changing graph receipt verification semantics.
+
+## Recent Iterations
 
 ### Iteration 176: Direct Voided Receipt Reward Pruning
 
@@ -109,141 +173,6 @@ Validation completed on June 22, 2026:
 Out of scope: public deployment evidence, CUDA evidence, new verifier binaries, and changing challenge
 economics.
 
-### Iteration 175: Admitted-Op Conformance Identity Guard
-
-Feature capability: tighten the v0 deterministic `F_p` conformance evidence by making vector IDs unique,
-asserting that every conformance vector op is either registry-admitted or explicitly auxiliary, and proving
-that the CPU reference profile exactly matches the vector op set with the same auxiliary boundary.
-
-Readiness requirements covered: `upow.md` §3.3 per-op `F_p` conformance vectors and §4.7-§4.9 frozen
-registry admission gates for exact v0 ops.
-
-Canonical owner: `crates/tensor_vm/src/conformance.rs` owns the vector suite, stable hash, and CPU profile;
-receipt/graph verifiers continue to consume `ConformanceProfile` rather than reimplementing suite policy.
-
-Adapter callers: `verify.rs` and `runtime::backend_conformance_profile` consume the profile. No network,
-storage, or consensus command boundary changes are expected.
-
-Old shortcut being removed: vector/profile evidence could be weakened by duplicate vector IDs or by
-non-registry vector/profile entries that were not explicitly identified as auxiliary verifier-only
-coverage.
-
-Regression test that proves the shortcut is gone: conformance tests will reject duplicate vector IDs and
-will reject non-admitted vector/profile entries unless they are explicitly listed as auxiliary.
-
-Behavior with local synthetic block production disabled: unchanged; this is a verifier/conformance gate.
-
-Behavior for producer and non-producer roles: unchanged; both roles consume the same verifier profile when
-validating receipts/graph executions.
-
-Structured evidence source: conformance test names, coverage matrix, tarpaulin report, and this exec plan.
-
-Finality source: unchanged; no block/finality mutation in this slice.
-
-Wire-size and codec boundary: unchanged; no p2p/RPC/storage codec changes.
-
-Tests/checkers/docs to add or update: focused conformance tests, coverage matrix, tarpaulin report, and
-exec plan.
-
-Validation completed on June 22, 2026:
-- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
-- `cargo test -p tensor_vm conformance --lib -- --nocapture` passed: 10 focused conformance/profile tests.
-- `cargo fmt --all -- --check` passed.
-- `git diff --check` passed.
-- `cargo test -p tensor_vm --lib` passed: 540 tests.
-- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered `tvmd_cli`
-  local-testnet gateway test.
-- `cargo clippy --workspace --all-targets -- -D warnings` passed.
-- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 555
-  instrumented tests, 84.48% workspace line coverage, 22570/26717 lines covered.
-- Manual verifier-style review: conformance remains owned by `conformance.rs`; verifiers consume the same
-  profile interface; no adapter, network, storage, or consensus command path was changed.
-- Feature commit `e45c876` plus metadata commit `b3c4bf9` pushed to `main` on June 22, 2026:
-  `git push` returned `c069f07..b3c4bf9  main -> main`.
-
-Out of scope: CUDA conformance execution, adding new admitted ops, generic arbitrary-IR job admission,
-public deployment evidence, and trace-bisection DoS policy.
-
-Split trigger: if exact admitted-op profile matching exposes missing execution support for an op, split the
-missing op implementation/vector work into a separate feature-sized iteration.
-
-### Iteration 174: Runtime Trace-Bisection Referee Witness Generation
-
-Feature capability: a validator/challenger node with local graph evidence automatically derives an
-isolated one-op referee witness from canonical graph replay when the isolated session's stored opening
-input roots match the generated witness, submits `ChainCommand::RefereeTraceBisection`, and gossips the
-existing bounded referee payload. This removes the manual referee step for referrable isolated transcripts
-without adding or depending on any standalone verifier binary.
-
-Readiness requirements covered: `upow.md` §16 trace-bisection fraud-proof lifecycle and `mvp_spec.md`
-§38 v1 fraud-proof path for single invalid op proof after interactive bisection.
-
-Canonical owner: chain admission remains `ChainCommand::RefereeTraceBisection`; runtime only derives the
-witness from local graph inputs and submits/publishes it. P2P/node boundaries continue using the existing
-`NewTraceBisectionRefereePayload` codec and pending-queue application.
-
-Verifier reality check: no `tensorvm-verifier` binary exists in this repository. Validation for this slice
-will use cargo/tarpaulin evidence plus manual verifier-style review of the chain/runtime boundaries.
-
-Runtime behavior: validator ticks now run the referee candidate after session-open and expected-root
-submission. Successful submissions are persisted, published over the existing bounded referee payload, and
-reported through `validator_trace_bisection_referees_submitted` and
-`role_validator_trace_bisection_referees_submitted` status fields.
-
-Validation completed on June 22, 2026:
-- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
-- `cargo test -p tensor_vm trace_bisection_referee_generation_requires_challenger_and_local_witness --lib -- --nocapture` passed.
-- `cargo test -p tensor_vm exact_interpreter_executes_hand_built_graph_and_commits_trace --lib -- --nocapture` passed.
-- `cargo test -p tensor_vm trace_bisection --lib -- --nocapture` passed: 23 tests.
-- `cargo test -p tensor_vm runtime_state_tracks_loop_counters --lib -- --nocapture` passed.
-- `cargo fmt --all -- --check` passed.
-- `cargo check --all-targets` passed.
-- `git diff --check` passed.
-- `cargo clippy --workspace --all-targets -- -D warnings` passed after mechanical cleanup of current-toolchain clippy warnings.
-- `cargo test -p tensor_vm --lib` passed: 538 tests.
-- `cargo test -p tensor_vm local_testnet --release` passed: 5 release lib tests plus the filtered `tvmd_cli` local-testnet gateway test.
-- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 84.48% line coverage.
-- Manual verifier-style review: there is no standalone verifier binary. Runtime only materializes witness
-  inputs from local graph replay and submits the existing chain-owned `RefereeTraceBisection` command;
-  chain admission still validates op index, input roots, canonical op output roots, slashing, and delayed
-  challenger reward settlement.
-- Feature commit `b5bf0d9` pushed to `main` on June 22, 2026:
-  `git push` returned `2d353a8..b5bf0d9  main -> main`.
-
-Out of scope: adding a standalone verifier binary, changing trace-bisection economics, multi-round DoS
-policy, incomplete-transcript final-opening automation when isolation advances past the last opened op, and
-public/CUDA deployment evidence.
-
-## Recent Iterations
-
-### Iteration 173: Reward Claim Boundary Regression Hardening
-
-Feature capability: matured reward sweeps cannot be used as a workaround for verifier-dependent reward
-finality. Validation covered the reward-boundary regression, reward module tests, fmt/check/diff, lib
-tests, release local-testnet, tarpaulin, and manual review. Feature commit `919f77f` pushed to `main` on
-June 22, 2026.
-
-### Iteration 172: Trace-Bisection Expected-Root Gossip
-
-Feature capability: challenger-signed trace-bisection expected-root claims cross the bounded p2p/node/
-runtime path. A validator/challenger with local graph evidence submits and gossips expectations for the
-active midpoint; non-producers apply or queue through `ChainCommand::SubmitTraceBisectionExpectation`;
-responder rounds remain pending until that canonical expectation arrives.
-
-Validation completed on June 22, 2026: first executable Gate 0, focused expectation/pending/
-trace-bisection/runtime/network tests, fmt/check/diff, `cargo test -p tensor_vm --lib` (536 tests),
-release local-testnet, tarpaulin 84.52%, and manual ownership review all passed.
-
-Feature commit `bbb3d28` pushed to `main` on June 22, 2026:
-`git push` returned `8ff69c1..bbb3d28  main -> main`.
-
-### Iteration 171: Trace-Bisection Challenger Expected Roots
-
-Feature capability: chain-owned challenger expected-root claims are required before responder rounds can
-narrow or isolate trace-bisection disputes; responder-carried branch roots cannot self-select the branch.
-Validation covered focused chain/storage/runtime/p2p tests, fmt/check/diff, lib tests, release
-local-testnet, tarpaulin, and manual review. Feature commit `6901655` pushed to `main` on June 22, 2026.
-
 ## Decision Log
 
 - Gate 0 remains `cargo test -p tensor_vm local_testnet --release` and must be the first executable command
@@ -263,17 +192,28 @@ local-testnet, tarpaulin, and manual review. Feature commit `6901655` pushed to 
 
 ## Validation Evidence
 
-- Iteration 174 validation passed on June 22, 2026: first executable Gate 0; focused referee/IR/runtime
-  state tests; trace-bisection filtered tests; fmt/check/diff; clippy; `cargo test -p tensor_vm --lib`
-  (538 passed); release local-testnet; tarpaulin 84.48%; and manual chain/runtime boundary review.
-  Feature commit `b5bf0d9` pushed to `main` (`2d353a8..b5bf0d9`).
-- Iteration 173 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary and
-  reward module tests; broad fmt/check/diff/lib (537 passed), release local-testnet, tarpaulin 84.52%, and
-  manual review. Feature commit `919f77f` pushed to `main` (`8b94508..919f77f`).
-- Iteration 172 feature commit `bbb3d28` and metadata commit `8b94508` pushed to `main` on June 22, 2026.
+- Iteration 177 validation passed on June 22, 2026: first executable Gate 0; focused graph receipt pending
+  program test; `cargo test -p tensor_vm node::payload_application --lib` (19 passed); fmt/check/diff;
+  `cargo test -p tensor_vm --lib` (542 passed); release local-testnet; clippy; tarpaulin 84.49%
+  (22588/26736); and manual node/chain boundary review.
+- Iteration 176 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary,
+  reward module, and validator-audit regression tests; fmt/check/diff; `cargo test -p tensor_vm --lib`
+  (541 passed); release local-testnet; clippy; tarpaulin 84.48% (22580/26727); and manual review.
+  Feature commit `b96debd` and metadata commit `ee329bc` pushed to `main`.
 
 ## Archive
 
+- Iteration 175 (`e45c876` plus metadata `b3c4bf9`, pushed `main` -> `main`): conformance vector/profile
+  identity guard requiring unique vector IDs, registry-admitted coverage, and explicit auxiliary
+  non-registry verifier vectors.
+- Iteration 174 (`b5bf0d9`, pushed `main` -> `main`): runtime challenger derives one-op
+  trace-bisection referee witnesses from local graph replay and submits/gossips the existing bounded
+  referee payload without adding any standalone verifier binary.
+- Iteration 173 (`919f77f`, pushed `main` -> `main`): reward claim boundary regression hardening proved
+  matured reward sweeps cannot credit verifier-dependent rewards before beneficiary `ClaimReward`.
+- Iterations 171 through 172 (`6901655`, `bbb3d28` plus metadata `8b94508`, pushed `main` -> `main`):
+  chain-owned challenger expected-root claims and bounded gossip prevent responder-carried branch roots
+  from self-selecting trace-bisection branches.
 - Iteration 170 (`d88a14d` plus metadata `04a85d4`, pushed `main` -> `main`): runtime responder round
   generation builds signed midpoint rounds from local graph evidence, applies them through
   `ChainCommand::SubmitTraceBisectionRound`, persists state, publishes bounded round payloads, and reports

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 176 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 177 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,22 +9,22 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-556 tests passed under instrumentation:
+557 tests passed under instrumentation:
 - 14 experiments library tests
-- 541 tensor_vm library tests
+- 542 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.48% workspace line coverage
-22580/26727 workspace lines covered
+84.49% workspace line coverage
+22588/26736 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
-Iteration 176 coverage-changing work added automatic matured reward-prune coverage for auto-prunable
-receipt claims: live matured receipt rewards remain pending until `ClaimReward`, voided miner receipt
-claims are pruned without credit, and voided validator-audit claims stay on the appeal-aware explicit
-release path. The line-coverage percentage remains lower than the old May 23, 2026 report because the
+Iteration 177 coverage-changing work added graph receipt payload dependency coverage: a network
+`GraphExecution` receipt with known job/miner but missing registered program body returns `Pending`, a
+graph-id mismatch still rejects as invalid, and the same payload applies once the canonical graph body is
+registered. The line-coverage percentage remains lower than the old May 23, 2026 report because the
 current workspace includes substantially more runtime, deployment, public-evidence, and libp2p surface
 area in the denominator.
 
@@ -194,6 +194,9 @@ Iteration 176 strengthens direct delayed-reward pruning evidence. Focused reward
 cover automatic pruning of voided miner receipt claims without spendable credit, preservation of live
 matured receipt claims until beneficiary `ClaimReward`, and preservation of voided validator-audit claims
 for the explicit appeal-aware release path.
+Iteration 177 strengthens graph receipt dependency classification. Focused node payload tests cover
+`GraphExecution` receipt payloads waiting for missing registered program bodies, graph-id mismatches
+remaining invalid, and successful admission once the canonical graph body is registered.
 Iteration 117 adds external graph artifact propagation evidence. Focused node and libp2p tests cover
 valid graph job payloads staying pending while their graph body is missing, runtime retry after program
 registration, and loopback request-response fetching of graph program plus input tensor artifacts before

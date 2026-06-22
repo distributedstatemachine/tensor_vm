@@ -1,8 +1,8 @@
 use super::{NetworkBlockPayloadApply, NetworkPayloadApply};
 use crate::{
     chain::{
-        BlockAdmission, Chain, ChainCommand, ChainEngine, JobState, TraceBisectionStatus,
-        verified_chained_drand_source_id, verified_drand_source_id,
+        BlockAdmission, Chain, ChainCommand, ChainEngine, JobState, ReceiptState,
+        TraceBisectionStatus, verified_chained_drand_source_id, verified_drand_source_id,
     },
     challenge::{block_check_challenge_id, trace_bisection_challenge_id},
     p2p::{
@@ -222,6 +222,23 @@ pub fn apply_network_receipt_payload(
         || !chain.state().miners().contains_key(&receipt.miner())
     {
         return NetworkPayloadApply::Pending;
+    }
+    if let ReceiptState::GraphExecution(graph_receipt) = &receipt {
+        let Some(JobState::GraphExecution(graph_job)) =
+            chain.state().jobs().get(&graph_receipt.job_id)
+        else {
+            return NetworkPayloadApply::Invalid;
+        };
+        if graph_receipt.graph_id != graph_job.graph_id {
+            return NetworkPayloadApply::Invalid;
+        }
+        if chain
+            .state()
+            .program_body(&graph_receipt.graph_id)
+            .is_none()
+        {
+            return NetworkPayloadApply::Pending;
+        }
     }
     chain
         .apply_command(ChainCommand::SubmitReceipt(receipt))
@@ -1453,6 +1470,65 @@ mod tests {
                 &encode_receipt_payload(&conflicting),
             ),
             NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn graph_receipt_payload_waits_for_registered_program_body() {
+        let seed = hash_bytes(b"test", &[b"graph-receipt-pending-program"]);
+        let mut source = SyntheticLocalJobSource::default();
+        let graph = SyntheticLocalJobSource::graph_execution_graph();
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+        let mut chain = Chain::new(seed);
+        let miner = address(b"graph-receipt-pending-miner");
+        chain.register_miner(miner, 100).unwrap();
+        let job = source.next_graph_job(&chain);
+        let job_id = job.job_id;
+        let job_state = JobState::GraphExecution(job.clone());
+        assert_eq!(job.graph_id, graph_id);
+        chain.submit_job(job_state);
+
+        let (receipt, _) =
+            GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+        let receipt_id = receipt.receipt_id;
+        let payload = encode_receipt_payload(&ReceiptState::GraphExecution(receipt.clone()));
+
+        assert!(chain.state().program_body(&graph_id).is_none());
+        assert_eq!(
+            chain.state().jobs().get(&job_id),
+            Some(&JobState::GraphExecution(job.clone()))
+        );
+        assert_eq!(
+            apply_network_receipt_payload(&mut chain, receipt_id, &payload),
+            NetworkPayloadApply::Pending
+        );
+        assert!(!chain.state().receipts().contains_key(&receipt_id));
+
+        let mut wrong_graph_receipt = receipt.clone();
+        wrong_graph_receipt.graph_id = hash_bytes(b"test", &[b"wrong-graph-id"]);
+        assert_eq!(
+            apply_network_receipt_payload(
+                &mut chain,
+                wrong_graph_receipt.receipt_id,
+                &encode_receipt_payload(&ReceiptState::GraphExecution(wrong_graph_receipt)),
+            ),
+            NetworkPayloadApply::Invalid
+        );
+
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        assert_eq!(
+            apply_network_receipt_payload(&mut chain, receipt_id, &payload),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            chain.state().receipts().get(&receipt_id),
+            Some(&ReceiptState::GraphExecution(receipt))
         );
     }
 
