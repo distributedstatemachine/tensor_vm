@@ -128,6 +128,7 @@ Validation completed on June 22, 2026:
   instrumented tests, 84.54% line coverage, 22603/26736 lines covered.
 - No standalone verifier binary was used or added; validation used shell checks, Rust tests, clippy, and
   tarpaulin.
+- Commit `92e5602` (`Require graph execution checker evidence`) pushed to `origin/main`.
 
 ### Iteration 179: Graph Verifier Admitted-Op Receipt Coverage
 
