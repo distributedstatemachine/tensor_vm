@@ -161,6 +161,7 @@ fn encode_chain_params(out: &mut Vec<u8>, params: &ChainParams) {
     write_u64(out, params.difficulty_retarget_max_ratio);
     write_u64(out, params.proposer_cooldown_blocks);
     write_u64(out, params.pow_timeout_blocks);
+    write_u64(out, params.public_drand_rounds_per_epoch);
     encode_freivalds_params(out, &params.freivalds);
 }
 
@@ -197,6 +198,7 @@ fn decode_chain_params(reader: &mut StateReader<'_>) -> Result<ChainParams> {
         difficulty_retarget_max_ratio: reader.read_u64()?,
         proposer_cooldown_blocks: reader.read_u64()?,
         pow_timeout_blocks: reader.read_u64()?,
+        public_drand_rounds_per_epoch: reader.read_u64()?,
         freivalds: decode_freivalds_params(reader)?,
     })
 }
@@ -227,6 +229,8 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     write_u64(out, state.finalized_beacon_round());
     write_hash(out, &state.finalized_randomness());
     encode_external_randomness_beacons(out, state.external_randomness_beacons());
+    write_u64(out, state.public_drand_anchor_epoch());
+    write_u64(out, state.public_drand_anchor_round());
     write_u64(out, state.genesis_beacon_round());
     write_hash(out, &state.genesis_randomness());
     encode_accounts(out, state.accounts());
@@ -283,6 +287,8 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         finalized_beacon_round: reader.read_u64()?,
         finalized_randomness: reader.read_hash()?,
         external_randomness_beacons: decode_external_randomness_beacons(reader)?,
+        public_drand_anchor_epoch: reader.read_u64()?,
+        public_drand_anchor_round: reader.read_u64()?,
         genesis_beacon_round: reader.read_u64()?,
         genesis_randomness: reader.read_hash()?,
         accounts: decode_accounts(reader)?,

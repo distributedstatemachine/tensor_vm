@@ -499,6 +499,7 @@ pub fn drand_round_for_unix_time(
     Ok(((unix_time - genesis_time) / period).saturating_add(1))
 }
 
+#[cfg(test)]
 pub fn drand_rounds_per_chain_epoch(
     drand_period: u64,
     block_time_seconds: u64,
@@ -714,12 +715,7 @@ pub fn tick_randomness_beacon_once_with_client(
     runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
     let chain = &mut server.gateway_mut().node.chain;
     if public_drand_poll {
-        let rounds_per_chain_epoch = drand_rounds_per_chain_epoch(
-            config.drand_period,
-            chain.params().block_time_seconds,
-            chain.params().epoch_length,
-        )
-        .unwrap_or_default();
+        let rounds_per_chain_epoch = chain.params().public_drand_rounds_per_epoch.max(1);
         let chain_epoch = chain
             .state()
             .height()

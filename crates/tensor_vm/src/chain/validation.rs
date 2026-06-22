@@ -279,6 +279,13 @@ fn record_external_randomness_beacon(
             "external randomness beacon round already recorded",
         ));
     }
+    let is_chained_drand = matches!(
+        proof,
+        ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 { .. }
+    );
+    if is_chained_drand {
+        validate_public_drand_epoch_round(chain, beacon_round)?;
+    }
     let record = ExternalRandomnessBeaconRecord {
         source_id,
         beacon_round,
@@ -287,6 +294,10 @@ fn record_external_randomness_beacon(
         proof,
         observed_at_height: chain.state.height,
     };
+    if is_chained_drand && chain.state.public_drand_anchor_round == 0 {
+        chain.state.public_drand_anchor_epoch = chain.state.epoch;
+        chain.state.public_drand_anchor_round = beacon_round;
+    }
     chain.state.finalized_beacon_round = beacon_round;
     chain.state.finalized_randomness = randomness;
     chain
@@ -294,6 +305,20 @@ fn record_external_randomness_beacon(
         .external_randomness_beacons
         .insert(beacon_round, record.clone());
     Ok(record)
+}
+
+fn validate_public_drand_epoch_round(chain: &Chain, beacon_round: u64) -> Result<()> {
+    let rounds_per_epoch = chain.params.public_drand_rounds_per_epoch.max(1);
+    if chain
+        .state
+        .public_drand_epoch_round_window(rounds_per_epoch)
+        .is_some_and(|(start, end)| beacon_round < start || beacon_round > end)
+    {
+        return Err(TvmError::InvalidReceipt(
+            "public drand round outside chain epoch window",
+        ));
+    }
+    Ok(())
 }
 
 pub fn submit_validator_vrf_reveal(

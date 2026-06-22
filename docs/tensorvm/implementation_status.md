@@ -280,8 +280,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   validators to prove reveal bytes against their registered Ed25519 public key, relay/retry bounded
   reveal payloads through the same p2p/node ingest path, and the local checker gates the external-beacon
   record, validator-reveal record, network-applied beacon/reveal, and current-block-hash-ban evidence.
-  Deployed public drand epoch mapping, deployed validator reveal key lifecycle/full VRF construction, and
-  deployed commit-reveal lifecycle evidence remain open.
+  Deployed validator reveal key lifecycle/full VRF construction and deployed commit-reveal lifecycle
+  evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow
 - Negative-path coverage for transaction parsing, chain registration/receipt/attestation/block-vote rejection,

@@ -47,6 +47,7 @@ pub struct ChainParams {
     pub difficulty_retarget_max_ratio: u64,
     pub proposer_cooldown_blocks: u64,
     pub pow_timeout_blocks: u64,
+    pub public_drand_rounds_per_epoch: u64,
     pub freivalds: FreivaldsParams,
 }
 
@@ -84,6 +85,7 @@ impl Default for ChainParams {
             difficulty_retarget_max_ratio: 4,
             proposer_cooldown_blocks: 0,
             pow_timeout_blocks: 2,
+            public_drand_rounds_per_epoch: 20,
             freivalds: FreivaldsParams::default(),
         }
     }
@@ -629,6 +631,11 @@ pub struct RandomnessBindingEvidence {
     pub current_block_hash_anchor_count: usize,
     pub external_beacon_record_count: usize,
     pub latest_external_beacon_round: u64,
+    pub public_drand_anchor_epoch: u64,
+    pub public_drand_anchor_round: u64,
+    pub public_drand_rounds_per_epoch: u64,
+    pub public_drand_epoch_start_round: u64,
+    pub public_drand_epoch_end_round: u64,
     pub validator_vrf_reveal_count: usize,
     pub validator_vrf_production_reveal_count: usize,
     pub validator_vrf_legacy_reveal_count: usize,
@@ -1322,6 +1329,8 @@ pub struct ChainState {
     pub(in crate::chain) finalized_beacon_round: u64,
     pub(in crate::chain) finalized_randomness: Hash,
     pub(in crate::chain) external_randomness_beacons: BTreeMap<u64, ExternalRandomnessBeaconRecord>,
+    pub(in crate::chain) public_drand_anchor_epoch: u64,
+    pub(in crate::chain) public_drand_anchor_round: u64,
     pub(in crate::chain) genesis_beacon_round: u64,
     pub(in crate::chain) genesis_randomness: Hash,
     pub(in crate::chain) accounts: BTreeMap<Address, AccountState>,
@@ -1366,6 +1375,8 @@ pub(crate) struct ChainStateParts {
     pub finalized_beacon_round: u64,
     pub finalized_randomness: Hash,
     pub external_randomness_beacons: BTreeMap<u64, ExternalRandomnessBeaconRecord>,
+    pub public_drand_anchor_epoch: u64,
+    pub public_drand_anchor_round: u64,
     pub genesis_beacon_round: u64,
     pub genesis_randomness: Hash,
     pub accounts: BTreeMap<Address, AccountState>,
@@ -1410,6 +1421,8 @@ impl ChainState {
             finalized_beacon_round: parts.finalized_beacon_round,
             finalized_randomness: parts.finalized_randomness,
             external_randomness_beacons: parts.external_randomness_beacons,
+            public_drand_anchor_epoch: parts.public_drand_anchor_epoch,
+            public_drand_anchor_round: parts.public_drand_anchor_round,
             genesis_beacon_round: parts.genesis_beacon_round,
             genesis_randomness: parts.genesis_randomness,
             accounts: parts.accounts,
@@ -1467,6 +1480,27 @@ impl ChainState {
         &self.external_randomness_beacons
     }
 
+    pub fn public_drand_anchor_epoch(&self) -> u64 {
+        self.public_drand_anchor_epoch
+    }
+
+    pub fn public_drand_anchor_round(&self) -> u64 {
+        self.public_drand_anchor_round
+    }
+
+    pub fn public_drand_epoch_round_window(&self, rounds_per_epoch: u64) -> Option<(u64, u64)> {
+        let rounds_per_epoch = rounds_per_epoch.max(1);
+        if self.public_drand_anchor_round == 0 {
+            return None;
+        }
+        let epoch_delta = self.epoch.saturating_sub(self.public_drand_anchor_epoch);
+        let start = self
+            .public_drand_anchor_round
+            .saturating_add(epoch_delta.saturating_mul(rounds_per_epoch));
+        let end = start.saturating_add(rounds_per_epoch.saturating_sub(1));
+        Some((start, end))
+    }
+
     pub fn genesis_beacon_round(&self) -> u64 {
         self.genesis_beacon_round
     }
@@ -1512,6 +1546,13 @@ impl ChainState {
     }
 
     pub fn randomness_binding_evidence(&self) -> RandomnessBindingEvidence {
+        self.randomness_binding_evidence_for_params(&ChainParams::default())
+    }
+
+    pub fn randomness_binding_evidence_for_params(
+        &self,
+        params: &ChainParams,
+    ) -> RandomnessBindingEvidence {
         let mut finalized_beacon_anchor_count = 0_usize;
         let mut finalized_beacon_round_mapping_count = 0_usize;
         let mut validator_vrf_seed_count = 0_usize;
@@ -1588,6 +1629,17 @@ impl ChainState {
             current_block_hash_anchor_count: 0,
             external_beacon_record_count: self.external_randomness_beacons.len(),
             latest_external_beacon_round,
+            public_drand_anchor_epoch: self.public_drand_anchor_epoch,
+            public_drand_anchor_round: self.public_drand_anchor_round,
+            public_drand_rounds_per_epoch: params.public_drand_rounds_per_epoch,
+            public_drand_epoch_start_round: self
+                .public_drand_epoch_round_window(params.public_drand_rounds_per_epoch)
+                .map(|(start, _)| start)
+                .unwrap_or_default(),
+            public_drand_epoch_end_round: self
+                .public_drand_epoch_round_window(params.public_drand_rounds_per_epoch)
+                .map(|(_, end)| end)
+                .unwrap_or_default(),
             validator_vrf_reveal_count: self.validator_vrf_reveals.len(),
             validator_vrf_production_reveal_count,
             validator_vrf_legacy_reveal_count: self

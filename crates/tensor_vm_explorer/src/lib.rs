@@ -392,13 +392,18 @@ pub struct ExplorerRandomnessBindingEvidence {
     pub current_block_hash_anchor_count: usize,
     pub external_beacon_record_count: usize,
     pub latest_external_beacon_round: u64,
+    pub public_drand_anchor_epoch: u64,
+    pub public_drand_anchor_round: u64,
+    pub public_drand_rounds_per_epoch: u64,
+    pub public_drand_epoch_start_round: u64,
+    pub public_drand_epoch_end_round: u64,
     pub all_receipt_anchors_consistent: bool,
 }
 
 impl ExplorerRandomnessBindingEvidence {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"validator_vrf_registered_key_count\":{},\"validator_vrf_reveal_count\":{},\"validator_vrf_production_reveal_count\":{},\"validator_vrf_legacy_reveal_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"external_beacon_record_count\":{},\"latest_external_beacon_round\":{},\"all_receipt_anchors_consistent\":{}}}",
+            "{{\"beacon_source\":\"{}\",\"drand_round_mapping\":\"{}\",\"vrf_construction\":\"{}\",\"assignment_seed_domain\":\"{}\",\"validation_seed_commitment_domain\":\"{}\",\"validation_seed_reveal_domain\":\"{}\",\"commit_reveal_ordering\":\"{}\",\"current_block_hash_randomness_allowed\":{},\"receipt_anchor_count\":{},\"finalized_beacon_anchor_count\":{},\"finalized_beacon_round_mapping_count\":{},\"validator_vrf_seed_count\":{},\"validator_vrf_registered_key_count\":{},\"validator_vrf_reveal_count\":{},\"validator_vrf_production_reveal_count\":{},\"validator_vrf_legacy_reveal_count\":{},\"receipt_bound_anchor_count\":{},\"consistent_anchor_count\":{},\"current_block_hash_anchor_count\":{},\"external_beacon_record_count\":{},\"latest_external_beacon_round\":{},\"public_drand_anchor_epoch\":{},\"public_drand_anchor_round\":{},\"public_drand_rounds_per_epoch\":{},\"public_drand_epoch_start_round\":{},\"public_drand_epoch_end_round\":{},\"all_receipt_anchors_consistent\":{}}}",
             escape_json(&self.beacon_source),
             escape_json(&self.drand_round_mapping),
             escape_json(&self.vrf_construction),
@@ -420,6 +425,11 @@ impl ExplorerRandomnessBindingEvidence {
             self.current_block_hash_anchor_count,
             self.external_beacon_record_count,
             self.latest_external_beacon_round,
+            self.public_drand_anchor_epoch,
+            self.public_drand_anchor_round,
+            self.public_drand_rounds_per_epoch,
+            self.public_drand_epoch_start_round,
+            self.public_drand_epoch_end_round,
             self.all_receipt_anchors_consistent
         )
     }
@@ -947,6 +957,11 @@ mod tests {
             current_block_hash_anchor_count: 0,
             external_beacon_record_count: 1,
             latest_external_beacon_round: 42,
+            public_drand_anchor_epoch: 2,
+            public_drand_anchor_round: 100,
+            public_drand_rounds_per_epoch: 20,
+            public_drand_epoch_start_round: 140,
+            public_drand_epoch_end_round: 159,
             all_receipt_anchors_consistent: true,
         };
         assert!(
@@ -969,6 +984,11 @@ mod tests {
             randomness
                 .to_json()
                 .contains("\"validator_vrf_production_reveal_count\":3")
+        );
+        assert!(
+            randomness
+                .to_json()
+                .contains("\"public_drand_epoch_end_round\":159")
         );
         assert!(
             randomness

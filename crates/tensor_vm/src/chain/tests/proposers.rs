@@ -257,6 +257,54 @@ fn verified_chained_drand_beacon_command_derives_public_default_randomness() {
         record.proof,
         ExternalRandomnessBeaconProof::DrandPedersenBlsChainedV1 { .. }
     ));
+    assert_eq!(chain.state().public_drand_anchor_epoch(), 0);
+    assert_eq!(chain.state().public_drand_anchor_round(), 1);
+    assert_eq!(
+        chain
+            .state()
+            .public_drand_epoch_round_window(chain.params().public_drand_rounds_per_epoch),
+        Some((1, 20))
+    );
+    let evidence = chain
+        .state()
+        .randomness_binding_evidence_for_params(chain.params());
+    assert_eq!(evidence.public_drand_anchor_round, 1);
+    assert_eq!(evidence.public_drand_rounds_per_epoch, 20);
+    assert_eq!(evidence.public_drand_epoch_start_round, 1);
+    assert_eq!(evidence.public_drand_epoch_end_round, 20);
+}
+
+#[test]
+fn verified_chained_drand_beacon_respects_chain_epoch_mapping() {
+    let params = ChainParams {
+        public_drand_rounds_per_epoch: 3,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"drand-epoch-window"]));
+    chain.state.public_drand_anchor_epoch = 0;
+    chain.state.public_drand_anchor_round = 10;
+    let public_key = hex_bytes(
+        "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31",
+    );
+    let signature = hex_bytes(
+        "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655",
+    );
+    let previous_signature =
+        hex_bytes("176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a");
+    let source_id = verified_chained_drand_source_id(&public_key);
+
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitVerifiedChainedDrandBeacon {
+            source_id,
+            beacon_round: 1,
+            public_key,
+            signature,
+            previous_signature,
+        }),
+        Err(TvmError::InvalidReceipt(
+            "public drand round outside chain epoch window"
+        ))
+    );
 }
 
 #[test]

@@ -266,9 +266,10 @@ The local bundle is useful and should remain the first operational target:
   drand mode now polls the default-chain v2 endpoint, verifies chained proofs, skips stale rounds, backs
   off after failures, computes endpoint expected-round and chain-epoch freshness evidence, rejects locally
   fetched rounds beyond the configured lag, and exposes status counters for
-  attempts/successes/stale/failure backoff/freshness. Consensus-level public drand epoch mapping,
-  deployed validator reveal key lifecycle/full VRF construction, and deployed lifecycle evidence remain
-  open.
+  attempts/successes/stale/failure backoff/freshness. Chain admission now anchors accepted chained drand
+  rounds to deterministic epoch windows rooted in chain state and rejects later chained rounds outside the
+  current window. Deployed validator reveal key lifecycle/full VRF construction and deployed lifecycle
+  evidence remain open.
   Deployed-run measured detection records and remaining fraud paths remain open
   economics work.
 

@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 153 in progress - production validator reveal proofs.
+- Active feature: Iteration 154 in progress - consensus public drand epoch mapping.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   chain-owned pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage,
@@ -19,17 +19,17 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   `pedersen-bls-unchained` drand and public default-chain `pedersen-bls-chained` drand evidence through
   typed proof metadata. Public drand mode now polls continuously, applies only verified newer rounds,
   skips stale finalized rounds, backs off after failures, computes endpoint-observed expected-latest-round
-  and chain-epoch evidence, and rejects locally fetched public rounds outside the configured lag. Keyed
-  validators now register reveal public keys and must provide chain-verified bounded Ed25519 proof bytes
-  over the committed receipt seed before validator receipt rewards are released. Consensus-level public
-  drand epoch mapping, deployed validator reveal key lifecycle/full VRF construction, and deployed
-  lifecycle evidence remain open.
+  and chain-epoch evidence, rejects locally fetched public rounds outside the configured lag, and now
+  anchors accepted chained drand rounds to chain-owned epoch windows rooted in state. Keyed validators now
+  register reveal public keys and must provide chain-verified bounded Ed25519 proof bytes over the
+  committed receipt seed before validator receipt rewards are released. Deployed validator reveal key
+  lifecycle/full VRF construction and deployed lifecycle evidence remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue deployed validator reveal key lifecycle/full VRF construction, consensus-level
-  public drand epoch mapping, public/CUDA deployment runs, and full interactive transcript disputes.
+- Next action: continue deployed validator reveal key lifecycle/full VRF construction, public/CUDA
+  deployment runs, and full interactive transcript disputes.
 
 ## Readiness Matrix
 
@@ -46,13 +46,64 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, role-owned graph execution, `const_blob`, p2p trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, configured verified drand, and public default-chain chained drand through verified chain commands. P2p/node paths relay bounded fixture, verified drand, public chained drand, and validator reveal payloads. Public drand polling exposes attempts/successes/stale/failure/backoff plus expected latest round, fetched lag, max lag, rounds per chain epoch, chain epoch, and freshness, and stale-by-policy local public rounds are skipped before chain mutation. Keyed validator reveals register public keys and require bounded Ed25519 proof bytes before reward release. Status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, production-vs-legacy reveal counts, role counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add consensus-level public drand epoch mapping, deployed validator reveal key lifecycle/full VRF construction, and deployed commit-reveal lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, configured verified drand, and public default-chain chained drand through verified chain commands. P2p/node paths relay bounded fixture, verified drand, public chained drand, and validator reveal payloads. Public drand polling exposes attempts/successes/stale/failure/backoff plus expected latest round, fetched lag, max lag, rounds per chain epoch, chain epoch, and freshness, and stale-by-policy local public rounds are skipped before chain mutation. Accepted chained drand rounds now anchor to chain-owned epoch windows that are rooted, persisted, and exposed through status/explorer evidence. Keyed validator reveals register public keys and require bounded Ed25519 proof bytes before reward release. Status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, production-vs-legacy reveal counts, role counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add deployed validator reveal key lifecycle/full VRF construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit reward maturity, VRF reveal holds, claim-owned spendability, delayed miner TensorWork activation, late invalid-output voiding/slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
+### Iteration 154: Consensus Public Drand Epoch Mapping
+
+Feature capability: public chained drand admission now has a chain-owned epoch mapping instead of only
+runtime freshness counters. The first accepted chained drand record anchors the current chain epoch to a
+public drand round, later chained drand records must fall inside the deterministic epoch window derived from
+chain params, and the anchor/window are committed in state roots, persisted, and exposed through
+status/explorer evidence.
+
+Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` randomness binding: public beacon rounds
+used for receipt seeds are deterministic consensus state and cannot be advanced arbitrarily by runtime
+wall-clock observations.
+
+Files/modules touched: chain state/params/validation/rooting/storage, runtime public-drand mapping
+observation, status/explorer evidence, focused chain/runtime/RPC/explorer/storage tests, coverage/readiness
+docs, and this execution plan.
+
+Parallel subagents run: skipped for this continuation because no new subagent delegation was explicitly
+requested; parent kept the single-writer implementation boundary.
+
+Expected observable evidence: verified chained drand round `1` anchors epoch `0` to window `1..20`,
+state/root/storage preserve the anchor, a chained drand record outside the current chain epoch window is
+rejected before mutation, and status/explorer JSON expose the anchor round, anchor epoch, rounds per epoch,
+and current epoch start/end rounds.
+
+Canonical owner: chain validation/state/rooting own accepted public drand epoch windows. Runtime only
+fetches, verifies transport freshness, records local fetch counters, and submits bounded verified chained
+drand payloads.
+
+Out of scope: public endpoint quorum/failover, deployed validator reveal key lifecycle/full VRF
+construction, 7-day public deployment evidence, CUDA evidence, and full deployed commit-reveal lifecycle.
+
+First executable gate this iteration: `cargo test -p tensor_vm local_testnet --release` passed on
+June 22, 2026 before code edits.
+
+Narrow validation commands: `cargo test -p tensor_vm public_drand --lib -- --nocapture`,
+`cargo test -p tensor_vm drand_beacon --lib -- --nocapture`,
+`cargo test -p tensor_vm --test tvmd_runtime public_drand -- --nocapture`,
+`cargo test -p tensor_vm app::status::tests::service_status_exports_randomness_binding_evidence --lib -- --nocapture`,
+`cargo test -p tensor_vm rpc::tests::routes::explorer_overview_exports_validator_audit_economic_calibration --lib -- --nocapture`,
+`cargo test -p tensor_vm_explorer explorer_json_and_shell_include_live_websocket_contract -- --nocapture`,
+`cargo test -p tensor_vm storage::chain_state::tests::chain_state_store_roundtrips_full_chain_and_detects_tampering --lib -- --nocapture`,
+and `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_matches_spec_artifact_shape -- --nocapture`.
+
+Broad validation commands before commit: `cargo fmt --check --all`, `git diff --check`, and
+`cargo test -p tensor_vm local_testnet --release`; `cargo tarpaulin --workspace --offline` was rechecked
+and remains blocked by the missing `cargo-tarpaulin` command.
+
+## Recent Iterations
+
 ### Iteration 153: Production Validator Reveal Proofs
+
+Commit: `698d5d6`.
 
 Feature capability: validator receipt rewards no longer rely on the old address-hash reveal helper for
 keyed validators. Validators can register a reveal public key; reveal records carry bounded Ed25519 proof
@@ -94,8 +145,6 @@ and `cargo test -p tensor_vm --test local_cpu_compose local_cpu_compose_bundle_m
 
 Broad validation commands before commit: `cargo fmt --check --all`, `git diff --check`, and
 `cargo test -p tensor_vm local_testnet --release`.
-
-## Recent Iterations
 
 ### Iteration 152: Public Drand Freshness And Chain-Epoch Mapping Evidence
 

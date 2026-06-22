@@ -46,6 +46,8 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&external_randomness_beacon_root(
         &state.external_randomness_beacons,
     ));
+    parts.extend_from_slice(&state.public_drand_anchor_epoch.to_le_bytes());
+    parts.extend_from_slice(&state.public_drand_anchor_round.to_le_bytes());
     parts.extend_from_slice(&state.genesis_beacon_round.to_le_bytes());
     parts.extend_from_slice(&state.genesis_randomness);
     parts.extend_from_slice(&account_root(&state.accounts));

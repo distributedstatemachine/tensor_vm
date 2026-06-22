@@ -404,7 +404,9 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
             mechanism.live_subject_count,
         );
     }
-    let randomness = chain.state().randomness_binding_evidence();
+    let randomness = chain
+        .state()
+        .randomness_binding_evidence_for_params(chain.params());
     report.field("randomness_beacon_source", randomness.beacon_source);
     report.field(
         "randomness_drand_round_mapping",
@@ -462,6 +464,26 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
     report.field(
         "randomness_validator_vrf_legacy_reveal_count",
         randomness.validator_vrf_legacy_reveal_count,
+    );
+    report.field(
+        "randomness_public_drand_anchor_epoch",
+        randomness.public_drand_anchor_epoch,
+    );
+    report.field(
+        "randomness_public_drand_anchor_round",
+        randomness.public_drand_anchor_round,
+    );
+    report.field(
+        "randomness_public_drand_rounds_per_epoch",
+        randomness.public_drand_rounds_per_epoch,
+    );
+    report.field(
+        "randomness_public_drand_epoch_start_round",
+        randomness.public_drand_epoch_start_round,
+    );
+    report.field(
+        "randomness_public_drand_epoch_end_round",
+        randomness.public_drand_epoch_end_round,
     );
     report.field(
         "randomness_receipt_bound_anchor_count",
@@ -1049,6 +1071,26 @@ mod tests {
         assert_eq!(
             fields.value("randomness_validator_vrf_legacy_reveal_count"),
             Some("1")
+        );
+        assert_eq!(
+            fields.value("randomness_public_drand_anchor_epoch"),
+            Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_public_drand_anchor_round"),
+            Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_public_drand_rounds_per_epoch"),
+            Some("20")
+        );
+        assert_eq!(
+            fields.value("randomness_public_drand_epoch_start_round"),
+            Some("0")
+        );
+        assert_eq!(
+            fields.value("randomness_public_drand_epoch_end_round"),
+            Some("0")
         );
         assert_eq!(
             fields.value("randomness_receipt_bound_anchor_count"),

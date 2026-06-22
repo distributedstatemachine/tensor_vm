@@ -465,9 +465,11 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > `previous_signature`, applies only strictly newer finalized beacon rounds through the same chain
 > command, skips stale rounds, computes endpoint-observed expected latest round and chain-epoch mapping
 > evidence, rejects locally fetched public rounds outside the configured freshness lag, and exposes
-> poll/backoff/freshness counters. Consensus-level chain-genesis-time drand epoch mapping, deployed
-> validator reveal key lifecycle/full VRF construction, and deployed commit-reveal lifecycle evidence remain TODO before claiming the
-> full §10 construction.
+> poll/backoff/freshness counters. Accepted chained drand records now anchor the current chain epoch to
+> a public drand round, reject later chained records outside the deterministic chain-owned epoch window,
+> and expose the rooted/persisted anchor plus current window through status and explorer evidence.
+> Deployed validator reveal key lifecycle/full VRF construction and deployed commit-reveal lifecycle
+> evidence remain TODO before claiming the full §10 construction.
 
 ---
 

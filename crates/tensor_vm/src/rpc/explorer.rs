@@ -319,7 +319,9 @@ pub(super) fn explorer_detection_probability_evidence(
 pub(super) fn explorer_randomness_binding_evidence(
     chain: &Chain,
 ) -> ExplorerRandomnessBindingEvidence {
-    let evidence = chain.state().randomness_binding_evidence();
+    let evidence = chain
+        .state()
+        .randomness_binding_evidence_for_params(chain.params());
     ExplorerRandomnessBindingEvidence {
         beacon_source: evidence.beacon_source.to_owned(),
         drand_round_mapping: evidence.drand_round_mapping.to_owned(),
@@ -342,6 +344,11 @@ pub(super) fn explorer_randomness_binding_evidence(
         current_block_hash_anchor_count: evidence.current_block_hash_anchor_count,
         external_beacon_record_count: evidence.external_beacon_record_count,
         latest_external_beacon_round: evidence.latest_external_beacon_round,
+        public_drand_anchor_epoch: evidence.public_drand_anchor_epoch,
+        public_drand_anchor_round: evidence.public_drand_anchor_round,
+        public_drand_rounds_per_epoch: evidence.public_drand_rounds_per_epoch,
+        public_drand_epoch_start_round: evidence.public_drand_epoch_start_round,
+        public_drand_epoch_end_round: evidence.public_drand_epoch_end_round,
         all_receipt_anchors_consistent: evidence.all_receipt_anchors_consistent,
     }
 }

@@ -706,6 +706,17 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
         randomness["validator_vrf_legacy_reveal_count"].as_u64(),
         Some(0)
     );
+    assert_eq!(randomness["public_drand_anchor_epoch"].as_u64(), Some(0));
+    assert_eq!(randomness["public_drand_anchor_round"].as_u64(), Some(0));
+    assert_eq!(
+        randomness["public_drand_rounds_per_epoch"].as_u64(),
+        Some(20)
+    );
+    assert_eq!(
+        randomness["public_drand_epoch_start_round"].as_u64(),
+        Some(0)
+    );
+    assert_eq!(randomness["public_drand_epoch_end_round"].as_u64(), Some(0));
     assert_eq!(
         randomness["current_block_hash_anchor_count"].as_u64(),
         Some(0)
