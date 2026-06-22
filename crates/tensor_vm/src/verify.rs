@@ -668,14 +668,16 @@ fn linear_relation(left: Elem, right: Elem) -> bool {
 #[cfg(test)]
 mod tests {
     use super::*;
-    use crate::ir::{GraphOutput, IrLiteral, IrRef, IrValue, OpNode, TensorSpec};
+    use crate::ir::{
+        GraphOutput, IrLiteral, IrRef, IrValue, OpNode, TensorSpec, frozen_op_registry,
+    };
     use crate::jobs::{
         GraphJob, GraphReceipt, LinearTrainingStepJob, LinearTrainingStepReceipt,
         LinearTrainingStepSpec, TensorOpReceipt,
     };
     use crate::tensor::DType;
     use crate::types::{address, hash_bytes};
-    use std::collections::BTreeMap;
+    use std::collections::{BTreeMap, BTreeSet};
 
     #[test]
     fn full_freivalds_accepts_honest_and_rejects_corruption() {
@@ -845,6 +847,385 @@ mod tests {
                 &FreivaldsParams::default()
             ),
             Err(TvmError::InvalidReceipt("trace root mismatch"))
+        );
+    }
+
+    #[test]
+    fn graph_verifier_accepts_arithmetic_reduction_and_cast_receipt() {
+        let p = field::MODULUS;
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                TensorSpec {
+                    name: "a".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+                TensorSpec {
+                    name: "b".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::FieldElement,
+                    scale: 0,
+                },
+            ],
+            params: Vec::new(),
+            ops: vec![
+                OpNode {
+                    id: 0,
+                    op: "matmul".to_owned(),
+                    args: vec![
+                        IrRef::Input {
+                            name: "a".to_owned(),
+                        },
+                        IrRef::Input {
+                            name: "b".to_owned(),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "product".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 1,
+                    op: "add".to_owned(),
+                    args: vec![
+                        IrRef::Op { id: 0, idx: 0 },
+                        IrRef::Input {
+                            name: "a".to_owned(),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "added".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 2,
+                    op: "sub".to_owned(),
+                    args: vec![
+                        IrRef::Op { id: 1, idx: 0 },
+                        IrRef::Input {
+                            name: "b".to_owned(),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "subbed".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 3,
+                    op: "mul".to_owned(),
+                    args: vec![
+                        IrRef::Op { id: 2, idx: 0 },
+                        IrRef::Input {
+                            name: "a".to_owned(),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "multiplied".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 4,
+                    op: "scalar_mul".to_owned(),
+                    args: vec![
+                        IrRef::Op { id: 3, idx: 0 },
+                        IrRef::Const {
+                            value: IrLiteral::Field(2),
+                        },
+                    ],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "scaled".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 5,
+                    op: "reduce_sum".to_owned(),
+                    args: vec![IrRef::Op { id: 4, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(1)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "row_sum".to_owned(),
+                        shape: vec![2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 6,
+                    op: "mean".to_owned(),
+                    args: vec![IrRef::Op { id: 4, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "dim".to_owned(),
+                        IrValue::Literal(IrLiteral::Uint(0)),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "col_mean".to_owned(),
+                        shape: vec![2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 7,
+                    op: "transpose".to_owned(),
+                    args: vec![IrRef::Op { id: 4, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "transposed".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 8,
+                    op: "identity".to_owned(),
+                    args: vec![IrRef::Op { id: 7, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "same".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 9,
+                    op: "neg".to_owned(),
+                    args: vec![IrRef::Op { id: 8, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "negative".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 10,
+                    op: "abs".to_owned(),
+                    args: vec![IrRef::Op { id: 9, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "absolute".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 11,
+                    op: "sign".to_owned(),
+                    args: vec![IrRef::Op { id: 9, idx: 0 }],
+                    kwargs: BTreeMap::new(),
+                    out: vec![TensorSpec {
+                        name: "signs".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::FieldElement,
+                        scale: 0,
+                    }],
+                },
+                OpNode {
+                    id: 12,
+                    op: "cast".to_owned(),
+                    args: vec![IrRef::Op { id: 10, idx: 0 }],
+                    kwargs: BTreeMap::from([(
+                        "dtype".to_owned(),
+                        IrValue::Literal(IrLiteral::String("fixed32".to_owned())),
+                    )]),
+                    out: vec![TensorSpec {
+                        name: "fixed".to_owned(),
+                        shape: vec![2, 2],
+                        dtype: DType::Fixed32,
+                        scale: 0,
+                    }],
+                },
+            ],
+            outputs: vec![
+                GraphOutput {
+                    name: "row_sum".to_owned(),
+                    value: IrRef::Op { id: 5, idx: 0 },
+                },
+                GraphOutput {
+                    name: "col_mean".to_owned(),
+                    value: IrRef::Op { id: 6, idx: 0 },
+                },
+                GraphOutput {
+                    name: "negative".to_owned(),
+                    value: IrRef::Op { id: 9, idx: 0 },
+                },
+                GraphOutput {
+                    name: "absolute".to_owned(),
+                    value: IrRef::Op { id: 10, idx: 0 },
+                },
+                GraphOutput {
+                    name: "signs".to_owned(),
+                    value: IrRef::Op { id: 11, idx: 0 },
+                },
+                GraphOutput {
+                    name: "fixed".to_owned(),
+                    value: IrRef::Op { id: 12, idx: 0 },
+                },
+            ],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let a = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let b = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+        let inputs = BTreeMap::from([("a".to_owned(), a.clone()), ("b".to_owned(), b.clone())]);
+        let input_roots = BTreeMap::from([
+            ("a".to_owned(), a.commitment_root()),
+            ("b".to_owned(), b.commitment_root()),
+        ]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 48);
+        let (receipt, outputs) = GraphReceipt::from_execution(
+            &job,
+            &graph,
+            address(b"graph-arithmetic-miner"),
+            &inputs,
+            1,
+            13,
+        )
+        .unwrap();
+
+        assert_eq!(
+            outputs["row_sum"],
+            Tensor::from_vec(vec![2], DType::FieldElement, vec![102, 602]).unwrap()
+        );
+        assert_eq!(
+            outputs["col_mean"],
+            Tensor::from_vec(vec![2], DType::FieldElement, vec![132, 220]).unwrap()
+        );
+        assert_eq!(
+            outputs["negative"],
+            Tensor::from_vec(
+                vec![2, 2],
+                DType::FieldElement,
+                vec![p - 30, p - 234, p - 72, p - 368]
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            outputs["absolute"],
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![30, 234, 72, 368]).unwrap()
+        );
+        assert_eq!(
+            outputs["signs"],
+            Tensor::from_vec(
+                vec![2, 2],
+                DType::FieldElement,
+                vec![p - 1, p - 1, p - 1, p - 1]
+            )
+            .unwrap()
+        );
+        assert_eq!(
+            outputs["fixed"],
+            Tensor::from_vec(vec![2, 2], DType::Fixed32, vec![30, 234, 72, 368]).unwrap()
+        );
+        let report = verify_graph_execution(
+            &job,
+            &receipt,
+            &graph,
+            &inputs,
+            &hash_bytes(b"test", &[b"graph-arithmetic-validation"]),
+        )
+        .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        assert_eq!(report.conformance_suite_hash, conformance_suite_hash());
+
+        let mut missing_scalar_mul = cpu_reference_conformance_profile().unwrap();
+        missing_scalar_mul.passed_ops.remove("scalar_mul");
+        assert_eq!(
+            verify_graph_execution_with_conformance_profile(GraphConformanceVerification {
+                job: &job,
+                receipt: &receipt,
+                graph: &graph,
+                tensors: &inputs,
+                validation_seed: &hash_bytes(b"test", &[b"graph-arithmetic-validation"]),
+                conformance_profile: &missing_scalar_mul,
+            }),
+            Err(TvmError::InvalidReceipt(
+                "graph op not conformance admitted"
+            ))
+        );
+    }
+
+    #[test]
+    fn graph_verifier_receipt_scenarios_cover_every_consensus_admitted_op() {
+        let covered = BTreeSet::from([
+            "abs",
+            "add",
+            "arange",
+            "broadcast",
+            "cast",
+            "clamp",
+            "concat",
+            "dequantize_int8_per_channel",
+            "div",
+            "einsum",
+            "eq",
+            "full",
+            "ge",
+            "gt",
+            "identity",
+            "le",
+            "lt",
+            "matmul",
+            "mean",
+            "mul",
+            "neg",
+            "quantize_int8_per_channel",
+            "quantize_pack_int8",
+            "reduce_sum",
+            "relu",
+            "reshape",
+            "round",
+            "scalar_mul",
+            "sign",
+            "slice",
+            "split",
+            "stack",
+            "sub",
+            "sum",
+            "transpose",
+            "tril",
+            "triu",
+            "unpack_dequantize_int8",
+            "unsqueeze",
+            "squeeze",
+            "where",
+        ]);
+        let admitted = frozen_op_registry()
+            .iter()
+            .filter(|spec| spec.consensus_admitted)
+            .map(|spec| spec.name)
+            .collect::<BTreeSet<_>>();
+        let missing = admitted.difference(&covered).copied().collect::<Vec<_>>();
+        assert!(
+            missing.is_empty(),
+            "missing graph verifier receipt scenarios for admitted ops: {missing:?}"
         );
     }
 

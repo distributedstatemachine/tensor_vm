@@ -5,8 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 178 complete: Pre-Inclusion Voided Receipt Reward Delay.
-- Current status: network graph receipt payloads now wait on missing canonical program bodies instead of
+- Active feature: Iteration 179 complete: Graph Verifier Admitted-Op Receipt Coverage.
+- Current status: graph execution verifier receipt scenarios now include arithmetic, reduction, transpose,
+  unary sign/absolute, and cast coverage for admitted IR ops, with a frozen-registry drift test that fails
+  when a consensus-admitted op lacks graph-verifier receipt scenario coverage. Network graph receipt
+  payloads now wait on missing canonical program bodies instead of
   being misclassified as invalid when the graph job is already known through a direct/local state path.
   Pre-inclusion voided receipt rewards now prune directly after their explicit delayed hold even when the
   challenged receipt never reaches `included_receipts`. Automatic block-state reward pruning uses the
@@ -39,14 +42,85 @@ archive commit anchors only.
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection expectations/rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof or remaining fraud-proof DoS policy |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, packed int8 APIs, const blobs, role-owned graph execution, and automatic runtime trace-bisection referee witnesses when isolated-opening roots match local replay | Continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, graph-verifier receipt scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, and automatic runtime trace-bisection referee witnesses when isolated-opening roots match local replay | Continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
-| Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
+| Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops, and graph-verifier receipt scenario drift coverage for every admitted op; default CUDA non-admission | Add CUDA conformance evidence and deployed CUDA profile evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 179: Graph Verifier Admitted-Op Receipt Coverage
+
+Feature capability: local CPU graph execution verification now has explicit receipt-scenario evidence for
+every consensus-admitted frozen registry op. A new arithmetic/reduction/cast graph receipt covers the
+previously indirect admitted ops: `matmul`, `add`, `sub`, `mul`, `scalar_mul`, `reduce_sum`, `mean`,
+`transpose`, `identity`, `neg`, `abs`, `sign`, and `cast`. A companion registry-drift test fails if a
+future admitted op is not represented in the graph-verifier receipt scenario set.
+
+Readiness requirements covered: `goal.md` deterministic `F_p`/Tensor IR verifier coverage and
+`mvp_spec.md` CPU local-reference graph verifier evidence for admitted Tier-A/Tier-B ops. This is local CPU
+evidence only; it does not claim CUDA conformance or deployed public evidence.
+
+Canonical owner: `crates/tensor_vm/src/verify.rs` graph execution verification tests.
+
+Adapter callers: no runtime, p2p, RPC, storage, or consensus adapters changed.
+
+Old shortcut being removed: graph verifier receipt coverage for several admitted ops was implicit through
+lower-level IR execution and conformance tests rather than directly exercised through graph receipt
+verification.
+
+Regression test that proves the shortcut is gone:
+`graph_verifier_accepts_arithmetic_reduction_and_cast_receipt` verifies an accepted graph receipt and
+checks conformance-profile gating for the newly covered op group.
+`graph_verifier_receipt_scenarios_cover_every_consensus_admitted_op` compares the graph-verifier receipt
+scenario set against the frozen consensus-admitted registry.
+
+Behavior with local synthetic block production disabled: unchanged; this is test-only verification
+coverage.
+
+Behavior for producer and non-producer roles: unchanged.
+
+Structured evidence source: focused graph verifier tests, full library tests, release local-testnet gate,
+clippy, tarpaulin, and this exec plan.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: unchanged.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to graph verifier tests.
+
+Tests/checkers/docs to add or update: graph verifier admitted-op receipt tests and exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm graph_verifier --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin.
+
+Expected observable evidence: every consensus-admitted frozen IR op is named in an accepted graph verifier
+receipt scenario set, and a graph receipt using the previously indirect arithmetic/reduction/cast group
+verifies as valid under the CPU conformance profile.
+
+Out of scope: CUDA conformance admission, public deployment evidence, protocol behavior changes, and new
+standalone verifier binaries.
+
+Split trigger: split only if the new graph receipt exposes an actual interpreter/verifier bug requiring
+non-test behavior changes.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm graph_verifier --lib` passed: 16 graph verifier tests.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 545 library tests.
+- Post-change release gate `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 560
+  instrumented tests, 84.54% line coverage, 22603/26736 lines covered.
 
 ### Iteration 178: Pre-Inclusion Voided Receipt Reward Delay
 
