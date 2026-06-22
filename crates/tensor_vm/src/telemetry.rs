@@ -583,7 +583,9 @@ mod tests {
         assert_eq!(snapshot.invalid_receipts_accepted, 0);
         assert_eq!(snapshot.invalid_receipt_detection_rate, 1.0);
         assert_eq!(snapshot.validator_disagreement_rate, 1.0);
-        assert_eq!(snapshot.miner_reward_per_twu, 1.0);
+        assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 64);
+        assert_eq!(chain.state().accounts().get(&validator).unwrap().balance, 8);
+        assert_eq!(snapshot.miner_reward_per_twu, 0.0);
         assert_eq!(snapshot.validator_reward_per_attestation, 0.0);
         assert_eq!(snapshot.estimated_cost_to_attack_one_epoch, 6_667);
     }
@@ -600,10 +602,16 @@ mod tests {
             panic!("credit reward should create a pending claim");
         };
         chain.set_position_for_testing(claimable_at_height, 0);
-        let release_events = chain
-            .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+        assert!(
+            chain
+                .apply_command(ChainCommand::ReleaseMaturedCreditRewards)
+                .unwrap()
+                .is_empty()
+        );
+        let claim_events = chain
+            .apply_command(ChainCommand::ClaimReward(address))
             .unwrap();
-        assert!(release_events.contains(&ChainEvent::RewardCredited { address, amount }));
+        assert!(claim_events.contains(&ChainEvent::RewardCredited { address, amount }));
     }
 
     #[test]

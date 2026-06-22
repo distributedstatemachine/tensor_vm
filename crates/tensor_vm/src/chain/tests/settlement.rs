@@ -138,8 +138,12 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
     chain
         .apply_command(ChainCommand::SubmitValidatorVrfReveal(reveal))
         .unwrap();
-    let release_events = chain.release_matured_receipt_rewards().unwrap();
-    assert!(release_events.iter().any(|event| matches!(
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(miner))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
         event,
         ChainEvent::ReceiptRewardReleased {
             beneficiary,
@@ -147,7 +151,8 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
             ..
         } if *beneficiary == miner
     )));
-    assert_eq!(chain.state().rewards().balance(&miner), 1_000);
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 1_000);
     assert_eq!(
         chain
             .state()
@@ -166,12 +171,25 @@ fn chain_settles_valid_tensorwork_and_rewards_participants() {
             .pending_tensor_work,
         0
     );
-    let validator_reward = chain.state().rewards().balance(&validators[0]);
+    chain
+        .apply_command(ChainCommand::ClaimReward(validators[0]))
+        .unwrap();
+    let validator_reward = chain
+        .state()
+        .accounts()
+        .get(&validators[0])
+        .unwrap()
+        .balance;
     assert!(validator_reward > 0);
     chain.settle_epoch(1_000, 500);
-    assert_eq!(chain.state().rewards().balance(&miner), 1_000);
+    assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 1_000);
     assert_eq!(
-        chain.state().rewards().balance(&validators[0]),
+        chain
+            .state()
+            .accounts()
+            .get(&validators[0])
+            .unwrap()
+            .balance,
         validator_reward
     );
 }
@@ -292,9 +310,14 @@ fn chain_settles_valid_graph_execution_and_delays_rewards() {
             .saturating_add(chain.params().reward_maturity_delay_blocks())
     );
     chain.set_position_for_testing(inclusion_claimable_at_height, 0);
-    chain.release_matured_receipt_rewards().unwrap();
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    chain
+        .apply_command(ChainCommand::ClaimReward(miner))
+        .unwrap();
 
-    assert_eq!(chain.state().rewards().balance(&miner), 1_000);
+    assert_eq!(chain.state().rewards().balance(&miner), 0);
+    assert_eq!(chain.state().accounts().get(&miner).unwrap().balance, 1_000);
     assert_eq!(
         chain
             .state()
@@ -484,7 +507,22 @@ fn miner_rewards_delay_tensorwork_activation_until_reward_release() {
             .saturating_add(chain.params().reward_maturity_delay_blocks()),
         0,
     );
-    chain.release_matured_receipt_rewards().unwrap();
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(
+        chain
+            .state()
+            .miners()
+            .get(&dominant)
+            .unwrap()
+            .settled_tensor_work,
+        0
+    );
+    chain
+        .apply_command(ChainCommand::ClaimReward(dominant))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::ClaimReward(minority))
+        .unwrap();
     assert_eq!(
         chain
             .state()
@@ -1072,8 +1110,12 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
     assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
     chain.set_position_for_testing(composed_reward_delay_until_height, 0);
-    let release_events = chain.release_matured_receipt_rewards().unwrap();
-    assert!(release_events.iter().any(|event| matches!(
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(receipts[0].miner))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
         event,
         ChainEvent::ReceiptRewardReleased {
             receipt_id,
@@ -1081,7 +1123,16 @@ fn redundant_agreement_quorum_is_required_before_settlement() {
             ..
         } if *receipt_id == receipts[0].receipt_id && *beneficiary == receipts[0].miner
     )));
-    assert!(chain.state().rewards().balance(&receipts[0].miner) > 0);
+    assert_eq!(chain.state().rewards().balance(&receipts[0].miner), 0);
+    assert!(
+        chain
+            .state()
+            .accounts()
+            .get(&receipts[0].miner)
+            .unwrap()
+            .balance
+            > 0
+    );
     assert!(
         chain
             .state()

@@ -252,8 +252,22 @@ fn reward_allocation_matches_mvp_split_and_credits_proposer_and_treasury() {
         .unwrap()
         .claimable_at_height;
     chain.set_position_for_testing(claimable_at_height, 1);
-    chain.release_matured_proposer_rewards().unwrap();
-    assert_eq!(chain.state().rewards().balance(&proposer), 1_000);
+    assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+    chain
+        .apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert_eq!(
+        chain.state().accounts().get(&proposer).unwrap().balance,
+        1_000
+    );
 }
 
 #[test]

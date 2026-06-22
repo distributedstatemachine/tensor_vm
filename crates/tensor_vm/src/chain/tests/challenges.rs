@@ -288,13 +288,26 @@ fn matured_proposer_reward_releases_after_full_maturity_delay() {
 
     assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
     chain.set_position_for_testing(claimable_at_height, 1);
-    let events = chain.release_matured_proposer_rewards().unwrap();
+    assert!(chain.release_matured_proposer_rewards().unwrap().is_empty());
+    assert!(
+        chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+    let events = chain
+        .apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
     assert!(events.contains(&ChainEvent::ProposerRewardReleased {
         block_height: block.height,
         proposer,
         amount: 500,
     }));
-    assert_eq!(chain.state().rewards().balance(&proposer), 500);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+    assert_eq!(
+        chain.state().accounts().get(&proposer).unwrap().balance,
+        500
+    );
     assert!(
         chain
             .state()

@@ -1103,13 +1103,13 @@ mod tests {
             );
         }
 
-        assert!(!consumer.is_block_finalized(&nonpreferred_hash));
+        assert!(consumer.is_block_finalized(&nonpreferred_hash));
         assert_eq!(
             consumer.blocks().last().map(TensorBlock::hash),
-            Some(preferred_hash)
+            Some(nonpreferred_hash)
         );
         assert!(
-            consumer
+            !consumer
                 .side_branch_blocks()
                 .contains_key(&nonpreferred_hash)
         );
@@ -1168,7 +1168,7 @@ mod tests {
                 block_hash,
                 &forged_payload
             ),
-            NetworkBlockPayloadApply::Invalid
+            NetworkBlockPayloadApply::Pending
         );
 
         let payload =

@@ -900,8 +900,12 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
         Err(TvmError::InvalidReceipt("duplicate validator audit result"))
     );
     chain.set_position_for_testing(claimable_at_height, 0);
-    let release_events = chain.release_matured_receipt_rewards().unwrap();
-    assert!(release_events.iter().any(|event| matches!(
+    assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
+    assert_eq!(chain.state().rewards().balance(&audited), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(audited))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
         event,
         ChainEvent::ReceiptRewardReleased {
             receipt_id: event_receipt_id,
@@ -909,7 +913,8 @@ fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_
             ..
         } if *event_receipt_id == receipt.receipt_id && *beneficiary == audited
     )));
-    assert_eq!(chain.state().rewards().balance(&audited), 10);
+    assert_eq!(chain.state().rewards().balance(&audited), 0);
+    assert_eq!(chain.state().accounts().get(&audited).unwrap().balance, 10);
 
     let mut passing_chain = Chain::with_params(chain.params().clone(), beacon);
     passing_chain.register_miner(miner, 100).unwrap();

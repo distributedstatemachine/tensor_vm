@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 155 in progress - validator reveal key lifecycle.
+- Active feature: Iteration 156 in progress - explicit reward claim spendability.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   chain-owned pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage,
@@ -24,7 +24,9 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   runtimes now derive and register production reveal public keys from their configured wallet secret before
   receipt work, persist that chain state, and expose checker-gated key lifecycle evidence. Keyed validators
   must provide chain-verified bounded Ed25519 proof bytes over the committed receipt seed before validator
-  receipt rewards are released. Deployed full VRF construction and deployed lifecycle evidence remain open.
+  receipt rewards are released. Maturity release commands cannot move matured rewards into spendable
+  balances; explicit `ClaimReward` remains the canonical spendability boundary. Deployed full VRF
+  construction and deployed lifecycle evidence remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
@@ -53,7 +55,74 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
+### Iteration 156: Explicit Reward Claim Spendability
+
+Feature capability: matured proposer, receipt, challenge, and credit rewards remain pending claims until
+the beneficiary explicitly submits `ClaimReward`. Maintenance-style release commands may prune matured
+voided claims, but they must not credit spendable reward balances or remove valid matured claims.
+
+Readiness requirements covered: `upow.md` §12 delayed rewards, reveal/challenge/audit holds, and the
+shortcut ban against working around maturity by crediting rewards outside the canonical claim boundary.
+
+Files/modules touched: chain reward command helpers, focused reward/settlement/challenge/transaction tests,
+and this execution plan.
+
+Parallel subagents run: skipped because the available subagent tool requires explicit user authorization
+for delegation.
+
+Expected observable evidence: calling `ReleaseMatured*Rewards` after maturity leaves valid pending claims
+and spendable reward balances unchanged; calling `ClaimReward` after maturity releases the same claims,
+credits the transient reward ledger, and transfers the reward to the beneficiary account.
+
+Canonical owner: chain validation/state own pending reward claims, maturity, void pruning, spendability,
+and account crediting. Runtime, node, RPC, and checker surfaces only observe or submit chain commands.
+
+Adapter callers: node payload application and tests can invoke release commands, but those commands only
+prune voided matured claims after this slice. Beneficiaries must use `ClaimReward` for spendability.
+
+Old shortcut being removed: direct reward-balance crediting through mature-release commands.
+
+Regression test that proves the shortcut is gone: focused reward tests assert release commands leave
+valid matured claims pending and do not emit reward-credit events, while explicit claims still pay.
+
+Behavior with local synthetic block production disabled: unchanged; pending reward maturity is independent
+of synthetic production and requires claim submission for spendability.
+
+Behavior for producer and non-producer roles: both observe identical rooted pending-claim state; neither
+role can bypass `ClaimReward` through release commands.
+
+Structured evidence source: chain pending reward claim views and reward/account balances.
+
+Finality source: unchanged stake-weighted block votes/finality; reward finality remains separate from
+spendability.
+
+Wire-size and codec boundary: no wire format changes.
+
+First executable gate this iteration: `cargo test -p tensor_vm local_testnet --release` passed on
+June 22, 2026 before code edits.
+
+Focused validation passed on June 22, 2026: `cargo test -p tensor_vm rewards --lib -- --nocapture`,
+`cargo test -p tensor_vm settlement --lib -- --nocapture`,
+`cargo test -p tensor_vm challenges --lib -- --nocapture`,
+`cargo test -p tensor_vm attestations --lib -- --nocapture`,
+`cargo test -p tensor_vm transactions --lib -- --nocapture`, and
+`cargo test -p tensor_vm telemetry --lib -- --nocapture`.
+
+Additional node-focused validation passed on June 22, 2026:
+`cargo test -p tensor_vm node::payload_application::tests::block_vote_payload_finalizes_and_promotes_useful_side_branch --lib -- --nocapture`
+and
+`cargo test -p tensor_vm node::payload_application::tests::block_payload_application_uses_producer_parent_snapshot_for_divergent_mempool --lib -- --nocapture`.
+
+Broad validation before commit passed on June 22, 2026: `cargo test -p tensor_vm --lib`,
+`cargo fmt --check --all`, `cargo check -p tensor_vm --tests`, `git diff --check`, and final
+`cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+
 ### Iteration 155: Validator Reveal Key Lifecycle
+
+Commit: `832ccf4`.
 
 Feature capability: validator role runtimes derive the production reveal public key from the configured
 wallet secret, register it through `ChainCommand::RegisterValidatorVrfKey` before receipt work, persist the
@@ -274,6 +343,15 @@ production drand/VRF verification a stable public evidence surface.
 - Iteration 155 final release gate passed on June 22, 2026:
   `cargo test -p tensor_vm local_testnet --release`.
 - Iteration 155 coverage command remained environmentally blocked:
+  `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+- Iteration 156 first executable command passed before code edits on June 22, 2026:
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 156 validation passed on June 22, 2026:
+  focused reward/settlement/challenge/attestation/transaction/telemetry tests; focused node payload
+  application tests for side-branch promotion and producer parent snapshots; `cargo test -p tensor_vm --lib`;
+  `cargo fmt --check --all`; `cargo check -p tensor_vm --tests`; `git diff --check`; and final
+  `cargo test -p tensor_vm local_testnet --release`.
+- Iteration 156 coverage command remained environmentally blocked:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 - Iteration 154 validation passed on June 22, 2026 before commit `823ac32`:
   `cargo test -p tensor_vm public_drand --lib -- --nocapture`;
