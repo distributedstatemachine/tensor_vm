@@ -453,6 +453,43 @@ pub fn referee_trace_bisection(
     } else {
         record.state.responder
     };
+    let loser_bond = if dishonest_party == record.state.challenger {
+        record.state.challenger_bond
+    } else {
+        record.state.responder_bond
+    };
+    let winner = if dishonest_party == record.state.challenger {
+        record.state.responder
+    } else {
+        record.state.challenger
+    };
+    let winner_is_challenger = winner == record.state.challenger;
+    let challenger_reward = if winner_is_challenger {
+        loser_bond.saturating_mul(CHALLENGER_REWARD_BPS) / 10_000
+    } else {
+        0
+    };
+    if loser_bond > 0 {
+        slash_trace_bisection_loser(chain, dishonest_party, loser_bond)?;
+        if challenger_reward > 0 {
+            let claimable_at_height = chain
+                .state
+                .height
+                .saturating_add(chain.params.reward_maturity_delay_blocks());
+            enqueue_pending_trace_bisection_challenge_reward(
+                chain,
+                challenge_id,
+                record.state.receipt_id,
+                winner,
+                challenger_reward,
+                claimable_at_height,
+            );
+        }
+        let treasury_reward = loser_bond.saturating_sub(challenger_reward);
+        if treasury_reward > 0 {
+            chain.state.rewards.credit_treasury(treasury_reward);
+        }
+    }
     let updated = chain
         .state
         .trace_bisection_challenges
@@ -469,6 +506,26 @@ pub fn referee_trace_bisection(
     };
     updated.updated_at_height = chain.state.height;
     Ok(updated.clone())
+}
+
+fn slash_trace_bisection_loser(
+    chain: &mut Chain,
+    dishonest_party: Address,
+    slash_amount: u64,
+) -> Result<()> {
+    if let Some(miner) = chain.state.miners.get_mut(&dishonest_party) {
+        miner.stake = miner.stake.saturating_sub(slash_amount);
+        miner.reputation -= 10;
+        return Ok(());
+    }
+    if let Some(validator) = chain.state.validators.get_mut(&dishonest_party) {
+        validator.stake = validator.stake.saturating_sub(slash_amount);
+        validator.reputation -= 10;
+        return Ok(());
+    }
+    Err(TvmError::InvalidReceipt(
+        "trace bisection loser is not slashable",
+    ))
 }
 
 fn trace_bisection_receipt_graph(chain: &Chain, receipt_id: Hash) -> Result<TensorGraph> {
@@ -611,6 +668,34 @@ fn enqueue_pending_challenge_reward(
             receipt_id: record.receipt_id,
             challenger: record.challenger,
             amount: record.challenger_reward,
+            claimable_at_height,
+            voided_by_challenge: false,
+        });
+}
+
+fn enqueue_pending_trace_bisection_challenge_reward(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    receipt_id: Hash,
+    challenger: Address,
+    amount: u64,
+    claimable_at_height: u64,
+) {
+    if amount == 0 {
+        return;
+    }
+    let claim_id = challenge_reward_claim_id(&challenge_id, &challenger);
+    chain
+        .state
+        .pending_challenge_rewards
+        .entry(claim_id)
+        .or_insert(PendingChallengeReward {
+            claim_id,
+            challenge_id,
+            block_hash: [0; 32],
+            receipt_id,
+            challenger,
+            amount,
             claimable_at_height,
             voided_by_challenge: false,
         });

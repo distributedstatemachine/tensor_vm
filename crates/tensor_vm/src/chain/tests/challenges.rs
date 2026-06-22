@@ -245,6 +245,7 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
 fn isolated_trace_bisection_referee_records_one_op_verdict() {
     let (mut chain, receipt, execution, x, y) = two_op_trace_bisection_fixture();
     let challenger = address(b"trace-bisection-referee-challenger");
+    chain.register_validator(challenger, 10_000).unwrap();
     let open_events = chain
         .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
             receipt_id: receipt.receipt_id,
@@ -331,6 +332,7 @@ fn isolated_trace_bisection_referee_records_one_op_verdict() {
         })
         .unwrap();
     let expected_sum = x.add(&y).unwrap().commitment_root();
+    assert_eq!(refereed_events.len(), 1);
     assert!(matches!(
         refereed_events.as_slice(),
         [ChainEvent::TraceBisectionRefereed {
@@ -343,6 +345,12 @@ fn isolated_trace_bisection_referee_records_one_op_verdict() {
             && canonical_output_roots == &vec![expected_sum]
             && disputed_output_roots == &opening.op_trace.output_roots
     ));
+    assert_eq!(
+        chain.state().validators().get(&challenger).unwrap().stake,
+        9_993
+    );
+    assert_eq!(chain.state().rewards().treasury(), 7);
+    assert!(chain.state().pending_challenge_rewards().is_empty());
     let record = chain
         .state()
         .trace_bisection_challenges()
@@ -375,6 +383,203 @@ fn isolated_trace_bisection_referee_records_one_op_verdict() {
     assert_eq!(
         decoded.trace_bisection_challenges(),
         chain.state().trace_bisection_challenges()
+    );
+}
+
+#[test]
+fn trace_bisection_referee_slashes_miner_and_delays_challenger_reward() {
+    let beacon = hash_bytes(b"test", &[b"trace-bisection-bounty-chain"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"trace-bisection-bounty-miner");
+    let challenger = address(b"trace-bisection-bounty-challenger");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(challenger, 10_000).unwrap();
+
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![
+            TensorSpec::field("x", vec![2, 2]),
+            TensorSpec::field("y", vec![2, 2]),
+        ],
+        params: Vec::new(),
+        ops: vec![
+            OpNode {
+                id: 0,
+                op: "add".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "y".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("sum", vec![2, 2])],
+            },
+            OpNode {
+                id: 1,
+                op: "identity".to_owned(),
+                args: vec![IrRef::Op { id: 0, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("out", vec![2, 2])],
+            },
+        ],
+        outputs: vec![GraphOutput {
+            name: "out".to_owned(),
+            value: IrRef::Op { id: 1, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let x = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let y = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), x.clone()), ("y".to_owned(), y.clone())]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+    let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+    let mut bad_execution = execution.clone();
+    let bad_output_root = hash_bytes(b"test", &[b"trace-bisection-bad-op-output"]);
+    bad_execution.op_traces[0].output_roots = vec![bad_output_root];
+    bad_execution.trace_root = merkle_root(&bad_execution.trace_leaves());
+    let output_roots = execution
+        .outputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let receipt =
+        GraphReceipt::from_roots(&job, miner, output_roots, bad_execution.trace_root, 1, 3);
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(job)))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: bad_execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+        panic!("expected trace bisection open event");
+    };
+    let challenge_id = *challenge_id;
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = bad_execution.trace_opening(0).unwrap();
+    let expected_output_roots = execution.op_traces[0].output_roots.clone();
+    let round = TraceBisectionRound::new(&state, expected_output_roots.clone(), opening).unwrap();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionIsolated { op_index: 0, .. }]
+    ));
+
+    let witness = IrOpRefereeWitness {
+        op_index: 0,
+        input_values: vec![IrOpWitnessValue::Tensor(x), IrOpWitnessValue::Tensor(y)],
+    };
+    let events = chain
+        .apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness,
+        })
+        .unwrap();
+    assert!(matches!(
+        events.as_slice(),
+        [
+            ChainEvent::TraceBisectionRefereed {
+                dishonest_party,
+                canonical_output_roots,
+                disputed_output_roots,
+                ..
+            },
+            ChainEvent::ChallengeRewardPending {
+                challenge_id: event_challenge_id,
+                block_hash,
+                receipt_id,
+                challenger: event_challenger,
+                amount: 5,
+                ..
+            }
+        ] if *dishonest_party == miner
+            && canonical_output_roots == &expected_output_roots
+            && disputed_output_roots == &vec![bad_output_root]
+            && *event_challenge_id == challenge_id
+            && *block_hash == [0; 32]
+            && *receipt_id == receipt.receipt_id
+            && *event_challenger == challenger
+    ));
+    assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 89);
+    assert_eq!(chain.state().rewards().treasury(), 6);
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    let pending = chain
+        .state()
+        .pending_challenge_rewards()
+        .values()
+        .next()
+        .unwrap();
+    assert_eq!(pending.challenge_id, challenge_id);
+    assert_eq!(pending.receipt_id, receipt.receipt_id);
+    assert_eq!(pending.challenger, challenger);
+    assert_eq!(pending.amount, 5);
+    assert_eq!(
+        pending.claimable_at_height,
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+
+    let claimable_at_height = pending.claimable_at_height;
+    chain.set_position_for_testing(claimable_at_height, 1);
+    assert!(
+        chain
+            .release_matured_challenge_rewards()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(challenger))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ChallengeRewardReleased {
+            challenge_id: event_challenge_id,
+            challenger: event_challenger,
+            amount: 5,
+            ..
+        } if *event_challenge_id == challenge_id && *event_challenger == challenger
+    )));
+    assert_eq!(
+        chain.state().accounts().get(&challenger).unwrap().balance,
+        5
     );
 }
 

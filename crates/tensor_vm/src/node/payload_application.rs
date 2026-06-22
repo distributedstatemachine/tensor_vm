@@ -1703,6 +1703,7 @@ mod tests {
         let miner = address(b"network-trace-bisection-miner");
         let challenger = address(b"network-trace-bisection-challenger");
         chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(challenger, 10_000).unwrap();
 
         let graph =
             canonical_linear_training_step_graph(&[2, 2], &[2, 2], &[2, 2], DType::FieldElement);

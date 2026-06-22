@@ -918,6 +918,7 @@ mod tests {
         let miner = address(b"network-ingest-trace-referee-miner");
         let challenger = address(b"network-ingest-trace-referee-challenger");
         chain.register_miner(miner, 100).unwrap();
+        chain.register_validator(challenger, 10_000).unwrap();
 
         let graph = TensorGraph {
             ir_version: 1,

@@ -458,14 +458,30 @@ impl ChainEngine for Chain {
                 else {
                     unreachable!("referee command returns refereed record")
                 };
-                Ok(vec![ChainEvent::TraceBisectionRefereed {
+                let mut events = vec![ChainEvent::TraceBisectionRefereed {
                     challenge_id: record.challenge_id,
                     receipt_id: record.state.receipt_id,
                     op_index,
                     dishonest_party,
                     canonical_output_roots,
                     disputed_output_roots,
-                }])
+                }];
+                let claim_id = challenges::challenge_reward_claim_id(
+                    &record.challenge_id,
+                    &record.state.challenger,
+                );
+                if let Some(reward) = self.state.pending_challenge_rewards.get(&claim_id) {
+                    events.push(ChainEvent::ChallengeRewardPending {
+                        claim_id,
+                        challenge_id: record.challenge_id,
+                        block_hash: reward.block_hash,
+                        receipt_id: record.state.receipt_id,
+                        challenger: reward.challenger,
+                        amount: reward.amount,
+                        claimable_at_height: reward.claimable_at_height,
+                    });
+                }
+                Ok(events)
             }
             ChainCommand::RecordTraceBisectionTimeout { challenge_id } => {
                 let record = challenges::record_trace_bisection_timeout(self, challenge_id)?;
