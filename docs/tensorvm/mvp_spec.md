@@ -2413,6 +2413,11 @@ lines or empty fields are rejected, and reward-settlement participant IDs must b
 IDs.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
+The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and
+device checks for the counted public miner set. Full-spec evidence requires this count to cover the counted
+public miners; a public run with otherwise valid services, operators, network observations, and raw
+supporting records but missing or undercounted CUDA miner evidence must report
+`public_evidence_full_spec=false`.
 `public_evidence_full_spec=true` is reserved for default-or-stricter public-testnet criteria; shortened or
 relaxed local harness criteria may exercise the validator but must not mark evidence as full-spec.
 

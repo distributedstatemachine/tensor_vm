@@ -41,6 +41,13 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
             .run_evidence
             .has_deployed_public_service_content
     );
+    assert_eq!(parsed.run.cuda_verified_miner_count, 2);
+    assert!(
+        parsed
+            .evaluate(&criteria, 6)
+            .run_evidence
+            .has_cuda_verified_miners
+    );
     assert!(
         parsed
             .evaluate(&criteria, 6)
@@ -249,6 +256,7 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
         manifest_without_line(&manifest, "invalid_work_rejection_signature="),
         manifest_without_line(&manifest, "reward_settlement_root="),
         manifest_without_line(&manifest, "reward_settlement_signature="),
+        manifest_without_line(&manifest, "cuda_verified_miner_count="),
         manifest_without_line(&manifest, "run_started_at_unix_seconds="),
         manifest_without_line(&manifest, "run_ended_at_unix_seconds="),
         manifest_without_line(&manifest, "run_window_signature="),
@@ -262,6 +270,7 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
         manifest.replace("observed_blocks=10", "observed_blocks=10 "),
         manifest.replace("libp2p_runtime_used=true", "libp2p_runtime_used= true"),
         manifest.replace("manifest_signature_count=1", "manifest_signature_count=abc"),
+        manifest.replace("cuda_verified_miner_count=2", "cuda_verified_miner_count=abc"),
         manifest.replace("dos_controls_enabled=true", "dos_controls_enabled=maybe"),
         manifest.replace("node=miner", "node=archive"),
         manifest.replace(

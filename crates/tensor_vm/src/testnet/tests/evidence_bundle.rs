@@ -942,6 +942,42 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
 }
 
 #[test]
+fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(full_spec_report.run_evidence.public_criterion_met);
+    assert!(full_spec_report.independently_checkable);
+    assert!(full_spec_report.has_cuda_verified_miners);
+    assert!(full_spec_report.full_spec_evidence_met);
+
+    let mut missing_cuda = full_spec_bundle.clone();
+    missing_cuda.run.cuda_verified_miner_count = 0;
+    let missing_cuda_report = missing_cuda.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(missing_cuda_report.run_evidence.public_criterion_met);
+    assert!(missing_cuda_report.independently_checkable);
+    assert!(!missing_cuda_report.has_cuda_verified_miners);
+    assert!(!missing_cuda_report.full_spec_evidence_met);
+
+    let mut undercounted_cuda = full_spec_bundle;
+    undercounted_cuda.run.cuda_verified_miner_count =
+        (full_spec_criteria.min_miners.saturating_sub(1)) as u64;
+    let undercounted_cuda_report =
+        undercounted_cuda.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(undercounted_cuda_report.run_evidence.public_criterion_met);
+    assert!(undercounted_cuda_report.independently_checkable);
+    assert_eq!(
+        undercounted_cuda_report
+            .run_evidence
+            .cuda_verified_miner_count,
+        (full_spec_criteria.min_miners - 1) as u64
+    );
+    assert!(!undercounted_cuda_report.has_cuda_verified_miners);
+    assert!(!undercounted_cuda_report.full_spec_evidence_met);
+}
+
+#[test]
 fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = ChainParams::default().block_time_seconds;

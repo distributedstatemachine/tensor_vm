@@ -355,10 +355,12 @@ impl PublicTestnetEvidenceBundle {
             && has_public_supporting_record_artifacts;
         let full_spec_evidence_met = public_testnet_criteria_are_full_spec(criteria)
             && run_evidence.public_criterion_met
+            && run_evidence.has_cuda_verified_miners
             && independently_checkable
             && has_public_randomness_beacon_records
             && has_public_chain_history_records
             && has_public_operational_records;
+        let has_cuda_verified_miners = run_evidence.has_cuda_verified_miners;
         PublicTestnetEvidenceBundleReport {
             run_evidence,
             has_published_evidence_bundle,
@@ -373,6 +375,7 @@ impl PublicTestnetEvidenceBundle {
             has_invalid_work_rejection_records,
             has_reward_settlement_record_summary,
             has_public_supporting_record_artifacts,
+            has_cuda_verified_miners,
             independently_checkable,
             full_spec_evidence_met,
         }

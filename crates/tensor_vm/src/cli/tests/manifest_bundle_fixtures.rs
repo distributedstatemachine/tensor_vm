@@ -106,6 +106,7 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
         invalid_receipts_submitted: 1,
         invalid_receipts_rejected: 1,
         reward_settlement_records: 1,
+        cuda_verified_miner_count: 2,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
     PublicTestnetEvidenceBundle::new(

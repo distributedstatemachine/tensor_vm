@@ -268,6 +268,7 @@ invalid_work_rejection_signature={}
 reward_settlement_records=1
 reward_settlement_root={}
 reward_settlement_signature={}
+cuda_verified_miner_count=2
 node=miner,{},{},0,9,10,{}
 node=miner,{},{},0,9,10,{}
 node=validator,{},{},0,9,10,{}

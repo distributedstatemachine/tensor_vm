@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 190 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 191 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,22 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-567 tests passed under instrumentation:
+568 tests passed under instrumentation:
 - 14 experiments library tests
-- 552 tensor_vm library tests
+- 553 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.80% workspace line coverage
-23142/27291 workspace lines covered
+23153/27302 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 191 coverage-changing work added a public-evidence CUDA miner gate for full-spec evidence. The
+new regression proves otherwise complete public evidence cannot set `public_evidence_full_spec=true`
+unless `cuda_verified_miner_count` covers the counted public miners, and manifest parsing/report output
+now exposes the CUDA miner count and boolean gate.
 
 Iteration 190 coverage-changing work added state-rooted released proposer reward block tracking for
 late-finalized proposer rewards. The new reward regression proves late finality still creates a delayed

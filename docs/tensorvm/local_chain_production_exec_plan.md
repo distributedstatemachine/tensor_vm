@@ -5,17 +5,16 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 190 complete: Proposer Reward Delay Tombstone.
-- Current status: finalized proposer rewards are being moved away from a height-cutoff rematerialization
-  workaround. The chain now records released proposer reward block heights in state, reward roots, state
-  roots, and chain-state snapshots so late-finalized proposer rewards still materialize as delayed claims
-  and already claimed/voided proposer rewards cannot reappear.
+- Active feature: Iteration 191 complete locally: Public Evidence CUDA Miner Gate.
+- Current status: post-run public evidence now requires `cuda_verified_miner_count` to cover counted public
+  miners before a bundle can report `public_evidence_full_spec=true`; deployed services, public operators,
+  raw supporting records, and network-runtime roots remain separately enforced.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: commit and push Iteration 190, then continue CUDA/public deployment evidence or remaining
-  deployed-randomness/economic evidence.
+- Next action: commit and push Iteration 191, then continue the remaining deployed public/CUDA evidence
+  work.
 
 ## Readiness Matrix
 
@@ -34,6 +33,89 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 191: Public Evidence CUDA Miner Gate
+
+Feature capability: require independently checkable post-run evidence to include CUDA-verified counted
+miner evidence before a public evidence bundle can satisfy the full-spec flag.
+
+Readiness requirements covered: `mvp_spec.md` full-spec completion requires real CUDA/C++ kernels where GPU
+mining is claimed, public preflight requires CUDA-ready miners, and public evidence must not promote a
+CPU-only/unspecified public run to full-spec completion.
+
+Canonical owner: `testnet::PublicTestnetEvidenceBundle::evaluate` and the public evidence manifest parser
+own public-run evidence admission; CLI/report surfaces render the resulting evidence fields.
+
+Adapter callers: `tvmd public evidence validate` and docs/deployment examples consume the manifest and
+report output. They must not infer CUDA readiness from local preflight or from the mere presence of miners.
+
+Old shortcut being removed: post-run evidence could satisfy `public_evidence_full_spec=true` through public
+run/service/operator/raw-record gates without a public evidence field proving the counted miners were
+CUDA-verified.
+
+Regression test that proves the shortcut is gone: focused public evidence bundle and manifest tests will
+show full-spec evidence fails when `cuda_verified_miner_count` is missing or lower than the counted miner
+requirement, while relaxed local/public evidence remains non-full-spec.
+
+Behavior with local synthetic block production disabled: unchanged; this only affects public evidence
+validation after a run.
+
+Behavior for producer and non-producer roles: unchanged; counted public miner evidence is evaluated at the
+bundle/report layer, not by role runtime mutation.
+
+Structured evidence source: `cuda_verified_miner_count` in `PublicTestnetRunEvidence` and public evidence
+manifest output/report fields.
+
+Finality source: unchanged; signed run-window and finality-history records remain the finality evidence.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; public evidence manifest gains one scalar
+field.
+
+Parallel subagents to run: none. The user corrected the nonexistent verifier assumption, and the decision
+log says not to spawn subagents without explicit delegation.
+
+Parallelizable implementation workstreams: single-writer slice across public evidence structs/parser,
+fixtures/tests, and docs/status.
+
+Tests/checkers/docs to add or update: public evidence bundle tests, manifest parser/report tests, checked
+public evidence example manifests, coverage/status/tarpaulin docs, and this exec plan.
+
+Narrow validation commands:
+`cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec --lib`,
+`cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+`cargo test -p tensor_vm docs_public_testnet_evidence_manifest_is_parseable_but_not_full_spec --lib`.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`,
+`cargo test --workspace --release`, `cargo clippy --workspace --all-targets -- -D warnings`, and
+tarpaulin because public evidence tests/reportable coverage change.
+
+Expected observable evidence: a full-spec public evidence fixture passes only when its CUDA-verified miner
+count covers the counted miners; removing or undercounting that field keeps all other public evidence true
+but makes `public_evidence_full_spec=false`.
+
+Out of scope: generating real CUDA deployment artifacts or claiming a 7-day public run in this workspace.
+
+Split trigger: split if the manifest format change requires unrelated CLI generation refactors or if broad
+tests expose existing public evidence fixture drift outside this gate.
+
+Validation evidence:
+
+- Required first executable on this resume, before implementation:
+  `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026.
+- Focused evidence passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`,
+  `cargo test -p tensor_vm docs_public_testnet_evidence_manifest_is_parseable_but_not_full_spec --lib`,
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`, and
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_rejects_malformed_input --lib`.
+- Broad gates passed:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Tarpaulin passed:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  568 instrumented tests and 84.80% line coverage, 23153/27302 lines covered.
 
 ### Iteration 190: Proposer Reward Delay Tombstone
 
@@ -106,10 +188,16 @@ Validation evidence:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   567 instrumented tests and 84.80% line coverage, 23142/27291 lines covered.
 - Commit `b1b368b` (`Delay proposer rewards without height workaround`) pushed to `origin/main` on
-  June 22, 2026.
+  June 22, 2026. Metadata commit `5659058` (`Record proposer reward delay push`) was also pushed to
+  `origin/main` on June 22, 2026.
 
 ## Recent Completed Iterations
 
+- Iteration 191: Public Evidence CUDA Miner Gate. Commit pending; full local validation passed on
+  June 22, 2026.
+- Iteration 190: Proposer Reward Delay Tombstone. Commit `b1b368b` (`Delay proposer rewards without height
+  workaround`) pushed to `origin/main` on June 22, 2026; metadata commit `5659058` recorded/pushed the
+  evidence anchor.
 - Iteration 189: Public Evidence Raw Chain History Record Gate. Commit `8f84062`
   (`Require raw public chain history evidence`) pushed to `origin/main` on June 22, 2026; metadata commit
   `581f87a` recorded/pushed the evidence anchor.
@@ -134,6 +222,20 @@ Validation evidence:
 
 ## Validation Evidence
 
+- Current Iteration 191 first executable Gate 0 passed on June 22, 2026.
+- Current Iteration 191 focused validation passed on June 22, 2026:
+  `public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec`,
+  `public_testnet_evidence_manifest_parses_into_bundle`,
+  `docs_public_testnet_evidence_manifest_is_parseable_but_not_full_spec`,
+  `validate_public_evidence_manifest_reports_default_criteria_status`, and
+  `public_testnet_evidence_manifest_rejects_malformed_input`.
+- Current Iteration 191 broad validation passed on June 22, 2026:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Current Iteration 191 tarpaulin passed on June 22, 2026:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  568 instrumented tests and 84.80% line coverage, 23153/27302 lines covered.
 - Current Iteration 190 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 190 focused validation passed on June 22, 2026:
   `late_finalized_proposer_reward_materializes_as_delayed_claim_once`, `proposer_reward`,
@@ -147,7 +249,7 @@ Validation evidence:
 - Current Iteration 190 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   567 instrumented tests and 84.80% line coverage, 23142/27291 lines covered.
-- Commit `b1b368b` pushed to `origin/main` on June 22, 2026.
+- Commits `b1b368b` and `5659058` pushed to `origin/main` on June 22, 2026.
 
 ## Archive
 

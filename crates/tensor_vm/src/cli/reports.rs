@@ -56,6 +56,7 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         "supporting_record_artifacts",
         report.has_public_supporting_record_artifacts,
     );
+    output.field("cuda_verified_miners", report.has_cuda_verified_miners);
     output.field("miners", run.miner_count);
     output.field("validators", run.validator_count);
     output.field(
@@ -76,6 +77,7 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         run.invalid_work_rejection_rate_bps,
     );
     output.field("reward_settlement_records", run.reward_settlement_records);
+    output.field("cuda_verified_miner_count", run.cuda_verified_miner_count);
     output.field("external_operator_evidence", run.external_operator_evidence);
     output.field("required_miners", run.has_required_miners);
     output.field("required_validators", run.has_required_validators);
@@ -94,6 +96,7 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         "reward_settlement_evidence",
         run.has_reward_settlement_records,
     );
+    output.field("cuda_miner_evidence", run.has_cuda_verified_miners);
     output.field(
         "production_libp2p_runtime",
         run.has_production_libp2p_runtime,

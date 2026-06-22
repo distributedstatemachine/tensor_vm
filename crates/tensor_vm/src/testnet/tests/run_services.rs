@@ -47,6 +47,7 @@ fn public_testnet_run_evidence_requires_production_runtime_and_reachable_service
         invalid_receipts_submitted: 1,
         invalid_receipts_rejected: 1,
         reward_settlement_records: 1,
+        cuda_verified_miner_count: 2,
     };
 
     assert!(run.services[0].covers_run(0));

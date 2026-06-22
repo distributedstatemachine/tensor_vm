@@ -553,6 +553,7 @@ checked_receipts=20
 available_receipts=19
 invalid_receipts_submitted=1
 invalid_receipts_rejected=1
+cuda_verified_miner_count=2
 {}
 {}
 {}
@@ -584,6 +585,8 @@ invalid_receipts_rejected=1
         "true"
     );
     assert_eq!(stdout_value(&report, "production_libp2p_runtime"), "true");
+    assert_eq!(stdout_value(&report, "cuda_verified_miner_count"), "2");
+    assert_eq!(stdout_value(&report, "cuda_miner_evidence"), "true");
     assert_eq!(stdout_value(&report, "required_run_duration"), "false");
     assert_eq!(stdout_value(&report, "required_block_count"), "false");
     assert_eq!(stdout_value(&report, "required_miners"), "false");

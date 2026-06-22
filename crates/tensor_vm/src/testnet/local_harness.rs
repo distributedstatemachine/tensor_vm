@@ -497,6 +497,8 @@ impl LocalTestnet {
             has_required_data_availability,
             has_invalid_work_rejection_evidence,
             has_reward_settlement_records,
+            cuda_verified_miner_count: 0,
+            has_cuda_verified_miners: false,
             public_criterion_met,
         }
     }
