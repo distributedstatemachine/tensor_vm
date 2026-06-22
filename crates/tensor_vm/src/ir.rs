@@ -165,12 +165,13 @@ pub struct ConstBlobSpec {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct IrOpTrace {
     pub op_id: usize,
+    pub input_roots: Vec<Hash>,
     pub output_roots: Vec<Hash>,
 }
 
 impl IrOpTrace {
     pub fn leaf_hash(&self) -> Hash {
-        trace_op_leaf(self.op_id, &self.output_roots)
+        trace_op_leaf(self.op_id, &self.input_roots, &self.output_roots)
     }
 }
 
@@ -235,6 +236,43 @@ enum RuntimeValue {
     Field(Elem),
 }
 
+impl From<IrOpWitnessValue> for RuntimeValue {
+    fn from(value: IrOpWitnessValue) -> Self {
+        match value {
+            IrOpWitnessValue::Tensor(tensor) => Self::Tensor(tensor),
+            IrOpWitnessValue::Field(value) => Self::Field(value),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum IrOpWitnessValue {
+    Tensor(Tensor),
+    Field(Elem),
+}
+
+impl IrOpWitnessValue {
+    pub fn commitment_root(&self) -> Hash {
+        match self {
+            Self::Tensor(tensor) => tensor.commitment_root(),
+            Self::Field(value) => field_value_root(*value),
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrOpRefereeWitness {
+    pub op_index: u64,
+    pub input_values: Vec<IrOpWitnessValue>,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct IrOpRefereeVerdict {
+    pub op_index: u64,
+    pub input_roots: Vec<Hash>,
+    pub canonical_output_roots: Vec<Hash>,
+}
+
 pub fn frozen_op_registry() -> &'static [OpSpec] {
     &FROZEN_OP_REGISTRY
 }
@@ -287,6 +325,7 @@ impl TensorGraph {
                     resolve_runtime_ref(arg, &inputs.tensors, &inputs.field_params, &op_outputs)
                 })
                 .collect::<Result<Vec<_>>>()?;
+            let input_roots = args.iter().map(runtime_value_root).collect::<Vec<_>>();
             let outputs = execute_op(op, args)?;
             let output_roots = outputs
                 .iter()
@@ -297,9 +336,10 @@ impl TensorGraph {
                     )),
                 })
                 .collect::<Result<Vec<_>>>()?;
-            trace_leaves.push(trace_op_leaf(op.id, &output_roots));
+            trace_leaves.push(trace_op_leaf(op.id, &input_roots, &output_roots));
             op_traces.push(IrOpTrace {
                 op_id: op.id,
+                input_roots,
                 output_roots,
             });
             op_outputs.push(outputs);
@@ -330,6 +370,45 @@ impl TensorGraph {
             outputs,
             op_traces,
             trace_root: merkle_root(&trace_leaves),
+        })
+    }
+
+    pub fn referee_op(&self, witness: &IrOpRefereeWitness) -> Result<IrOpRefereeVerdict> {
+        self.validate_for_consensus()?;
+        let op = self
+            .ops
+            .get(witness.op_index as usize)
+            .ok_or(TvmError::InvalidChunk {
+                chunk_index: witness.op_index,
+            })?;
+        if op.id as u64 != witness.op_index {
+            return Err(TvmError::InvalidReceipt("tensor ir op id mismatch"));
+        }
+        let input_roots = witness
+            .input_values
+            .iter()
+            .map(IrOpWitnessValue::commitment_root)
+            .collect::<Vec<_>>();
+        let args = witness
+            .input_values
+            .iter()
+            .cloned()
+            .map(RuntimeValue::from)
+            .collect::<Vec<_>>();
+        let outputs = execute_op(op, args)?;
+        let canonical_output_roots = outputs
+            .iter()
+            .map(|value| match value {
+                RuntimeValue::Tensor(tensor) => Ok(tensor.commitment_root()),
+                RuntimeValue::Field(_) => Err(TvmError::InvalidReceipt(
+                    "tensor ir referee op produced scalar output",
+                )),
+            })
+            .collect::<Result<Vec<_>>>()?;
+        Ok(IrOpRefereeVerdict {
+            op_index: witness.op_index,
+            input_roots,
+            canonical_output_roots,
         })
     }
 
@@ -1613,9 +1692,24 @@ fn tensor_and_scalar_values(values: &[RuntimeValue]) -> Result<(&Tensor, Elem)> 
     }
 }
 
-fn trace_op_leaf(op_id: usize, output_roots: &[Hash]) -> Hash {
-    let mut encoded = Vec::with_capacity(16 + output_roots.len() * 32);
+fn runtime_value_root(value: &RuntimeValue) -> Hash {
+    match value {
+        RuntimeValue::Tensor(tensor) => tensor.commitment_root(),
+        RuntimeValue::Field(value) => field_value_root(*value),
+    }
+}
+
+fn field_value_root(value: Elem) -> Hash {
+    hash_bytes(b"tensor-vm-ir-field-value-v1", &[&value.to_le_bytes()])
+}
+
+fn trace_op_leaf(op_id: usize, input_roots: &[Hash], output_roots: &[Hash]) -> Hash {
+    let mut encoded = Vec::with_capacity(24 + input_roots.len() * 32 + output_roots.len() * 32);
     encoded.extend_from_slice(&(op_id as u64).to_le_bytes());
+    encoded.extend_from_slice(&(input_roots.len() as u64).to_le_bytes());
+    for root in input_roots {
+        encoded.extend_from_slice(root);
+    }
     encoded.extend_from_slice(&(output_roots.len() as u64).to_le_bytes());
     for root in output_roots {
         encoded.extend_from_slice(root);
@@ -3881,7 +3975,7 @@ mod tests {
                 tensors: BTreeMap::from([
                     ("lhs".to_owned(), lhs),
                     ("rhs".to_owned(), rhs),
-                    ("bias".to_owned(), bias),
+                    ("bias".to_owned(), bias.clone()),
                 ]),
                 field_params: BTreeMap::new(),
             })
@@ -3902,7 +3996,7 @@ mod tests {
         let trace_leaves: Vec<_> = execution
             .op_traces
             .iter()
-            .map(|trace| trace_op_leaf(trace.op_id, &trace.output_roots))
+            .map(|trace| trace_op_leaf(trace.op_id, &trace.input_roots, &trace.output_roots))
             .collect();
         assert_eq!(execution.trace_root, merkle_root(&trace_leaves));
         assert_eq!(execution.trace_leaves(), trace_leaves);
@@ -3911,10 +4005,20 @@ mod tests {
         assert_eq!(opening.op_index, 1);
         assert_eq!(opening.op_trace.op_id, 1);
         assert_eq!(
+            opening.op_trace.input_roots,
+            vec![
+                execution.op_traces[0].output_roots[0],
+                bias.commitment_root()
+            ]
+        );
+        assert_eq!(
             opening.op_trace.output_roots[0],
             expected_biased.commitment_root()
         );
         assert!(opening.verify());
+        let mut tampered_input = opening.clone();
+        tampered_input.op_trace.input_roots[0] = expected_row_sum.commitment_root();
+        assert!(!tampered_input.verify());
         let mut tampered = opening.clone();
         tampered.op_trace.output_roots[0] = expected_row_sum.commitment_root();
         assert!(!tampered.verify());

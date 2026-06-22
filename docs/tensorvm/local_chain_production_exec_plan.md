@@ -19,22 +19,24 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   chain admission now records sessions, signed rounds, transcript-root progress, isolated-op outcomes, and
   responder timeouts in state-rooted dispute records. Node-side application of bounded trace-bisection
   round payloads now uses the shared pending queue and canonical chain command path with status counters.
-  One-op referee execution, slashing, challenger settlement, session-open gossip, and runtime generation
-  remain open.
+  Trace openings now bind resolved input roots as well as output roots, and isolated trace-bisection
+  sessions can record chain-owned one-op referee verdicts from explicit witness values. Slashing,
+  challenger settlement, p2p referee payloads, session-open gossip, runtime generation, and multi-round DoS
+  policy remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are one-op referee execution
-  for isolated trace-bisection disputes, session-open/runtime challenge generation, deployed full VRF
-  lifecycle evidence, public/CUDA deployment evidence, or the remaining exact Tier-B/CUDA conformance
-  surface.
+- Next action: choose the next feature-sized slice. Current high-value options are p2p/runtime referee
+  payloads, trace-bisection slashing and challenger settlement, session-open/runtime challenge generation,
+  deployed full VRF lifecycle evidence, public/CUDA deployment evidence, or remaining exact Tier-B/CUDA
+  conformance surface.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 162 on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | `cargo test -p tensor_vm local_testnet --release` passed as first command and final gate for Iteration 163 on June 22, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, local-testnet Gate 0 | Preserve one transition engine while adding IR/runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations | Implemented locally | Validator role verifies assigned receipts, fetches tensors remotely, submits attestations | Keep as input path for IR-backed jobs |
@@ -42,7 +44,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, trace-bisection rounds, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof, and trace-bisection p2p/chain admission | Add referee execution or deployed public/CUDA proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, p2p trace openings, signed trace-bisection core, bounded trace-bisection round p2p payloads, state-rooted chain admission for trace-bisection sessions/rounds, and node pending-queue application | Continue one-op referee execution, session-open/runtime generation, and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, input-rooted p2p trace openings, signed trace-bisection core, bounded trace-bisection round p2p payloads, state-rooted chain admission for trace-bisection sessions/rounds, node pending-queue application, and chain-owned one-op referee verdicts | Continue p2p/runtime referee payloads, slashing/settlement, session-open/runtime generation, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, verified drand, public chained drand, chain-owned epoch windows, registered validator reveal keys, and keyed Ed25519 reveal proofs before reward release | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -55,6 +57,93 @@ No active feature is checkpointed. Start the next slice with the required Gate 0
 checkpoint before edits.
 
 ## Recent Iterations
+
+### Iteration 163: Trace-Bisection Referee-Ready Openings And Verdicts
+
+Commit: pending.
+
+Feature capability: isolated trace-bisection disputes should carry enough state-rooted evidence for a real
+one-op referee ruling: trace openings commit to the resolved input roots as well as output roots, isolated
+records retain the last opened input/output roots, and a chain command records the canonical one-op referee
+verdict for the isolated op without mutating stakes or rewards yet.
+
+Readiness requirements covered: `upow.md` §8.2 interactive fraud proofs over `trace_root`, §9 trace opening
+availability, `mvp_spec.md` §4.6 canonical transition boundary, and the current open item for referee
+one-op execution after trace-bisection isolation.
+
+Canonical owner: `ir` owns input-rooted trace leaves/openings and one-op exact execution from explicit
+witness values. `chain::challenges` owns isolated-session referee admission, verdict state, duplicate
+rejection, and state-rooted records. P2P/node/runtime remain codecs/adapters and must not decide the
+winner.
+
+Adapter callers: future runtime/session-open gossip and p2p referee payloads will call the chain command;
+this slice adds no p2p referee message.
+
+Old shortcut being removed: a “referee” cannot rule from output roots alone or from adapter-local replay.
+The opened trace leaf must bind agreed input roots before any canonical one-op verdict is recorded.
+
+Regression test that proves the shortcut is gone: trace opening tampering with input roots invalidates the
+Merkle proof; chain referee admission rejects a witness whose input roots do not match the isolated
+opening and records a verdict only when canonical one-op output roots disagree with the disputed output
+roots.
+
+Behavior with local synthetic block production disabled: unchanged; referee admission is an explicit chain
+command independent of local producer settings.
+
+Behavior for producer and non-producer roles: unchanged this slice; both will later submit/ingest the same
+bounded referee payload through shared node application.
+
+Structured evidence source: `TraceBisectionRecord` status and last opened input/output roots, chain events,
+state root, and snapshot codec.
+
+Finality source: unchanged block votes/finality; referee verdicts are chain state transitions but do not
+finalize blocks.
+
+Wire-size and codec boundary: trace-opening payload codec remains bounded and is extended with a bounded
+input-root vector. No unbounded reads and no new block/job/receipt codec.
+
+Tests/checkers/docs to add or update: IR trace-opening tests, p2p trace-opening/round codec tests,
+chain trace-bisection referee tests, storage/state-root tests, `upow.md`, and this execution plan.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`
+- `cargo test -p tensor_vm trace_opening --lib -- --nocapture`
+- `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`
+- `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --tests`
+- `git diff --check`
+- `cargo test -p tensor_vm --lib`
+- `cargo test -p tensor_vm local_testnet --release`
+
+Expected observable evidence: exact IR trace roots change to bind each op's resolved input roots; bounded
+trace-opening payloads roundtrip and reject input-root tampering; isolated trace-bisection records persist
+last input/output roots; `RefereeTraceBisection` records the canonical output roots and losing party for an
+isolated disputed op; duplicate/mismatched/non-isolated referee commands are rejected.
+
+Out of scope: stake slashing, challenger bounty settlement, p2p referee payloads, runtime challenge
+generation, session-open gossip, public/CUDA evidence, and multi-round DoS policy.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm trace_opening --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm trace_bisection_round_payload --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`.
+- Focused regression after trace-root hash-order changes:
+  `cargo test -p tensor_vm parent_state_skips_conflicting_linear_transition_after_first_match --lib -- --nocapture`.
+- Focused regression after receipt-reward delay assertions covered validator VRF-held claims:
+  `cargo test -p tensor_vm produced_blocks_delay_receipt_rewards_from_inclusion_height --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (523 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
 ### Iteration 162: Trace-Bisection Node Payload Application
 

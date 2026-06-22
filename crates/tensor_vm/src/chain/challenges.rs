@@ -1,5 +1,5 @@
 use super::state::{
-    BlockCheckChallengeRecord, ChainState, PendingChallengeReward, TensorBlock,
+    BlockCheckChallengeRecord, ChainState, JobState, PendingChallengeReward, TensorBlock,
     TraceBisectionRecord, TraceBisectionStatus,
 };
 use super::{Chain, blocks, settlement};
@@ -8,6 +8,7 @@ use crate::challenge::{
     TraceBisectionRound, TraceBisectionState, TraceBisectionStep, trace_bisection_challenge_id,
 };
 use crate::error::{Result, TvmError};
+use crate::ir::{IrOpRefereeWitness, TensorGraph};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
 use crate::types::{Address, Hash, hash_bytes, sign};
 
@@ -351,6 +352,8 @@ pub fn open_trace_bisection(
         state,
         opened_rounds: 0,
         last_round_leaf: None,
+        last_opening_input_roots: Vec::new(),
+        last_opening_output_roots: Vec::new(),
         last_matched_midpoint: None,
         started_at_height: chain.state.height,
         updated_at_height: chain.state.height,
@@ -394,12 +397,16 @@ pub fn submit_trace_bisection_round(
             record.state = next_state;
             record.opened_rounds = record.opened_rounds.saturating_add(1);
             record.last_round_leaf = Some(round_leaf);
+            record.last_opening_input_roots = round.opening.op_trace.input_roots.clone();
+            record.last_opening_output_roots = round.opening.op_trace.output_roots.clone();
             record.last_matched_midpoint = Some(matched_midpoint);
             record.updated_at_height = chain.state.height;
         }
         TraceBisectionStep::Isolated { op_index } => {
             record.opened_rounds = record.opened_rounds.saturating_add(1);
             record.last_round_leaf = Some(round_leaf);
+            record.last_opening_input_roots = round.opening.op_trace.input_roots.clone();
+            record.last_opening_output_roots = round.opening.op_trace.output_roots.clone();
             record.last_matched_midpoint =
                 Some(round.expected_output_roots == round.opening.op_trace.output_roots);
             record.updated_at_height = chain.state.height;
@@ -408,6 +415,86 @@ pub fn submit_trace_bisection_round(
         TraceBisectionStep::TimedOut { .. } => unreachable!("round application cannot time out"),
     }
     Ok(record.clone())
+}
+
+pub fn referee_trace_bisection(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    witness: IrOpRefereeWitness,
+) -> Result<TraceBisectionRecord> {
+    let record = chain
+        .state
+        .trace_bisection_challenges
+        .get(&challenge_id)
+        .cloned()
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    let TraceBisectionStatus::Isolated { op_index } = record.status else {
+        return Err(TvmError::InvalidReceipt("trace bisection is not isolated"));
+    };
+    if witness.op_index != op_index {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection referee op mismatch",
+        ));
+    }
+    if record.last_opening_input_roots.is_empty() || record.last_opening_output_roots.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection missing isolated opening roots",
+        ));
+    }
+    let graph = trace_bisection_receipt_graph(chain, record.state.receipt_id)?;
+    let verdict = graph.referee_op(&witness)?;
+    if verdict.input_roots != record.last_opening_input_roots {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection referee input root mismatch",
+        ));
+    }
+    let dishonest_party = if verdict.canonical_output_roots == record.last_opening_output_roots {
+        record.state.challenger
+    } else {
+        record.state.responder
+    };
+    let updated = chain
+        .state
+        .trace_bisection_challenges
+        .get_mut(&challenge_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    if !matches!(updated.status, TraceBisectionStatus::Isolated { .. }) {
+        return Err(TvmError::InvalidReceipt("trace bisection is not isolated"));
+    }
+    updated.status = TraceBisectionStatus::Refereed {
+        op_index,
+        dishonest_party,
+        canonical_output_roots: verdict.canonical_output_roots,
+        disputed_output_roots: updated.last_opening_output_roots.clone(),
+    };
+    updated.updated_at_height = chain.state.height;
+    Ok(updated.clone())
+}
+
+fn trace_bisection_receipt_graph(chain: &Chain, receipt_id: Hash) -> Result<TensorGraph> {
+    let receipt = chain
+        .state
+        .receipts
+        .get(&receipt_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection receipt"))?;
+    let job = chain
+        .state
+        .jobs
+        .get(&receipt.job_id())
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection job"))?;
+    match job {
+        JobState::TensorOp(job) => Ok(job.tensor_ir_graph()),
+        JobState::LinearTrainingStep(job) => Ok(job.tensor_ir_graph()),
+        JobState::GraphExecution(job) => {
+            let body = chain
+                .state
+                .program_body(&job.graph_id)
+                .ok_or(TvmError::InvalidReceipt(
+                    "missing trace bisection program body",
+                ))?;
+            TensorGraph::from_canonical_json_bytes(body)
+        }
+    }
 }
 
 pub fn record_trace_bisection_timeout(

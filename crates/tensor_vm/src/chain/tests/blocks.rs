@@ -251,6 +251,11 @@ fn parent_state_skips_conflicting_linear_transition_after_first_match() {
     receipt_b.weight_root_after = hash_bytes(b"test", &[b"conflicting-linear-after-b"]);
     receipt_b.receipt_id = receipt_b.recompute_receipt_id(&job.program_hash());
     receipt_b.signature = sign(&miner_b, &receipt_b.receipt_id);
+    while receipt_b.receipt_id < receipt_a.receipt_id {
+        receipt_b.execution_time_ms = receipt_b.execution_time_ms.saturating_add(1);
+        receipt_b.receipt_id = receipt_b.recompute_receipt_id(&job.program_hash());
+        receipt_b.signature = sign(&miner_b, &receipt_b.receipt_id);
+    }
     chain.submit_linear_receipt(receipt_a.clone()).unwrap();
     chain.submit_linear_receipt(receipt_b.clone()).unwrap();
     for receipt in [&receipt_a, &receipt_b] {
@@ -1001,7 +1006,9 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
         .state()
         .pending_receipt_rewards()
         .values()
-        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id && reward.kind == ReceiptRewardKind::Miner
+        })
         .unwrap();
     assert!(initial_claim.awaiting_inclusion());
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());
@@ -1021,23 +1028,35 @@ fn produced_blocks_delay_receipt_rewards_from_inclusion_height() {
             .included_receipts()
             .contains(&receipt.receipt_id)
     );
+    let inclusion_delayed_height = block.height.saturating_add(
+        chain
+            .params()
+            .reward_settlement_delay_epochs
+            .saturating_add(chain.params().challenge_window_epochs)
+            .saturating_mul(chain.params().epoch_length),
+    );
     let inclusion_delayed_claimable = chain
         .state()
         .pending_receipt_rewards()
         .values()
-        .find(|reward| reward.receipt_id == receipt.receipt_id)
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id && reward.kind == ReceiptRewardKind::Miner
+        })
         .unwrap()
         .claimable_at_height()
         .expect("receipt reward should have inclusion-derived maturity");
+    assert_eq!(inclusion_delayed_claimable, inclusion_delayed_height);
+    let validator_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .values()
+        .find(|reward| {
+            reward.receipt_id == receipt.receipt_id && reward.kind == ReceiptRewardKind::Validator
+        })
+        .unwrap();
     assert_eq!(
-        inclusion_delayed_claimable,
-        block.height.saturating_add(
-            chain
-                .params()
-                .reward_settlement_delay_epochs
-                .saturating_add(chain.params().challenge_window_epochs)
-                .saturating_mul(chain.params().epoch_length)
-        )
+        validator_reward.maturity,
+        ReceiptRewardMaturity::AwaitingValidatorVrfReveal(inclusion_delayed_height)
     );
     assert!(inclusion_delayed_claimable > 0);
     assert!(chain.release_matured_receipt_rewards().unwrap().is_empty());

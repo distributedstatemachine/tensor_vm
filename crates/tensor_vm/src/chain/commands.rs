@@ -438,8 +438,34 @@ impl ChainEngine for Chain {
                     super::TraceBisectionStatus::TimedOut { .. } => {
                         unreachable!("round submission cannot record timeout")
                     }
+                    super::TraceBisectionStatus::Refereed { .. } => {
+                        unreachable!("round submission cannot record referee verdict")
+                    }
                 };
                 Ok(vec![event])
+            }
+            ChainCommand::RefereeTraceBisection {
+                challenge_id,
+                witness,
+            } => {
+                let record = challenges::referee_trace_bisection(self, challenge_id, witness)?;
+                let super::TraceBisectionStatus::Refereed {
+                    op_index,
+                    dishonest_party,
+                    canonical_output_roots,
+                    disputed_output_roots,
+                } = record.status
+                else {
+                    unreachable!("referee command returns refereed record")
+                };
+                Ok(vec![ChainEvent::TraceBisectionRefereed {
+                    challenge_id: record.challenge_id,
+                    receipt_id: record.state.receipt_id,
+                    op_index,
+                    dishonest_party,
+                    canonical_output_roots,
+                    disputed_output_roots,
+                }])
             }
             ChainCommand::RecordTraceBisectionTimeout { challenge_id } => {
                 let record = challenges::record_trace_bisection_timeout(self, challenge_id)?;

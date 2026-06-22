@@ -6,7 +6,7 @@ use crate::challenge::{
     BlockCheckChallenge, ChallengeOutcome, TraceBisectionConfig, TraceBisectionRound,
 };
 use crate::error::Result;
-use crate::ir::GraphId;
+use crate::ir::{GraphId, IrOpRefereeWitness};
 use crate::types::{Address, Hash};
 use crate::verify::ValidatorAttestation;
 
@@ -147,6 +147,10 @@ pub enum ChainCommand {
     SubmitBlockCheckChallenge(BlockCheckChallenge),
     OpenTraceBisection(TraceBisectionConfig),
     SubmitTraceBisectionRound(TraceBisectionRound),
+    RefereeTraceBisection {
+        challenge_id: Hash,
+        witness: IrOpRefereeWitness,
+    },
     RecordTraceBisectionTimeout {
         challenge_id: Hash,
     },
@@ -349,6 +353,14 @@ pub enum ChainEvent {
         challenge_id: Hash,
         receipt_id: Hash,
         forfeiting_party: Address,
+    },
+    TraceBisectionRefereed {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        op_index: u64,
+        dishonest_party: Address,
+        canonical_output_roots: Vec<Hash>,
+        disputed_output_roots: Vec<Hash>,
     },
 }
 

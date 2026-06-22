@@ -505,6 +505,10 @@ fn encode_trace_opening_for_hash(opening: &IrTraceOpening) -> Vec<u8> {
     encoded.extend_from_slice(&opening.trace_root);
     encoded.extend_from_slice(&opening.op_index.to_le_bytes());
     encoded.extend_from_slice(&opening.op_trace.op_id.to_le_bytes());
+    encoded.extend_from_slice(&(opening.op_trace.input_roots.len() as u64).to_le_bytes());
+    for root in &opening.op_trace.input_roots {
+        encoded.extend_from_slice(root);
+    }
     encoded.extend_from_slice(&(opening.op_trace.output_roots.len() as u64).to_le_bytes());
     for root in &opening.op_trace.output_roots {
         encoded.extend_from_slice(root);

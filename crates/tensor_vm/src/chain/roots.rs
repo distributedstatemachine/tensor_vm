@@ -265,6 +265,14 @@ pub(super) fn trace_bisection_challenge_root(
             }
             None => encoded.push(0),
         }
+        encoded.extend_from_slice(&(record.last_opening_input_roots.len() as u64).to_le_bytes());
+        for root in &record.last_opening_input_roots {
+            encoded.extend_from_slice(root);
+        }
+        encoded.extend_from_slice(&(record.last_opening_output_roots.len() as u64).to_le_bytes());
+        for root in &record.last_opening_output_roots {
+            encoded.extend_from_slice(root);
+        }
         match record.last_matched_midpoint {
             Some(matched) => {
                 encoded.push(1);
@@ -275,13 +283,30 @@ pub(super) fn trace_bisection_challenge_root(
         encoded.extend_from_slice(&record.started_at_height.to_le_bytes());
         encoded.extend_from_slice(&record.updated_at_height.to_le_bytes());
         encoded.push(record.status.tag());
-        match record.status {
+        match &record.status {
             TraceBisectionStatus::Active => {}
             TraceBisectionStatus::Isolated { op_index } => {
                 encoded.extend_from_slice(&op_index.to_le_bytes());
             }
+            TraceBisectionStatus::Refereed {
+                op_index,
+                dishonest_party,
+                canonical_output_roots,
+                disputed_output_roots,
+            } => {
+                encoded.extend_from_slice(&op_index.to_le_bytes());
+                encoded.extend_from_slice(dishonest_party);
+                encoded.extend_from_slice(&(canonical_output_roots.len() as u64).to_le_bytes());
+                for root in canonical_output_roots {
+                    encoded.extend_from_slice(root);
+                }
+                encoded.extend_from_slice(&(disputed_output_roots.len() as u64).to_le_bytes());
+                for root in disputed_output_roots {
+                    encoded.extend_from_slice(root);
+                }
+            }
             TraceBisectionStatus::TimedOut { forfeiting_party } => {
-                encoded.extend_from_slice(&forfeiting_party);
+                encoded.extend_from_slice(forfeiting_party);
             }
         }
     }

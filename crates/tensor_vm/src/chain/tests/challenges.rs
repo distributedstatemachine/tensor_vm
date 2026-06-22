@@ -4,6 +4,9 @@ use crate::{
     challenge::{
         BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionRound,
     },
+    ir::{
+        GraphOutput, IrOpRefereeWitness, IrOpWitnessValue, IrRef, OpNode, TensorGraph, TensorSpec,
+    },
     jobs::{GraphJob, GraphReceipt},
     merkle::{build_proof, merkle_root},
     storage::{decode_chain_state_snapshot, encode_chain_state_snapshot},
@@ -71,6 +74,76 @@ fn trace_bisection_fixture() -> (Chain, GraphReceipt, crate::ir::IrExecution) {
         )))
         .unwrap();
     (chain, receipt, execution)
+}
+
+fn two_op_trace_bisection_fixture() -> (Chain, GraphReceipt, crate::ir::IrExecution, Tensor, Tensor)
+{
+    let beacon = hash_bytes(b"test", &[b"trace-bisection-referee-chain"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"trace-bisection-referee-miner");
+    chain.register_miner(miner, 100).unwrap();
+
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![
+            TensorSpec::field("x", vec![2, 2]),
+            TensorSpec::field("y", vec![2, 2]),
+        ],
+        params: Vec::new(),
+        ops: vec![
+            OpNode {
+                id: 0,
+                op: "add".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "y".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("sum", vec![2, 2])],
+            },
+            OpNode {
+                id: 1,
+                op: "identity".to_owned(),
+                args: vec![IrRef::Op { id: 0, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("out", vec![2, 2])],
+            },
+        ],
+        outputs: vec![GraphOutput {
+            name: "out".to_owned(),
+            value: IrRef::Op { id: 1, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let x = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let y = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), x.clone()), ("y".to_owned(), y.clone())]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 8);
+    let (receipt, _) = GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+    let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(job)))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+    (chain, receipt, execution, x, y)
 }
 
 #[test]
@@ -159,6 +232,143 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
         record.status,
         TraceBisectionStatus::Isolated { op_index: 5 }
     ));
+
+    let encoded = encode_chain_state_snapshot(chain.state());
+    let decoded = decode_chain_state_snapshot(&encoded).unwrap();
+    assert_eq!(
+        decoded.trace_bisection_challenges(),
+        chain.state().trace_bisection_challenges()
+    );
+}
+
+#[test]
+fn isolated_trace_bisection_referee_records_one_op_verdict() {
+    let (mut chain, receipt, execution, x, y) = two_op_trace_bisection_fixture();
+    let challenger = address(b"trace-bisection-referee-challenger");
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+        panic!("expected trace bisection open event");
+    };
+    let challenge_id = *challenge_id;
+    let witness = IrOpRefereeWitness {
+        op_index: 0,
+        input_values: vec![
+            IrOpWitnessValue::Tensor(x.clone()),
+            IrOpWitnessValue::Tensor(y.clone()),
+        ],
+    };
+    assert_eq!(
+        chain.apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness: witness.clone(),
+        }),
+        Err(TvmError::InvalidReceipt("trace bisection is not isolated"))
+    );
+
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = execution.trace_opening(0).unwrap();
+    let wrong_expected = vec![hash_bytes(b"test", &[b"wrong-referee-expected-root"])];
+    let round = TraceBisectionRound::new(&state, wrong_expected, opening.clone()).unwrap();
+    let isolated_events = chain
+        .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+        .unwrap();
+    assert!(matches!(
+        isolated_events.as_slice(),
+        [ChainEvent::TraceBisectionIsolated { op_index: 0, .. }]
+    ));
+    let record = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap();
+    assert_eq!(
+        record.last_opening_input_roots,
+        opening.op_trace.input_roots
+    );
+    assert_eq!(
+        record.last_opening_output_roots,
+        opening.op_trace.output_roots
+    );
+
+    let bad_witness = IrOpRefereeWitness {
+        op_index: 0,
+        input_values: vec![
+            IrOpWitnessValue::Tensor(y.clone()),
+            IrOpWitnessValue::Tensor(x.clone()),
+        ],
+    };
+    assert_eq!(
+        chain.apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness: bad_witness,
+        }),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection referee input root mismatch"
+        ))
+    );
+
+    let refereed_events = chain
+        .apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness,
+        })
+        .unwrap();
+    let expected_sum = x.add(&y).unwrap().commitment_root();
+    assert!(matches!(
+        refereed_events.as_slice(),
+        [ChainEvent::TraceBisectionRefereed {
+            op_index: 0,
+            dishonest_party,
+            canonical_output_roots,
+            disputed_output_roots,
+            ..
+        }] if *dishonest_party == challenger
+            && canonical_output_roots == &vec![expected_sum]
+            && disputed_output_roots == &opening.op_trace.output_roots
+    ));
+    let record = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap();
+    assert!(matches!(
+        &record.status,
+        TraceBisectionStatus::Refereed {
+            op_index: 0,
+            dishonest_party,
+            canonical_output_roots,
+            disputed_output_roots,
+        } if *dishonest_party == challenger
+            && canonical_output_roots == &vec![expected_sum]
+            && disputed_output_roots == &opening.op_trace.output_roots
+    ));
+    assert_eq!(
+        chain.apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness: IrOpRefereeWitness {
+                op_index: 0,
+                input_values: vec![IrOpWitnessValue::Tensor(x), IrOpWitnessValue::Tensor(y)],
+            },
+        }),
+        Err(TvmError::InvalidReceipt("trace bisection is not isolated"))
+    );
 
     let encoded = encode_chain_state_snapshot(chain.state());
     let decoded = decode_chain_state_snapshot(&encoded).unwrap();

@@ -1395,6 +1395,8 @@ fn encode_trace_bisection_challenges(
             }
             None => out.push(0),
         }
+        write_hash_vec(out, &record.last_opening_input_roots);
+        write_hash_vec(out, &record.last_opening_output_roots);
         match record.last_matched_midpoint {
             Some(matched) => {
                 out.push(1);
@@ -1405,11 +1407,22 @@ fn encode_trace_bisection_challenges(
         write_u64(out, record.started_at_height);
         write_u64(out, record.updated_at_height);
         out.push(record.status.tag());
-        match record.status {
+        match &record.status {
             TraceBisectionStatus::Active => {}
-            TraceBisectionStatus::Isolated { op_index } => write_u64(out, op_index),
+            TraceBisectionStatus::Isolated { op_index } => write_u64(out, *op_index),
+            TraceBisectionStatus::Refereed {
+                op_index,
+                dishonest_party,
+                canonical_output_roots,
+                disputed_output_roots,
+            } => {
+                write_u64(out, *op_index);
+                write_hash(out, dishonest_party);
+                write_hash_vec(out, canonical_output_roots);
+                write_hash_vec(out, disputed_output_roots);
+            }
             TraceBisectionStatus::TimedOut { forfeiting_party } => {
-                write_hash(out, &forfeiting_party);
+                write_hash(out, forfeiting_party);
             }
         }
     }
@@ -1438,6 +1451,8 @@ fn decode_trace_bisection_challenges(
             1 => Some(reader.read_hash()?),
             _ => return Err(TvmError::Storage("invalid trace bisection round leaf tag")),
         };
+        let last_opening_input_roots = read_hash_vec(reader)?;
+        let last_opening_output_roots = read_hash_vec(reader)?;
         let last_matched_midpoint = match reader.read_u8()? {
             0 => None,
             1 => match reader.read_u8()? {
@@ -1454,7 +1469,13 @@ fn decode_trace_bisection_challenges(
             1 => TraceBisectionStatus::Isolated {
                 op_index: reader.read_u64()?,
             },
-            2 => TraceBisectionStatus::TimedOut {
+            2 => TraceBisectionStatus::Refereed {
+                op_index: reader.read_u64()?,
+                dishonest_party: reader.read_hash()?,
+                canonical_output_roots: read_hash_vec(reader)?,
+                disputed_output_roots: read_hash_vec(reader)?,
+            },
+            3 => TraceBisectionStatus::TimedOut {
                 forfeiting_party: reader.read_hash()?,
             },
             _ => return Err(TvmError::Storage("invalid trace bisection status")),
@@ -1477,6 +1498,8 @@ fn decode_trace_bisection_challenges(
                 },
                 opened_rounds,
                 last_round_leaf,
+                last_opening_input_roots,
+                last_opening_output_roots,
                 last_matched_midpoint,
                 started_at_height,
                 updated_at_height,
@@ -1493,6 +1516,21 @@ fn encode_u64_by_hash_map(out: &mut Vec<u8>, items: &BTreeMap<Hash, u64>) {
         write_hash(out, key);
         write_u64(out, *value);
     }
+}
+
+fn write_hash_vec(out: &mut Vec<u8>, items: &[Hash]) {
+    write_len(out, items.len());
+    for item in items {
+        write_hash(out, item);
+    }
+}
+
+fn read_hash_vec(reader: &mut StateReader<'_>) -> Result<Vec<Hash>> {
+    let mut items = Vec::new();
+    for _ in 0..reader.read_len()? {
+        items.push(reader.read_hash()?);
+    }
+    Ok(items)
 }
 
 fn decode_u64_by_hash_map(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash, u64>> {

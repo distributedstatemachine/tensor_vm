@@ -880,6 +880,10 @@ pub fn encode_trace_opening_payload(opening: &IrTraceOpening) -> Vec<u8> {
     write_hash(&mut out, &opening.trace_root);
     write_u64(&mut out, opening.op_index);
     write_u64(&mut out, opening.op_trace.op_id as u64);
+    write_u64(&mut out, opening.op_trace.input_roots.len() as u64);
+    for root in &opening.op_trace.input_roots {
+        write_hash(&mut out, root);
+    }
     write_u64(&mut out, opening.op_trace.output_roots.len() as u64);
     for root in &opening.op_trace.output_roots {
         write_hash(&mut out, root);
@@ -897,6 +901,16 @@ pub fn decode_trace_opening_payload(input: &[u8]) -> TvmResult<IrTraceOpening> {
     let trace_root = reader.read_hash()?;
     let op_index = reader.read_u64()?;
     let op_id = read_usize(&mut reader)?;
+    let input_root_len = read_usize(&mut reader)?;
+    if input_root_len > MAX_TRACE_OUTPUT_ROOTS {
+        return Err(TvmError::InvalidReceipt(
+            "trace opening input roots too large",
+        ));
+    }
+    let mut input_roots = Vec::with_capacity(input_root_len);
+    for _ in 0..input_root_len {
+        input_roots.push(reader.read_hash()?);
+    }
     let output_root_len = read_usize(&mut reader)?;
     if output_root_len > MAX_TRACE_OUTPUT_ROOTS {
         return Err(TvmError::InvalidReceipt(
@@ -926,6 +940,7 @@ pub fn decode_trace_opening_payload(input: &[u8]) -> TvmResult<IrTraceOpening> {
         op_index,
         op_trace: IrOpTrace {
             op_id,
+            input_roots,
             output_roots,
         },
         proof: MerkleProof {
@@ -2974,6 +2989,7 @@ mod tests {
     fn trace_opening_fixture() -> IrTraceOpening {
         let op_trace = IrOpTrace {
             op_id: 0,
+            input_roots: vec![hash_bytes(b"test", &[b"trace-opening-input"])],
             output_roots: vec![hash_bytes(b"test", &[b"trace-opening-output"])],
         };
         IrTraceOpening {
@@ -2993,14 +3009,17 @@ mod tests {
         let traces = [
             IrOpTrace {
                 op_id: 0,
+                input_roots: vec![hash_bytes(b"test", &[b"trace-bisection-input-0"])],
                 output_roots: vec![hash_bytes(b"test", &[b"trace-bisection-op-0"])],
             },
             IrOpTrace {
                 op_id: 1,
+                input_roots: vec![hash_bytes(b"test", &[b"trace-bisection-input-1"])],
                 output_roots: vec![hash_bytes(b"test", &[b"trace-bisection-op-1"])],
             },
             IrOpTrace {
                 op_id: 2,
+                input_roots: vec![hash_bytes(b"test", &[b"trace-bisection-input-2"])],
                 output_roots: vec![hash_bytes(b"test", &[b"trace-bisection-op-2"])],
             },
         ];

@@ -310,8 +310,18 @@ pub struct BlockCheckChallengeRecord {
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub enum TraceBisectionStatus {
     Active,
-    Isolated { op_index: u64 },
-    TimedOut { forfeiting_party: Address },
+    Isolated {
+        op_index: u64,
+    },
+    Refereed {
+        op_index: u64,
+        dishonest_party: Address,
+        canonical_output_roots: Vec<Hash>,
+        disputed_output_roots: Vec<Hash>,
+    },
+    TimedOut {
+        forfeiting_party: Address,
+    },
 }
 
 impl TraceBisectionStatus {
@@ -319,7 +329,8 @@ impl TraceBisectionStatus {
         match self {
             Self::Active => 0,
             Self::Isolated { .. } => 1,
-            Self::TimedOut { .. } => 2,
+            Self::Refereed { .. } => 2,
+            Self::TimedOut { .. } => 3,
         }
     }
 }
@@ -330,6 +341,8 @@ pub struct TraceBisectionRecord {
     pub state: TraceBisectionState,
     pub opened_rounds: u64,
     pub last_round_leaf: Option<Hash>,
+    pub last_opening_input_roots: Vec<Hash>,
+    pub last_opening_output_roots: Vec<Hash>,
     pub last_matched_midpoint: Option<bool>,
     pub started_at_height: u64,
     pub updated_at_height: u64,
