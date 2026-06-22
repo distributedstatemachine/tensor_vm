@@ -5,8 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 194 validation complete, pending commit/push: Public VRF Lifecycle Evidence
-  Gate.
+- Active feature: Iteration 194 complete and pushed: Public VRF Lifecycle Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly before
@@ -17,7 +16,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: commit and push Iteration 194, then continue deployed public/CUDA evidence work.
+- Next action: continue deployed public/CUDA evidence work, especially real public VRF lifecycle artifacts.
 
 ## Readiness Matrix
 
@@ -97,6 +96,9 @@ Tarpaulin passed:
 `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with 572 instrumented
 tests and 84.82% line coverage, 23183/27332 lines covered.
 
+Commit `5a101b5` (`Require VRF lifecycle evidence for full spec`) pushed to `origin/main` on
+June 22, 2026.
+
 Expected observable evidence: otherwise complete full-spec public evidence passes only when
 `validator_vrf_lifecycle_records` covers every checked receipt exactly; missing, zero, malformed,
 undercounted, or overcounted lifecycle evidence keeps `public_evidence_full_spec=false`.
@@ -163,6 +165,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 - Current Iteration 194 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   572 instrumented tests and 84.82% line coverage, 23183/27332 lines covered.
+- Current Iteration 194 feature commit `5a101b5` (`Require VRF lifecycle evidence for full spec`) pushed
+  to `origin/main` on June 22, 2026.
 
 ## Archive
 
