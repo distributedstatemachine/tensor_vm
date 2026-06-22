@@ -1034,6 +1034,10 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED",
                 "role_validator_block_votes_submitted",
             ),
+            (
+                "SERVICE_ROLE_VALIDATOR_TRACE_BISECTION_OPENS_SUBMITTED",
+                "role_validator_trace_bisection_opens_submitted",
+            ),
             ("SERVICE_ROLE_LOCAL_PRODUCER", "role_local_producer"),
             (
                 "SERVICE_ROLE_LOCAL_BLOCK_PROPOSER",
@@ -1094,6 +1098,30 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
             (
                 "SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED",
                 "role_network_block_check_challenges_applied",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS",
+                "role_network_trace_bisection_opens_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS_APPLIED",
+                "role_network_trace_bisection_opens_applied",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS",
+                "role_network_trace_bisection_rounds_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS_APPLIED",
+                "role_network_trace_bisection_rounds_applied",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES",
+                "role_network_trace_bisection_referees_ingested",
+            ),
+            (
+                "SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES_APPLIED",
+                "role_network_trace_bisection_referees_applied",
             ),
             (
                 "SERVICE_ROLE_NETWORK_JOB_EVENTS",

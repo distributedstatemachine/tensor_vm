@@ -86,6 +86,7 @@ pub struct RuntimeStatusSnapshot {
     pub(super) validator_fallback_blocks_proposed: usize,
     pub(super) validator_receipts_proposed: usize,
     pub(super) validator_block_votes_submitted: usize,
+    pub(super) validator_trace_bisection_opens_submitted: usize,
 }
 
 impl RuntimeStatusSnapshot {
@@ -212,6 +213,8 @@ impl RuntimeStatusSnapshot {
             validator_fallback_blocks_proposed: state.validator_fallback_blocks_proposed(),
             validator_receipts_proposed: state.validator_receipts_proposed(),
             validator_block_votes_submitted: state.validator_block_votes_submitted(),
+            validator_trace_bisection_opens_submitted: state
+                .validator_trace_bisection_opens_submitted(),
         }
     }
 }

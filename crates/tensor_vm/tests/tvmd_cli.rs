@@ -984,6 +984,10 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
             stdout_u64(&status, "role_validator_block_votes_submitted"),
             0
         );
+        assert_eq!(
+            stdout_u64(&status, "role_validator_trace_bisection_opens_submitted"),
+            0
+        );
         assert_eq!(stdout_value(&status, "role_local_producer"), "false");
         assert_eq!(stdout_value(&status, "role_local_block_proposer"), "false");
         assert_eq!(
@@ -1018,6 +1022,30 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         );
         assert_eq!(stdout_u64(&status, "role_network_block_votes_ingested"), 0);
         assert_eq!(stdout_u64(&status, "role_network_block_votes_applied"), 0);
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_opens_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_opens_applied"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_rounds_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_rounds_applied"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_referees_ingested"),
+            0
+        );
+        assert_eq!(
+            stdout_u64(&status, "role_network_trace_bisection_referees_applied"),
+            0
+        );
         assert_eq!(stdout_u64(&status, "role_network_job_events_ingested"), 0);
         assert_eq!(stdout_u64(&status, "role_network_job_payloads_ingested"), 0);
         assert_eq!(stdout_u64(&status, "role_network_job_payloads_applied"), 0);

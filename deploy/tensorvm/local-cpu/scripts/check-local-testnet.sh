@@ -1015,6 +1015,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED=$(status_value role_validator_fallback_blocks_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED=$(status_value role_validator_receipts_proposed "$STATUS")
     SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED=$(status_value role_validator_block_votes_submitted "$STATUS")
+    SERVICE_ROLE_VALIDATOR_TRACE_BISECTION_OPENS_SUBMITTED=$(status_value role_validator_trace_bisection_opens_submitted "$STATUS")
     SERVICE_ROLE_RANDOMNESS_BEACON_MODE=$(status_value role_randomness_beacon_mode "$STATUS")
     SERVICE_ROLE_RANDOMNESS_BEACON_CONFIGURED=$(status_value role_randomness_beacon_configured "$STATUS")
     SERVICE_ROLE_RANDOMNESS_BEACON_SOURCE=$(status_value role_randomness_beacon_configured_source "$STATUS")
@@ -1044,6 +1045,12 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED=$(status_value role_network_block_votes_applied "$STATUS")
     SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=$(status_value role_network_block_check_challenges_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=$(status_value role_network_block_check_challenges_applied "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS=$(status_value role_network_trace_bisection_opens_ingested "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS_APPLIED=$(status_value role_network_trace_bisection_opens_applied "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS=$(status_value role_network_trace_bisection_rounds_ingested "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS_APPLIED=$(status_value role_network_trace_bisection_rounds_applied "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES=$(status_value role_network_trace_bisection_referees_ingested "$STATUS")
+    SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES_APPLIED=$(status_value role_network_trace_bisection_referees_applied "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_EVENTS=$(status_value role_network_job_events_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_PAYLOADS=$(status_value role_network_job_payloads_ingested "$STATUS")
     SERVICE_ROLE_NETWORK_JOB_PAYLOADS_APPLIED=$(status_value role_network_job_payloads_applied "$STATUS")
@@ -1126,6 +1133,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     is_u64 "$SERVICE_ROLE_VALIDATOR_FALLBACK_BLOCKS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_RECEIPTS_PROPOSED" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_VALIDATOR_BLOCK_VOTES_SUBMITTED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_VALIDATOR_TRACE_BISECTION_OPENS_SUBMITTED" || { STATUS_MISMATCH=true; continue; }
     [ -n "$SERVICE_ROLE_LOCAL_PRODUCER" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_LOCAL_PRODUCER" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "true" ] || [ "$SERVICE_ROLE_LOCAL_PRODUCER" = "false" ] || { STATUS_MISMATCH=true; continue; }
@@ -1157,6 +1165,12 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     [ "$SERVICE_ROLE_NETWORK_BLOCK_VOTES_APPLIED" != "unknown" ] || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES" || { STATUS_MISMATCH=true; continue; }
     is_u64 "$SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_OPENS_APPLIED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_ROUNDS_APPLIED" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES" || { STATUS_MISMATCH=true; continue; }
+    is_u64 "$SERVICE_ROLE_NETWORK_TRACE_BISECTION_REFEREES_APPLIED" || { STATUS_MISMATCH=true; continue; }
     LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES=$((LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES + SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES))
     LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED=$((LIVE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED + SERVICE_ROLE_NETWORK_BLOCK_CHECK_CHALLENGES_APPLIED))
     [ -n "$SERVICE_ROLE_NETWORK_JOB_EVENTS" ] || { STATUS_MISMATCH=true; continue; }
