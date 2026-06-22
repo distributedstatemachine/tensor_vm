@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 191 complete locally: Public Evidence CUDA Miner Gate.
+- Active feature: Iteration 191 complete and pushed: Public Evidence CUDA Miner Gate.
 - Current status: post-run public evidence now requires `cuda_verified_miner_count` to cover counted public
   miners before a bundle can report `public_evidence_full_spec=true`; deployed services, public operators,
   raw supporting records, and network-runtime roots remain separately enforced.
@@ -13,8 +13,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: commit and push Iteration 191, then continue the remaining deployed public/CUDA evidence
-  work.
+- Next action: continue the remaining deployed public/CUDA evidence work.
 
 ## Readiness Matrix
 
@@ -116,6 +115,8 @@ Validation evidence:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   568 instrumented tests and 84.80% line coverage, 23153/27302 lines covered.
+- Commit `a0697dc` (`Require CUDA miner evidence for full spec`) pushed to `origin/main` on
+  June 22, 2026.
 
 ### Iteration 190: Proposer Reward Delay Tombstone
 
@@ -193,8 +194,8 @@ Validation evidence:
 
 ## Recent Completed Iterations
 
-- Iteration 191: Public Evidence CUDA Miner Gate. Commit pending; full local validation passed on
-  June 22, 2026.
+- Iteration 191: Public Evidence CUDA Miner Gate. Commit `a0697dc`
+  (`Require CUDA miner evidence for full spec`) pushed to `origin/main` on June 22, 2026.
 - Iteration 190: Proposer Reward Delay Tombstone. Commit `b1b368b` (`Delay proposer rewards without height
   workaround`) pushed to `origin/main` on June 22, 2026; metadata commit `5659058` recorded/pushed the
   evidence anchor.
@@ -236,6 +237,7 @@ Validation evidence:
 - Current Iteration 191 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   568 instrumented tests and 84.80% line coverage, 23153/27302 lines covered.
+- Commit `a0697dc` pushed to `origin/main` on June 22, 2026.
 - Current Iteration 190 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 190 focused validation passed on June 22, 2026:
   `late_finalized_proposer_reward_materializes_as_delayed_claim_once`, `proposer_reward`,
