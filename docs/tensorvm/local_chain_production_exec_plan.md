@@ -111,6 +111,7 @@ Validation completed on June 22, 2026:
 - Manual ownership-boundary review: no standalone verifier binary was used or added; reward claim release
   remains chain-owned, release/sweep commands are maintenance-only for voided/prunable ledgers, adapters do
   not credit rewards directly, and no p2p, storage, or RPC wire format changed.
+- Commit `d185b02` (`Clarify reward sweep claim boundary`) pushed to `origin/main`.
 
 ### Iteration 181: Explorer WebSocket GraphExecution Evidence
 
@@ -243,7 +244,7 @@ Commit `be4af33` (`Cover admitted graph verifier ops`) pushed to `origin/main`.
 - Current Iteration 182 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 182 validation passed on June 22, 2026: focused reward-boundary test; fmt/check/diff;
   `cargo test -p tensor_vm --lib` (546 passed); release local-testnet; clippy. Tarpaulin was not rerun
-  because executable coverage scope did not change.
+  because executable coverage scope did not change. Commit `d185b02` pushed to `origin/main`.
 
 ## Archive
 
