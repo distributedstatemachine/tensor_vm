@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 183 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 184 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,21 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-562 tests passed under instrumentation:
+563 tests passed under instrumentation:
 - 14 experiments library tests
-- 547 tensor_vm library tests
+- 548 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.59% workspace line coverage
-22621/26741 workspace lines covered
+22635/26757 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 184 coverage-changing work added trace-bisection DoS admission coverage for oversized
+worst-case bisection depth, duplicate pending expectation replay, and conflicting pending expectation
+overwrite rejection.
 
 Iteration 183 coverage-changing work added isolated trace-bisection timeout coverage for incomplete
 challenger transcripts, proving that isolated sessions close by challenger forfeiture without voiding the

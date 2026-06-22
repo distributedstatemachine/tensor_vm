@@ -4,9 +4,10 @@ use super::state::{
 };
 use super::{Chain, blocks, settlement};
 use crate::challenge::{
-    BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome, TraceBisectionConfig,
-    TraceBisectionExpectation, TraceBisectionOpen, TraceBisectionRound, TraceBisectionState,
-    TraceBisectionStep, trace_bisection_challenge_id,
+    BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome,
+    MAX_TRACE_BISECTION_ADMITTED_ROUNDS, TraceBisectionConfig, TraceBisectionExpectation,
+    TraceBisectionOpen, TraceBisectionRound, TraceBisectionState, TraceBisectionStep,
+    trace_bisection_challenge_id, trace_bisection_required_rounds,
 };
 use crate::error::{Result, TvmError};
 use crate::ir::{IrOpRefereeWitness, TensorGraph};
@@ -334,6 +335,11 @@ pub fn open_trace_bisection(
             "trace bisection deadline already expired",
         ));
     }
+    if trace_bisection_required_rounds(config.op_count)? > MAX_TRACE_BISECTION_ADMITTED_ROUNDS {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection round cap exceeded",
+        ));
+    }
     let state = TraceBisectionState::new(config)?;
     let challenge_id = trace_bisection_challenge_id(
         &state.receipt_id,
@@ -405,8 +411,19 @@ pub fn submit_trace_bisection_expectation(
         ));
     }
     expectation.verify_for_state(&record.state)?;
+    let expectation_leaf = expectation.expectation_leaf();
+    if let Some(pending_leaf) = record.pending_expectation_leaf {
+        if pending_leaf == expectation_leaf
+            && record.pending_expected_output_roots == expectation.expected_output_roots
+        {
+            return Ok(record.clone());
+        }
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation already pending",
+        ));
+    }
     record.pending_expected_output_roots = expectation.expected_output_roots.clone();
-    record.pending_expectation_leaf = Some(expectation.expectation_leaf());
+    record.pending_expectation_leaf = Some(expectation_leaf);
     record.updated_at_height = chain.state.height;
     Ok(record.clone())
 }

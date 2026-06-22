@@ -21,10 +21,10 @@ unless the current-head replacement rule applies; strictly longer unfinalized br
 reorganize canonical head state while finalized canonical blocks remain protected. The latest local CPU
 Docker proof covers live validator proposer/block-assembly networking, three validator block proposers with
 chain-visible proposer cooldown state, delayed proposer rewards, applied diagnostic block-check evidence,
-local isolated trace-bisection timeout against incomplete challengers, and passive observer finalized-head
-convergence. Remaining consensus/evidence gaps are full deployed interactive verifier-transcript challenge
-evidence, multi-round trace-bisection DoS policy, public deployment evidence, CUDA miner evidence, and
-public drand/VRF randomness verification. Deterministic
+trace-bisection admission DoS bounds, local isolated trace-bisection timeout against incomplete
+challengers, and passive observer finalized-head convergence. Remaining consensus/evidence gaps are full
+deployed interactive verifier-transcript challenge evidence, public deployment evidence, CUDA miner
+evidence, and public drand/VRF randomness verification. Deterministic
 local bad-block challenge construction, live validator-proposer diagnostic emission, and observed-block p2p
 propagation support now exist as diagnostic chain/node/runtime helpers. See
 [`mvp_core_formal_proofs.md`](../formal/mvp_core_formal_proofs.md).

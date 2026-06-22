@@ -8,6 +8,8 @@ use crate::verify::{
     FreivaldsParams, TensorOpVerificationReport, VerificationResult, verify_tensor_op,
 };
 
+pub const MAX_TRACE_BISECTION_ADMITTED_ROUNDS: u32 = 32;
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraceStep {
     pub op_index: u64,
@@ -136,6 +138,17 @@ pub fn trace_bisection_challenge_id(
         b"tensor-vm-trace-bisection-challenge-id-v1",
         &[receipt_id, trace_root, challenger, responder],
     )
+}
+
+pub fn trace_bisection_required_rounds(op_count: u64) -> Result<u32> {
+    if op_count == 0 {
+        return Err(TvmError::InvalidReceipt("empty trace dispute"));
+    }
+    Ok(if op_count == 1 {
+        1
+    } else {
+        u64::BITS - (op_count - 1).leading_zeros()
+    })
 }
 
 fn trace_bisection_open_hash(config: &TraceBisectionConfig) -> Hash {

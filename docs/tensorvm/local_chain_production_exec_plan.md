@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 183 complete: Isolated Trace-Bisection Timeout Policy.
+- Active feature: Iteration 184 complete: Trace-Bisection DoS Admission Bounds.
 - Current status: the local CPU checker requires live TensorOp, LinearTrainingStep, and GraphExecution
   receipt/block evidence. Graph receipt verification test scenarios cover every consensus-admitted frozen
   registry op locally, and explorer WebSocket jobs/receipts now expose the same `graph_execution`
@@ -14,8 +14,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: continue CUDA/public deployment evidence or remaining deployed-randomness/economic evidence
-  without treating roadmap trace-bisection work as a v0 blocker.
+- Next action: continue CUDA/public deployment evidence or remaining deployed-randomness/economic evidence.
 
 ## Readiness Matrix
 
@@ -26,8 +25,8 @@ archive commit anchors only.
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection expectations/rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof or remaining fraud-proof DoS policy |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence and multi-round trace-bisection DoS policy |
+| Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof and deployed dispute evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops, receipt verification scenario drift coverage for every admitted op; default CUDA non-admission | Add CUDA conformance evidence and deployed CUDA profile evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -35,6 +34,91 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 184: Trace-Bisection DoS Admission Bounds
+
+Feature capability: bound interactive trace-bisection resource use in the canonical chain path. Opening a
+trace dispute now must fit the protocol's maximum admitted bisection depth, and challenger midpoint
+expectations are idempotent only for exact duplicates while conflicting pending expectation overwrites are
+rejected.
+
+Readiness requirements covered: `goal.md`/`upow.md` fraud-proof game liveness, multi-round trace-bisection
+DoS policy, and chain-owned challenge admission.
+
+Canonical owner: `challenge` defines the bisection-round budget and cap; `chain::challenges` enforces
+admission and pending-expectation state transitions.
+
+Adapter callers: existing open/expectation command callers, p2p payload handlers, and runtime challenger
+generation; no new wire format is required.
+
+Old shortcut being removed: any nonempty `op_count` was admissible regardless of worst-case bisection
+depth, and a challenger could repeatedly overwrite a pending expectation for the same midpoint before the
+responder round arrived.
+
+Regression tests that prove the shortcut is gone:
+`chain::tests::trace_bisection_admission_enforces_round_budget_and_pending_expectation_policy` rejects
+oversized disputes, accepts duplicate expectation replay idempotently, and rejects conflicting pending
+expectation overwrites.
+
+Behavior with local synthetic block production disabled: unchanged; the policy is a chain-state admission
+rule over submitted challenge commands.
+
+Behavior for producer and non-producer roles: unchanged; any role that submits or ingests the shared
+commands observes the same canonical rejection/acceptance rules.
+
+Structured evidence source: chain command errors/events, trace-bisection pending expectation state,
+state-rooted challenge records, and this exec plan.
+
+Finality source: unchanged; this is pre-finality challenge admission and bounded transcript progression.
+
+Wire-size and codec boundary: unchanged; existing config, expectation, and event fields are reused.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to challenge budget helpers,
+chain admission, focused tests, and docs/status alignment.
+
+Tests/checkers/docs to add or update: chain admission test, `upow.md`, `coverage_matrix.md`,
+`implementation_status.md`, `tarpaulin_report.md`, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm
+trace_bisection_admission_enforces_round_budget_and_pending_expectation_policy --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because the test count/coverage changes.
+
+Expected observable evidence: oversized bisection sessions fail before state insertion, exact duplicate
+expectation replay stays accepted, conflicting pending expectation overwrites fail, and normal
+round-response progression still clears the pending expectation.
+
+Out of scope: public/CUDA deployed dispute evidence, new p2p payload types, per-profile cap tuning, and
+new standalone verifier binaries.
+
+Split trigger: split only if the cap must become a persisted chain parameter or wire field.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm trace_bisection_admission_enforces_round_budget_and_pending_expectation_policy --lib`
+  passed.
+- `cargo test -p tensor_vm trace_bisection_rounds_are_chain_admitted_and_state_rooted --lib` passed.
+- `cargo test -p tensor_vm trace_bisection_rounds_narrow_to_disputed_op --lib` passed.
+- `cargo test -p tensor_vm trace_bisection_expectation_payload_application_reports_pending_applied_and_invalid_edges --lib`
+  passed.
+- `cargo test -p tensor_vm network_event_driver_applies_and_retries_trace_bisection_expectation_payloads --lib`
+  passed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 548 library tests.
+- Post-change release gate `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 563
+  workspace tests under instrumentation, 84.59% line coverage, 22635/26757 lines covered.
+- Manual ownership-boundary review: no standalone verifier binary was used or added; bisection budget
+  math lives in the protocol challenge module, chain admission rejects oversized sessions before state
+  insertion, duplicate expectation replay remains idempotent for p2p retries, conflicting expectation
+  overwrites are rejected while a midpoint response is pending, and no p2p, storage, or RPC wire format
+  changed.
 
 ### Iteration 183: Isolated Trace-Bisection Timeout Policy
 
@@ -315,8 +399,8 @@ Commit `be4af33` (`Cover admitted graph verifier ops`) pushed to `origin/main`.
   claim/state transitions. Valid matured claims become spendable only through beneficiary `ClaimReward`.
 - Bounded p2p/node payloads remain the only network wire surface for randomness, reveal records, graph
   jobs/receipts, and trace-bisection expectation/round/referee evidence.
-- Public 7-day evidence, CUDA evidence, deployed full VRF construction, deployed dispute evidence, and
-  multi-round DoS policy remain deployment or future-feature gates, not local-completion claims.
+- Public 7-day evidence, CUDA evidence, deployed full VRF construction, and deployed dispute evidence
+  remain deployment gates, not local-completion claims.
 - There is no standalone `tensorvm-verifier` binary. Validation uses shell checks, Rust tests, clippy,
   tarpaulin, and manual ownership-boundary review.
 

@@ -214,18 +214,20 @@ fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
             "trace bisection expectation missing"
         ))
     );
-    submit_trace_bisection_expectation(
-        &mut chain,
-        challenge_id,
-        vec![hash_bytes(b"test", &[b"wrong-pending-expected-root"])],
-    );
+    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots.clone());
+    let wrong_opening = execution.trace_opening(state.midpoint()).unwrap();
+    let wrong_round = TraceBisectionRound::new(
+        &state,
+        vec![hash_bytes(b"test", &[b"wrong-round-expected-root"])],
+        wrong_opening,
+    )
+    .unwrap();
     assert_eq!(
-        chain.apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone())),
+        chain.apply_command(ChainCommand::SubmitTraceBisectionRound(wrong_round)),
         Err(TvmError::InvalidReceipt(
             "trace bisection expectation mismatch"
         ))
     );
-    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots);
     let pending_record = chain
         .state()
         .trace_bisection_challenges()
@@ -801,6 +803,107 @@ fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
         chain.state().accounts().get(&challenger).unwrap().balance,
         5
     );
+}
+
+#[test]
+fn trace_bisection_admission_enforces_round_budget_and_pending_expectation_policy() {
+    let (mut chain, receipt, execution) = trace_bisection_fixture();
+    let challenger = address(b"trace-bisection-dos-policy-challenger");
+    chain.register_validator(challenger, 10_000).unwrap();
+    assert_eq!(
+        chain.apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: (1_u64 << 32) + 1,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        })),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection round cap exceeded"
+        ))
+    );
+    assert!(chain.state().trace_bisection_challenges().is_empty());
+
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+        panic!("expected trace bisection open event");
+    };
+    let challenge_id = *challenge_id;
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = execution.trace_opening(state.midpoint()).unwrap();
+    let expected_output_roots = opening.op_trace.output_roots.clone();
+    let expectation =
+        TraceBisectionExpectation::new(&state, expected_output_roots.clone()).unwrap();
+    let expectation_leaf = expectation.expectation_leaf();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(
+                expectation.clone()
+            ))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionExpectationAccepted {
+            expectation_leaf: event_leaf,
+            ..
+        }] if *event_leaf == expectation_leaf
+    ));
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionExpectation(
+                expectation.clone()
+            ))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionExpectationAccepted {
+            expectation_leaf: event_leaf,
+            ..
+        }] if *event_leaf == expectation_leaf
+    ));
+    let conflicting =
+        TraceBisectionExpectation::new(&state, vec![hash_bytes(b"test", &[b"conflicting-root"])])
+            .unwrap();
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitTraceBisectionExpectation(conflicting)),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection expectation already pending"
+        ))
+    );
+
+    let round = TraceBisectionRound::new(&state, expected_output_roots, opening).unwrap();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionNarrowed { .. }]
+    ));
+    let record = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap();
+    assert!(record.pending_expected_output_roots.is_empty());
+    assert!(record.pending_expectation_leaf.is_none());
 }
 
 #[test]
