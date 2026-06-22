@@ -682,7 +682,11 @@ This section is non-normative guidance on how the spec components partition into
   comparison, generator, reduction, fixed-point `cast`/`round`, mixed-scale `add`/`sub`, mixed-scale
   `mul`, and `Fixed32` `matmul` rescale surface with conformance gating where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
   mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
-- [ ] Fraud-proof game: precise message format, timeouts, griefing bonds (challenger must stake ≥ referee cost), multi-round DoS resistance (§8.2).
+- [~] Fraud-proof game: signed trace-bisection session and round state now provide a deterministic
+  message/hash boundary over verified `IrTraceOpening`s, with response deadlines and challenger/responder
+  bond envelope fields. Focused tests prove midpoint narrowing, final-op isolation, timeout reporting, and
+  tamper rejection. Chain command admission, p2p round codecs, referee one-op re-execution, slashing,
+  challenger bounty settlement, and multi-round DoS policy remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.

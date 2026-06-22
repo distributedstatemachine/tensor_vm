@@ -51,7 +51,10 @@ pub use chain::{
     verified_chained_drand_beacon_record, verified_chained_drand_source_id,
     verified_drand_beacon_record, verified_drand_source_id,
 };
-pub use challenge::{ChallengeOutcome, FraudChallenge, TensorOpChallengeInput, TraceStep};
+pub use challenge::{
+    ChallengeOutcome, FraudChallenge, TensorOpChallengeInput, TraceBisectionConfig,
+    TraceBisectionRound, TraceBisectionState, TraceBisectionStep, TraceStep,
+};
 pub use cli::{
     TvmdCli, validate_public_evidence_manifest, validate_public_testnet_preflight_manifest,
 };
