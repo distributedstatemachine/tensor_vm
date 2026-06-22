@@ -453,43 +453,7 @@ pub fn referee_trace_bisection(
     } else {
         record.state.responder
     };
-    let loser_bond = if dishonest_party == record.state.challenger {
-        record.state.challenger_bond
-    } else {
-        record.state.responder_bond
-    };
-    let winner = if dishonest_party == record.state.challenger {
-        record.state.responder
-    } else {
-        record.state.challenger
-    };
-    let winner_is_challenger = winner == record.state.challenger;
-    let challenger_reward = if winner_is_challenger {
-        loser_bond.saturating_mul(CHALLENGER_REWARD_BPS) / 10_000
-    } else {
-        0
-    };
-    if loser_bond > 0 {
-        slash_trace_bisection_loser(chain, dishonest_party, loser_bond)?;
-        if challenger_reward > 0 {
-            let claimable_at_height = chain
-                .state
-                .height
-                .saturating_add(chain.params.reward_maturity_delay_blocks());
-            enqueue_pending_trace_bisection_challenge_reward(
-                chain,
-                challenge_id,
-                record.state.receipt_id,
-                winner,
-                challenger_reward,
-                claimable_at_height,
-            );
-        }
-        let treasury_reward = loser_bond.saturating_sub(challenger_reward);
-        if treasury_reward > 0 {
-            chain.state.rewards.credit_treasury(treasury_reward);
-        }
-    }
+    settle_trace_bisection_loss(chain, challenge_id, &record, dishonest_party)?;
     let updated = chain
         .state
         .trace_bisection_challenges
@@ -528,6 +492,74 @@ fn slash_trace_bisection_loser(
     ))
 }
 
+fn settle_trace_bisection_loss(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    record: &TraceBisectionRecord,
+    dishonest_party: Address,
+) -> Result<()> {
+    let loser_bond = if dishonest_party == record.state.challenger {
+        record.state.challenger_bond
+    } else {
+        record.state.responder_bond
+    };
+    let winner = if dishonest_party == record.state.challenger {
+        record.state.responder
+    } else {
+        record.state.challenger
+    };
+    let winner_is_challenger = winner == record.state.challenger;
+    let challenger_reward = if winner_is_challenger {
+        loser_bond.saturating_mul(CHALLENGER_REWARD_BPS) / 10_000
+    } else {
+        0
+    };
+    if loser_bond == 0 {
+        return Ok(());
+    }
+    slash_trace_bisection_loser(chain, dishonest_party, loser_bond)?;
+    if winner_is_challenger {
+        chain
+            .state
+            .challenged_receipts
+            .insert(record.state.receipt_id);
+        chain
+            .state
+            .settled_receipts
+            .remove(&record.state.receipt_id);
+        settlement::void_pending_miner_tensor_work(&mut chain.state, &record.state.receipt_id);
+        let receipt_reward_hold_until_height = chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
+        for reward in chain.state.pending_receipt_rewards.values_mut() {
+            if reward.receipt_id == record.state.receipt_id {
+                reward.delay_until(receipt_reward_hold_until_height);
+                reward.voided_by_challenge = true;
+            }
+        }
+    }
+    if challenger_reward > 0 {
+        let claimable_at_height = chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks());
+        enqueue_pending_trace_bisection_challenge_reward(
+            chain,
+            challenge_id,
+            record.state.receipt_id,
+            winner,
+            challenger_reward,
+            claimable_at_height,
+        );
+    }
+    let treasury_reward = loser_bond.saturating_sub(challenger_reward);
+    if treasury_reward > 0 {
+        chain.state.rewards.credit_treasury(treasury_reward);
+    }
+    Ok(())
+}
+
 fn trace_bisection_receipt_graph(chain: &Chain, receipt_id: Hash) -> Result<TensorGraph> {
     let receipt = chain
         .state
@@ -561,7 +593,8 @@ pub fn record_trace_bisection_timeout(
     let record = chain
         .state
         .trace_bisection_challenges
-        .get_mut(&challenge_id)
+        .get(&challenge_id)
+        .cloned()
         .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
     if record.status != TraceBisectionStatus::Active {
         return Err(TvmError::InvalidReceipt("trace bisection is closed"));
@@ -572,9 +605,18 @@ pub fn record_trace_bisection_timeout(
     else {
         return Err(TvmError::InvalidReceipt("trace bisection deadline pending"));
     };
-    record.status = TraceBisectionStatus::TimedOut { forfeiting_party };
-    record.updated_at_height = chain.state.height;
-    Ok(record.clone())
+    settle_trace_bisection_loss(chain, challenge_id, &record, forfeiting_party)?;
+    let updated = chain
+        .state
+        .trace_bisection_challenges
+        .get_mut(&challenge_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    if updated.status != TraceBisectionStatus::Active {
+        return Err(TvmError::InvalidReceipt("trace bisection is closed"));
+    }
+    updated.status = TraceBisectionStatus::TimedOut { forfeiting_party };
+    updated.updated_at_height = chain.state.height;
+    Ok(updated.clone())
 }
 
 fn challenged_block(chain: &Chain, block_hash: &Hash) -> Option<TensorBlock> {

@@ -5,22 +5,23 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: none; Iteration 165 implementation, validation, commit, and push are complete.
+- Active feature: none; Iteration 166 implementation and validation are complete, commit/push metadata is pending.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move matured rewards into spendable balances; explicit
   `ClaimReward` remains the canonical spendability boundary. The trace-bisection path now has signed
   sessions/rounds, bounded p2p round and referee payloads, node pending-queue application, input-rooted
   trace openings, chain-owned one-op referee verdicts, and referee economic settlement: the losing
   registered miner or validator stake is slashed from the session bond envelope, treasury receives the net
-  slash, and a winning challenger receives only a delayed `PendingChallengeReward` claim.
+  slash, and a winning challenger receives only a delayed `PendingChallengeReward` claim. Responder
+  timeout settlement now uses the same chain-owned slash, delayed challenger reward, and affected receipt
+  reward/TensorWork voiding boundary.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
+  - Required `tensorvm-verifier` pre-commit step is blocked because the package has no such binary target:
+    `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are trace-bisection
-  session-open/runtime challenge generation, timeout economic settlement and multi-round DoS policy,
-  deployed full VRF lifecycle evidence, public/CUDA deployment evidence, or remaining exact Tier-B/CUDA
-  conformance surface.
+- Next action: commit and push Iteration 166, then choose the next feature-sized slice.
 
 ## Readiness Matrix
 
@@ -33,18 +34,118 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator block votes | Implemented locally | Validator role submits/gossips `SubmitBlockVote`; non-producers ingest/apply votes | Preserve append/finality separation |
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, trace-bisection rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
-| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof, and trace-bisection p2p/chain/referee admission with slashing/delayed challenger settlement | Add runtime challenge generation, timeout settlement, or deployed public/CUDA proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, role-owned graph execution, `const_blob`, input-rooted p2p trace openings, signed trace-bisection core, bounded round/referee p2p payloads, state-rooted sessions/rounds, chain-owned referee verdicts and economic settlement | Continue session-open/runtime generation and CUDA graph evidence |
+| Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof, and trace-bisection p2p/chain/referee/timeout admission with slashing/delayed challenger settlement | Add runtime challenge generation, session-open gossip, or deployed public/CUDA proof |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, role-owned graph execution, `const_blob`, input-rooted p2p trace openings, signed trace-bisection core, bounded round/referee p2p payloads, state-rooted sessions/rounds, chain-owned referee/timeout verdicts and economic settlement | Continue session-open/runtime generation and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, verified drand, public chained drand, chain-owned epoch windows, registered validator reveal keys, and keyed Ed25519 reveal proofs before reward release | Add deployed full VRF construction and deployed commit-reveal lifecycle |
-| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, claim-owned spendability, delayed miner TensorWork activation, late invalid-output voiding/slashing, audit/data-unavailability slashing, appeal reversal, block-check challenger delayed bounties, trace-bisection referee slashing/delayed challenger rewards, pending claim view, study helper, calibration, detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
+| Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, claim-owned spendability, delayed miner TensorWork activation, late invalid-output voiding/slashing, audit/data-unavailability slashing, appeal reversal, block-check challenger delayed bounties, trace-bisection referee/timeout slashing and delayed challenger rewards, pending claim view, study helper, calibration, detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
 
-No active feature is checkpointed. Start the next slice with the required Gate 0 command and a fresh
-checkpoint before edits.
+### Iteration 166: Trace-Bisection Timeout Slashing And Delayed Challenger Rewards
+
+Feature capability: a chain-owned trace-bisection timeout should settle the economic side without adapter
+workarounds. When the responder/miner forfeits by timeout, the chain slashes the responder bond, credits
+treasury with the net slash, creates a delayed `PendingChallengeReward` claim for the challenger, and keeps
+spendability behind beneficiary `ClaimReward`. The current trace-bisection state machine times out the
+responder only; challenger-forfeit policy remains part of future multi-round DoS work.
+
+Readiness requirements covered: `upow.md` §8.2 data-availability timeout loss, §9 unavailable trace
+evidence putting miner bond at risk, §12.1 pending challenger rewards before spendability, §12.2 timeout
+slashing, and `mvp_spec.md` §4.6 chain transition ownership for challenge outcomes.
+
+Canonical owner: `chain::challenges` owns timeout settlement, stake mutation, treasury accounting, pending
+challenge reward creation, and duplicate rejection. `node::payload_application`, runtime loops, p2p
+codecs, and checkers only submit/observe the chain command and must not materialize rewards or slash
+balances.
+
+Adapter callers: direct `ChainCommand::RecordTraceBisectionTimeout` and future runtime/session-open logic.
+This slice does not add a new network timeout payload.
+
+Old shortcut being removed: trace-bisection timeout records currently identify the forfeiting party but
+leave slashing and challenger bounty settlement undone. This moves timeout economics into the canonical
+chain transition.
+
+Regression test that proves the shortcut is gone: recording a timeout after the response deadline against
+a receipt miner reduces miner stake, credits treasury net of the challenger bounty, creates a delayed
+challenge reward claim, does not credit spendable balance before maturity, and releases only through
+`ClaimReward`. The same transition voids affected receipt rewards and removes the receipt from settled
+blockspace.
+
+Behavior with local synthetic block production disabled: unchanged; timeout settlement is an explicit
+chain command independent of synthetic jobs, local producer mode, block proposal, or finality helpers.
+
+Behavior for producer and non-producer roles: unchanged; any role that submits the timeout command reaches
+the same chain-owned state transition.
+
+Structured evidence source: `trace_bisection_challenges`, `pending_challenge_rewards`, miner/validator
+stake maps, treasury balance, reward-claim views, chain events, state roots, and snapshot codec.
+
+Finality source: unchanged block append/vote/finality. Timeout settlement is a normal chain state
+transition and reward spendability remains delayed until claim maturity plus `ClaimReward`.
+
+Wire-size and codec boundary: no new wire type and no codec changes; this is a chain/state economic effect
+on an existing command.
+
+Parallel subagents to run: skipped; available subagent tooling requires explicit user authorization.
+Read-only discovery is parallelized with local shell tools.
+
+Parallelizable implementation workstreams: timeout settlement helper, chain tests, and docs can be
+inspected independently, but the parent remains the single writer because state roots and command events
+are shared.
+
+Tests/checkers/docs to add or update: focused chain challenge tests for timeout slashing/reward delay,
+`upow.md`, and this execution plan.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm records_timeout --lib -- --nocapture`
+- `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`
+- `cargo test -p tensor_vm reward --lib -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --tests`
+- `git diff --check`
+- `cargo test -p tensor_vm --lib`
+- `cargo test -p tensor_vm local_testnet --release`
+
+Expected observable evidence: `TraceBisectionTimedOut` remains the timeout event; the same command also
+state-roots slash/treasury mutation and, when the miner responder forfeits, a delayed
+`ChallengeRewardPending` claim whose `claimable_at_height` is current height plus the configured reward
+maturity delay. Matured release commands alone do not credit spendable balances; `ClaimReward(challenger)`
+is required.
+
+Out of scope: session-open gossip, runtime automatic challenge generation, multi-round DoS policy,
+public/CUDA evidence, and new p2p timeout payloads.
+
+Split trigger: if timeout settlement requires a generalized fraud-path ledger beyond the existing
+`PendingChallengeReward` fields, split that ledger migration into a separate feature.
+
+Validation started on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm records_timeout --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm reward --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (526 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Verifier command blocked on June 22, 2026:
+`cargo run -p tensor_vm --bin tensorvm-verifier -- --help` returned
+`error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
+
+Commit/push metadata: pending.
 
 ## Recent Iterations
 
@@ -146,43 +247,37 @@ Validation passed on June 22, 2026: first-command Gate 0, focused
 - Bounded p2p/node payloads remain the only network wire surface for randomness, reveal records, and
   trace-bisection round/referee evidence.
 - Public 7-day evidence, CUDA evidence, deployed full VRF construction, runtime-generated interactive
-  transcript disputes, and timeout economic settlement remain deployment or future-feature gates, not
-  local-completion claims.
+  transcript disputes, session-open gossip, and multi-round DoS policy remain deployment or future-feature
+  gates, not local-completion claims.
 
 ## Validation Evidence
 
-- Iteration 165 first executable command passed before edits on June 22, 2026:
+- Iteration 165 feature commit `e3af101` pushed to `main` on June 22, 2026:
+  `git push` returned `f7a5fe6..e3af101  main -> main`.
+- Iteration 166 first executable command passed before edits on June 22, 2026:
   `cargo test -p tensor_vm local_testnet --release`.
-- Iteration 165 focused validation passed on June 22, 2026:
-  `cargo test -p tensor_vm trace_bisection_referee --lib -- --nocapture`;
-  `cargo test -p tensor_vm reward --lib -- --nocapture`;
-  `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`; and
-  `cargo test -p tensor_vm pending_payloads --lib -- --nocapture`.
-- Iteration 165 broad validation passed on June 22, 2026:
+- Iteration 166 focused validation passed on June 22, 2026:
+  `cargo test -p tensor_vm records_timeout --lib -- --nocapture`;
+  `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`;
+  `cargo test -p tensor_vm reward --lib -- --nocapture`; and
+  `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`.
+- Iteration 166 broad validation passed on June 22, 2026:
   `cargo fmt --check --all`; `cargo check -p tensor_vm --tests`; `git diff --check`;
   `cargo test -p tensor_vm --lib` (526 passed); and final
   `cargo test -p tensor_vm local_testnet --release`.
-- Iteration 165 coverage command remained environmentally blocked on June 22, 2026:
+- Iteration 166 verifier command blocked on June 22, 2026:
+  `cargo run -p tensor_vm --bin tensorvm-verifier -- --help` returned
+  `error: no bin target named 'tensorvm-verifier' in 'tensor_vm' package`.
+- Iteration 166 coverage command remained environmentally blocked on June 22, 2026:
   `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-- Iteration 165 feature commit `e3af101` pushed to `main` on June 22, 2026:
-  `git push` returned `f7a5fe6..e3af101  main -> main`.
+- Iteration 166 commit/push metadata: pending.
 
 ## Archive
 
-- Iteration 163 (`0487f77`, pushed `main` -> `main`): input-rooted trace openings and chain-owned
-  one-op referee verdicts from explicit witness values. Validation included first-command Gate 0, focused
-  trace-opening/bisection/referee tests, full lib tests, and final Gate 0.
-- Iteration 162 (`02e288f`, pushed `main` -> `main`): node payload application for bounded
-  trace-bisection rounds through shared pending queues into `SubmitTraceBisectionRound`, with retry and
-  invalid-edge tests.
-- Iteration 161 (`f1372a4`, pushed `main` -> `main`): chain admission for signed trace-bisection sessions
-  and rounds with state-rooted dispute records, transcript-root advancement, isolation, and timeout records.
-- Iteration 160 (`2662d5a`, pushed `main` -> `main`): bounded p2p wire payloads for signed
-  trace-bisection rounds with identity/wrapper checks and malformed-edge coverage.
-- Iteration 159 (`713c6a4`, pushed `main` -> `main`): chain-owned delayed block-check challenger rewards;
-  adapters no longer materialize proposer rewards as a workaround before challenge admission.
-- Iteration 158 (`6f6344a`, pushed `main` -> `main`): signed deterministic trace-bisection dispute core
-  over verified `IrTraceOpening` values.
+- Iterations 158 through 163 (`6f6344a`, `713c6a4`, `2662d5a`, `f1372a4`, `02e288f`, `0487f77`, all
+  pushed `main` -> `main`): established signed trace-bisection core, delayed block-check challenger
+  rewards, bounded round wire payloads, chain session/round admission, node pending-queue round
+  application, input-rooted trace openings, and chain-owned one-op referee verdicts.
 - Iteration 157 (`fc14b63`, pushed `main` -> `main`; metadata `7d4e172`): graph-verifier exact-op
   coverage for admitted Tier-B op clusters.
 - Iterations 143 through 156 established verified drand/network randomness, production validator reveal

@@ -587,6 +587,18 @@ fn trace_bisection_referee_slashes_miner_and_delays_challenger_reward() {
 fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
     let (mut chain, receipt, execution) = trace_bisection_fixture();
     let challenger = address(b"trace-bisection-timeout-challenger");
+    chain.register_validator(challenger, 10_000).unwrap();
+    let pending_receipt_claim = hash_bytes(b"test", &[b"trace-timeout-pending-receipt-reward"]);
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: pending_receipt_claim,
+        receipt_id: receipt.receipt_id,
+        beneficiary: receipt.miner,
+        amount: 13,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::ClaimableAt(0),
+        voided_by_challenge: false,
+    });
     let open = ChainCommand::OpenTraceBisection(TraceBisectionConfig {
         receipt_id: receipt.receipt_id,
         trace_root: receipt.trace_root,
@@ -634,10 +646,22 @@ fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
         .unwrap();
     assert!(matches!(
         timeout_events.as_slice(),
-        [ChainEvent::TraceBisectionTimedOut {
+        [
+            ChainEvent::TraceBisectionTimedOut {
             forfeiting_party,
             ..
-        }] if *forfeiting_party == receipt.miner
+            },
+            ChainEvent::ChallengeRewardPending {
+                challenge_id: event_challenge_id,
+                receipt_id,
+                challenger: event_challenger,
+                amount: 5,
+                ..
+            }
+        ] if *forfeiting_party == receipt.miner
+            && *event_challenge_id == challenge_id
+            && *receipt_id == receipt.receipt_id
+            && *event_challenger == challenger
     ));
     assert!(matches!(
         chain
@@ -648,6 +672,75 @@ fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
             .status,
         TraceBisectionStatus::TimedOut { forfeiting_party } if forfeiting_party == receipt.miner
     ));
+    assert_eq!(
+        chain.state().miners().get(&receipt.miner).unwrap().stake,
+        89
+    );
+    assert_eq!(chain.state().rewards().treasury(), 6);
+    assert!(
+        chain
+            .state()
+            .challenged_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        !chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    let voided_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .get(&pending_receipt_claim)
+        .unwrap();
+    assert!(voided_reward.voided_by_challenge);
+    assert_eq!(
+        voided_reward.maturity,
+        ReceiptRewardMaturity::ClaimableAt(
+            3_u64.saturating_add(chain.params().reward_maturity_delay_blocks())
+        )
+    );
+    let pending = chain
+        .state()
+        .pending_challenge_rewards()
+        .values()
+        .next()
+        .unwrap();
+    assert_eq!(pending.challenge_id, challenge_id);
+    assert_eq!(pending.receipt_id, receipt.receipt_id);
+    assert_eq!(pending.challenger, challenger);
+    assert_eq!(pending.amount, 5);
+    assert_eq!(
+        pending.claimable_at_height,
+        3_u64.saturating_add(chain.params().reward_maturity_delay_blocks())
+    );
+    let claimable_at_height = pending.claimable_at_height;
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    chain.set_position_for_testing(claimable_at_height, 1);
+    assert!(
+        chain
+            .release_matured_challenge_rewards()
+            .unwrap()
+            .is_empty()
+    );
+    assert_eq!(chain.state().rewards().balance(&challenger), 0);
+    let claim_events = chain
+        .apply_command(ChainCommand::ClaimReward(challenger))
+        .unwrap();
+    assert!(claim_events.iter().any(|event| matches!(
+        event,
+        ChainEvent::ChallengeRewardReleased {
+            challenge_id: event_challenge_id,
+            challenger: event_challenger,
+            amount: 5,
+            ..
+        } if *event_challenge_id == challenge_id && *event_challenger == challenger
+    )));
+    assert_eq!(
+        chain.state().accounts().get(&challenger).unwrap().balance,
+        5
+    );
 }
 
 #[test]

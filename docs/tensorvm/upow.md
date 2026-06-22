@@ -694,16 +694,18 @@ This section is non-normative guidance on how the spec components partition into
   `ChainCommand::SubmitTraceBisectionRound` path, with status counters for ingested/applied rounds. Trace
   openings now bind resolved input roots as well as output roots, and isolated disputes can record a
   chain-owned one-op referee verdict from explicit witness values through
-  `ChainCommand::RefereeTraceBisection`. Referee verdicts now also settle the state-rooted economic side:
-  the losing registered miner or validator stake is slashed from the session bond envelope, treasury
-  receives the net slash, and a winning challenger receives only a delayed `PendingChallengeReward` claim
-  that remains non-spendable until the normal reward maturity plus beneficiary `ClaimReward` boundary.
+  `ChainCommand::RefereeTraceBisection`. Referee verdicts and responder timeouts now also settle the
+  state-rooted economic side: the losing registered miner or validator stake is slashed from the session
+  bond envelope, affected receipt rewards and pending TensorWork are voided when the responder/miner loses,
+  treasury receives the net slash, and a winning challenger receives only a delayed
+  `PendingChallengeReward` claim that remains non-spendable until the normal reward maturity plus
+  beneficiary `ClaimReward` boundary.
   Bounded p2p referee-witness payloads now route through the shared node pending queue into the same chain
   command, with dedicated ingest/application counters.
-  Focused tests prove midpoint narrowing, final-op isolation, one-op referee verdicts, timeout reporting,
-  tamper rejection, malformed wire edges, duplicate rejection, round and referee pending retry, and
-  snapshot persistence. Runtime challenge generation, session-open gossip, timeout economic settlement,
-  and multi-round DoS policy remain TODO (§8.2).
+  Focused tests prove midpoint narrowing, final-op isolation, one-op referee verdicts, timeout reporting
+  with slashing and delayed challenger rewards, tamper rejection, malformed wire edges, duplicate rejection,
+  round and referee pending retry, and snapshot persistence. Runtime challenge generation, session-open
+  gossip, and multi-round DoS policy remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.
