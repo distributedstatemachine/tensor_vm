@@ -129,6 +129,26 @@ pub fn format_role_runtime_report(
         nonempty_status_label(&snapshot.randomness_last_error),
     );
     report.field(
+        "randomness_public_drand_fetch_attempts",
+        snapshot.randomness_public_drand_fetch_attempts,
+    );
+    report.field(
+        "randomness_public_drand_fetch_successes",
+        snapshot.randomness_public_drand_fetch_successes,
+    );
+    report.field(
+        "randomness_public_drand_fetch_stale",
+        snapshot.randomness_public_drand_fetch_stale,
+    );
+    report.field(
+        "randomness_public_drand_consecutive_failures",
+        snapshot.randomness_public_drand_consecutive_failures,
+    );
+    report.field(
+        "randomness_public_drand_backoff_remaining_ticks",
+        snapshot.randomness_public_drand_backoff_remaining_ticks,
+    );
+    report.field(
         "validator_attestations_submitted",
         snapshot.validator_attestations_submitted,
     );
@@ -495,6 +515,26 @@ pub fn write_role_runtime_status(
     report.field(
         "role_randomness_last_error",
         nonempty_status_label(&snapshot.randomness_last_error),
+    );
+    report.field(
+        "role_randomness_public_drand_fetch_attempts",
+        snapshot.randomness_public_drand_fetch_attempts,
+    );
+    report.field(
+        "role_randomness_public_drand_fetch_successes",
+        snapshot.randomness_public_drand_fetch_successes,
+    );
+    report.field(
+        "role_randomness_public_drand_fetch_stale",
+        snapshot.randomness_public_drand_fetch_stale,
+    );
+    report.field(
+        "role_randomness_public_drand_consecutive_failures",
+        snapshot.randomness_public_drand_consecutive_failures,
+    );
+    report.field(
+        "role_randomness_public_drand_backoff_remaining_ticks",
+        snapshot.randomness_public_drand_backoff_remaining_ticks,
     );
     report.field(
         "role_validator_attestations_submitted",

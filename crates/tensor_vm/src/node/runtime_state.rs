@@ -153,6 +153,11 @@ pub struct NodeRuntimeState {
     randomness_last_error: String,
     randomness_published_source_id: String,
     randomness_published_round: u64,
+    randomness_public_drand_fetch_attempts: usize,
+    randomness_public_drand_fetch_successes: usize,
+    randomness_public_drand_fetch_stale: usize,
+    randomness_public_drand_consecutive_failures: usize,
+    randomness_public_drand_backoff_remaining_ticks: u64,
 }
 
 impl NodeRuntimeState {
@@ -332,9 +337,39 @@ impl NodeRuntimeState {
         &self.randomness_last_error
     }
 
+    pub fn randomness_public_drand_fetch_attempts(&self) -> usize {
+        self.randomness_public_drand_fetch_attempts
+    }
+
+    pub fn randomness_public_drand_fetch_successes(&self) -> usize {
+        self.randomness_public_drand_fetch_successes
+    }
+
+    pub fn randomness_public_drand_fetch_stale(&self) -> usize {
+        self.randomness_public_drand_fetch_stale
+    }
+
+    pub fn randomness_public_drand_consecutive_failures(&self) -> usize {
+        self.randomness_public_drand_consecutive_failures
+    }
+
+    pub fn randomness_public_drand_backoff_remaining_ticks(&self) -> u64 {
+        self.randomness_public_drand_backoff_remaining_ticks
+    }
+
     pub fn randomness_beacon_published(&self, source_id: &str, beacon_round: u64) -> bool {
         self.randomness_published_source_id == source_id
             && self.randomness_published_round == beacon_round
+    }
+
+    pub fn randomness_public_drand_poll_due(&mut self) -> bool {
+        if self.randomness_public_drand_backoff_remaining_ticks == 0 {
+            return true;
+        }
+        self.randomness_public_drand_backoff_remaining_ticks = self
+            .randomness_public_drand_backoff_remaining_ticks
+            .saturating_sub(1);
+        self.randomness_public_drand_backoff_remaining_ticks == 0
     }
 
     pub fn record_served_request(&mut self) {
@@ -534,6 +569,46 @@ impl NodeRuntimeState {
         self.randomness_latest_round = beacon_round;
         self.randomness_last_error = error.to_owned();
     }
+
+    pub fn record_randomness_public_drand_fetch_attempt(&mut self) {
+        self.randomness_public_drand_fetch_attempts = self
+            .randomness_public_drand_fetch_attempts
+            .saturating_add(1);
+    }
+
+    pub fn record_randomness_public_drand_fetch_success(&mut self, poll_interval_ticks: u64) {
+        self.randomness_public_drand_fetch_successes = self
+            .randomness_public_drand_fetch_successes
+            .saturating_add(1);
+        self.randomness_public_drand_consecutive_failures = 0;
+        self.randomness_public_drand_backoff_remaining_ticks = poll_interval_ticks;
+    }
+
+    pub fn record_randomness_public_drand_fetch_stale(&mut self, poll_interval_ticks: u64) {
+        self.randomness_public_drand_fetch_stale =
+            self.randomness_public_drand_fetch_stale.saturating_add(1);
+        self.randomness_public_drand_consecutive_failures = 0;
+        self.randomness_public_drand_backoff_remaining_ticks = poll_interval_ticks;
+    }
+
+    pub fn record_randomness_public_drand_fetch_failure(
+        &mut self,
+        poll_interval_ticks: u64,
+        max_backoff_ticks: u64,
+    ) {
+        self.randomness_public_drand_consecutive_failures = self
+            .randomness_public_drand_consecutive_failures
+            .saturating_add(1);
+        let exponent = self
+            .randomness_public_drand_consecutive_failures
+            .saturating_sub(1)
+            .min(16) as u32;
+        let multiplier = 1_u64.checked_shl(exponent).unwrap_or(u64::MAX);
+        let backoff = poll_interval_ticks
+            .saturating_mul(multiplier)
+            .min(max_backoff_ticks);
+        self.randomness_public_drand_backoff_remaining_ticks = backoff.max(1);
+    }
 }
 
 #[cfg(test)]
@@ -622,6 +697,12 @@ mod tests {
         state.record_randomness_beacon_applied("fixture", 7);
         state.record_randomness_beacon_skipped("fixture", 7);
         state.record_randomness_beacon_failure("fixture", 8, "bad proof");
+        state.record_randomness_public_drand_fetch_attempt();
+        state.record_randomness_public_drand_fetch_success(3);
+        assert!(!state.randomness_public_drand_poll_due());
+        assert!(!state.randomness_public_drand_poll_due());
+        assert!(state.randomness_public_drand_poll_due());
+        state.record_randomness_public_drand_fetch_failure(3, 12);
         assert_eq!(state.randomness_beacons_observed(), 1);
         assert_eq!(state.randomness_beacons_applied(), 1);
         assert_eq!(state.randomness_beacons_skipped(), 1);
@@ -629,6 +710,10 @@ mod tests {
         assert_eq!(state.randomness_latest_source_id(), "fixture");
         assert_eq!(state.randomness_latest_round(), 8);
         assert_eq!(state.randomness_last_error(), "bad proof");
+        assert_eq!(state.randomness_public_drand_fetch_attempts(), 1);
+        assert_eq!(state.randomness_public_drand_fetch_successes(), 1);
+        assert_eq!(state.randomness_public_drand_consecutive_failures(), 1);
+        assert_eq!(state.randomness_public_drand_backoff_remaining_ticks(), 3);
     }
 
     #[test]

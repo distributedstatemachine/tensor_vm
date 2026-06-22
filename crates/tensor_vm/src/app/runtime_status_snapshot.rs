@@ -55,6 +55,11 @@ pub struct RuntimeStatusSnapshot {
     pub(super) randomness_latest_source_id: String,
     pub(super) randomness_latest_round: u64,
     pub(super) randomness_last_error: String,
+    pub(super) randomness_public_drand_fetch_attempts: usize,
+    pub(super) randomness_public_drand_fetch_successes: usize,
+    pub(super) randomness_public_drand_fetch_stale: usize,
+    pub(super) randomness_public_drand_consecutive_failures: usize,
+    pub(super) randomness_public_drand_backoff_remaining_ticks: u64,
     pub(super) validator_attestations_submitted: usize,
     pub(super) validator_audit_work_ready: bool,
     pub(super) validator_assigned_audits_seen: usize,
@@ -158,6 +163,14 @@ impl RuntimeStatusSnapshot {
             randomness_latest_source_id: state.randomness_latest_source_id().to_owned(),
             randomness_latest_round: state.randomness_latest_round(),
             randomness_last_error: state.randomness_last_error().to_owned(),
+            randomness_public_drand_fetch_attempts: state.randomness_public_drand_fetch_attempts(),
+            randomness_public_drand_fetch_successes: state
+                .randomness_public_drand_fetch_successes(),
+            randomness_public_drand_fetch_stale: state.randomness_public_drand_fetch_stale(),
+            randomness_public_drand_consecutive_failures: state
+                .randomness_public_drand_consecutive_failures(),
+            randomness_public_drand_backoff_remaining_ticks: state
+                .randomness_public_drand_backoff_remaining_ticks(),
             validator_attestations_submitted: state.validator_attestations_submitted(),
             validator_audit_work_ready: state.validator_audit_work_ready(),
             validator_assigned_audits_seen: state.validator_assigned_audits_seen(),

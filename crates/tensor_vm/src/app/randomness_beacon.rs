@@ -20,6 +20,8 @@ pub const PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL: &str = "https://api.drand.sh/v2";
 pub const PUBLIC_DRAND_DEFAULT_CHAIN_HASH: &str =
     "8990e7a9aaed2ffed73dbd7092123d6f289930540d7651336225dc172e51b2ce";
 const PUBLIC_DRAND_DEFAULT_TIMEOUT_MS: u64 = 5_000;
+const PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS: u64 = 1_200;
+const PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS: u64 = 9_600;
 const PUBLIC_DRAND_CHAINED_SCHEME: &str = "pedersen-bls-chained";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -54,6 +56,8 @@ pub struct RandomnessBeaconRuntimeConfig {
     pub drand_http_base_url: String,
     pub drand_chain_hash: String,
     pub drand_fetch_timeout_ms: u64,
+    pub drand_poll_interval_ticks: u64,
+    pub drand_failure_backoff_max_ticks: u64,
 }
 
 impl RandomnessBeaconRuntimeConfig {
@@ -70,6 +74,8 @@ impl RandomnessBeaconRuntimeConfig {
             drand_http_base_url: String::new(),
             drand_chain_hash: String::new(),
             drand_fetch_timeout_ms: 0,
+            drand_poll_interval_ticks: 0,
+            drand_failure_backoff_max_ticks: 0,
         }
     }
 
@@ -96,6 +102,8 @@ impl RandomnessBeaconRuntimeConfig {
             drand_http_base_url: String::new(),
             drand_chain_hash: String::new(),
             drand_fetch_timeout_ms: 0,
+            drand_poll_interval_ticks: 0,
+            drand_failure_backoff_max_ticks: 0,
         }
     }
 
@@ -146,6 +154,8 @@ impl RandomnessBeaconRuntimeConfig {
             drand_http_base_url: String::new(),
             drand_chain_hash: String::new(),
             drand_fetch_timeout_ms: 0,
+            drand_poll_interval_ticks: 0,
+            drand_failure_backoff_max_ticks: 0,
         })
     }
 
@@ -205,6 +215,8 @@ impl RandomnessBeaconRuntimeConfig {
             drand_http_base_url: String::new(),
             drand_chain_hash: String::new(),
             drand_fetch_timeout_ms: 0,
+            drand_poll_interval_ticks: 0,
+            drand_failure_backoff_max_ticks: 0,
         })
     }
 
@@ -238,6 +250,8 @@ impl RandomnessBeaconRuntimeConfig {
             drand_http_base_url: http_base_url,
             drand_chain_hash: chain_hash,
             drand_fetch_timeout_ms: fetch_timeout_ms,
+            drand_poll_interval_ticks: PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS,
+            drand_failure_backoff_max_ticks: PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS,
         })
     }
 
@@ -333,7 +347,22 @@ impl RandomnessBeaconRuntimeConfig {
                         })?,
                         Err(_) => PUBLIC_DRAND_DEFAULT_TIMEOUT_MS,
                     };
-                Self::public_drand(http_base_url, chain_hash, fetch_timeout_ms)
+                let mut config = Self::public_drand(http_base_url, chain_hash, fetch_timeout_ms)?;
+                config.drand_poll_interval_ticks = parse_optional_positive_env_u64(
+                    "TENSORVM_RANDOMNESS_BEACON_DRAND_POLL_INTERVAL_TICKS",
+                    PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS,
+                )?;
+                config.drand_failure_backoff_max_ticks = parse_optional_positive_env_u64(
+                    "TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS",
+                    PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS,
+                )?;
+                if config.drand_failure_backoff_max_ticks < config.drand_poll_interval_ticks {
+                    return Err(
+                        "TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS must be greater than or equal to TENSORVM_RANDOMNESS_BEACON_DRAND_POLL_INTERVAL_TICKS"
+                            .to_owned(),
+                    );
+                }
+                Ok(config)
             }
             other => Err(format!(
                 "unsupported TENSORVM_RANDOMNESS_BEACON_MODE {other:?}; expected off, local_deterministic, verified_drand, or public_drand"
@@ -343,6 +372,21 @@ impl RandomnessBeaconRuntimeConfig {
 
     pub fn enabled(&self) -> bool {
         self.mode != RandomnessBeaconMode::Off
+    }
+}
+
+fn parse_optional_positive_env_u64(name: &str, default: u64) -> std::result::Result<u64, String> {
+    match std::env::var(name) {
+        Ok(value) => {
+            let parsed = value
+                .parse::<u64>()
+                .map_err(|error| format!("invalid {name}: {error}"))?;
+            if parsed == 0 {
+                return Err(format!("{name} must be greater than zero"));
+            }
+            Ok(parsed)
+        }
+        Err(_) => Ok(default),
     }
 }
 
@@ -490,6 +534,8 @@ impl DrandBeaconClient for HttpDrandBeaconClient {
         fetched.drand_http_base_url = config.drand_http_base_url.clone();
         fetched.drand_chain_hash = config.drand_chain_hash.clone();
         fetched.drand_fetch_timeout_ms = config.drand_fetch_timeout_ms;
+        fetched.drand_poll_interval_ticks = config.drand_poll_interval_ticks;
+        fetched.drand_failure_backoff_max_ticks = config.drand_failure_backoff_max_ticks;
         Ok(fetched)
     }
 }
@@ -523,10 +569,13 @@ pub fn tick_randomness_beacon_once_with_client(
         return Ok(false);
     }
     let fetched_config;
+    let public_drand_poll =
+        config.mode == RandomnessBeaconMode::PublicDrand && config.beacon_round == 0;
     let config = if config.mode == RandomnessBeaconMode::PublicDrand && config.beacon_round == 0 {
-        if runtime_state.randomness_beacons_observed() > 0 {
+        if !runtime_state.randomness_public_drand_poll_due() {
             return Ok(false);
         }
+        runtime_state.record_randomness_public_drand_fetch_attempt();
         fetched_config = match drand_client.fetch_latest_chained(config) {
             Ok(config) => config,
             Err(error) => {
@@ -535,6 +584,10 @@ pub fn tick_randomness_beacon_once_with_client(
                     config.beacon_round,
                     &error,
                 );
+                runtime_state.record_randomness_public_drand_fetch_failure(
+                    config.drand_poll_interval_ticks,
+                    config.drand_failure_backoff_max_ticks,
+                );
                 return Ok(true);
             }
         };
@@ -542,7 +595,8 @@ pub fn tick_randomness_beacon_once_with_client(
     } else {
         config
     };
-    if runtime_state.randomness_latest_source_id() == config.source_id
+    if !public_drand_poll
+        && runtime_state.randomness_latest_source_id() == config.source_id
         && runtime_state.randomness_latest_round() == config.beacon_round
         && runtime_state.randomness_beacons_observed() > 0
     {
@@ -572,6 +626,11 @@ pub fn tick_randomness_beacon_once_with_client(
     }
     runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
     let chain = &mut server.gateway_mut().node.chain;
+    if public_drand_poll && config.beacon_round <= chain.state().finalized_beacon_round() {
+        runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
+        runtime_state.record_randomness_public_drand_fetch_stale(config.drand_poll_interval_ticks);
+        return Ok(true);
+    }
     if let Some(record) = chain
         .state()
         .external_randomness_beacons()
@@ -590,6 +649,10 @@ pub fn tick_randomness_beacon_once_with_client(
     }
     if config.beacon_round <= chain.state().finalized_beacon_round() {
         runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
+        if public_drand_poll {
+            runtime_state
+                .record_randomness_public_drand_fetch_stale(config.drand_poll_interval_ticks);
+        }
         return Ok(true);
     }
     let command = match config.mode {
@@ -628,6 +691,10 @@ pub fn tick_randomness_beacon_once_with_client(
                 error
             })?;
             runtime_state.record_randomness_beacon_applied(&config.source_id, config.beacon_round);
+            if public_drand_poll {
+                runtime_state
+                    .record_randomness_public_drand_fetch_success(config.drand_poll_interval_ticks);
+            }
             Ok(true)
         }
         Err(error) => {
@@ -819,6 +886,8 @@ mod tests {
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_HTTP_BASE_URL");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_CHAIN_HASH");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_POLL_INTERVAL_TICKS");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS");
         }
     }
 
@@ -958,6 +1027,46 @@ mod tests {
         assert_eq!(
             config.drand_fetch_timeout_ms,
             PUBLIC_DRAND_DEFAULT_TIMEOUT_MS
+        );
+        assert_eq!(
+            config.drand_poll_interval_ticks,
+            PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS
+        );
+        assert_eq!(
+            config.drand_failure_backoff_max_ticks,
+            PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS
+        );
+
+        clear_randomness_beacon_env();
+    }
+
+    #[test]
+    fn public_drand_config_from_env_accepts_poll_and_backoff_knobs() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_randomness_beacon_env();
+        unsafe {
+            std::env::set_var("TENSORVM_RANDOMNESS_BEACON_MODE", "public_drand");
+            std::env::set_var("TENSORVM_RANDOMNESS_BEACON_DRAND_POLL_INTERVAL_TICKS", "7");
+            std::env::set_var(
+                "TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS",
+                "28",
+            );
+        }
+
+        let config = RandomnessBeaconRuntimeConfig::from_env().unwrap();
+        assert_eq!(config.drand_poll_interval_ticks, 7);
+        assert_eq!(config.drand_failure_backoff_max_ticks, 28);
+
+        unsafe {
+            std::env::set_var(
+                "TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS",
+                "6",
+            );
+        }
+        assert!(
+            RandomnessBeaconRuntimeConfig::from_env()
+                .unwrap_err()
+                .contains("FAILURE_BACKOFF_MAX_TICKS")
         );
 
         clear_randomness_beacon_env();

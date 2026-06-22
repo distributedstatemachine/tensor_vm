@@ -457,9 +457,12 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > anchors arrive, and expose observed/applied counters plus external-beacon/reveal count evidence through
 > status, explorer JSON, and the local checker. The chain and bounded p2p/node ingest path can now admit
 > `pedersen-bls-unchained` drand evidence by verifying the signature, deriving randomness from that
-> signature, and storing typed `DrandPedersenBlsUnchainedV1` proof metadata. Live public drand fetching,
-> external drand round mapping, production validator VRF signatures, and deployed commit-reveal lifecycle
-> evidence remain TODO before claiming the full §10 construction.
+> signature, and storing typed `DrandPedersenBlsUnchainedV1` proof metadata. Public drand mode now polls
+> the default-chain v2 HTTP endpoint, verifies `pedersen-bls-chained` responses using
+> `previous_signature`, applies only strictly newer finalized beacon rounds through the same chain
+> command, skips stale rounds, and exposes poll/backoff counters. External drand round-to-epoch mapping,
+> production validator VRF signatures, and deployed commit-reveal lifecycle evidence remain TODO before
+> claiming the full §10 construction.
 
 ---
 
@@ -678,7 +681,8 @@ This section is non-normative guidance on how the spec components partition into
   commit→reveal, and current-block-hash-ban evidence through status/explorer; local role runtimes now
   ingest a deterministic drand-style external beacon fixture and expose checker-gated applied-record
   evidence. Chain and p2p/node admission can now verify bounded `pedersen-bls-unchained` drand evidence.
-  Live public drand fetching, external drand round ↔ epoch mapping, and validator VRF construction remain
+  Public drand mode now polls and verifies newer default-chain `pedersen-bls-chained` rounds with stale
+  skip and backoff evidence. External drand round ↔ epoch mapping and validator VRF construction remain
   TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
 - [~] Retention evidence: selected-receipt block openings now anchor `expires_at_block` to receipt

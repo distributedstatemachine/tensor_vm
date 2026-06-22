@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 150 complete - live public default-chain drand fetch and chained verification.
+- Active feature: Iteration 151 complete - continuous public drand polling and backoff.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   state-rooted pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots with producer-selected receipts,
@@ -55,8 +55,11 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   the local deterministic fixture path. Public drand default-chain HTTP fetching now verifies the
   `pedersen-bls-chained` scheme with `previous_signature`, stores typed
   `DrandPedersenBlsChainedV1` proof metadata through the same chain command boundary, and relays bounded
-  chained drand payloads over p2p/node ingest. Continuous polling/backoff, production validator VRF
-  signatures, and deployed lifecycle evidence remain open. `Fixed32`
+  chained drand payloads over p2p/node ingest. Public drand mode now polls that default-chain endpoint
+  continuously, applies only strictly newer verified rounds, skips stale rounds, backs off after fetch or
+  verification failures, and exposes runtime attempt/success/stale/backoff counters. Production validator
+  VRF signatures, external drand round-to-epoch mapping, and deployed lifecycle evidence remain open.
+  `Fixed32`
   multiplication now rescales the signed raw product back to the lhs/output scale with round-half-to-even
   semantics in tensor, exact IR replay, and conformance vectors. Mixed-scale `Fixed32` `add`/`sub` now
   rescale the RHS to the lhs/output scale with the same half-even policy. `Fixed32` reciprocal division now
@@ -74,7 +77,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: continue public/CUDA deployment runs, live public drand fetching/round mapping, production
+- Next action: continue public/CUDA deployment runs, external drand round-to-epoch mapping, production
   validator VRF construction, and full interactive transcript disputes.
 
 ## Readiness Matrix
@@ -92,11 +95,42 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph jobs/receipts, exact replay for current core and broad Tier-B surface, packed int8 artifact APIs, role-owned graph execution, content-addressed `const_blob` replay/fetch, and p2p-sampled verified trace openings | Continue exact Tier-B verifier coverage, full interactive trace disputes, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant agreement quorum, watcher flags, state-rooted redundant settlement delay records with miner/operator counts, and delayed pending reward claims after redundant holds clear to settlement | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
-| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixtures and configured verified drand evidence; bounded p2p messages relay fixture, verified drand, and validator reveal records through node ingest; chain, p2p/node, and role-runtime paths verify `pedersen-bls-unchained` drand evidence and store typed proof metadata; status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, role applied counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add live public drand fetching/round mapping, production validator VRF signatures, and deployed commit-reveal lifecycle |
+| Randomness commit/reveal or VRF beacon | Partial | Receipts persist receipt-time finalized beacon randomness, assignment seed, validation seed commitment; attestations require anchor; local runtime ingests configured deterministic external beacon fixtures and configured verified drand evidence; bounded p2p messages relay fixture, verified drand, public chained drand, and validator reveal records through node ingest; chain, p2p/node, and role-runtime paths verify `pedersen-bls-unchained` and public default-chain `pedersen-bls-chained` drand evidence and store typed proof metadata; public drand polling skips stale rounds, backs off after failures, and exposes attempt/success/stale/backoff counters; status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, role applied counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add external drand round-to-epoch mapping, production validator VRF signatures, and deployed commit-reveal lifecycle |
 | Economics and slashing invariant | Partial | Delayed rewards, reward-root binding, explicit receipt reward maturity state, explicit pre-inclusion delayed receipt maturity, inclusion-started receipt reward maturity, explicit `AwaitingValidatorVrfReveal` validator receipt maturity, claim-owned spendability, validator receipt reward release gated by accepted reveal records, delayed miner TensorWork activation, late invalid-output reward/work voiding and miner stake slashing, audit/data-unavailability slashing, appeal reversal, pending claim view, study helper, validator-audit/fraud-path calibration, and structured detection-probability evidence | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 151: Continuous Public Drand Polling And Backoff
+
+Feature capability: `TENSORVM_RANDOMNESS_BEACON_MODE=public_drand` now means runtime polling, not a
+startup workaround. The role loop fetches the latest public default-chain chained drand beacon when its
+tick cooldown expires, verifies and applies only strictly newer rounds through
+`SubmitVerifiedChainedDrandBeacon`, records stale rounds without mutating finalized randomness, and backs
+off after fetch/verification failures.
+Readiness requirements covered: `upow.md` §10 unbiasable beacon liveness, the goal shortcut ban against
+working around randomness with one-shot fixtures, and operator evidence for public drand fetch attempts,
+successes, stale skips, consecutive failures, and remaining backoff ticks.
+Files/modules touched: `crates/tensor_vm/src/app/randomness_beacon.rs`,
+`crates/tensor_vm/src/node/runtime_state.rs`, `crates/tensor_vm/src/app/runtime_status_snapshot.rs`,
+`crates/tensor_vm/src/app/runtime_status.rs`, `crates/tensor_vm/src/app/status.rs`, runtime persistence
+tests, coverage/readiness docs, and this execution plan.
+Parallel subagents run: readiness mapper, code-path explorer, and test coverage explorer; parent owned
+the final code/docs integration.
+Tests/checkers/docs added or updated: public drand poll/backoff env defaults and validation, runtime
+status counters, scripted drand-client coverage for newer-round apply, stale-round skip, and failure
+backoff, plus readiness text narrowing the remaining randomness gap.
+Narrow validation commands: `cargo test -p tensor_vm public_drand --lib -- --nocapture` and
+`cargo test -p tensor_vm --test tvmd_runtime public_drand -- --nocapture`.
+Broad validation commands before commit: `cargo test -p tensor_vm local_testnet --release`,
+`cargo fmt --check --all`, and `git diff --check`.
+Completed validation: first-command Gate 0 `cargo test -p tensor_vm local_testnet --release` passed on
+June 22, 2026 before edits; after edits, `cargo test -p tensor_vm public_drand --lib -- --nocapture`,
+`cargo test -p tensor_vm --test tvmd_runtime public_drand -- --nocapture`,
+`cargo test -p tensor_vm node::runtime_state::tests::runtime_state_tracks_loop_counters --lib -- --nocapture`,
+`cargo test -p tensor_vm app::status::tests::service_status_forwards_role_randomness_beacon_evidence --lib -- --nocapture`,
+`cargo fmt --check --all`, `git diff --check`, and `cargo test -p tensor_vm local_testnet --release`
+passed.
 
 ### Iteration 150: Public Default-Chain Drand Fetch
 

@@ -10,6 +10,7 @@ const PUBLIC_DRAND_DEFAULT_PUBLIC_KEY_HEX: &str = "868f005eb8e6e4ca0a47c8a77ceaa
 const PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX: &str = "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655";
 const PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX: &str =
     "176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a";
+const PUBLIC_DRAND_DEFAULT_ROUND_2_SIGNATURE_HEX: &str = "aa18facd2d51b616511d542de6f9af8a3b920121401dad1434ed1db4a565f10e04fad8d9b2b4e3e0094364374caafe9b10478bf75650124831509c638b5a36a7a232ec70289f8751a2adb47fc32eb70b57dc81c39d48cbcac9fec46cdfc31663";
 
 fn hex_bytes(input: &str) -> Vec<u8> {
     assert_eq!(input.len() % 2, 0);
@@ -36,25 +37,61 @@ fn verified_drand_vector() -> (u64, Vec<u8>, Vec<u8>, tensor_vm::types::Hash) {
 }
 
 fn public_drand_default_round_1_config() -> RandomnessBeaconRuntimeConfig {
-    RandomnessBeaconRuntimeConfig::verified_chained_drand(
+    public_drand_default_round_config(
         1,
+        PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX,
+        PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX,
+    )
+}
+
+fn public_drand_default_round_2_config() -> RandomnessBeaconRuntimeConfig {
+    public_drand_default_round_config(
+        2,
+        PUBLIC_DRAND_DEFAULT_ROUND_2_SIGNATURE_HEX,
+        PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX,
+    )
+}
+
+fn public_drand_default_round_config(
+    round: u64,
+    signature_hex: &str,
+    previous_signature_hex: &str,
+) -> RandomnessBeaconRuntimeConfig {
+    RandomnessBeaconRuntimeConfig::verified_chained_drand(
+        round,
         hex_bytes(PUBLIC_DRAND_DEFAULT_PUBLIC_KEY_HEX),
-        hex_bytes(PUBLIC_DRAND_DEFAULT_ROUND_1_SIGNATURE_HEX),
-        hex_bytes(PUBLIC_DRAND_DEFAULT_ROUND_1_PREVIOUS_SIGNATURE_HEX),
+        hex_bytes(signature_hex),
+        hex_bytes(previous_signature_hex),
     )
     .unwrap()
 }
 
-struct FixtureDrandClient {
-    config: RandomnessBeaconRuntimeConfig,
+struct ScriptedDrandClient {
+    responses: std::sync::Mutex<
+        std::collections::VecDeque<std::result::Result<RandomnessBeaconRuntimeConfig, String>>,
+    >,
 }
 
-impl DrandBeaconClient for FixtureDrandClient {
+impl ScriptedDrandClient {
+    fn new(
+        responses: Vec<std::result::Result<RandomnessBeaconRuntimeConfig, String>>,
+    ) -> ScriptedDrandClient {
+        Self {
+            responses: std::sync::Mutex::new(responses.into()),
+        }
+    }
+}
+
+impl DrandBeaconClient for ScriptedDrandClient {
     fn fetch_latest_chained(
         &self,
         _config: &RandomnessBeaconRuntimeConfig,
     ) -> std::result::Result<RandomnessBeaconRuntimeConfig, String> {
-        Ok(self.config.clone())
+        self.responses
+            .lock()
+            .unwrap()
+            .pop_front()
+            .expect("scripted drand response must exist")
     }
 }
 
@@ -261,6 +298,8 @@ fn role_runtime_public_drand_fetch_tick_persists_chain_and_status() {
         1_000,
     )
     .unwrap();
+    config.randomness_beacon.drand_poll_interval_ticks = 1;
+    config.randomness_beacon.drand_failure_backoff_max_ticks = 4;
     let fetched_config = public_drand_default_round_1_config();
     let expected_source_id = fetched_config.source_id.clone();
     let expected_randomness = fetched_config.randomness;
@@ -273,9 +312,9 @@ fn role_runtime_public_drand_fetch_tick_persists_chain_and_status() {
 
     let mut runtime = RoleRuntimeLoop::start(config).unwrap();
     runtime
-        .tick_randomness_beacon_once_with_client(&FixtureDrandClient {
-            config: fetched_config,
-        })
+        .tick_randomness_beacon_once_with_client(&ScriptedDrandClient::new(vec![Ok(
+            fetched_config,
+        )]))
         .unwrap();
     let persisted = store.load_chain().unwrap();
     assert_eq!(persisted.state().finalized_beacon_round(), 1);
@@ -308,6 +347,116 @@ fn role_runtime_public_drand_fetch_tick_persists_chain_and_status() {
     assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
     assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 1);
     assert_eq!(report_u64(&status, "role_randomness_beacon_failures"), 0);
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetch_attempts"),
+        1
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetch_successes"),
+        1
+    );
+
+    drop(runtime);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn role_runtime_public_drand_polling_skips_stale_rounds_and_backs_off_failures() {
+    let data_dir = unique_temp_data_dir("role-runtime-public-drand-polling");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let mut config = test_service_runtime_config(&data_dir, "secret");
+    config.randomness_beacon = RandomnessBeaconRuntimeConfig::public_drand(
+        PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL,
+        PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+        1_000,
+    )
+    .unwrap();
+    config.randomness_beacon.drand_poll_interval_ticks = 1;
+    config.randomness_beacon.drand_failure_backoff_max_ticks = 4;
+    let round_1 = public_drand_default_round_1_config();
+    let round_2 = public_drand_default_round_2_config();
+    let expected_source_id = round_2.source_id.clone();
+    let expected_randomness = round_2.randomness;
+    let chain = config
+        .node
+        .build_chain(hash_bytes(b"test", &[b"runtime-public-drand-polling"]));
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+
+    let mut runtime = RoleRuntimeLoop::start(config).unwrap();
+    let client = ScriptedDrandClient::new(vec![
+        Ok(round_1.clone()),
+        Ok(round_1),
+        Ok(round_2),
+        Err("temporary drand outage".to_owned()),
+    ]);
+    runtime
+        .tick_randomness_beacon_once_with_client(&client)
+        .unwrap();
+    runtime
+        .tick_randomness_beacon_once_with_client(&client)
+        .unwrap();
+    runtime
+        .tick_randomness_beacon_once_with_client(&client)
+        .unwrap();
+    runtime
+        .tick_randomness_beacon_once_with_client(&client)
+        .unwrap();
+
+    let persisted = store.load_chain().unwrap();
+    assert_eq!(persisted.state().finalized_beacon_round(), 2);
+    assert_eq!(
+        persisted.state().finalized_randomness(),
+        expected_randomness
+    );
+    assert!(
+        persisted
+            .state()
+            .external_randomness_beacons()
+            .get(&1)
+            .is_some()
+    );
+    assert!(
+        persisted
+            .state()
+            .external_randomness_beacons()
+            .get(&2)
+            .is_some()
+    );
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(
+        report_field(&status, "role_randomness_latest_source_id"),
+        "public-drand:8990e7a9aaed2ffe"
+    );
+    assert_eq!(report_u64(&status, "role_randomness_latest_round"), 0);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 3);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 2);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacon_failures"), 1);
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetch_attempts"),
+        4
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetch_successes"),
+        2
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetch_stale"),
+        1
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_consecutive_failures"),
+        1
+    );
+    assert_eq!(
+        report_u64(
+            &status,
+            "role_randomness_public_drand_backoff_remaining_ticks"
+        ),
+        1
+    );
+    assert!(expected_source_id.starts_with("drand-pedersen-bls-chained-v1:"));
 
     drop(runtime);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
