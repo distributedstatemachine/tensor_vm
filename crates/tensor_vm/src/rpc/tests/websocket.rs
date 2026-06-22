@@ -39,9 +39,32 @@ fn explorer_websocket_views_cover_chain_collections_and_bad_commands() {
         lr: 1,
         deadline_block: 20,
     });
+    let graph = SyntheticLocalJobSource::graph_execution_graph();
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let mut job_source = SyntheticLocalJobSource::new(JobScheduler::default());
+    let graph_job = job_source.next_graph_job(&chain);
+    let graph_inputs = SyntheticLocalJobSource::graph_execution_inputs();
+    let (graph_receipt, _graph_outputs) =
+        GraphReceipt::from_execution(&graph_job, &graph, cpu_miner, &graph_inputs, 2, 6).unwrap();
     chain.submit_job(JobState::TensorOp(matmul_job));
     chain.submit_job(JobState::LinearTrainingStep(linear_job));
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+            graph_job.clone(),
+        )))
+        .unwrap();
     chain.submit_tensor_op_receipt(receipt.clone()).unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            graph_receipt.clone(),
+        )))
+        .unwrap();
     chain.mark_receipt_settled_for_testing(receipt.receipt_id);
     chain.register_validator(cpu_miner, 10_000).unwrap();
     chain.produce_block(cpu_miner, 1000).unwrap();
@@ -79,7 +102,7 @@ fn explorer_websocket_views_cover_chain_collections_and_bad_commands() {
             .all(|validator| validator["valid_attestations"].as_u64().is_some())
     );
 
-    let jobs = rpc.explorer_websocket_response("{\"type\":\"jobs\",\"job_limit\":2}");
+    let jobs = rpc.explorer_websocket_response("{\"type\":\"jobs\",\"job_limit\":3}");
     let jobs = json_text(&jobs);
     assert_eq!(jobs["type"].as_str(), Some("jobs"));
     let mut primitive_types = jobs["jobs"]
@@ -93,24 +116,40 @@ fn explorer_websocket_views_cover_chain_collections_and_bad_commands() {
         })
         .collect::<Vec<_>>();
     primitive_types.sort_unstable();
-    assert_eq!(primitive_types, ["linear_training_step", "tensor_op"]);
+    assert_eq!(
+        primitive_types,
+        ["graph_execution", "linear_training_step", "tensor_op"]
+    );
 
-    let receipts = rpc.explorer_websocket_response("{\"type\":\"receipts\",\"receipt_limit\":1}");
+    let receipts = rpc.explorer_websocket_response("{\"type\":\"receipts\",\"receipt_limit\":2}");
     let receipts = json_text(&receipts);
     assert_eq!(receipts["type"].as_str(), Some("receipts"));
     let receipts = receipts["receipts"]
         .as_array()
         .expect("receipts response must contain receipts array");
-    assert_eq!(receipts.len(), 1);
-    assert_eq!(receipts[0]["primitive_type"].as_str(), Some("tensor_op"));
-    assert_eq!(receipts[0]["attestation_count"].as_u64(), Some(0));
+    assert_eq!(receipts.len(), 2);
+    let mut receipt_primitive_types = receipts
+        .iter()
+        .map(|receipt| {
+            receipt["primitive_type"]
+                .as_str()
+                .expect("receipt primitive type must be a string")
+        })
+        .collect::<Vec<_>>();
+    receipt_primitive_types.sort_unstable();
+    assert_eq!(receipt_primitive_types, ["graph_execution", "tensor_op"]);
+    let tensor_op_receipt = receipts
+        .iter()
+        .find(|receipt| receipt["primitive_type"].as_str() == Some("tensor_op"))
+        .expect("receipts response must include the tensor op receipt");
+    assert_eq!(tensor_op_receipt["attestation_count"].as_u64(), Some(0));
     assert!(
-        receipts[0]["validator_attestations"]
+        tensor_op_receipt["validator_attestations"]
             .as_array()
             .expect("receipt validator attestations must be an array")
             .is_empty()
     );
-    assert_eq!(receipts[0]["settled"].as_bool(), Some(true));
+    assert_eq!(tensor_op_receipt["settled"].as_bool(), Some(true));
 
     let blocks = rpc.explorer_websocket_response("{\"type\":\"blocks\",\"block_limit\":1}");
     let blocks = json_text(&blocks);
@@ -125,7 +164,7 @@ fn explorer_websocket_views_cover_chain_collections_and_bad_commands() {
     let summary = json_text(&summary);
     assert_eq!(summary["type"].as_str(), Some("summary"));
     assert_eq!(summary["summary"]["miner_count"].as_u64(), Some(4));
-    assert_eq!(summary["summary"]["job_count"].as_u64(), Some(2));
+    assert_eq!(summary["summary"]["job_count"].as_u64(), Some(3));
     let spaced_summary = rpc.explorer_websocket_response("{\"type\": \"summary\"}");
     let spaced_summary = json_text(&spaced_summary);
     assert_eq!(spaced_summary["type"].as_str(), Some("summary"));

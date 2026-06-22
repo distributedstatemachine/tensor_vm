@@ -128,7 +128,9 @@ output, and `const_blob` tensor artifacts before attestation. Evidence:
 `validator_role::validator_role_fetches_remote_graph_const_blobs_before_attesting`. Trace-opening sampling
 evidence: `p2p::wire::tests::trace_opening_payloads_roundtrip_and_reject_malformed_edges`,
 `p2p::service::tests::libp2p_service_fetches_trace_opening`, and
-`p2p::node::tests::local_testnet_libp2p_swarms_exchange_gossip_and_request_response`.
+`p2p::node::tests::local_testnet_libp2p_swarms_exchange_gossip_and_request_response`. Explorer API
+evidence: `rpc::tests::websocket::explorer_websocket_views_cover_chain_collections_and_bad_commands`
+now covers `graph_execution` in WebSocket jobs and receipts alongside TensorOp and LinearTrainingStep.
 
 The local reference also has a deterministic `F_p` conformance vector gate for the current executable
 admitted op surface used by TensorOp and LinearTrainingStep: field `add`, `sub`, `mul`, `div`, `scalar_mul`,
@@ -213,9 +215,9 @@ explorer page opens a WebSocket to the TensorVM `/explorer/ws` data endpoint, wa
 height, block, job, receipt, settled-receipt, model-count, attestation-count, and pending receipt-reward
 advancement so the live producer must settle at least one LinearTrainingStep and create new validator/miner
 claims after the seed, requires live receipt details to expose validator attestation counts and more than
-the seeded count of both `tensor_op` and `linear_training_step` primitive receipts, requires finalized
-live `tvmd node block` views to expose block-height receipt IDs and primitive counts for both TensorOp
-and LinearTrainingStep work, fetches a live tensor
+the seeded count of `tensor_op`, `linear_training_step`, and `graph_execution` primitive receipts, requires
+finalized live `tvmd node block` views to expose block-height receipt IDs and primitive counts for TensorOp,
+LinearTrainingStep, and GraphExecution work, fetches a live tensor
 descriptor, row, chunk, and opening through the TensorVM node, reruns Gate 0 from the checker,
 verifies the local-only evidence boundary, requires all 15 operator stores to report the same finalized
 common-head block hash through `tvmd node block`, selects a non-producer's latest finalized p2p-observed

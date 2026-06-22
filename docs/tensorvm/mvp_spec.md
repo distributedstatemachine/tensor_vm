@@ -1262,6 +1262,7 @@ struct ReceiptHeader {
 enum PrimitiveType {
     TensorOp,
     LinearTrainingStep,
+    GraphExecution,
 }
 ```
 

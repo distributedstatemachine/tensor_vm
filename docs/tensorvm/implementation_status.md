@@ -382,7 +382,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   propagation and bounded tensor/program fetches
 - Node/tensor RPC route handling, state-root-bearing `/chain/head` responses, service and per-surface
   health endpoints, explorer data RPC endpoints, `/explorer/ws` WebSocket polling for browser explorers,
-  telemetry/faucet RPC endpoints, browser-facing explorer/telemetry/faucet HTML pages, mutable
+  including checked WebSocket jobs and receipts for `graph_execution` alongside TensorOp and
+  LinearTrainingStep, telemetry/faucet RPC endpoints, browser-facing explorer/telemetry/faucet HTML pages, mutable
   transaction submission, job lookup, HTTP response formatting, generic HTTP request reading, socketed
   stdlib HTTP serving, `tvmd node init/peer add/check/serve` launch
   configuration for a `NodeStore`-backed service process with mandatory rust-libp2p listen configuration,
@@ -626,15 +627,16 @@ preflight, public evidence, or deployment-gated work can count:
   `standalone_explorer_websocket_polling=true`; the gate now also requires
   `live_block_production=true`, `live_synthetic_jobs=true`, `live_linear_training_jobs=true`,
   `live_attestations=true`, `live_receipt_attestations=true`, `live_tensor_op_receipts=true`,
-  `live_linear_training_receipts=true`, `live_tensor_op_block_evidence=true`,
-  `live_linear_training_block_evidence=true`, `live_tensor_fetch=true`, `live_rewards=true`,
+  `live_linear_training_receipts=true`, `live_graph_execution_receipts=true`,
+  `live_tensor_op_block_evidence=true`, `live_linear_training_block_evidence=true`,
+  `live_graph_execution_block_evidence=true`, `live_tensor_fetch=true`, `live_rewards=true`,
   positive `live_delayed_receipt_reward_claims`, and positive
   `live_delayed_proposer_reward_claims`, proving
   `/chain/head` and explorer counters advance past the seeded two-block baseline, at least one live
   LinearTrainingStep advances model state after startup, validators add attestations, `/explorer/receipts`
-  exposes per-receipt validator attestation details plus named post-seed TensorOp and LinearTrainingStep
-  primitive receipts for live work, and `tvmd node block` exposes finalized live block-height receipt
-  IDs and primitive counts for both TensorOp and LinearTrainingStep work,
+  exposes per-receipt validator attestation details plus named post-seed TensorOp, LinearTrainingStep, and
+  GraphExecution primitive receipts for live work, and `tvmd node block` exposes finalized live
+  block-height receipt IDs and primitive counts for TensorOp, LinearTrainingStep, and GraphExecution work,
   `/tensor/latest` returns a live tensor ID whose descriptor, row, chunk, and opening are fetchable, and
   settled live work creates delayed pending reward claims before spendable credit; the gate also runs
   `tvmd node status` and
@@ -722,12 +724,11 @@ loopback listen address instead of counting local service startup as public netw
 The current instrumented Tarpaulin line coverage is documented in
 [`tarpaulin_report.md`](tarpaulin_report.md):
 
-- 97.29% workspace line coverage
-- 11559/11881 workspace lines covered
-- 97.81% `tensor_vm` crate line coverage
-- 10696/10936 `tensor_vm` lines covered
-- 100.00% `tensor_vm_explorer` crate line coverage
-- 277/277 `tensor_vm_explorer` lines covered
+- 84.58% workspace line coverage
+- 22613/26736 workspace lines covered
+- 561 instrumented tests passed
+- `crates/tensor_vm/src/rpc/explorer.rs` coverage is 247/250 after adding WebSocket GraphExecution
+  job/receipt evidence
 
 The CUDA feature gate was also checked locally on an NVIDIA B200 with CUDA 12.8:
 

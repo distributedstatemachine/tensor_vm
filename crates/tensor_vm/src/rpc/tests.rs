@@ -3,14 +3,17 @@ use crate::chain::{
     ASSIGNMENT_SEED_DOMAIN, BlockVote, Chain, ChainCommand, ChainEngine, ChainParams,
     HardwareClass, JobState, PendingReceiptReward, RANDOMNESS_BEACON_SOURCE,
     RANDOMNESS_DRAND_ROUND_MAPPING, RANDOMNESS_VRF_CONSTRUCTION, ReceiptRewardKind,
-    ReceiptRewardMaturity, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
+    ReceiptRewardMaturity, ReceiptState, VALIDATION_SEED_COMMITMENT_DOMAIN,
+    VALIDATION_SEED_REVEAL_DOMAIN,
 };
 use crate::faucet::Faucet;
 use crate::hash::hex;
 use crate::jobs::{
-    LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob, PrimitiveType, TensorOpReceipt,
+    GraphReceipt, LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob, PrimitiveType,
+    TensorOpReceipt,
 };
 use crate::profile::ChainProfile;
+use crate::scheduler::{JobScheduler, SyntheticLocalJobSource};
 use crate::tensor::{DType, Tensor};
 use crate::types::{address, hash_bytes};
 use crate::verify::FreivaldsParams;

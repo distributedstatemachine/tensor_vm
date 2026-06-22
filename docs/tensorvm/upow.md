@@ -165,7 +165,11 @@ Graph {
 > chain state keyed by `graph_id`, persist those bodies through node-store snapshots, commit them in the
 > state root, and can serve them through the existing `RequestProgram`/`ProgramResponse` libp2p path.
 > Current canonical TensorOp and LinearTrainingStep receipts derive `trace_root` from exact execution of
-> their canonical TensorGraph op traces. Generic arbitrary-IR job admission and role execution remain TODO.
+> their canonical TensorGraph op traces. Generic `GraphExecution` jobs and receipts can reference
+> registered canonical graph bodies, execute locally through miner role loops, attest through validator
+> role loops, cross the shared p2p/node payload path, settle through delayed receipt rewards, and surface
+> through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution and public deployed
+> graph evidence remain TODO.
 
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):
@@ -343,7 +347,9 @@ Every record's signed body is canonical JSON / SSZ; `*_id = SHA256(canonical(bod
 > graph job payload. Runtime ingest now fetches missing pending graph-program bodies over the bounded
 > `RequestProgram` path before retrying queued graph jobs; miner role loops fetch missing graph input and
 > `const_blob` tensors before execution; and validator role loops fetch graph input, output, and
-> `const_blob` tensors before attestation. A generic cheap verifier for every admitted op remains open.
+> `const_blob` tensors before attestation. Local CPU graph receipt verification now has direct receipt
+> scenarios for every consensus-admitted frozen-registry op, but CUDA/deployed graph verification evidence
+> and broader public-runtime measurements remain open.
 
 > **Crypto is asymmetric, full stop.** No HMAC/shared-secret signing anywhere in the consensus path. Identities are on-chain accounts.
 
@@ -391,8 +397,9 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > calculation, and shared encode/decode validation for IR replay and conformance. Field `div` is
 > admitted as exact modular-inverse replay, and `Fixed32` `div` is admitted as signed reciprocal
 > division that returns to the lhs/output scale with round-half-even semantics.
-> Remaining packed tensor chunking/public-artifact APIs and full verifier coverage for every exact Tier-B
-> op remains TODO.
+> Packed tensor chunking/public-artifact APIs exist for packed payload artifacts, and local CPU graph
+> receipt verification scenarios cover every current consensus-admitted exact op. Additional mixed-dtype
+> vectors plus CUDA/deployed verifier evidence remain TODO.
 
 ---
 
@@ -683,7 +690,7 @@ This section is non-normative guidance on how the spec components partition into
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,
   comparison, generator, reduction, fixed-point `cast`/`round`, mixed-scale `add`/`sub`, mixed-scale
   `mul`, and `Fixed32` `matmul` rescale surface with conformance gating where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
-  mixed-dtype vectors and full verifier coverage for every exact Tier-B op remain TODO (§7).
+  mixed-dtype vectors and CUDA/deployed verifier evidence remain TODO (§7).
 - [~] Fraud-proof game: signed trace-bisection session and round state now provide a deterministic
   message/hash boundary over verified `IrTraceOpening`s, with response deadlines and challenger/responder
   bond envelope fields. Bounded p2p round payloads now reuse the trace-opening codec, verify responder

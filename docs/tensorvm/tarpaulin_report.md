@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 177 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 181 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,24 +9,23 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-557 tests passed under instrumentation:
+561 tests passed under instrumentation:
 - 14 experiments library tests
-- 542 tensor_vm library tests
+- 546 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.49% workspace line coverage
-22588/26736 workspace lines covered
+84.58% workspace line coverage
+22613/26736 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
-Iteration 177 coverage-changing work added graph receipt payload dependency coverage: a network
-`GraphExecution` receipt with known job/miner but missing registered program body returns `Pending`, a
-graph-id mismatch still rejects as invalid, and the same payload applies once the canonical graph body is
-registered. The line-coverage percentage remains lower than the old May 23, 2026 report because the
-current workspace includes substantially more runtime, deployment, public-evidence, and libp2p surface
-area in the denominator.
+Iteration 181 coverage-changing work extended explorer WebSocket regression coverage to first-class
+`GraphExecution` jobs and receipts, raising `crates/tensor_vm/src/rpc/explorer.rs` coverage to 247/250
+lines. The line-coverage percentage remains lower than the old May 23, 2026 report because the current
+workspace includes substantially more runtime, deployment, public-evidence, and libp2p surface area in the
+denominator.
 
 Historical report:
 
