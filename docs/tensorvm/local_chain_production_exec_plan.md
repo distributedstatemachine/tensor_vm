@@ -103,6 +103,8 @@ Validation completed on June 22, 2026:
 - Manual verifier-style review: no standalone verifier binary was used or added; the change stays inside
   chain reward-prune policy, preserves `ClaimReward` as the only live-reward credit path, and keeps
   validator-audit voided claims on the existing appeal-aware explicit release path.
+- Feature commit `b96debd` pushed to `main` on June 22, 2026:
+  `git push` returned `8087fbe..b96debd  main -> main`.
 
 Out of scope: public deployment evidence, CUDA evidence, new verifier binaries, and changing challenge
 economics.
