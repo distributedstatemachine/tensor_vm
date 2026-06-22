@@ -534,10 +534,12 @@ TensorBlock {
 ## 12. Economics & Parameters
 
 ### 12.1 Incentives
-- **Miners** earn rewards from settled, verified TensorWork through a diminishing-return curve to resist
-  monopoly: the local reference aggregates newly settled TensorWork per miner, allocates the miner pool by
-  `sqrt(miner_epoch_twu)`, and then splits each miner's allocation across that miner's included receipts by
-  raw receipt TWU. Reward requires surviving verification; a slashed receipt forfeits the bond.
+- **Miners** earn rewards from settled, verified TensorWork through delayed chain-owned claims: the local
+  reference aggregates newly settled TensorWork per miner, allocates the miner pool proportionally by raw
+  receipt TWU, and keeps the matching miner TensorWork pending until the non-voided receipt reward survives
+  canonical inclusion, challenge/audit holds, and beneficiary `ClaimReward`. Reward requires surviving
+  verification; a slashed or voided receipt forfeits the pending claim and clears the pending TensorWork
+  before it can activate.
 - **Validators** earn (a) the block reward for the winning UVPoW block and (b) attestation fees / a share of slashed bonds for catching fraud. Verifying correctly is the paid job.
 - **Challengers** (§8.2) earn a share of the loser's slashed bond → bounty for finding fraud.
 - Miner and validator rewards derived from verifier-dependent receipt settlement are pending claims first.

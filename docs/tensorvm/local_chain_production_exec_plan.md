@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 194 complete and pushed: Public VRF Lifecycle Evidence Gate.
+- Active feature: Iteration 195 complete: Reward Delay Spec Alignment.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly before
@@ -35,6 +35,35 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 195: Reward Delay Spec Alignment
+
+Feature capability: remove the stale miner reward-curve wording from `upow.md` and state the implemented
+chain-owned delayed reward plus delayed TensorWork activation rule directly.
+
+Readiness requirements covered: rewards must be distributed by verified settled TensorWork, but spendable
+credit must remain delayed until canonical inclusion, challenge/audit holds, maturity, and beneficiary
+`ClaimReward`.
+
+Canonical owner: existing chain reward ledgers own this behavior through pending receipt, proposer,
+challenge, and credit claims. This iteration changes documentation only because the implementation and
+focused reward tests already enforce the delayed path.
+
+Old shortcut being removed: the spec no longer describes a diminishing-return `sqrt(miner_epoch_twu)`
+reward curve as the miner reward defense. The implemented defense is delayed, voidable reward escrow plus
+delayed TensorWork activation.
+
+Validation passed on June 22, 2026: first executable Gate 0
+`cargo test -p tensor_vm local_testnet --release`, focused reward-delay regressions
+`generic_credit_rewards_claim_only_after_maturity`,
+`reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim`, and
+`miner_rewards_delay_tensorwork_activation_until_reward_release`, plus `cargo fmt --all -- --check` and
+`git diff --check`.
+
+Coverage impact: docs-only; no coverage change, so tarpaulin was not rerun for this iteration. Installed
+coverage tool confirmed as `cargo-tarpaulin-tarpaulin 0.35.5`.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
 
 ### Iteration 194: Public VRF Lifecycle Evidence Gate
 
