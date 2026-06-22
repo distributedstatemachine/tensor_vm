@@ -41,7 +41,7 @@ A complete evidence bundle must include:
 - signed invalid-work submission and rejection evidence
 - signed reward-settlement records for verified TensorWork
 - exactly one signed external artifact locator for the raw supporting records behind each
-  block/finality/libp2p/data-availability/invalid-work/reward-settlement summary root
+  block/finality/libp2p/randomness/data-availability/invalid-work/reward-settlement summary root
 - proof that production libp2p was used for peer discovery, gossip, and request/response propagation,
   with one signed observation record per counted public miner or validator operator
 - external HTTPS URLs, health paths, reachability records, content paths, and signed content-root
@@ -101,7 +101,7 @@ External evidence can be represented as a line-oriented manifest parsed by
 must be exact with no leading or trailing whitespace around the key before `=`. Scalar manifest fields must
 appear exactly once, and scalar values are parsed exactly with no leading or trailing whitespace; repeated
 record fields are allowed only for `auditor`, `record_artifact`, `operator`, `network_runtime_observation`,
-`randomness_beacon_record`, `data_availability_measurement`, `invalid_work_rejection`,
+`block_history_record`, `finality_history_record`, `randomness_beacon_record`, `data_availability_measurement`, `invalid_work_rejection`,
 `reward_settlement`, `node`, `service`, and `service_content`. The comma-separated values inside those
 repeated public-evidence records must also be exact, nonempty, and free of leading or trailing whitespace. For `record_artifact`, the full
 independently checkable gate requires exactly one valid line for each required supporting-record kind and
@@ -208,6 +208,8 @@ network_runtime_observation_signature=<network-runtime-signature-hex>
 randomness_beacon_records=100800
 randomness_beacon_root=<randomness-root-hex>
 randomness_beacon_signature=<randomness-signature-hex>
+block_history_record=<block>,<block-root-hex>
+finality_history_record=<block>,<block-root-hex>,finalized|unfinalized
 randomness_beacon_record=<source-id-hex>,1,<randomness-root-hex>,<proof-root-hex>,drand-v1,<observed-block>,accepted
 data_availability_measurement_records=1000
 data_availability_measurement_root=<da-root-hex>
@@ -528,9 +530,10 @@ Whitespace-padded record lines and empty fields are rejected.
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
 public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
-manifest-level raw `data_availability_measurement=...`, `invalid_work_rejection=...`, and
-`reward_settlement=...` lines whose aggregate roots match the signed operational summaries. Full-spec
-randomness records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
+manifest-level raw `block_history_record=...`, `finality_history_record=...`,
+`data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` lines
+whose aggregate roots match the signed chain-history and operational summaries. Full-spec randomness
+records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
 `local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public randomness
 evidence.
 Relaxed local harness criteria can exercise the validator but cannot set the full-spec flag. The

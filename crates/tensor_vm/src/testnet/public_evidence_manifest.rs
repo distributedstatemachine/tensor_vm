@@ -7,9 +7,10 @@ use super::public_manifest_fields::{
     required_string, required_u64,
 };
 use super::{
-    PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicDataAvailabilityMeasurementRecord,
-    PublicDataAvailabilityStatus, PublicEvidenceAuditorRecord, PublicEvidencePublication,
-    PublicEvidenceSupportingArtifact, PublicInvalidWorkRejectionRecord,
+    PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicBlockHistoryRecord,
+    PublicDataAvailabilityMeasurementRecord, PublicDataAvailabilityStatus,
+    PublicEvidenceAuditorRecord, PublicEvidencePublication, PublicEvidenceSupportingArtifact,
+    PublicFinalityHistoryRecord, PublicFinalityHistoryStatus, PublicInvalidWorkRejectionRecord,
     PublicNetworkRuntimeEvidence, PublicNetworkRuntimeObservation, PublicNodeEvidence,
     PublicNodeRole, PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
     PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicRewardSettlementRecord,
@@ -39,6 +40,8 @@ fn public_evidence_manifest_field_allows_repeated(key: &str) -> bool {
             | "record_artifact"
             | "operator"
             | "network_runtime_observation"
+            | "block_history_record"
+            | "finality_history_record"
             | "randomness_beacon_record"
             | "data_availability_measurement"
             | "invalid_work_rejection"
@@ -63,9 +66,11 @@ struct PublicEvidenceManifestBuilder {
     block_history_records: Option<u64>,
     block_history_root: Option<Hash>,
     block_history_signature: Option<Signature>,
+    block_history_raw_records: Vec<PublicBlockHistoryRecord>,
     finality_history_records: Option<u64>,
     finality_history_root: Option<Hash>,
     finality_history_signature: Option<Signature>,
+    finality_history_raw_records: Vec<PublicFinalityHistoryRecord>,
     operator_identity_attestation_records: Option<u64>,
     operator_identity_attestations: Vec<PublicOperatorIdentityAttestation>,
     network_runtime_observations: Vec<PublicNetworkRuntimeObservation>,
@@ -142,6 +147,9 @@ impl PublicEvidenceManifestBuilder {
             "block_history_signature" => {
                 self.block_history_signature = Some(parse_hash_hex(scalar)?);
             }
+            "block_history_record" => self
+                .block_history_raw_records
+                .push(parse_manifest_block_history_record(value)?),
             "finality_history_records" => {
                 self.finality_history_records = Some(parse_manifest_u64(scalar)?);
             }
@@ -149,6 +157,9 @@ impl PublicEvidenceManifestBuilder {
             "finality_history_signature" => {
                 self.finality_history_signature = Some(parse_hash_hex(scalar)?);
             }
+            "finality_history_record" => self
+                .finality_history_raw_records
+                .push(parse_manifest_finality_history_record(value)?),
             "operator_identity_attestation_records" => {
                 self.operator_identity_attestation_records = Some(parse_manifest_u64(scalar)?);
             }
@@ -298,9 +309,11 @@ impl PublicEvidenceManifestBuilder {
             block_history_records: required_u64(self.block_history_records)?,
             block_history_root: required_hash(self.block_history_root)?,
             block_history_signature: required_hash(self.block_history_signature)?,
+            block_history_raw_records: self.block_history_raw_records,
             finality_history_records: required_u64(self.finality_history_records)?,
             finality_history_root: required_hash(self.finality_history_root)?,
             finality_history_signature: required_hash(self.finality_history_signature)?,
+            finality_history_raw_records: self.finality_history_raw_records,
             operator_identity_attestation_records: required_u64(
                 self.operator_identity_attestation_records,
             )?,
@@ -336,6 +349,28 @@ impl PublicEvidenceManifestBuilder {
             reward_settlement_raw_records: self.reward_settlement_raw_records,
         })
     }
+}
+
+fn parse_manifest_block_history_record(value: &str) -> Result<PublicBlockHistoryRecord> {
+    let fields = exact_manifest_record_fields(value, 2, "malformed block history record")?;
+    Ok(PublicBlockHistoryRecord {
+        block: parse_manifest_u64(fields[0])?,
+        block_root: parse_hash_hex(fields[1])?,
+    })
+}
+
+fn parse_manifest_finality_history_record(value: &str) -> Result<PublicFinalityHistoryRecord> {
+    let fields = exact_manifest_record_fields(value, 3, "malformed finality history record")?;
+    let status = match fields[2] {
+        "finalized" => PublicFinalityHistoryStatus::Finalized,
+        "unfinalized" => PublicFinalityHistoryStatus::Unfinalized,
+        _ => return Err(TvmError::InvalidReceipt("unknown finality history status")),
+    };
+    Ok(PublicFinalityHistoryRecord {
+        block: parse_manifest_u64(fields[0])?,
+        block_root: parse_hash_hex(fields[1])?,
+        status,
+    })
 }
 
 fn parse_manifest_supporting_artifact(value: &str) -> Result<PublicEvidenceSupportingArtifact> {

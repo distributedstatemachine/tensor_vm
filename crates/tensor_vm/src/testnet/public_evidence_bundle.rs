@@ -126,6 +126,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.block_history_root,
                 record_summaries.block_history_records,
             ),
+            block_history_raw_records: Vec::new(),
             finality_history_records: record_summaries.finality_history_records,
             finality_history_root: record_summaries.finality_history_root,
             finality_history_signature: sign_public_evidence_record(
@@ -135,6 +136,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.finality_history_root,
                 record_summaries.finality_history_records,
             ),
+            finality_history_raw_records: Vec::new(),
             operator_identity_attestation_records: record_summaries
                 .operator_identity_attestation_records,
             operator_identity_attestations,
@@ -266,6 +268,7 @@ impl PublicTestnetEvidenceBundle {
                 &self.randomness_beacon_signature,
             );
         let has_public_randomness_beacon_records = self.has_public_randomness_beacon_records();
+        let has_public_chain_history_records = self.has_public_chain_history_records();
         let has_public_operational_records = self.has_public_operational_records();
         let has_data_availability_measurements = self.run.checked_receipts > 0
             && self.data_availability_measurement_records == self.run.checked_receipts
@@ -354,6 +357,7 @@ impl PublicTestnetEvidenceBundle {
             && run_evidence.public_criterion_met
             && independently_checkable
             && has_public_randomness_beacon_records
+            && has_public_chain_history_records
             && has_public_operational_records;
         PublicTestnetEvidenceBundleReport {
             run_evidence,
@@ -463,6 +467,24 @@ impl PublicTestnetEvidenceBundle {
             self.run.reward_settlement_records,
             &self.reward_settlement_root,
             self.reward_settlement_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn has_public_chain_history_records(&self) -> bool {
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::BlockHistory,
+            self.block_history_records,
+            &self.block_history_root,
+            self.block_history_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        ) && self.raw_operational_records_match(
+            PublicEvidenceRecordKind::FinalityHistory,
+            self.finality_history_records,
+            &self.finality_history_root,
+            self.finality_history_raw_records
                 .iter()
                 .map(|record| record.record_root()),
         )

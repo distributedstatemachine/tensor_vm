@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 188 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 189 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,21 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-565 tests passed under instrumentation:
+566 tests passed under instrumentation:
 - 14 experiments library tests
-- 550 tensor_vm library tests
+- 551 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.74% workspace line coverage
-23056/27207 workspace lines covered
+84.78% workspace line coverage
+23111/27259 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 189 coverage-changing work added raw public chain-history evidence records for full-spec public
+evidence: block-history and finality-history records must now aggregate to their signed summary roots
+before full-spec evidence can pass.
 
 Iteration 188 coverage-changing work added raw public operational evidence records for full-spec public
 evidence: data-availability measurements, invalid-work rejections, and reward-settlement records must now

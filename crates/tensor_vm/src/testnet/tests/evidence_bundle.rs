@@ -940,3 +940,61 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     assert!(!missing_service_content.run_evidence.public_criterion_met);
     assert!(!missing_service_content.full_spec_evidence_met);
 }
+
+#[test]
+fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    assert!(
+        full_spec_bundle
+            .evaluate(&full_spec_criteria, full_spec_block_time)
+            .full_spec_evidence_met
+    );
+
+    let mut missing_block_history = full_spec_bundle.clone();
+    missing_block_history.block_history_raw_records.clear();
+    let report = missing_block_history.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut missing_finality_history = full_spec_bundle.clone();
+    missing_finality_history
+        .finality_history_raw_records
+        .clear();
+    let report = missing_finality_history.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_block_root = full_spec_bundle.clone();
+    let record_count = mismatched_block_root.block_history_records;
+    resign_record_summary_and_artifact(
+        &mut mismatched_block_root,
+        PublicEvidenceRecordKind::BlockHistory,
+        hash_bytes(
+            b"test",
+            &[b"summary-root-not-derived-from-raw-block-history"],
+        ),
+        record_count,
+    );
+    let report = mismatched_block_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_finality_root = full_spec_bundle;
+    let record_count = mismatched_finality_root.finality_history_records;
+    resign_record_summary_and_artifact(
+        &mut mismatched_finality_root,
+        PublicEvidenceRecordKind::FinalityHistory,
+        hash_bytes(
+            b"test",
+            &[b"summary-root-not-derived-from-raw-finality-history"],
+        ),
+        record_count,
+    );
+    let report = mismatched_finality_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+}

@@ -445,8 +445,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   missing, duplicate, extra, or overreported operator-attestation records are rejected, signed
   per-operator production libp2p network-observation records, signed
   block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement summary roots, manifest-level raw accepted
-  public `drand-v1` or `validator-vrf-v1` randomness records plus raw data-availability, invalid-work, and
-  reward-settlement operational records whose aggregate roots must match their signed summaries before
+  public `drand-v1` or `validator-vrf-v1` randomness records plus raw block-history, finality-history,
+  data-availability, invalid-work, and reward-settlement records whose aggregate roots must match their signed summaries before
   full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind, well-formed whitespace-free
@@ -454,8 +454,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
   whitespace-padded repeated-record value rejection, and
-  exact run-derived block/finality/network-runtime/randomness-beacon/data-availability/invalid-work summary counts, raw operational-record
-  parser coverage for malformed DA/invalid-work/reward statuses and field counts, distinct node-address
+  exact run-derived block/finality/network-runtime/randomness-beacon/data-availability/invalid-work summary counts, raw chain-history and operational-record
+  parser coverage for malformed block/finality/DA/invalid-work/reward statuses and field counts, distinct node-address
   counting for public operators, plus network-runtime observation rejection for missing records,
   unmatched operators, non-public listen addresses, stale timestamps, undercounts, and overcounts against
   every counted public operator before full-spec evidence can be considered

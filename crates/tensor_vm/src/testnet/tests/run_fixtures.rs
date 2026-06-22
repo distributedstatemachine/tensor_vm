@@ -294,6 +294,24 @@ pub(super) fn full_spec_public_evidence_bundle(
         reward_settlement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
+    let block_history_raw_records = full_spec_block_history_records(observed_blocks);
+    let block_history_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::BlockHistory,
+        &block_history_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated block history roots should aggregate");
+    let finality_history_raw_records = full_spec_finality_history_records(observed_blocks);
+    let finality_history_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::FinalityHistory,
+        &finality_history_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated finality history roots should aggregate");
     let randomness_beacon_raw_records = full_spec_randomness_beacon_records(observed_blocks);
     let randomness_beacon_root = aggregate_public_evidence_record_roots(
         PublicEvidenceRecordKind::RandomnessBeaconEvidence,
@@ -341,9 +359,9 @@ pub(super) fn full_spec_public_evidence_bundle(
         ),
         PublicEvidenceRecordSummaries {
             block_history_records: observed_blocks,
-            block_history_root: hash_bytes(b"test", &[b"full-spec-block-history-root"]),
+            block_history_root,
             finality_history_records: observed_blocks,
-            finality_history_root: hash_bytes(b"test", &[b"full-spec-finality-history-root"]),
+            finality_history_root,
             operator_identity_attestation_records: operator_records,
             network_runtime_observation_records: operator_records,
             network_runtime_observation_root,
@@ -356,11 +374,42 @@ pub(super) fn full_spec_public_evidence_bundle(
             reward_settlement_root,
         },
     );
+    bundle.block_history_raw_records = block_history_raw_records;
+    bundle.finality_history_raw_records = finality_history_raw_records;
     bundle.randomness_beacon_raw_records = randomness_beacon_raw_records;
     bundle.data_availability_raw_records = data_availability_raw_records;
     bundle.invalid_work_raw_records = invalid_work_raw_records;
     bundle.reward_settlement_raw_records = reward_settlement_raw_records;
     bundle
+}
+
+pub(super) fn full_spec_block_history_records(
+    observed_blocks: u64,
+) -> Vec<PublicBlockHistoryRecord> {
+    (0..observed_blocks)
+        .map(|index| PublicBlockHistoryRecord {
+            block: index,
+            block_root: hash_bytes(
+                b"test",
+                &[format!("full-spec-public-block-root-{index}").as_bytes()],
+            ),
+        })
+        .collect()
+}
+
+pub(super) fn full_spec_finality_history_records(
+    observed_blocks: u64,
+) -> Vec<PublicFinalityHistoryRecord> {
+    (0..observed_blocks)
+        .map(|index| PublicFinalityHistoryRecord {
+            block: index,
+            block_root: hash_bytes(
+                b"test",
+                &[format!("full-spec-public-finality-root-{index}").as_bytes()],
+            ),
+            status: PublicFinalityHistoryStatus::Finalized,
+        })
+        .collect()
 }
 
 pub(super) fn full_spec_randomness_beacon_records(

@@ -5,17 +5,16 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 188 complete: Public Evidence Raw Operational Record Gate.
-- Current status: full-spec public evidence evaluation now requires raw data-availability, invalid-work,
-  and reward-settlement operational records whose aggregate roots match the signed public evidence
-  summaries. The validator runtime also delays empty fallback proposer rewards while a local synthetic
-  job producer has no settled receipts, and VRF key registration is scoped to real attestation/proposal
-  work so failed remote tensor fetch status updates do not persist chain state.
+- Active feature: Iteration 189 complete pending commit/push: Public Evidence Raw Chain History Record Gate.
+- Current status: full-spec public evidence evaluation now requires raw block-history and
+  finality-history records whose aggregate roots match the signed public evidence summaries, in addition
+  to the existing raw randomness and operational-record gates.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: continue CUDA/public deployment evidence or remaining deployed-randomness/economic evidence.
+- Next action: commit and push the raw chain-history evidence gate, then continue CUDA/public deployment
+  evidence or remaining deployed-randomness/economic evidence.
 
 ## Readiness Matrix
 
@@ -35,6 +34,78 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 189: Public Evidence Raw Chain History Record Gate
+
+Feature capability: require full-spec public evidence bundles to include raw block-history and
+finality-history records whose aggregate roots match their signed summaries, instead of letting signed
+counters and artifact locators alone satisfy those chain-history gates.
+
+Readiness requirements covered: `goal.md`/`mvp_spec.md` Acceptance Criterion 13 independently checkable
+public-run evidence, raw supporting records behind summary roots, and the local/full boundary that no
+public run has happened yet.
+
+Canonical owner: `testnet` public evidence bundle evaluation and manifest parsing own public-run evidence
+claims.
+
+Adapter callers: `tvmd public evidence validate` and docs/deploy examples consume the parsed
+`PublicTestnetEvidenceBundle`; adapters may not promote summary-only block/finality evidence to full-spec
+completion.
+
+Old shortcut being removed: full-spec evaluation could accept signed block-history and finality-history
+summary roots without inspecting raw manifest-level records for those chain-history evidence kinds.
+
+Regression tests that prove the shortcut is gone: public evidence bundle and manifest tests prove
+full-spec evidence fails without raw chain-history records, fails when they do not aggregate to the signed
+roots, and rejects malformed block/finality raw records.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run evidence validation.
+
+Behavior for producer and non-producer roles: unchanged; the validation concerns public evidence bundles,
+not runtime role logic.
+
+Structured evidence source: repeated `block_history_record` and `finality_history_record` manifest lines,
+their aggregate roots, and the signed public evidence bundle report.
+
+Finality source: unchanged; this validates post-run evidence for finalized public runs.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC wire format changes.
+
+Parallel subagents to run: none. The available subagent tool policy requires explicit user delegation; this
+slice is confined to public evidence parsing/evaluation, tests, and docs/status alignment.
+
+Parallelizable implementation workstreams: not split; one writer owns the manifest/evidence structs and
+fixture updates.
+
+Tests/checkers/docs to add or update: public evidence bundle/manifest tests, public evidence docs,
+`coverage_matrix.md`, `implementation_status.md`, `tarpaulin_report.md`, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_chain_history_records --lib`,
+`cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+`cargo test -p tensor_vm public_testnet_evidence_manifest_rejects_malformed_input --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, workspace
+release tests, clippy, and tarpaulin because evidence tests and reportable coverage change.
+
+Expected observable evidence: `public_evidence_full_spec` remains false unless raw block-history and
+finality-history records are present in the manifest and aggregate to their signed summary roots.
+
+Validation evidence:
+
+- Required first executable on this resume, before implementation:
+  `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026.
+- Narrow evidence gates passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_chain_history_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_rejects_malformed_input --lib`.
+- Broad gates passed:
+  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
+  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
+  `cargo clippy --workspace --all-targets -- -D warnings`.
+- Tarpaulin passed:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  566 instrumented tests and 84.78% line coverage, 23111/27259 lines covered.
+- Commit/push: pending.
 
 ### Iteration 188: Public Evidence Raw Operational Record Gate
 

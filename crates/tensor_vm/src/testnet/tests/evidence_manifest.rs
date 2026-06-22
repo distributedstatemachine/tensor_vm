@@ -60,8 +60,10 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
     );
 
     let raw_operational_manifest = format!(
-        "{}data_availability_measurement={},available,1\ninvalid_work_rejection={},rejected,2\nreward_settlement={},{},{},3\n",
+        "{}block_history_record=1,{}\nfinality_history_record=1,{},finalized\ndata_availability_measurement={},available,1\ninvalid_work_rejection={},rejected,2\nreward_settlement={},{},{},3\n",
         manifest,
+        manifest_hash(b"test", b"raw-block-history-root"),
+        manifest_hash(b"test", b"raw-finality-history-root"),
         manifest_hash(b"test", b"raw-data-availability-receipt"),
         manifest_hash(b"test", b"raw-invalid-work-receipt"),
         manifest_hash(b"test", b"raw-reward-settlement-receipt"),
@@ -70,6 +72,8 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
     );
     let parsed_raw_operational =
         parse_public_testnet_evidence_manifest(&raw_operational_manifest).unwrap();
+    assert_eq!(parsed_raw_operational.block_history_raw_records.len(), 1);
+    assert_eq!(parsed_raw_operational.finality_history_raw_records.len(), 1);
     assert_eq!(
         parsed_raw_operational.data_availability_raw_records.len(),
         1
@@ -291,6 +295,20 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
         manifest.replace(
             "service_content=rpc,",
             "service_content=rpc,too,few,fields\n# removed original service_content=",
+        ),
+        format!(
+            "{}block_history_record=abc,{}\n",
+            manifest,
+            manifest_hash(b"test", b"block-history-root")
+        ),
+        format!(
+            "{}block_history_record=1\n",
+            manifest
+        ),
+        format!(
+            "{}finality_history_record=1,{},pending\n",
+            manifest,
+            manifest_hash(b"test", b"finality-history-root")
         ),
         format!(
             "{}randomness_beacon_record={},1,{},{},unknown-kind,1,accepted\n",

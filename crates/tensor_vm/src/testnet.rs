@@ -263,9 +263,11 @@ pub struct PublicTestnetEvidenceBundle {
     pub block_history_records: u64,
     pub block_history_root: Hash,
     pub block_history_signature: Signature,
+    pub block_history_raw_records: Vec<PublicBlockHistoryRecord>,
     pub finality_history_records: u64,
     pub finality_history_root: Hash,
     pub finality_history_signature: Signature,
+    pub finality_history_raw_records: Vec<PublicFinalityHistoryRecord>,
     pub operator_identity_attestation_records: u64,
     pub operator_identity_attestations: Vec<PublicOperatorIdentityAttestation>,
     pub network_runtime_observations: Vec<PublicNetworkRuntimeObservation>,
@@ -324,6 +326,34 @@ impl PublicDataAvailabilityStatus {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicBlockHistoryRecord {
+    pub block: u64,
+    pub block_root: Hash,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicFinalityHistoryStatus {
+    Finalized,
+    Unfinalized,
+}
+
+impl PublicFinalityHistoryStatus {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Finalized => "finalized",
+            Self::Unfinalized => "unfinalized",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicFinalityHistoryRecord {
+    pub block: u64,
+    pub block_root: Hash,
+    pub status: PublicFinalityHistoryStatus,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct PublicDataAvailabilityMeasurementRecord {
     pub receipt_root: Hash,
     pub status: PublicDataAvailabilityStatus,
@@ -342,6 +372,38 @@ pub struct PublicRewardSettlementRecord {
     pub miner_id: Hash,
     pub validator_id: Hash,
     pub observed_block: u64,
+}
+
+impl PublicBlockHistoryRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "block_history_record={},{}",
+            self.block,
+            hex(&self.block_root)
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(PublicEvidenceRecordKind::BlockHistory, &self.record_line())
+    }
+}
+
+impl PublicFinalityHistoryRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "finality_history_record={},{},{}",
+            self.block,
+            hex(&self.block_root),
+            self.status.tag()
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(
+            PublicEvidenceRecordKind::FinalityHistory,
+            &self.record_line(),
+        )
+    }
 }
 
 impl PublicDataAvailabilityMeasurementRecord {
