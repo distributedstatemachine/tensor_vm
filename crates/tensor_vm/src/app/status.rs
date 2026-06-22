@@ -67,6 +67,7 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_miner_unreceipted_jobs",
     "role_miner_receipts_submitted",
     "role_miner_tensors_inserted",
+    "role_miner_trace_bisection_rounds_submitted",
     "role_validator_work_ready",
     "role_validator_assigned_receipts_seen",
     "role_validator_unattested_receipts",

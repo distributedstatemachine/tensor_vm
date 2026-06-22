@@ -704,8 +704,10 @@ This section is non-normative guidance on how the spec components partition into
   command, with dedicated ingest/application counters.
   Focused tests prove midpoint narrowing, final-op isolation, one-op referee verdicts, timeout reporting
   with slashing and delayed challenger rewards, tamper rejection, malformed wire edges, duplicate rejection,
-  round and referee pending retry, and snapshot persistence. Runtime challenge generation, session-open
-  gossip, and multi-round DoS policy remain TODO (§8.2).
+  round and referee pending retry, runtime session-open generation/gossip from local evidence, runtime
+  responder round generation from committed local traces, and snapshot persistence. Multi-round DoS policy,
+  challenger/responder expected-root negotiation beyond the current round model, automatic referee witness
+  generation, and deployed public/CUDA dispute evidence remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.

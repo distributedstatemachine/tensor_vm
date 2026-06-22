@@ -992,6 +992,7 @@ while [ "$attempt" -lt "$EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT" ]; do
     SERVICE_ROLE_MINER_UNRECEIPTED_JOBS=$(status_value role_miner_unreceipted_jobs "$STATUS")
     SERVICE_ROLE_MINER_RECEIPTS_SUBMITTED=$(status_value role_miner_receipts_submitted "$STATUS")
     SERVICE_ROLE_MINER_TENSORS_INSERTED=$(status_value role_miner_tensors_inserted "$STATUS")
+    SERVICE_ROLE_MINER_TRACE_BISECTION_ROUNDS_SUBMITTED=$(status_value role_miner_trace_bisection_rounds_submitted "$STATUS")
     SERVICE_ROLE_VALIDATOR_WORK_READY=$(status_value role_validator_work_ready "$STATUS")
     SERVICE_ROLE_VALIDATOR_ASSIGNED_RECEIPTS_SEEN=$(status_value role_validator_assigned_receipts_seen "$STATUS")
     SERVICE_ROLE_VALIDATOR_UNATTESTED_RECEIPTS=$(status_value role_validator_unattested_receipts "$STATUS")

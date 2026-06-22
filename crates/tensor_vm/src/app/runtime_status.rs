@@ -42,6 +42,10 @@ pub fn format_role_runtime_report(
         snapshot.miner_receipts_submitted,
     );
     report.field("miner_tensors_inserted", snapshot.miner_tensors_inserted);
+    report.field(
+        "miner_trace_bisection_rounds_submitted",
+        snapshot.miner_trace_bisection_rounds_submitted,
+    );
     report.field("validator_work_ready", snapshot.validator_work_ready);
     report.field(
         "validator_assigned_receipts_seen",
@@ -493,6 +497,10 @@ pub fn write_role_runtime_status(
     report.field(
         "role_miner_tensors_inserted",
         snapshot.miner_tensors_inserted,
+    );
+    report.field(
+        "role_miner_trace_bisection_rounds_submitted",
+        snapshot.miner_trace_bisection_rounds_submitted,
     );
     report.field("role_validator_work_ready", snapshot.validator_work_ready);
     report.field(

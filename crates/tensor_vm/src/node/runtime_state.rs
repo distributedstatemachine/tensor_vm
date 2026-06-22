@@ -148,6 +148,7 @@ pub struct NodeRuntimeState {
     miner_unreceipted_jobs: BTreeSet<Hash>,
     miner_receipts_submitted: usize,
     miner_tensors_inserted: usize,
+    miner_trace_bisection_rounds_submitted: usize,
     validator_assigned_receipts_seen: BTreeSet<Hash>,
     validator_unattested_receipts: BTreeSet<Hash>,
     validator_artifact_ready_receipts: BTreeSet<Hash>,
@@ -239,6 +240,10 @@ impl NodeRuntimeState {
 
     pub fn miner_tensors_inserted(&self) -> usize {
         self.miner_tensors_inserted
+    }
+
+    pub fn miner_trace_bisection_rounds_submitted(&self) -> usize {
+        self.miner_trace_bisection_rounds_submitted
     }
 
     pub fn validator_assigned_receipts_seen(&self) -> usize {
@@ -491,6 +496,12 @@ impl NodeRuntimeState {
             .miner_receipts_submitted
             .saturating_add(receipts_submitted);
         self.miner_tensors_inserted = self.miner_tensors_inserted.saturating_add(tensors_inserted);
+    }
+
+    pub fn record_miner_trace_bisection_round_submission(&mut self, rounds_submitted: usize) {
+        self.miner_trace_bisection_rounds_submitted = self
+            .miner_trace_bisection_rounds_submitted
+            .saturating_add(rounds_submitted);
     }
 
     pub fn record_validator_work_observation(
@@ -759,6 +770,8 @@ mod tests {
         state.record_miner_receipt_submission(1, 3);
         assert_eq!(state.miner_receipts_submitted(), 1);
         assert_eq!(state.miner_tensors_inserted(), 3);
+        state.record_miner_trace_bisection_round_submission(1);
+        assert_eq!(state.miner_trace_bisection_rounds_submitted(), 1);
         assert!(state.record_validator_work_observation(
             BTreeSet::from([[8; 32]]),
             BTreeSet::from([[8; 32]]),

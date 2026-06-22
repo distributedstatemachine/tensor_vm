@@ -955,6 +955,10 @@ fn local_cpu_compose_bundle_matches_spec_artifact_shape() {
                 "role_miner_tensors_inserted",
             ),
             (
+                "SERVICE_ROLE_MINER_TRACE_BISECTION_ROUNDS_SUBMITTED",
+                "role_miner_trace_bisection_rounds_submitted",
+            ),
+            (
                 "SERVICE_ROLE_VALIDATOR_WORK_READY",
                 "role_validator_work_ready",
             ),

@@ -827,6 +827,7 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert!(stdout_u64(&stdout, "miner_unreceipted_jobs") <= 10);
         assert!(stdout_u64(&stdout, "miner_receipts_submitted") <= 10);
         assert!(stdout_u64(&stdout, "miner_tensors_inserted") <= 20);
+        assert!(stdout_u64(&stdout, "miner_trace_bisection_rounds_submitted") <= 10);
         assert!(matches!(
             stdout_value(&stdout, "validator_work_ready"),
             "true" | "false"
@@ -948,6 +949,7 @@ fn role_run_commands_serve_through_role_specific_surfaces() {
         assert!(stdout_u64(&status, "role_miner_unreceipted_jobs") <= 10);
         assert!(stdout_u64(&status, "role_miner_receipts_submitted") <= 10);
         assert!(stdout_u64(&status, "role_miner_tensors_inserted") <= 20);
+        assert!(stdout_u64(&status, "role_miner_trace_bisection_rounds_submitted") <= 10);
         assert!(matches!(
             stdout_value(&status, "role_validator_work_ready"),
             "true" | "false"

@@ -10,8 +10,9 @@ use crate::{
 };
 
 use super::{
-    ServiceRuntimeConfig, chain_announcement_checkpoint, persist_runtime_tensor,
-    publish_new_chain_announcements, runtime_role_wallet_registration,
+    ServiceRuntimeConfig, chain_announcement_checkpoint,
+    network::{publish_runtime_trace_bisection_round, submit_runtime_trace_bisection_round},
+    persist_runtime_tensor, publish_new_chain_announcements, runtime_role_wallet_registration,
     validator_fetch::fetch_miner_role_missing_graph_artifacts,
 };
 
@@ -277,6 +278,16 @@ pub fn tick_miner_role_work_once(
             );
             status_changed = true;
         }
+    }
+    if let Some(round) =
+        submit_runtime_trace_bisection_round(&mut server.gateway_mut().node, miner)?
+    {
+        store
+            .persist_chain(&server.gateway().node.chain)
+            .map_err(|error| format!("failed to persist trace-bisection round state: {error}"))?;
+        publish_runtime_trace_bisection_round(p2p_service, &round)?;
+        runtime_state.record_miner_trace_bisection_round_submission(1);
+        status_changed = true;
     }
     Ok(status_changed)
 }
