@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 192 complete locally: Public Randomness Run Coverage Gate.
+- Active feature: Iteration 192 complete and pushed: Public Randomness Run Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners before a bundle can report `public_evidence_full_spec=true`, and signed randomness-beacon summary
   evidence now requires an explicit run-coverage count match so an undercounted or overcounted beacon
@@ -14,7 +14,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
     execution evidence remain open.
-- Next action: commit and push Iteration 192, then continue deployed public/CUDA evidence work.
+- Next action: continue deployed public/CUDA evidence work.
 
 ## Readiness Matrix
 
@@ -112,6 +112,8 @@ Validation evidence:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   570 instrumented tests and 84.80% line coverage, 23154/27303 lines covered.
+- Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main` on
+  June 22, 2026.
 
 ### Iteration 191: Public Evidence CUDA Miner Gate
 
@@ -274,8 +276,8 @@ Validation evidence:
 
 ## Recent Completed Iterations
 
-- Iteration 192: Public Randomness Run Coverage Gate. Commit pending; full local validation passed on
-  June 22, 2026.
+- Iteration 192: Public Randomness Run Coverage Gate. Commit `6a50ad6`
+  (`Require full-run randomness evidence`) pushed to `origin/main` on June 22, 2026.
 - Iteration 191: Public Evidence CUDA Miner Gate. Commit `a0697dc`
   (`Require CUDA miner evidence for full spec`) pushed to `origin/main` on June 22, 2026.
 - Iteration 190: Proposer Reward Delay Tombstone. Commit `b1b368b` (`Delay proposer rewards without height
@@ -317,6 +319,7 @@ Validation evidence:
 - Current Iteration 192 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   570 instrumented tests and 84.80% line coverage, 23154/27303 lines covered.
+- Commit `6a50ad6` pushed to `origin/main` on June 22, 2026.
 - Current Iteration 191 first executable Gate 0 passed on June 22, 2026.
 - Current Iteration 191 focused validation passed on June 22, 2026:
   `public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec`,
