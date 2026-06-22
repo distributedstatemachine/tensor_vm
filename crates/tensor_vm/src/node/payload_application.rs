@@ -9,10 +9,10 @@ use crate::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
-        decode_trace_bisection_open_payload, decode_trace_bisection_referee_payload,
-        decode_trace_bisection_round_payload, decode_validator_audit_report_payload,
-        decode_validator_vrf_reveal_payload, decode_verified_chained_drand_beacon_payload,
-        decode_verified_drand_beacon_payload,
+        decode_trace_bisection_expectation_payload, decode_trace_bisection_open_payload,
+        decode_trace_bisection_referee_payload, decode_trace_bisection_round_payload,
+        decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
+        decode_verified_chained_drand_beacon_payload, decode_verified_drand_beacon_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -715,6 +715,52 @@ pub fn apply_network_trace_bisection_open_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+pub fn apply_network_trace_bisection_expectation_payload(
+    chain: &mut Chain,
+    receipt_id: Hash,
+    trace_root: Hash,
+    challenger: Hash,
+    responder: Hash,
+    expectation_leaf: Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if receipt_id == [0; 32]
+        || trace_root == [0; 32]
+        || challenger == [0; 32]
+        || responder == [0; 32]
+        || expectation_leaf == [0; 32]
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(expectation) = decode_trace_bisection_expectation_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if expectation.receipt_id != receipt_id
+        || expectation.trace_root != trace_root
+        || expectation.challenger != challenger
+        || expectation.responder != responder
+        || expectation.expectation_leaf() != expectation_leaf
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let challenge_id =
+        trace_bisection_challenge_id(&receipt_id, &trace_root, &challenger, &responder);
+    let Some(existing) = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+    else {
+        return NetworkPayloadApply::Pending;
+    };
+    if existing.pending_expectation_leaf == Some(expectation_leaf) {
+        return NetworkPayloadApply::Applied;
+    }
+    chain
+        .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn apply_network_trace_bisection_referee_payload(
     chain: &mut Chain,
     challenge_id: Hash,
@@ -817,9 +863,9 @@ mod tests {
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_payload_with_selected_receipts, encode_block_vote_payload,
-            encode_job_payload, encode_receipt_payload, encode_trace_bisection_open_payload,
-            encode_trace_bisection_round_payload, encode_validator_audit_report_payload,
-            encode_validator_vrf_reveal_payload,
+            encode_job_payload, encode_receipt_payload, encode_trace_bisection_expectation_payload,
+            encode_trace_bisection_open_payload, encode_trace_bisection_round_payload,
+            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
         },
         profile::ChainProfile,
         scheduler::{JobScheduler, SyntheticLocalJobSource},
@@ -1850,6 +1896,112 @@ mod tests {
         chain
             .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
             .unwrap();
+    }
+
+    #[test]
+    fn trace_bisection_expectation_payload_application_reports_pending_applied_and_invalid_edges() {
+        let (chain, config, round, _round_payload) = trace_bisection_round_chain();
+        let mut opened_chain = chain.clone();
+        opened_chain
+            .apply_command(ChainCommand::OpenTraceBisection(config.clone()))
+            .unwrap();
+        let state = opened_chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("trace bisection session should exist")
+            .state
+            .clone();
+        let expectation =
+            TraceBisectionExpectation::new(&state, round.expected_output_roots.clone()).unwrap();
+        let expectation_leaf = expectation.expectation_leaf();
+        let payload = encode_trace_bisection_expectation_payload(&expectation);
+
+        let mut missing_session = chain.clone();
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut missing_session,
+                expectation.receipt_id,
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                expectation_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut opened_chain,
+                expectation.receipt_id,
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                expectation_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        let record = opened_chain
+            .state()
+            .trace_bisection_challenges()
+            .values()
+            .next()
+            .expect("trace bisection session should exist");
+        assert_eq!(record.pending_expectation_leaf, Some(expectation_leaf));
+        assert_eq!(
+            record.pending_expected_output_roots,
+            expectation.expected_output_roots
+        );
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut opened_chain,
+                expectation.receipt_id,
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                expectation_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut opened_chain,
+                [0; 32],
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                expectation_leaf,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut opened_chain,
+                expectation.receipt_id,
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                hash_bytes(b"test", &[b"wrong-expectation-leaf"]),
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_expectation_payload(
+                &mut opened_chain,
+                expectation.receipt_id,
+                expectation.trace_root,
+                expectation.challenger,
+                expectation.responder,
+                expectation_leaf,
+                &[1, 2, 3],
+            ),
+            NetworkPayloadApply::Invalid
+        );
     }
 
     #[test]

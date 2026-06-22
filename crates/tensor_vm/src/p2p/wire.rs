@@ -4,8 +4,8 @@ use crate::chain::{
     ValidatorVrfRevealRecord,
 };
 use crate::challenge::{
-    BlockCheckChallenge, TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound,
-    block_check_challenge_id, trace_bisection_challenge_id,
+    BlockCheckChallenge, TraceBisectionConfig, TraceBisectionExpectation, TraceBisectionOpen,
+    TraceBisectionRound, block_check_challenge_id, trace_bisection_challenge_id,
 };
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
@@ -44,6 +44,8 @@ const TRACE_BISECTION_ROUND_PAYLOAD_MAX_LEN: usize = 32
     + 8
     + 8
     + 32;
+const TRACE_BISECTION_EXPECTATION_PAYLOAD_MAX_LEN: usize =
+    32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + MAX_TRACE_BISECTION_EXPECTED_ROOTS * 32 + 8 + 8 + 8 + 32;
 const MAX_TRACE_REFEREE_INPUT_VALUES: usize = 16;
 const TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN: usize =
     8 + MAX_TENSOR_SHAPE_DIMS * 8 + 1 + 8 + MAX_TENSOR_VALUES * 8;
@@ -122,6 +124,7 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
         | P2pMessage::NewTraceBisectionOpenPayload { .. }
+        | P2pMessage::NewTraceBisectionExpectationPayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
         | P2pMessage::NewTraceBisectionRefereePayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
@@ -179,6 +182,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
         | P2pMessage::NewTraceBisectionOpenPayload { .. }
+        | P2pMessage::NewTraceBisectionExpectationPayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
         | P2pMessage::NewTraceBisectionRefereePayload { .. }
         | P2pMessage::NewJob(_)
@@ -320,6 +324,22 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             write_hash(&mut out, challenger);
             write_hash(&mut out, responder);
             write_hash(&mut out, transcript_leaf);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewTraceBisectionExpectationPayload {
+            receipt_id,
+            trace_root,
+            challenger,
+            responder,
+            expectation_leaf,
+            payload,
+        } => {
+            out.push(34);
+            write_hash(&mut out, receipt_id);
+            write_hash(&mut out, trace_root);
+            write_hash(&mut out, challenger);
+            write_hash(&mut out, responder);
+            write_hash(&mut out, expectation_leaf);
             write_bytes(&mut out, payload);
         }
         P2pMessage::NewTraceBisectionRefereePayload {
@@ -660,6 +680,34 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 challenger,
                 responder,
                 transcript_leaf,
+                payload,
+            }
+        }
+        34 => {
+            let receipt_id = reader.read_hash()?;
+            let trace_root = reader.read_hash()?;
+            let challenger = reader.read_hash()?;
+            let responder = reader.read_hash()?;
+            let expectation_leaf = reader.read_hash()?;
+            let payload =
+                reader.read_bytes_with_max(TRACE_BISECTION_EXPECTATION_PAYLOAD_MAX_LEN)?;
+            let expectation = decode_trace_bisection_expectation_payload(&payload)?;
+            if expectation.receipt_id != receipt_id
+                || expectation.trace_root != trace_root
+                || expectation.challenger != challenger
+                || expectation.responder != responder
+                || expectation.expectation_leaf() != expectation_leaf
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "trace bisection expectation payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewTraceBisectionExpectationPayload {
+                receipt_id,
+                trace_root,
+                challenger,
+                responder,
+                expectation_leaf,
                 payload,
             }
         }
@@ -1185,6 +1233,89 @@ pub fn decode_trace_bisection_round_payload(input: &[u8]) -> TvmResult<TraceBise
     Ok(round)
 }
 
+pub fn encode_trace_bisection_expectation_payload(
+    expectation: &TraceBisectionExpectation,
+) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_hash(&mut out, &expectation.receipt_id);
+    write_hash(&mut out, &expectation.trace_root);
+    write_hash(&mut out, &expectation.challenger);
+    write_hash(&mut out, &expectation.responder);
+    write_u64(&mut out, expectation.low_op);
+    write_u64(&mut out, expectation.high_op);
+    write_u64(&mut out, expectation.midpoint_op);
+    write_u64(&mut out, expectation.expected_output_roots.len() as u64);
+    for root in &expectation.expected_output_roots {
+        write_hash(&mut out, root);
+    }
+    write_u64(&mut out, expectation.response_deadline_height);
+    write_u64(&mut out, expectation.challenger_bond);
+    write_u64(&mut out, expectation.responder_bond);
+    write_hash(&mut out, &expectation.challenger_signature);
+    out
+}
+
+pub fn decode_trace_bisection_expectation_payload(
+    input: &[u8],
+) -> TvmResult<TraceBisectionExpectation> {
+    let mut reader = Reader::new(input);
+    let receipt_id = reader.read_hash()?;
+    let trace_root = reader.read_hash()?;
+    let challenger = reader.read_hash()?;
+    let responder = reader.read_hash()?;
+    let low_op = reader.read_u64()?;
+    let high_op = reader.read_u64()?;
+    let midpoint_op = reader.read_u64()?;
+    let expected_len = read_usize(&mut reader)?;
+    if expected_len == 0 || expected_len > MAX_TRACE_BISECTION_EXPECTED_ROOTS {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expected roots too large",
+        ));
+    }
+    let mut expected_output_roots = Vec::with_capacity(expected_len);
+    for _ in 0..expected_len {
+        expected_output_roots.push(reader.read_hash()?);
+    }
+    let response_deadline_height = reader.read_u64()?;
+    let challenger_bond = reader.read_u64()?;
+    let responder_bond = reader.read_u64()?;
+    let challenger_signature = reader.read_hash()?;
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing trace bisection expectation payload bytes",
+        ));
+    }
+    if low_op >= high_op || midpoint_op != low_op + (high_op - low_op) / 2 {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation midpoint mismatch",
+        ));
+    }
+    let expectation = TraceBisectionExpectation {
+        receipt_id,
+        trace_root,
+        challenger,
+        responder,
+        low_op,
+        high_op,
+        midpoint_op,
+        expected_output_roots,
+        response_deadline_height,
+        challenger_bond,
+        responder_bond,
+        challenger_signature,
+    };
+    if !verify_signature(
+        &expectation.challenger,
+        &expectation.message_hash(),
+        &expectation.challenger_signature,
+    ) {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection expectation signature mismatch",
+        ));
+    }
+    Ok(expectation)
+}
+
 pub fn encode_trace_bisection_referee_payload(witness: &IrOpRefereeWitness) -> Vec<u8> {
     let mut out = Vec::new();
     write_u64(&mut out, witness.op_index);
@@ -1613,8 +1744,9 @@ mod tests {
         BlockVote, Chain, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
     };
     use crate::challenge::{
-        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionOpen,
-        TraceBisectionRound, TraceBisectionState, block_check_challenge_id,
+        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig,
+        TraceBisectionExpectation, TraceBisectionOpen, TraceBisectionRound, TraceBisectionState,
+        block_check_challenge_id,
     };
     use crate::codec;
     use crate::jobs::{
@@ -2360,6 +2492,84 @@ mod tests {
         );
         assert_eq!(
             decode_trace_bisection_round_payload(&oversized_expected_roots),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection expected roots too large"
+            ))
+        );
+    }
+
+    #[test]
+    fn trace_bisection_expectation_payloads_roundtrip_and_reject_malformed_edges() {
+        let round = trace_bisection_round_fixture();
+        let state = TraceBisectionState {
+            receipt_id: round.receipt_id,
+            trace_root: round.trace_root,
+            challenger: round.challenger,
+            responder: round.responder,
+            low_op: round.low_op,
+            high_op: round.high_op,
+            response_deadline_height: round.response_deadline_height,
+            challenger_bond: round.challenger_bond,
+            responder_bond: round.responder_bond,
+            transcript_root: hash_bytes(b"test", &[b"wire-trace-bisection-expectation-root"]),
+        };
+        let expectation =
+            TraceBisectionExpectation::new(&state, round.expected_output_roots.clone()).unwrap();
+        let payload = encode_trace_bisection_expectation_payload(&expectation);
+        assert_eq!(
+            decode_trace_bisection_expectation_payload(&payload).unwrap(),
+            expectation
+        );
+
+        let message = P2pMessage::NewTraceBisectionExpectationPayload {
+            receipt_id: expectation.receipt_id,
+            trace_root: expectation.trace_root,
+            challenger: expectation.challenger,
+            responder: expectation.responder,
+            expectation_leaf: expectation.expectation_leaf(),
+            payload: payload.clone(),
+        };
+        assert_eq!(decode_message(&encode_message(&message)).unwrap(), message);
+
+        let wrong_leaf = encode_message(&P2pMessage::NewTraceBisectionExpectationPayload {
+            receipt_id: expectation.receipt_id,
+            trace_root: expectation.trace_root,
+            challenger: expectation.challenger,
+            responder: expectation.responder,
+            expectation_leaf: hash_bytes(b"test", &[b"wrong-trace-bisection-expectation-leaf"]),
+            payload: payload.clone(),
+        });
+        assert_eq!(
+            decode_message(&wrong_leaf),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection expectation payload announcement mismatch"
+            ))
+        );
+
+        let mut tampered_signature = payload.clone();
+        let last = tampered_signature.len() - 1;
+        tampered_signature[last] = tampered_signature[last].wrapping_add(1);
+        assert_eq!(
+            decode_trace_bisection_expectation_payload(&tampered_signature),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection expectation signature mismatch"
+            ))
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(1);
+        assert_eq!(
+            decode_trace_bisection_expectation_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing trace bisection expectation payload bytes"
+            ))
+        );
+
+        let mut oversized_expected_roots = payload.clone();
+        oversized_expected_roots[152..160]
+            .copy_from_slice(&((MAX_TRACE_BISECTION_EXPECTED_ROOTS as u64) + 1).to_le_bytes());
+        assert_eq!(
+            decode_trace_bisection_expectation_payload(&oversized_expected_roots),
             Err(TvmError::InvalidReceipt(
                 "trace bisection expected roots too large"
             ))

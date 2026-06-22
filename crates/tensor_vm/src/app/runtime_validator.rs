@@ -7,8 +7,9 @@ use super::{
     fetch_validator_role_missing_tensors, publish_block_payload_announcements,
     publish_block_vote_announcements, publish_chain_payload_announcements,
     publish_new_chain_announcements, publish_observed_block_check_challenge,
-    publish_runtime_trace_bisection_open, publish_validator_block_proposal,
-    runtime_production::next_block_timestamp, runtime_role_wallet_registration,
+    publish_runtime_trace_bisection_expectation, publish_runtime_trace_bisection_open,
+    publish_validator_block_proposal, runtime_production::next_block_timestamp,
+    runtime_role_wallet_registration, submit_runtime_trace_bisection_expectation,
     submit_runtime_trace_bisection_open, submit_validator_role_attestation,
     submit_validator_role_audit_report, submit_validator_role_block_proposal,
     submit_validator_role_block_vote, validator_role_audit_observation,
@@ -203,6 +204,18 @@ pub fn tick_validator_role_work_once(
                 format!("failed to persist runtime trace-bisection open state: {error}")
             })?;
         runtime_state.record_validator_trace_bisection_open_submission(1);
+        status_changed = true;
+    }
+    if let Some(expectation) =
+        submit_runtime_trace_bisection_expectation(&mut server.gateway_mut().node, validator)?
+    {
+        publish_runtime_trace_bisection_expectation(p2p_service, &expectation)?;
+        store
+            .persist_chain(&server.gateway().node.chain)
+            .map_err(|error| {
+                format!("failed to persist runtime trace-bisection expectation state: {error}")
+            })?;
+        runtime_state.record_validator_trace_bisection_expectation_submission(1);
         status_changed = true;
     }
     let local_block_proposer_delay_satisfied = config

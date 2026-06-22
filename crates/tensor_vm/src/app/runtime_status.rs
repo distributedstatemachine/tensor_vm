@@ -259,6 +259,10 @@ pub fn format_role_runtime_report(
         "validator_trace_bisection_opens_submitted",
         snapshot.validator_trace_bisection_opens_submitted,
     );
+    report.field(
+        "validator_trace_bisection_expectations_submitted",
+        snapshot.validator_trace_bisection_expectations_submitted,
+    );
     report.field("local_producer", snapshot.local_synthetic_job_producer);
     report.field("local_block_proposer", snapshot.local_block_proposer);
     report.field(
@@ -384,6 +388,14 @@ pub fn format_role_runtime_report(
     report.field(
         "network_trace_bisection_opens_applied",
         network_events.trace_bisection_opens_applied,
+    );
+    report.field(
+        "network_trace_bisection_expectations_ingested",
+        network_events.trace_bisection_expectations,
+    );
+    report.field(
+        "network_trace_bisection_expectations_applied",
+        network_events.trace_bisection_expectations_applied,
     );
     report.field(
         "network_trace_bisection_rounds_ingested",
@@ -718,6 +730,10 @@ pub fn write_role_runtime_status(
         "role_validator_trace_bisection_opens_submitted",
         snapshot.validator_trace_bisection_opens_submitted,
     );
+    report.field(
+        "role_validator_trace_bisection_expectations_submitted",
+        snapshot.validator_trace_bisection_expectations_submitted,
+    );
     report.field("role_local_producer", snapshot.local_synthetic_job_producer);
     report.field("role_local_block_proposer", snapshot.local_block_proposer);
     report.field(
@@ -790,6 +806,14 @@ pub fn write_role_runtime_status(
     report.field(
         "role_network_trace_bisection_opens_applied",
         network_events.trace_bisection_opens_applied,
+    );
+    report.field(
+        "role_network_trace_bisection_expectations_ingested",
+        network_events.trace_bisection_expectations,
+    );
+    report.field(
+        "role_network_trace_bisection_expectations_applied",
+        network_events.trace_bisection_expectations_applied,
     );
     report.field(
         "role_network_trace_bisection_rounds_ingested",

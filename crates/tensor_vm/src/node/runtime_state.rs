@@ -15,6 +15,8 @@ pub struct NetworkEventIngest {
     pub block_check_challenges_applied: usize,
     pub trace_bisection_opens: usize,
     pub trace_bisection_opens_applied: usize,
+    pub trace_bisection_expectations: usize,
+    pub trace_bisection_expectations_applied: usize,
     pub trace_bisection_rounds: usize,
     pub trace_bisection_rounds_applied: usize,
     pub trace_bisection_referees: usize,
@@ -52,6 +54,7 @@ impl NetworkEventIngest {
             || self.block_votes_applied > 0
             || self.block_check_challenges_applied > 0
             || self.trace_bisection_opens_applied > 0
+            || self.trace_bisection_expectations_applied > 0
             || self.trace_bisection_rounds_applied > 0
             || self.trace_bisection_referees_applied > 0
             || self.invalid_events > 0
@@ -84,6 +87,12 @@ impl NetworkEventIngest {
         self.trace_bisection_opens_applied = self
             .trace_bisection_opens_applied
             .saturating_add(other.trace_bisection_opens_applied);
+        self.trace_bisection_expectations = self
+            .trace_bisection_expectations
+            .saturating_add(other.trace_bisection_expectations);
+        self.trace_bisection_expectations_applied = self
+            .trace_bisection_expectations_applied
+            .saturating_add(other.trace_bisection_expectations_applied);
         self.trace_bisection_rounds = self
             .trace_bisection_rounds
             .saturating_add(other.trace_bisection_rounds);
@@ -170,6 +179,7 @@ pub struct NodeRuntimeState {
     validator_receipts_proposed: usize,
     validator_block_votes_submitted: usize,
     validator_trace_bisection_opens_submitted: usize,
+    validator_trace_bisection_expectations_submitted: usize,
     validator_remote_tensor_fetch_attempts: usize,
     validator_remote_tensor_fetch_successes: usize,
     validator_remote_tensor_fetch_failures: usize,
@@ -346,6 +356,10 @@ impl NodeRuntimeState {
         self.validator_trace_bisection_opens_submitted
     }
 
+    pub fn validator_trace_bisection_expectations_submitted(&self) -> usize {
+        self.validator_trace_bisection_expectations_submitted
+    }
+
     pub fn validator_remote_tensor_fetch_attempts(&self) -> usize {
         self.validator_remote_tensor_fetch_attempts
     }
@@ -502,6 +516,15 @@ impl NodeRuntimeState {
         self.miner_trace_bisection_rounds_submitted = self
             .miner_trace_bisection_rounds_submitted
             .saturating_add(rounds_submitted);
+    }
+
+    pub fn record_validator_trace_bisection_expectation_submission(
+        &mut self,
+        expectations_submitted: usize,
+    ) {
+        self.validator_trace_bisection_expectations_submitted = self
+            .validator_trace_bisection_expectations_submitted
+            .saturating_add(expectations_submitted);
     }
 
     pub fn record_validator_work_observation(
