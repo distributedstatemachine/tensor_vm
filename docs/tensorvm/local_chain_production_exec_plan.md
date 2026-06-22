@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: Iteration 157 in progress - graph verifier admitted exact-op coverage.
+- Active feature: none; next implementation slice not yet checkpointed.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are
   chain-owned pending claims. Validator-owned proposal, block votes, audit-report gossip, observed
   malformed block-check challenge handling, parent-state snapshots, side-branch fork storage,
@@ -26,15 +26,14 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   must provide chain-verified bounded Ed25519 proof bytes over the committed receipt seed before validator
   receipt rewards are released. Maturity release commands cannot move matured rewards into spendable
   balances; explicit `ClaimReward` remains the canonical spendability boundary. The graph verifier exact
-  replay path is being hardened with focused admission evidence for the remaining admitted exact Tier-B op
+  replay path now has focused admission evidence for admitted exact generator, shaping, and comparison op
   clusters. Deployed full VRF construction and deployed lifecycle evidence remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: add focused graph-verifier acceptance/admission tests for admitted exact generators,
-  concat/stack/broadcast, and remaining comparison op clusters, then continue deployed full VRF
-  construction, public/CUDA deployment runs, and full interactive transcript disputes.
+- Next action: continue deployed full VRF construction, public/CUDA deployment runs, and full interactive
+  transcript disputes, or pick the next exact Tier-B/CUDA conformance slice.
 
 ## Readiness Matrix
 
@@ -48,7 +47,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof | Remaining: full interactive transcript disputes |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, role-owned graph execution, `const_blob`, p2p trace openings | Finish focused admitted exact-op verifier admission evidence, then continue full interactive trace disputes and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier admission evidence, role-owned graph execution, `const_blob`, p2p trace openings | Continue full interactive trace disputes and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, configured verified drand, and public default-chain chained drand through verified chain commands. P2p/node paths relay bounded fixture, verified drand, public chained drand, and validator reveal payloads. Public drand polling exposes attempts/successes/stale/failure/backoff plus expected latest round, fetched lag, max lag, rounds per chain epoch, chain epoch, and freshness, and stale-by-policy local public rounds are skipped before chain mutation. Accepted chained drand rounds now anchor to chain-owned epoch windows that are rooted, persisted, and exposed through status/explorer evidence. Validator role runtimes proactively register wallet-derived reveal public keys, status/checker evidence gates registered key coverage, and keyed validator reveals require bounded Ed25519 proof bytes before reward release. Status/explorer/checker expose seed-domain, external beacon count/latest round, validator reveal count, production-vs-legacy reveal counts, role counters, network-applied beacon/reveal counters, and block-hash-ban evidence | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -57,7 +56,14 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
+No active feature is checkpointed. Start the next slice with the required Gate 0 command and a fresh
+checkpoint before edits.
+
+## Recent Iterations
+
 ### Iteration 157: Graph Verifier Admitted Exact-Op Coverage
+
+Commit: `fc14b63` (pushed `main` -> `main`).
 
 Feature capability: focused graph-verifier evidence that admitted exact Tier-B op clusters are not only
 executable by the IR interpreter and conformance suite, but accepted through `verify_graph_execution` only
@@ -135,8 +141,6 @@ Broad validation passed on June 22, 2026: `cargo test -p tensor_vm --lib` (512 p
 
 Coverage command remained environmentally blocked on June 22, 2026:
 `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-
-## Recent Iterations
 
 ### Iteration 156: Explicit Reward Claim Spendability
 
