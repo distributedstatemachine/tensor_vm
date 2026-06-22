@@ -40,10 +40,10 @@ pub use state::{
     PendingReceiptReward, RandomnessBindingEvidence, ReceiptRandomnessAnchor, ReceiptRewardKind,
     ReceiptRewardMaturity, ReceiptState, RedundantSettlementDelayRecord, RewardAllocation,
     RewardClaimKey, RewardClaimLedger, RewardClaimView, RewardState, SelectedReceiptOpening,
-    TensorBlock, Transaction, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditEconomicCalibration,
-    ValidatorAuditReport, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
-    ValidatorVrfRevealRecord,
+    TensorBlock, TraceBisectionRecord, TraceBisectionStatus, Transaction, ValidatorAuditAppeal,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditEconomicCalibration, ValidatorAuditReport, ValidatorAuditResult,
+    ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
 };
 pub(crate) use state::{ChainParts, ChainStateParts};
 pub use validation::{

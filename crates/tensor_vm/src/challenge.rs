@@ -88,6 +88,18 @@ pub struct TraceBisectionConfig {
     pub responder_bond: u64,
 }
 
+pub fn trace_bisection_challenge_id(
+    receipt_id: &Hash,
+    trace_root: &Hash,
+    challenger: &Address,
+    responder: &Address,
+) -> Hash {
+    hash_bytes(
+        b"tensor-vm-trace-bisection-challenge-id-v1",
+        &[receipt_id, trace_root, challenger, responder],
+    )
+}
+
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct TraceBisectionRound {
     pub receipt_id: Hash,

@@ -2,7 +2,9 @@ use super::state::{
     BlockVote, ChainParams, ChainState, JobState, ReceiptState, TensorBlock, ValidatorAuditAppeal,
     ValidatorAuditAppealResolution, ValidatorAuditReport, ValidatorVrfRevealRecord,
 };
-use crate::challenge::{BlockCheckChallenge, ChallengeOutcome};
+use crate::challenge::{
+    BlockCheckChallenge, ChallengeOutcome, TraceBisectionConfig, TraceBisectionRound,
+};
 use crate::error::Result;
 use crate::ir::GraphId;
 use crate::types::{Address, Hash};
@@ -143,6 +145,11 @@ pub enum ChainCommand {
     },
     ApplyChallengeOutcome(ChallengeOutcome),
     SubmitBlockCheckChallenge(BlockCheckChallenge),
+    OpenTraceBisection(TraceBisectionConfig),
+    SubmitTraceBisectionRound(TraceBisectionRound),
+    RecordTraceBisectionTimeout {
+        challenge_id: Hash,
+    },
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -313,6 +320,35 @@ pub enum ChainEvent {
         challenger_reward: u64,
         penalty_until_height: u64,
         reason: String,
+    },
+    TraceBisectionOpened {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        trace_root: Hash,
+        challenger: Address,
+        responder: Address,
+        low_op: u64,
+        high_op: u64,
+        transcript_root: Hash,
+    },
+    TraceBisectionNarrowed {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        low_op: u64,
+        high_op: u64,
+        transcript_root: Hash,
+        matched_midpoint: bool,
+    },
+    TraceBisectionIsolated {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        op_index: u64,
+        transcript_root: Hash,
+    },
+    TraceBisectionTimedOut {
+        challenge_id: Hash,
+        receipt_id: Hash,
+        forfeiting_party: Address,
     },
 }
 

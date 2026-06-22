@@ -1,6 +1,12 @@
-use super::state::{BlockCheckChallengeRecord, ChainState, PendingChallengeReward, TensorBlock};
+use super::state::{
+    BlockCheckChallengeRecord, ChainState, PendingChallengeReward, TensorBlock,
+    TraceBisectionRecord, TraceBisectionStatus,
+};
 use super::{Chain, blocks, settlement};
-use crate::challenge::{BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome};
+use crate::challenge::{
+    BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome, TraceBisectionConfig,
+    TraceBisectionRound, TraceBisectionState, TraceBisectionStep, trace_bisection_challenge_id,
+};
 use crate::error::{Result, TvmError};
 use crate::merkle::{build_proof, merkle_root, verify_proof};
 use crate::types::{Address, Hash, hash_bytes, sign};
@@ -295,6 +301,136 @@ pub fn submit_block_check(
         penalty_until_height: record.penalty_until_height,
         reason: record.reason,
     })
+}
+
+pub fn open_trace_bisection(
+    chain: &mut Chain,
+    config: TraceBisectionConfig,
+) -> Result<TraceBisectionRecord> {
+    let receipt = chain
+        .state
+        .receipts
+        .get(&config.receipt_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection receipt"))?;
+    if receipt.trace_root() != config.trace_root {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection receipt trace root mismatch",
+        ));
+    }
+    if receipt.miner() != config.responder {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection responder is not receipt miner",
+        ));
+    }
+    if config.challenger == config.responder {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection challenger is responder",
+        ));
+    }
+    if config.response_deadline_height <= chain.state.height {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection deadline already expired",
+        ));
+    }
+    let state = TraceBisectionState::new(config)?;
+    let challenge_id = trace_bisection_challenge_id(
+        &state.receipt_id,
+        &state.trace_root,
+        &state.challenger,
+        &state.responder,
+    );
+    if chain
+        .state
+        .trace_bisection_challenges
+        .contains_key(&challenge_id)
+    {
+        return Err(TvmError::InvalidReceipt("duplicate trace bisection"));
+    }
+    let record = TraceBisectionRecord {
+        challenge_id,
+        state,
+        opened_rounds: 0,
+        last_round_leaf: None,
+        last_matched_midpoint: None,
+        started_at_height: chain.state.height,
+        updated_at_height: chain.state.height,
+        status: TraceBisectionStatus::Active,
+    };
+    chain
+        .state
+        .trace_bisection_challenges
+        .insert(challenge_id, record.clone());
+    Ok(record)
+}
+
+pub fn submit_trace_bisection_round(
+    chain: &mut Chain,
+    round: TraceBisectionRound,
+) -> Result<TraceBisectionRecord> {
+    let challenge_id = trace_bisection_challenge_id(
+        &round.receipt_id,
+        &round.trace_root,
+        &round.challenger,
+        &round.responder,
+    );
+    let record = chain
+        .state
+        .trace_bisection_challenges
+        .get_mut(&challenge_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    if record.status != TraceBisectionStatus::Active {
+        return Err(TvmError::InvalidReceipt("trace bisection is closed"));
+    }
+    if record.state.timed_out(chain.state.height) {
+        return Err(TvmError::InvalidReceipt("trace bisection round timed out"));
+    }
+    let step = record.state.apply_round(&round)?;
+    let round_leaf = round.transcript_leaf();
+    match step {
+        TraceBisectionStep::Narrowed {
+            next_state,
+            matched_midpoint,
+        } => {
+            record.state = next_state;
+            record.opened_rounds = record.opened_rounds.saturating_add(1);
+            record.last_round_leaf = Some(round_leaf);
+            record.last_matched_midpoint = Some(matched_midpoint);
+            record.updated_at_height = chain.state.height;
+        }
+        TraceBisectionStep::Isolated { op_index } => {
+            record.opened_rounds = record.opened_rounds.saturating_add(1);
+            record.last_round_leaf = Some(round_leaf);
+            record.last_matched_midpoint =
+                Some(round.expected_output_roots == round.opening.op_trace.output_roots);
+            record.updated_at_height = chain.state.height;
+            record.status = TraceBisectionStatus::Isolated { op_index };
+        }
+        TraceBisectionStep::TimedOut { .. } => unreachable!("round application cannot time out"),
+    }
+    Ok(record.clone())
+}
+
+pub fn record_trace_bisection_timeout(
+    chain: &mut Chain,
+    challenge_id: Hash,
+) -> Result<TraceBisectionRecord> {
+    let record = chain
+        .state
+        .trace_bisection_challenges
+        .get_mut(&challenge_id)
+        .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
+    if record.status != TraceBisectionStatus::Active {
+        return Err(TvmError::InvalidReceipt("trace bisection is closed"));
+    }
+    let Some(TraceBisectionStep::TimedOut {
+        forfeiting_party, ..
+    }) = record.state.timeout_step(chain.state.height)
+    else {
+        return Err(TvmError::InvalidReceipt("trace bisection deadline pending"));
+    };
+    record.status = TraceBisectionStatus::TimedOut { forfeiting_party };
+    record.updated_at_height = chain.state.height;
+    Ok(record.clone())
 }
 
 fn challenged_block(chain: &Chain, block_hash: &Hash) -> Option<TensorBlock> {

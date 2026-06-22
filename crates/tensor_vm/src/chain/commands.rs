@@ -403,6 +403,56 @@ impl ChainEngine for Chain {
                 }
                 Ok(events)
             }
+            ChainCommand::OpenTraceBisection(config) => {
+                let record = challenges::open_trace_bisection(self, config)?;
+                Ok(vec![ChainEvent::TraceBisectionOpened {
+                    challenge_id: record.challenge_id,
+                    receipt_id: record.state.receipt_id,
+                    trace_root: record.state.trace_root,
+                    challenger: record.state.challenger,
+                    responder: record.state.responder,
+                    low_op: record.state.low_op,
+                    high_op: record.state.high_op,
+                    transcript_root: record.state.transcript_root,
+                }])
+            }
+            ChainCommand::SubmitTraceBisectionRound(round) => {
+                let record = challenges::submit_trace_bisection_round(self, round)?;
+                let event = match record.status {
+                    super::TraceBisectionStatus::Active => ChainEvent::TraceBisectionNarrowed {
+                        challenge_id: record.challenge_id,
+                        receipt_id: record.state.receipt_id,
+                        low_op: record.state.low_op,
+                        high_op: record.state.high_op,
+                        transcript_root: record.state.transcript_root,
+                        matched_midpoint: record.last_matched_midpoint.unwrap_or(false),
+                    },
+                    super::TraceBisectionStatus::Isolated { op_index } => {
+                        ChainEvent::TraceBisectionIsolated {
+                            challenge_id: record.challenge_id,
+                            receipt_id: record.state.receipt_id,
+                            op_index,
+                            transcript_root: record.state.transcript_root,
+                        }
+                    }
+                    super::TraceBisectionStatus::TimedOut { .. } => {
+                        unreachable!("round submission cannot record timeout")
+                    }
+                };
+                Ok(vec![event])
+            }
+            ChainCommand::RecordTraceBisectionTimeout { challenge_id } => {
+                let record = challenges::record_trace_bisection_timeout(self, challenge_id)?;
+                let super::TraceBisectionStatus::TimedOut { forfeiting_party } = record.status
+                else {
+                    unreachable!("timeout command returns timed out record")
+                };
+                Ok(vec![ChainEvent::TraceBisectionTimedOut {
+                    challenge_id: record.challenge_id,
+                    receipt_id: record.state.receipt_id,
+                    forfeiting_party,
+                }])
+            }
         }
     }
 

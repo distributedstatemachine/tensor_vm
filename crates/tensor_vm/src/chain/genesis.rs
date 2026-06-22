@@ -38,6 +38,7 @@ pub fn with_params(params: ChainParams, finalized_randomness: Hash) -> Chain {
             included_receipts: BTreeSet::new(),
             block_selected_receipts: BTreeMap::new(),
             block_check_challenges: BTreeMap::new(),
+            trace_bisection_challenges: BTreeMap::new(),
             challenged_receipts: BTreeSet::new(),
             proposer_penalty_until: BTreeMap::new(),
             proposer_cadence_last_proposed: BTreeMap::new(),

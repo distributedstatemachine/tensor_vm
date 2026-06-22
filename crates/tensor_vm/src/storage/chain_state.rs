@@ -4,10 +4,12 @@ use crate::chain::{
     ExternalRandomnessBeaconRecord, HardwareClass, InvalidOutputSlashRecord, JobState, MinerState,
     ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
     PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptRewardMaturity,
-    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
-    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
-    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock, TraceBisectionRecord,
+    TraceBisectionStatus, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorVrfRevealRecord,
 };
+use crate::challenge::TraceBisectionState;
 use crate::codec::{
     self as payload_codec, primitive_type_from_tag, primitive_type_tag,
     verification_result_from_tag, verification_result_tag,
@@ -256,6 +258,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_hash_set(out, state.included_receipts());
     encode_hash_vec_map(out, state.block_selected_receipts());
     encode_block_check_challenges(out, state.block_check_challenges());
+    encode_trace_bisection_challenges(out, state.trace_bisection_challenges());
     encode_hash_set(out, state.challenged_receipts());
     encode_u64_by_hash_map(out, state.proposer_penalty_until());
     encode_u64_by_hash_map(out, state.proposer_cadence_last_proposed());
@@ -314,6 +317,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         included_receipts: decode_hash_set(reader)?,
         block_selected_receipts: decode_hash_vec_map(reader)?,
         block_check_challenges: decode_block_check_challenges(reader)?,
+        trace_bisection_challenges: decode_trace_bisection_challenges(reader)?,
         challenged_receipts: decode_hash_set(reader)?,
         proposer_penalty_until: decode_u64_by_hash_map(reader)?,
         proposer_cadence_last_proposed: decode_u64_by_hash_map(reader)?,
@@ -1359,6 +1363,124 @@ fn decode_block_check_challenges(
                 challenger_reward,
                 penalty_until_height,
                 reason,
+            },
+        );
+    }
+    Ok(challenges)
+}
+
+fn encode_trace_bisection_challenges(
+    out: &mut Vec<u8>,
+    challenges: &BTreeMap<Hash, TraceBisectionRecord>,
+) {
+    write_len(out, challenges.len());
+    for (challenge_id, record) in challenges {
+        write_hash(out, challenge_id);
+        write_hash(out, &record.challenge_id);
+        write_hash(out, &record.state.receipt_id);
+        write_hash(out, &record.state.trace_root);
+        write_hash(out, &record.state.challenger);
+        write_hash(out, &record.state.responder);
+        write_u64(out, record.state.low_op);
+        write_u64(out, record.state.high_op);
+        write_u64(out, record.state.response_deadline_height);
+        write_u64(out, record.state.challenger_bond);
+        write_u64(out, record.state.responder_bond);
+        write_hash(out, &record.state.transcript_root);
+        write_u64(out, record.opened_rounds);
+        match record.last_round_leaf {
+            Some(leaf) => {
+                out.push(1);
+                write_hash(out, &leaf);
+            }
+            None => out.push(0),
+        }
+        match record.last_matched_midpoint {
+            Some(matched) => {
+                out.push(1);
+                out.push(u8::from(matched));
+            }
+            None => out.push(0),
+        }
+        write_u64(out, record.started_at_height);
+        write_u64(out, record.updated_at_height);
+        out.push(record.status.tag());
+        match record.status {
+            TraceBisectionStatus::Active => {}
+            TraceBisectionStatus::Isolated { op_index } => write_u64(out, op_index),
+            TraceBisectionStatus::TimedOut { forfeiting_party } => {
+                write_hash(out, &forfeiting_party);
+            }
+        }
+    }
+}
+
+fn decode_trace_bisection_challenges(
+    reader: &mut StateReader<'_>,
+) -> Result<BTreeMap<Hash, TraceBisectionRecord>> {
+    let mut challenges = BTreeMap::new();
+    for _ in 0..reader.read_len()? {
+        let map_challenge_id = reader.read_hash()?;
+        let challenge_id = reader.read_hash()?;
+        let receipt_id = reader.read_hash()?;
+        let trace_root = reader.read_hash()?;
+        let challenger = reader.read_hash()?;
+        let responder = reader.read_hash()?;
+        let low_op = reader.read_u64()?;
+        let high_op = reader.read_u64()?;
+        let response_deadline_height = reader.read_u64()?;
+        let challenger_bond = reader.read_u64()?;
+        let responder_bond = reader.read_u64()?;
+        let transcript_root = reader.read_hash()?;
+        let opened_rounds = reader.read_u64()?;
+        let last_round_leaf = match reader.read_u8()? {
+            0 => None,
+            1 => Some(reader.read_hash()?),
+            _ => return Err(TvmError::Storage("invalid trace bisection round leaf tag")),
+        };
+        let last_matched_midpoint = match reader.read_u8()? {
+            0 => None,
+            1 => match reader.read_u8()? {
+                0 => Some(false),
+                1 => Some(true),
+                _ => return Err(TvmError::Storage("invalid trace bisection match tag")),
+            },
+            _ => return Err(TvmError::Storage("invalid trace bisection match option")),
+        };
+        let started_at_height = reader.read_u64()?;
+        let updated_at_height = reader.read_u64()?;
+        let status = match reader.read_u8()? {
+            0 => TraceBisectionStatus::Active,
+            1 => TraceBisectionStatus::Isolated {
+                op_index: reader.read_u64()?,
+            },
+            2 => TraceBisectionStatus::TimedOut {
+                forfeiting_party: reader.read_hash()?,
+            },
+            _ => return Err(TvmError::Storage("invalid trace bisection status")),
+        };
+        challenges.insert(
+            map_challenge_id,
+            TraceBisectionRecord {
+                challenge_id,
+                state: TraceBisectionState {
+                    receipt_id,
+                    trace_root,
+                    challenger,
+                    responder,
+                    low_op,
+                    high_op,
+                    response_deadline_height,
+                    challenger_bond,
+                    responder_bond,
+                    transcript_root,
+                },
+                opened_rounds,
+                last_round_leaf,
+                last_matched_midpoint,
+                started_at_height,
+                updated_at_height,
+                status,
             },
         );
     }

@@ -15,15 +15,18 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   rewards into spendable balances; explicit `ClaimReward` remains the canonical spendability boundary.
   The graph verifier exact replay path has focused admission evidence for admitted exact generator,
   shaping, and comparison op clusters. A chain-neutral signed trace-bisection message/state core over
-  verified IR trace openings now exists, and bounded p2p wire payloads can carry signed bisection rounds;
-  chain admission, one-op referee execution, slashing, and challenger settlement remain open.
+  verified IR trace openings now exists; bounded p2p wire payloads can carry signed bisection rounds; and
+  chain admission now records sessions, signed rounds, transcript-root progress, isolated-op outcomes, and
+  responder timeouts in state-rooted dispute records. One-op referee execution, slashing, challenger
+  settlement, runtime generation, and p2p pending-queue application counters remain open.
 - Current blockers:
   - `cargo tarpaulin --workspace --offline` is blocked because `cargo-tarpaulin` is not installed:
     `error: no such command: tarpaulin`.
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are chain admission for
-  trace-bisection rounds, deployed full VRF lifecycle evidence, public/CUDA deployment evidence, or the
-  remaining exact Tier-B/CUDA conformance surface.
+- Next action: choose the next feature-sized slice. Current high-value options are one-op referee execution
+  for isolated trace-bisection disputes, p2p/node application for admitted trace-bisection rounds, deployed
+  full VRF lifecycle evidence, public/CUDA deployment evidence, or the remaining exact Tier-B/CUDA
+  conformance surface.
 
 ## Readiness Matrix
 
@@ -37,7 +40,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Role-owned validator proposer tick | Docker-proven locally | Local CPU Docker proof covers proposer cadence, delayed proposer reward evidence, side-branch storage, and passive convergence | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, block payloads, votes, audits, block-check challenges, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW target/nonce, selected roots, typed check transcripts/leaves, retention deadlines, checks roots, beacon binding, fallback eligibility/timeout, parent snapshots, delayed rewards, diagnostic block-check challenges, competitor policy, side-branch storage, deep reorg, Docker proof | Add trace-bisection p2p/chain integration or deployed public/CUDA proof |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, p2p trace openings, signed trace-bisection core, and bounded trace-bisection round p2p payloads | Continue interactive trace dispute chain admission and CUDA graph evidence |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON, `graph_id`, registry validation, program storage/serving, graph receipts, exact replay for current core and broad Tier-B surface, packed int8 APIs, focused admitted exact-op graph-verifier evidence, role-owned graph execution, `const_blob`, p2p trace openings, signed trace-bisection core, bounded trace-bisection round p2p payloads, and state-rooted chain admission for trace-bisection sessions/rounds | Continue one-op referee execution, p2p/node application, and CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops; default CUDA non-admission | Add CUDA conformance evidence and remaining exact Tier-B vectors |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors bind finalized beacon randomness and validation seed commitments. Local runtimes ingest deterministic fixtures, verified drand, public chained drand, chain-owned epoch windows, registered validator reveal keys, and keyed Ed25519 reveal proofs before reward release | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -46,8 +49,46 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
-No active feature is checkpointed. Start the next slice with the required Gate 0 command and a fresh
-checkpoint before edits.
+### Iteration 161: Trace-Bisection Chain Admission
+
+Feature capability: signed trace-bisection sessions and rounds should be admitted through the canonical
+chain command path, recorded in state-rooted dispute records, and exposed as chain events before any node,
+p2p, or runtime adapter treats a round as protocol progress.
+
+Readiness requirements covered: `upow.md` §8.2 interactive fraud proofs over `trace_root`, §9 trace opening
+availability, `mvp_spec.md` §4.6 canonical transition boundary, and the Iteration 160 out-of-scope item for
+chain command admission.
+
+Canonical owner: `chain::challenges` owns trace-bisection session creation, round verification against the
+current state, transcript-root advancement, duplicate rejection, timeout recording, and final isolated-op
+state. P2P/node surfaces remain bounded codec and retry adapters.
+
+Shortcut being avoided: the new trace-bisection p2p payload must not become a network-only acknowledgement
+path. A round only counts after `ChainCommand` applies it to the stored session state.
+
+Parallel subagents to run: skipped; the available subagent tool requires explicit user authorization before
+spawning agents. Read-only code/test discovery is being parallelized with local shell tools.
+
+Expected observable evidence: chain tests create a graph receipt dispute session, apply a signed midpoint
+round through `ChainCommand`, observe a state-rooted narrowed transcript, reject duplicate/tampered/mismatched
+rounds, record an isolated disputed op after the final round, and record responder timeout without mutating
+stake or rewards. One-op referee re-execution, slashing, challenger bounty settlement, runtime challenge
+generation, public/CUDA evidence, and p2p pending-queue application counters remain out of scope.
+
+Validation passed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release`.
+- Focused: `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm challenge --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm chain_state --lib -- --nocapture`.
+- Focused: `cargo test -p tensor_vm chain::tests::challenges --lib -- --nocapture`.
+- Broad: `cargo fmt --check --all`.
+- Broad: `cargo check -p tensor_vm --tests`.
+- Broad: `git diff --check`.
+- Broad: `cargo test -p tensor_vm --lib` (520 passed).
+- Final gate: `cargo test -p tensor_vm local_testnet --release`.
+
+Coverage command remained environmentally blocked on June 22, 2026:
+`cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
 
 ## Recent Iterations
 

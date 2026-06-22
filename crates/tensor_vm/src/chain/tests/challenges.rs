@@ -1,9 +1,16 @@
 use super::*;
 use crate::{
-    challenge::{BlockCheckChallenge, BlockCheckChallengeInput},
+    canonical_linear_training_step_graph,
+    challenge::{
+        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionRound,
+    },
+    jobs::{GraphJob, GraphReceipt},
     merkle::{build_proof, merkle_root},
+    storage::{decode_chain_state_snapshot, encode_chain_state_snapshot},
+    tensor::{DType, Tensor},
     types::sign,
 };
+use std::collections::BTreeMap;
 
 fn finalize_challenge_test_block(chain: &mut Chain, block: &TensorBlock) {
     let validators = chain
@@ -21,6 +28,211 @@ fn finalize_challenge_test_block(chain: &mut Chain, block: &TensorBlock) {
             .unwrap();
     }
     assert!(chain.is_block_finalized(&block.hash()));
+}
+
+fn trace_bisection_fixture() -> (Chain, GraphReceipt, crate::ir::IrExecution) {
+    let beacon = hash_bytes(b"test", &[b"trace-bisection-chain"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"trace-bisection-miner");
+    chain.register_miner(miner, 100).unwrap();
+
+    let graph =
+        canonical_linear_training_step_graph(&[2, 2], &[2, 2], &[2, 2], DType::FieldElement);
+    let graph_id = graph.validate_for_consensus().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    let x = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+    let w = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![5, 6, 7, 8]).unwrap();
+    let target = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 1, 1, 1]).unwrap();
+    let inputs = BTreeMap::from([
+        ("target".to_owned(), target),
+        ("w".to_owned(), w),
+        ("x".to_owned(), x),
+    ]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let field_params = BTreeMap::from([("lr".to_owned(), 1)]);
+    let job = GraphJob::new(0, graph_id, input_roots, field_params, 10, 1, 16);
+    let (receipt, _) = GraphReceipt::from_execution(&job, &graph, miner, &inputs, 1, 3).unwrap();
+    let execution = job.exact_ir_execution(&graph, &inputs).unwrap();
+
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(job)))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+    (chain, receipt, execution)
+}
+
+#[test]
+fn trace_bisection_rounds_are_chain_admitted_and_state_rooted() {
+    let (mut chain, receipt, execution) = trace_bisection_fixture();
+    let challenger = address(b"trace-bisection-challenger");
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let ChainEvent::TraceBisectionOpened {
+        challenge_id,
+        low_op,
+        high_op,
+        ..
+    } = open_events[0]
+    else {
+        panic!("expected trace bisection open event");
+    };
+    assert_eq!(low_op, 0);
+    assert_eq!(high_op, 5);
+    let opened_root = chain.state_root();
+
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = execution.trace_opening(state.midpoint()).unwrap();
+    let round =
+        TraceBisectionRound::new(&state, opening.op_trace.output_roots.clone(), opening).unwrap();
+    let narrowed_events = chain
+        .apply_command(ChainCommand::SubmitTraceBisectionRound(round.clone()))
+        .unwrap();
+    assert!(matches!(
+        narrowed_events.as_slice(),
+        [ChainEvent::TraceBisectionNarrowed {
+            low_op: 3,
+            high_op: 5,
+            matched_midpoint: true,
+            ..
+        }]
+    ));
+    assert_ne!(chain.state_root(), opened_root);
+    assert_eq!(
+        chain.apply_command(ChainCommand::SubmitTraceBisectionRound(round)),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection round state mismatch"
+        ))
+    );
+
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = execution.trace_opening(state.midpoint()).unwrap();
+    let final_round =
+        TraceBisectionRound::new(&state, opening.op_trace.output_roots.clone(), opening).unwrap();
+    let isolated_events = chain
+        .apply_command(ChainCommand::SubmitTraceBisectionRound(final_round))
+        .unwrap();
+    assert!(matches!(
+        isolated_events.as_slice(),
+        [ChainEvent::TraceBisectionIsolated { op_index: 5, .. }]
+    ));
+    let record = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap();
+    assert_eq!(record.opened_rounds, 2);
+    assert!(matches!(
+        record.status,
+        TraceBisectionStatus::Isolated { op_index: 5 }
+    ));
+
+    let encoded = encode_chain_state_snapshot(chain.state());
+    let decoded = decode_chain_state_snapshot(&encoded).unwrap();
+    assert_eq!(
+        decoded.trace_bisection_challenges(),
+        chain.state().trace_bisection_challenges()
+    );
+}
+
+#[test]
+fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
+    let (mut chain, receipt, execution) = trace_bisection_fixture();
+    let challenger = address(b"trace-bisection-timeout-challenger");
+    let open = ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+        receipt_id: receipt.receipt_id,
+        trace_root: receipt.trace_root,
+        challenger,
+        responder: receipt.miner,
+        op_count: execution.op_traces.len() as u64,
+        response_deadline_height: 2,
+        challenger_bond: 7,
+        responder_bond: 11,
+    });
+    chain.apply_command(open.clone()).unwrap();
+    assert_eq!(
+        chain.apply_command(open),
+        Err(TvmError::InvalidReceipt("duplicate trace bisection"))
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: hash_bytes(b"test", &[b"wrong-trace-root"]),
+            challenger: address(b"wrong-trace-challenger"),
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 2,
+            challenger_bond: 7,
+            responder_bond: 11,
+        })),
+        Err(TvmError::InvalidReceipt(
+            "trace bisection receipt trace root mismatch"
+        ))
+    );
+
+    let challenge_id = *chain
+        .state()
+        .trace_bisection_challenges()
+        .keys()
+        .next()
+        .unwrap();
+    assert_eq!(
+        chain.apply_command(ChainCommand::RecordTraceBisectionTimeout { challenge_id }),
+        Err(TvmError::InvalidReceipt("trace bisection deadline pending"))
+    );
+    chain.set_position_for_testing(3, 0);
+    let timeout_events = chain
+        .apply_command(ChainCommand::RecordTraceBisectionTimeout { challenge_id })
+        .unwrap();
+    assert!(matches!(
+        timeout_events.as_slice(),
+        [ChainEvent::TraceBisectionTimedOut {
+            forfeiting_party,
+            ..
+        }] if *forfeiting_party == receipt.miner
+    ));
+    assert!(matches!(
+        chain
+            .state()
+            .trace_bisection_challenges()
+            .get(&challenge_id)
+            .unwrap()
+            .status,
+        TraceBisectionStatus::TimedOut { forfeiting_party } if forfeiting_party == receipt.miner
+    ));
 }
 
 #[test]

@@ -1,3 +1,4 @@
+use crate::challenge::TraceBisectionState;
 use crate::codec::primitive_type_tag;
 use crate::field;
 use crate::ir::TensorGraph;
@@ -304,6 +305,35 @@ pub struct BlockCheckChallengeRecord {
     pub challenger_reward: u64,
     pub penalty_until_height: u64,
     pub reason: String,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub enum TraceBisectionStatus {
+    Active,
+    Isolated { op_index: u64 },
+    TimedOut { forfeiting_party: Address },
+}
+
+impl TraceBisectionStatus {
+    pub fn tag(&self) -> u8 {
+        match self {
+            Self::Active => 0,
+            Self::Isolated { .. } => 1,
+            Self::TimedOut { .. } => 2,
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraceBisectionRecord {
+    pub challenge_id: Hash,
+    pub state: TraceBisectionState,
+    pub opened_rounds: u64,
+    pub last_round_leaf: Option<Hash>,
+    pub last_matched_midpoint: Option<bool>,
+    pub started_at_height: u64,
+    pub updated_at_height: u64,
+    pub status: TraceBisectionStatus,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -1083,6 +1113,14 @@ impl ReceiptState {
         }
     }
 
+    pub fn trace_root(&self) -> Hash {
+        match self {
+            Self::TensorOp(receipt) => receipt.trace_root,
+            Self::LinearTrainingStep(receipt) => receipt.trace_root,
+            Self::GraphExecution(receipt) => receipt.trace_root,
+        }
+    }
+
     pub fn primitive_type(&self) -> PrimitiveType {
         match self {
             Self::TensorOp(_) => PrimitiveType::TensorOp,
@@ -1357,6 +1395,7 @@ pub struct ChainState {
     pub(in crate::chain) included_receipts: BTreeSet<Hash>,
     pub(in crate::chain) block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
     pub(in crate::chain) block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
+    pub(in crate::chain) trace_bisection_challenges: BTreeMap<Hash, TraceBisectionRecord>,
     pub(in crate::chain) challenged_receipts: BTreeSet<Hash>,
     pub(in crate::chain) proposer_penalty_until: BTreeMap<Address, u64>,
     pub(in crate::chain) proposer_cadence_last_proposed: BTreeMap<Address, u64>,
@@ -1402,6 +1441,7 @@ pub(crate) struct ChainStateParts {
     pub included_receipts: BTreeSet<Hash>,
     pub block_selected_receipts: BTreeMap<Hash, Vec<Hash>>,
     pub block_check_challenges: BTreeMap<Hash, BlockCheckChallengeRecord>,
+    pub trace_bisection_challenges: BTreeMap<Hash, TraceBisectionRecord>,
     pub challenged_receipts: BTreeSet<Hash>,
     pub proposer_penalty_until: BTreeMap<Address, u64>,
     pub proposer_cadence_last_proposed: BTreeMap<Address, u64>,
@@ -1448,6 +1488,7 @@ impl ChainState {
             included_receipts: parts.included_receipts,
             block_selected_receipts: parts.block_selected_receipts,
             block_check_challenges: parts.block_check_challenges,
+            trace_bisection_challenges: parts.trace_bisection_challenges,
             challenged_receipts: parts.challenged_receipts,
             proposer_penalty_until: parts.proposer_penalty_until,
             proposer_cadence_last_proposed: parts.proposer_cadence_last_proposed,
@@ -1708,6 +1749,10 @@ impl ChainState {
 
     pub fn block_check_challenges(&self) -> &BTreeMap<Hash, BlockCheckChallengeRecord> {
         &self.block_check_challenges
+    }
+
+    pub fn trace_bisection_challenges(&self) -> &BTreeMap<Hash, TraceBisectionRecord> {
+        &self.trace_bisection_challenges
     }
 
     pub fn challenged_receipts(&self) -> &BTreeSet<Hash> {

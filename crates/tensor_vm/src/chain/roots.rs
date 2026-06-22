@@ -3,9 +3,10 @@ use super::{
     DataUnavailabilitySlashRecord, ExternalRandomnessBeaconProof, ExternalRandomnessBeaconRecord,
     InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
     PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
-    ReceiptState, RedundantSettlementDelayRecord, RewardState, ValidatorAuditAppealRecord,
-    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, TraceBisectionRecord,
+    TraceBisectionStatus, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
+    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
+    ValidatorVrfRevealRecord,
 };
 use crate::codec::{dtype_tag, primitive_type_tag, verification_result_tag};
 use crate::merkle::merkle_root;
@@ -88,6 +89,9 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
         &state.included_receipts,
     ));
     parts.extend_from_slice(&block_check_challenge_root(&state.block_check_challenges));
+    parts.extend_from_slice(&trace_bisection_challenge_root(
+        &state.trace_bisection_challenges,
+    ));
     parts.extend_from_slice(&hash_set_root(
         b"tensor-vm-challenged-receipt-root-v1",
         &state.challenged_receipts,
@@ -234,6 +238,54 @@ pub(super) fn block_check_challenge_root(
         encoded.extend_from_slice(challenge.reason.as_bytes());
     }
     hash_bytes(b"tensor-vm-block-check-challenge-root-v1", &[&encoded])
+}
+
+pub(super) fn trace_bisection_challenge_root(
+    challenges: &BTreeMap<Hash, TraceBisectionRecord>,
+) -> Hash {
+    let mut encoded = Vec::new();
+    for (challenge_id, record) in challenges {
+        encoded.extend_from_slice(challenge_id);
+        encoded.extend_from_slice(&record.challenge_id);
+        encoded.extend_from_slice(&record.state.receipt_id);
+        encoded.extend_from_slice(&record.state.trace_root);
+        encoded.extend_from_slice(&record.state.challenger);
+        encoded.extend_from_slice(&record.state.responder);
+        encoded.extend_from_slice(&record.state.low_op.to_le_bytes());
+        encoded.extend_from_slice(&record.state.high_op.to_le_bytes());
+        encoded.extend_from_slice(&record.state.response_deadline_height.to_le_bytes());
+        encoded.extend_from_slice(&record.state.challenger_bond.to_le_bytes());
+        encoded.extend_from_slice(&record.state.responder_bond.to_le_bytes());
+        encoded.extend_from_slice(&record.state.transcript_root);
+        encoded.extend_from_slice(&record.opened_rounds.to_le_bytes());
+        match record.last_round_leaf {
+            Some(leaf) => {
+                encoded.push(1);
+                encoded.extend_from_slice(&leaf);
+            }
+            None => encoded.push(0),
+        }
+        match record.last_matched_midpoint {
+            Some(matched) => {
+                encoded.push(1);
+                encoded.push(u8::from(matched));
+            }
+            None => encoded.push(0),
+        }
+        encoded.extend_from_slice(&record.started_at_height.to_le_bytes());
+        encoded.extend_from_slice(&record.updated_at_height.to_le_bytes());
+        encoded.push(record.status.tag());
+        match record.status {
+            TraceBisectionStatus::Active => {}
+            TraceBisectionStatus::Isolated { op_index } => {
+                encoded.extend_from_slice(&op_index.to_le_bytes());
+            }
+            TraceBisectionStatus::TimedOut { forfeiting_party } => {
+                encoded.extend_from_slice(&forfeiting_party);
+            }
+        }
+    }
+    hash_bytes(b"tensor-vm-trace-bisection-challenge-root-v1", &[&encoded])
 }
 
 pub(super) fn redundant_settlement_delay_root(
