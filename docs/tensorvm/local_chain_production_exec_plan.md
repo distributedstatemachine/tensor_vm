@@ -105,6 +105,8 @@ Validation evidence:
 - Tarpaulin passed:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   567 instrumented tests and 84.80% line coverage, 23142/27291 lines covered.
+- Commit `b1b368b` (`Delay proposer rewards without height workaround`) pushed to `origin/main` on
+  June 22, 2026.
 
 ## Recent Completed Iterations
 
@@ -145,7 +147,7 @@ Validation evidence:
 - Current Iteration 190 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
   567 instrumented tests and 84.80% line coverage, 23142/27291 lines covered.
-- Commit and push evidence will be recorded after push.
+- Commit `b1b368b` pushed to `origin/main` on June 22, 2026.
 
 ## Archive
 
