@@ -1124,6 +1124,117 @@ fn block_transition_preserves_matured_receipt_rewards_until_claim() {
 }
 
 #[test]
+fn block_transition_preserves_matured_challenge_rewards_until_claim() {
+    let beacon = hash_bytes(b"test", &[b"challenge-reward-block-transition-release"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        challenge_window_epochs: 1,
+        pow_timeout_blocks: 0,
+        ..ChainParams::default()
+    };
+    let mut producer = Chain::with_params(params.clone(), beacon);
+    let proposer = address(b"challenge-reward-transition-proposer");
+    let challenger = address(b"challenge-reward-transition-challenger");
+    producer
+        .register_validator(proposer, producer.params().validator_min_stake)
+        .unwrap();
+    let receipt_id = add_settled_receipt_for_blockspace(&mut producer, &beacon);
+    let challenge_id = hash_bytes(b"test", &[b"challenge-reward-transition-challenge"]);
+    let claim_id = hash_bytes(b"test", &[b"challenge-reward-transition-claim"]);
+    producer.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+        claim_id,
+        challenge_id,
+        block_hash: [0; 32],
+        receipt_id,
+        challenger,
+        amount: 250,
+        claimable_at_height: 0,
+        voided_by_challenge: false,
+    });
+
+    let mut peer = Chain::with_params(params, beacon);
+    peer.register_validator(proposer, peer.params().validator_min_stake)
+        .unwrap();
+    let peer_receipt_id = add_settled_receipt_for_blockspace(&mut peer, &beacon);
+    assert_eq!(peer_receipt_id, receipt_id);
+    peer.insert_pending_challenge_reward_for_testing(PendingChallengeReward {
+        claim_id,
+        challenge_id,
+        block_hash: [0; 32],
+        receipt_id,
+        challenger,
+        amount: 250,
+        claimable_at_height: 0,
+        voided_by_challenge: false,
+    });
+
+    let release_events = producer
+        .apply_command(ChainCommand::ReleaseMaturedChallengeRewards)
+        .unwrap();
+    assert!(release_events.is_empty());
+    assert!(
+        producer
+            .state()
+            .pending_challenge_rewards()
+            .contains_key(&claim_id)
+    );
+    assert_eq!(producer.state().rewards().balance(&challenger), 0);
+
+    let block0 = producer
+        .produce_block_with_rewards(proposer, 1_000, 80, 20)
+        .unwrap();
+    assert_eq!(block0.reward_root, reward_root(producer.state()));
+    finalize_reward_test_block(&mut producer, &block0);
+    assert!(
+        producer
+            .state()
+            .pending_challenge_rewards()
+            .contains_key(&claim_id)
+    );
+    assert_eq!(producer.state().rewards().balance(&challenger), 0);
+
+    peer.apply_command(ChainCommand::SubmitBlock(block0.clone()))
+        .unwrap();
+    finalize_reward_test_block(&mut peer, &block0);
+    assert_eq!(peer.state().rewards().balance(&challenger), 0);
+    assert_eq!(peer.state(), producer.state());
+
+    let claim_events = producer
+        .apply_command(ChainCommand::ClaimReward(challenger))
+        .unwrap();
+    assert!(claim_events.contains(&ChainEvent::ChallengeRewardReleased {
+        claim_id,
+        challenge_id,
+        challenger,
+        amount: 250,
+    }));
+    assert!(claim_events.contains(&ChainEvent::RewardClaimed {
+        address: challenger,
+        amount: 250,
+    }));
+    assert_eq!(
+        producer
+            .state()
+            .accounts()
+            .get(&challenger)
+            .unwrap()
+            .balance,
+        250
+    );
+    assert!(
+        !producer
+            .state()
+            .pending_challenge_rewards()
+            .contains_key(&claim_id)
+    );
+    assert_eq!(producer.state().rewards().balance(&challenger), 0);
+
+    peer.apply_command(ChainCommand::ClaimReward(challenger))
+        .unwrap();
+    assert_eq!(peer.state(), producer.state());
+}
+
+#[test]
 fn release_matured_proposer_rewards_sweeps_voided_claims_without_credit() {
     let beacon = hash_bytes(b"test", &[b"reward-voided-proposer-sweep"]);
     let params = ChainParams {
