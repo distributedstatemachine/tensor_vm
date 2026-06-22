@@ -59,6 +59,27 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
             .full_spec_evidence_met
     );
 
+    let raw_operational_manifest = format!(
+        "{}data_availability_measurement={},available,1\ninvalid_work_rejection={},rejected,2\nreward_settlement={},{},{},3\n",
+        manifest,
+        manifest_hash(b"test", b"raw-data-availability-receipt"),
+        manifest_hash(b"test", b"raw-invalid-work-receipt"),
+        manifest_hash(b"test", b"raw-reward-settlement-receipt"),
+        manifest_address(b"raw-reward-settlement-miner"),
+        manifest_address(b"raw-reward-settlement-validator"),
+    );
+    let parsed_raw_operational =
+        parse_public_testnet_evidence_manifest(&raw_operational_manifest).unwrap();
+    assert_eq!(
+        parsed_raw_operational.data_availability_raw_records.len(),
+        1
+    );
+    assert_eq!(parsed_raw_operational.invalid_work_raw_records.len(), 1);
+    assert_eq!(
+        parsed_raw_operational.reward_settlement_raw_records.len(),
+        1
+    );
+
     let local_rpc_service = manifest.replace(
         "https://rpc.tensorvm.net/health",
         "https://localhost/health",
@@ -284,6 +305,22 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
             manifest_hash(b"test", b"randomness-source"),
             manifest_hash(b"test", b"randomness-root"),
             manifest_hash(b"test", b"randomness-proof")
+        ),
+        format!(
+            "{}data_availability_measurement={},pending,1\n",
+            manifest,
+            manifest_hash(b"test", b"data-availability-receipt")
+        ),
+        format!(
+            "{}invalid_work_rejection={},accepted,1\n",
+            manifest,
+            manifest_hash(b"test", b"invalid-work-receipt")
+        ),
+        format!(
+            "{}reward_settlement={},{},1\n",
+            manifest,
+            manifest_hash(b"test", b"reward-settlement-receipt"),
+            manifest_address(b"reward-settlement-miner")
         ),
         manifest.replace("reward_settlement_records=1", "unknown_field=1"),
         manifest.replace("reward_settlement_records=1", "malformed-line"),

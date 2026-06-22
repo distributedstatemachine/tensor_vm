@@ -11,7 +11,7 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
         min_invalid_work_rejections: 1,
         min_reward_settlement_records: 1,
     };
-    let mut bundle = complete_public_evidence_bundle();
+    let bundle = complete_public_evidence_bundle();
 
     let complete = bundle.evaluate(&criteria, 6);
     assert!(complete.run_evidence.public_criterion_met);
@@ -94,6 +94,69 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     );
     assert!(local_fixture_randomness_report.independently_checkable);
     assert!(!local_fixture_randomness_report.full_spec_evidence_met);
+}
+
+#[test]
+fn public_testnet_evidence_bundle_requires_raw_operational_records() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    assert!(
+        full_spec_bundle
+            .evaluate(&full_spec_criteria, full_spec_block_time)
+            .full_spec_evidence_met
+    );
+
+    let mut missing_data_availability = full_spec_bundle.clone();
+    missing_data_availability
+        .data_availability_raw_records
+        .clear();
+    let report = missing_data_availability.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut missing_invalid_work = full_spec_bundle.clone();
+    missing_invalid_work.invalid_work_raw_records.clear();
+    let report = missing_invalid_work.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut missing_reward_settlement = full_spec_bundle.clone();
+    missing_reward_settlement
+        .reward_settlement_raw_records
+        .clear();
+    let report = missing_reward_settlement.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_data_root = full_spec_bundle;
+    let record_count = mismatched_data_root.data_availability_measurement_records;
+    resign_record_summary_and_artifact(
+        &mut mismatched_data_root,
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        hash_bytes(
+            b"test",
+            &[b"summary-root-not-derived-from-raw-data-availability"],
+        ),
+        record_count,
+    );
+    let report = mismatched_data_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let criteria = PublicTestnetCriteria {
+        min_miners: 2,
+        min_validators: 1,
+        duration_days: 0,
+        min_finality_rate_bps: 9_000,
+        min_data_availability_bps: 9_500,
+        min_invalid_work_rejections: 1,
+        min_reward_settlement_records: 1,
+    };
+    let mut bundle = complete_public_evidence_bundle();
 
     let mut role_order_bundle = complete_public_evidence_bundle();
     let shared_node_address = address(b"bundle-role-order-shared-address");

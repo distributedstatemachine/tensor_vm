@@ -279,11 +279,14 @@ pub struct PublicTestnetEvidenceBundle {
     pub data_availability_measurement_records: u64,
     pub data_availability_measurement_root: Hash,
     pub data_availability_measurement_signature: Signature,
+    pub data_availability_raw_records: Vec<PublicDataAvailabilityMeasurementRecord>,
     pub invalid_work_rejection_records: u64,
     pub invalid_work_rejection_root: Hash,
     pub invalid_work_rejection_signature: Signature,
+    pub invalid_work_raw_records: Vec<PublicInvalidWorkRejectionRecord>,
     pub reward_settlement_root: Hash,
     pub reward_settlement_signature: Signature,
+    pub reward_settlement_raw_records: Vec<PublicRewardSettlementRecord>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -303,6 +306,103 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_public_supporting_record_artifacts: bool,
     pub independently_checkable: bool,
     pub full_spec_evidence_met: bool,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum PublicDataAvailabilityStatus {
+    Available,
+    Unavailable,
+}
+
+impl PublicDataAvailabilityStatus {
+    pub fn tag(self) -> &'static str {
+        match self {
+            Self::Available => "available",
+            Self::Unavailable => "unavailable",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicDataAvailabilityMeasurementRecord {
+    pub receipt_root: Hash,
+    pub status: PublicDataAvailabilityStatus,
+    pub observed_block: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicInvalidWorkRejectionRecord {
+    pub receipt_root: Hash,
+    pub observed_block: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicRewardSettlementRecord {
+    pub receipt_root: Hash,
+    pub miner_id: Hash,
+    pub validator_id: Hash,
+    pub observed_block: u64,
+}
+
+impl PublicDataAvailabilityMeasurementRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "data_availability_measurement={},{},{}",
+            hex(&self.receipt_root),
+            self.status.tag(),
+            self.observed_block
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(
+            PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+            &self.record_line(),
+        )
+    }
+}
+
+impl PublicInvalidWorkRejectionRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "invalid_work_rejection={},rejected,{}",
+            hex(&self.receipt_root),
+            self.observed_block
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(
+            PublicEvidenceRecordKind::InvalidWorkRejections,
+            &self.record_line(),
+        )
+    }
+}
+
+impl PublicRewardSettlementRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "reward_settlement={},{},{},{}",
+            hex(&self.receipt_root),
+            hex(&self.miner_id),
+            hex(&self.validator_id),
+            self.observed_block
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(
+            PublicEvidenceRecordKind::RewardSettlements,
+            &self.record_line(),
+        )
+    }
+}
+
+fn supporting_record_root(kind: PublicEvidenceRecordKind, line: &str) -> Hash {
+    hash_bytes(
+        b"tensor-vm-public-evidence-supporting-record-root-v1",
+        &[kind.manifest_tag().as_bytes(), line.as_bytes()],
+    )
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

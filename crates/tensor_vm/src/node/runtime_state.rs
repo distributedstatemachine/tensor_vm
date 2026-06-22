@@ -150,6 +150,7 @@ impl NetworkEventIngest {
 pub struct NodeRuntimeState {
     served_requests: usize,
     produced_blocks: usize,
+    local_synthetic_jobs_published: usize,
     network_applied_blocks: usize,
     network_events: NetworkEventIngest,
     pending_network_payloads: PendingNetworkPayloads,
@@ -215,6 +216,10 @@ impl NodeRuntimeState {
 
     pub fn produced_blocks(&self) -> usize {
         self.produced_blocks
+    }
+
+    pub fn local_synthetic_jobs_published(&self) -> usize {
+        self.local_synthetic_jobs_published
     }
 
     pub fn network_applied_blocks(&self) -> usize {
@@ -478,6 +483,10 @@ impl NodeRuntimeState {
 
     pub fn record_produced_block(&mut self) {
         self.produced_blocks = self.produced_blocks.saturating_add(1);
+    }
+
+    pub fn record_local_synthetic_job_published(&mut self) {
+        self.local_synthetic_jobs_published = self.local_synthetic_jobs_published.saturating_add(1);
     }
 
     pub fn record_network_ingest(&mut self, ingested: NetworkEventIngest) {
@@ -793,6 +802,8 @@ mod tests {
 
         assert_eq!(state.served_requests(), 1);
         assert_eq!(state.produced_blocks(), 1);
+        state.record_local_synthetic_job_published();
+        assert_eq!(state.local_synthetic_jobs_published(), 1);
         assert_eq!(state.network_applied_blocks(), 2);
         assert_eq!(state.network_events().events, 1);
         assert_eq!(state.pending_payloads().pending_receipt_count(), 1);

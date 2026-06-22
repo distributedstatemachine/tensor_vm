@@ -695,7 +695,11 @@ fn validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallba
         stdout_value(&stdout, "local_block_proposer_delay_satisfied"),
         "true"
     );
-    assert_eq!(stdout_u64(&stdout, "produced_blocks"), 0);
+    assert_eq!(stdout_u64(&stdout, "validator_fallback_blocks_proposed"), 0);
+    assert_eq!(
+        stdout_u64(&stdout, "produced_blocks"),
+        stdout_u64(&stdout, "validator_useful_blocks_proposed")
+    );
 
     let status = run_tvmd(&["node", "status", "--data-dir", &data_dir_text]);
     assert_eq!(stdout_value(&status, "role_loop_role"), "validator");
@@ -714,8 +718,15 @@ fn validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallba
         stdout_value(&status, "role_local_block_proposer_delay_satisfied"),
         "true"
     );
-    assert_eq!(stdout_u64(&status, "role_produced_blocks"), 0);
-    assert_eq!(stdout_u64(&status, "height"), initial_height);
+    assert_eq!(
+        stdout_u64(&status, "role_validator_fallback_blocks_proposed"),
+        0
+    );
+    assert_eq!(
+        stdout_u64(&status, "role_produced_blocks"),
+        stdout_u64(&status, "role_validator_useful_blocks_proposed")
+    );
+    assert!(stdout_u64(&status, "height") >= initial_height);
     assert!(stdout_u64(&status, "job_count") > 2);
 
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");

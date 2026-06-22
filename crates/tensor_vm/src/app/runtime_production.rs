@@ -55,6 +55,7 @@ impl LocalProductionSchedule {
             )?
             .is_some()
             {
+                context.runtime_state.record_local_synthetic_job_published();
                 context
                     .store
                     .persist_chain(&context.server.gateway().node.chain)

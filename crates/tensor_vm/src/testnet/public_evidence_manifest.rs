@@ -7,13 +7,14 @@ use super::public_manifest_fields::{
     required_string, required_u64,
 };
 use super::{
-    PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicEvidenceAuditorRecord,
-    PublicEvidencePublication, PublicEvidenceSupportingArtifact, PublicNetworkRuntimeEvidence,
-    PublicNetworkRuntimeObservation, PublicNodeEvidence, PublicNodeRole,
-    PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
-    PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicServiceContentEvidence,
-    PublicServiceEndpoint, PublicServiceEvidence, PublicTestnetEvidenceBundle,
-    PublicTestnetRunEvidence,
+    PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicDataAvailabilityMeasurementRecord,
+    PublicDataAvailabilityStatus, PublicEvidenceAuditorRecord, PublicEvidencePublication,
+    PublicEvidenceSupportingArtifact, PublicInvalidWorkRejectionRecord,
+    PublicNetworkRuntimeEvidence, PublicNetworkRuntimeObservation, PublicNodeEvidence,
+    PublicNodeRole, PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
+    PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicRewardSettlementRecord,
+    PublicServiceContentEvidence, PublicServiceEndpoint, PublicServiceEvidence,
+    PublicTestnetEvidenceBundle, PublicTestnetRunEvidence,
 };
 use crate::error::{Result, TvmError};
 use crate::types::{Address, Hash, Signature};
@@ -39,6 +40,9 @@ fn public_evidence_manifest_field_allows_repeated(key: &str) -> bool {
             | "operator"
             | "network_runtime_observation"
             | "randomness_beacon_record"
+            | "data_availability_measurement"
+            | "invalid_work_rejection"
+            | "reward_settlement"
             | "node"
             | "service"
             | "service_content"
@@ -75,11 +79,14 @@ struct PublicEvidenceManifestBuilder {
     data_availability_measurement_records: Option<u64>,
     data_availability_measurement_root: Option<Hash>,
     data_availability_measurement_signature: Option<Signature>,
+    data_availability_raw_records: Vec<PublicDataAvailabilityMeasurementRecord>,
     invalid_work_rejection_records: Option<u64>,
     invalid_work_rejection_root: Option<Hash>,
     invalid_work_rejection_signature: Option<Signature>,
+    invalid_work_raw_records: Vec<PublicInvalidWorkRejectionRecord>,
     reward_settlement_root: Option<Hash>,
     reward_settlement_signature: Option<Signature>,
+    reward_settlement_raw_records: Vec<PublicRewardSettlementRecord>,
     run_started_at_unix_seconds: Option<u64>,
     run_ended_at_unix_seconds: Option<u64>,
     run_window_signature: Option<Signature>,
@@ -181,6 +188,9 @@ impl PublicEvidenceManifestBuilder {
             "data_availability_measurement_signature" => {
                 self.data_availability_measurement_signature = Some(parse_hash_hex(scalar)?);
             }
+            "data_availability_measurement" => self
+                .data_availability_raw_records
+                .push(parse_manifest_data_availability_measurement(value)?),
             "invalid_work_rejection_records" => {
                 self.invalid_work_rejection_records = Some(parse_manifest_u64(scalar)?);
             }
@@ -190,10 +200,16 @@ impl PublicEvidenceManifestBuilder {
             "invalid_work_rejection_signature" => {
                 self.invalid_work_rejection_signature = Some(parse_hash_hex(scalar)?);
             }
+            "invalid_work_rejection" => self
+                .invalid_work_raw_records
+                .push(parse_manifest_invalid_work_rejection(value)?),
             "reward_settlement_root" => self.reward_settlement_root = Some(parse_hash_hex(scalar)?),
             "reward_settlement_signature" => {
                 self.reward_settlement_signature = Some(parse_hash_hex(scalar)?);
             }
+            "reward_settlement" => self
+                .reward_settlement_raw_records
+                .push(parse_manifest_reward_settlement(value)?),
             "run_started_at_unix_seconds" => {
                 self.run_started_at_unix_seconds = Some(parse_manifest_u64(scalar)?);
             }
@@ -310,11 +326,14 @@ impl PublicEvidenceManifestBuilder {
             data_availability_measurement_signature: required_hash(
                 self.data_availability_measurement_signature,
             )?,
+            data_availability_raw_records: self.data_availability_raw_records,
             invalid_work_rejection_records: required_u64(self.invalid_work_rejection_records)?,
             invalid_work_rejection_root: required_hash(self.invalid_work_rejection_root)?,
             invalid_work_rejection_signature: required_hash(self.invalid_work_rejection_signature)?,
+            invalid_work_raw_records: self.invalid_work_raw_records,
             reward_settlement_root: required_hash(self.reward_settlement_root)?,
             reward_settlement_signature: required_hash(self.reward_settlement_signature)?,
+            reward_settlement_raw_records: self.reward_settlement_raw_records,
         })
     }
 }
@@ -357,6 +376,49 @@ fn parse_manifest_randomness_beacon_record(value: &str) -> Result<PublicRandomne
         proof_kind,
         observed_block: parse_manifest_u64(fields[5])?,
         status,
+    })
+}
+
+fn parse_manifest_data_availability_measurement(
+    value: &str,
+) -> Result<PublicDataAvailabilityMeasurementRecord> {
+    let fields = exact_manifest_record_fields(value, 3, "malformed data availability measurement")?;
+    let status = match fields[1] {
+        "available" => PublicDataAvailabilityStatus::Available,
+        "unavailable" => PublicDataAvailabilityStatus::Unavailable,
+        _ => {
+            return Err(TvmError::InvalidReceipt(
+                "unknown data availability measurement status",
+            ));
+        }
+    };
+    Ok(PublicDataAvailabilityMeasurementRecord {
+        receipt_root: parse_hash_hex(fields[0])?,
+        status,
+        observed_block: parse_manifest_u64(fields[2])?,
+    })
+}
+
+fn parse_manifest_invalid_work_rejection(value: &str) -> Result<PublicInvalidWorkRejectionRecord> {
+    let fields = exact_manifest_record_fields(value, 3, "malformed invalid work rejection")?;
+    if fields[1] != "rejected" {
+        return Err(TvmError::InvalidReceipt(
+            "unknown invalid work rejection status",
+        ));
+    }
+    Ok(PublicInvalidWorkRejectionRecord {
+        receipt_root: parse_hash_hex(fields[0])?,
+        observed_block: parse_manifest_u64(fields[2])?,
+    })
+}
+
+fn parse_manifest_reward_settlement(value: &str) -> Result<PublicRewardSettlementRecord> {
+    let fields = exact_manifest_record_fields(value, 4, "malformed reward settlement")?;
+    Ok(PublicRewardSettlementRecord {
+        receipt_root: parse_hash_hex(fields[0])?,
+        miner_id: parse_hash_hex(fields[1])?,
+        validator_id: parse_hash_hex(fields[2])?,
+        observed_block: parse_manifest_u64(fields[3])?,
     })
 }
 

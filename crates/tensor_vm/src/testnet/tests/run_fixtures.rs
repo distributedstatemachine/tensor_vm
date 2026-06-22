@@ -303,6 +303,33 @@ pub(super) fn full_spec_public_evidence_bundle(
             .collect::<Vec<_>>(),
     )
     .expect("generated randomness beacon roots should aggregate");
+    let data_availability_raw_records = full_spec_data_availability_records(checked_receipts);
+    let data_availability_measurement_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        &data_availability_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated data availability roots should aggregate");
+    let invalid_work_raw_records = full_spec_invalid_work_records();
+    let invalid_work_rejection_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        &invalid_work_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated invalid work roots should aggregate");
+    let reward_settlement_raw_records = full_spec_reward_settlement_records();
+    let reward_settlement_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RewardSettlements,
+        &reward_settlement_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated reward settlement roots should aggregate");
     let mut bundle = PublicTestnetEvidenceBundle::new(
         run,
         PublicEvidencePublication::new(
@@ -323,16 +350,16 @@ pub(super) fn full_spec_public_evidence_bundle(
             randomness_beacon_records: observed_blocks,
             randomness_beacon_root,
             data_availability_measurement_records: checked_receipts,
-            data_availability_measurement_root: hash_bytes(
-                b"test",
-                &[b"full-spec-data-availability-root"],
-            ),
+            data_availability_measurement_root,
             invalid_work_rejection_records: 1,
-            invalid_work_rejection_root: hash_bytes(b"test", &[b"full-spec-invalid-work-root"]),
-            reward_settlement_root: hash_bytes(b"test", &[b"full-spec-reward-settlement-root"]),
+            invalid_work_rejection_root,
+            reward_settlement_root,
         },
     );
     bundle.randomness_beacon_raw_records = randomness_beacon_raw_records;
+    bundle.data_availability_raw_records = data_availability_raw_records;
+    bundle.invalid_work_raw_records = invalid_work_raw_records;
+    bundle.reward_settlement_raw_records = reward_settlement_raw_records;
     bundle
 }
 
@@ -357,6 +384,37 @@ pub(super) fn full_spec_randomness_beacon_records(
             )
         })
         .collect()
+}
+
+pub(super) fn full_spec_data_availability_records(
+    checked_receipts: u64,
+) -> Vec<PublicDataAvailabilityMeasurementRecord> {
+    (0..checked_receipts)
+        .map(|index| PublicDataAvailabilityMeasurementRecord {
+            receipt_root: hash_bytes(
+                b"test",
+                &[format!("full-spec-data-available-receipt-{index}").as_bytes()],
+            ),
+            status: PublicDataAvailabilityStatus::Available,
+            observed_block: index,
+        })
+        .collect()
+}
+
+pub(super) fn full_spec_invalid_work_records() -> Vec<PublicInvalidWorkRejectionRecord> {
+    vec![PublicInvalidWorkRejectionRecord {
+        receipt_root: hash_bytes(b"test", &[b"full-spec-invalid-work-receipt"]),
+        observed_block: 1,
+    }]
+}
+
+pub(super) fn full_spec_reward_settlement_records() -> Vec<PublicRewardSettlementRecord> {
+    vec![PublicRewardSettlementRecord {
+        receipt_root: hash_bytes(b"test", &[b"full-spec-reward-settlement-receipt"]),
+        miner_id: address(b"full-spec-reward-settlement-miner"),
+        validator_id: address(b"full-spec-reward-settlement-validator"),
+        observed_block: 1,
+    }]
 }
 
 pub(super) fn network_runtime_root_for_run(run: &PublicTestnetRunEvidence) -> Hash {

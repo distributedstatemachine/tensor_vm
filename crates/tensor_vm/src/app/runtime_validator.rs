@@ -36,22 +36,6 @@ pub fn tick_validator_role_work_once(
         return Ok(false);
     }
     let mut status_changed = false;
-    if let Some(registration) = ensure_validator_role_vrf_key(
-        &mut server.gateway_mut().node,
-        validator,
-        config.role_wallet_secret.as_deref(),
-    )? {
-        runtime_state.record_validator_vrf_key_observation(
-            registration.vrf_public_key,
-            registration.registered_new_key,
-        );
-        if registration.registered_new_key {
-            store
-                .persist_chain(&server.gateway().node.chain)
-                .map_err(|error| format!("failed to persist validator vrf key: {error}"))?;
-            status_changed = true;
-        }
-    }
     let observation = validator_role_work_observation(&server.gateway().node, validator);
     let receipt_to_fetch = observation.artifact_missing_receipts.iter().next().copied();
     let mut receipt_to_submit = observation.artifact_ready_receipts.iter().next().copied();
@@ -97,6 +81,8 @@ pub fn tick_validator_role_work_once(
         }
     }
     if let Some(receipt_id) = receipt_to_submit {
+        status_changed |=
+            ensure_validator_vrf_key_for_work(config, store, server, validator, runtime_state)?;
         let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
         if let Some(submission) = submit_validator_role_attestation(
             &mut server.gateway_mut().node,
@@ -263,8 +249,12 @@ pub fn tick_validator_role_work_once(
             useful_proposer_selected(&server.gateway().node.chain, validator);
         let selected_local_proposer =
             fallback_proposer_selected(&server.gateway().node.chain, validator);
-        let fallback_work_ready =
-            observation.settled_receipts.is_empty() && selected_local_proposer;
+        let local_synthetic_work_pending = (config.node.local_synthetic_producer()
+            || runtime_state.local_synthetic_jobs_published() > 0)
+            && observation.settled_receipts.is_empty();
+        let fallback_work_ready = observation.settled_receipts.is_empty()
+            && selected_local_proposer
+            && !local_synthetic_work_pending;
         let timestamp = if fallback_work_ready {
             fallback_block_timestamp(&server.gateway().node.chain)
         } else {
@@ -279,6 +269,10 @@ pub fn tick_validator_role_work_once(
             observation.attested_receipts,
         ) {
             status_changed = true;
+        }
+        if proposer_work_ready {
+            status_changed |=
+                ensure_validator_vrf_key_for_work(config, store, server, validator, runtime_state)?;
         }
         if proposer_work_ready
             && let Some(proposal) = submit_validator_role_block_proposal(
@@ -354,6 +348,34 @@ pub fn tick_validator_role_work_once(
         }
     }
     Ok(status_changed)
+}
+
+fn ensure_validator_vrf_key_for_work(
+    config: &ServiceRuntimeConfig,
+    store: &NodeStore,
+    server: &mut RpcHttpServer,
+    validator: Address,
+    runtime_state: &mut NodeRuntimeState,
+) -> std::result::Result<bool, String> {
+    let Some(registration) = ensure_validator_role_vrf_key(
+        &mut server.gateway_mut().node,
+        validator,
+        config.role_wallet_secret.as_deref(),
+    )?
+    else {
+        return Ok(false);
+    };
+    runtime_state.record_validator_vrf_key_observation(
+        registration.vrf_public_key,
+        registration.registered_new_key,
+    );
+    if !registration.registered_new_key {
+        return Ok(false);
+    }
+    store
+        .persist_chain(&server.gateway().node.chain)
+        .map_err(|error| format!("failed to persist validator vrf key: {error}"))?;
+    Ok(true)
 }
 
 fn diagnostic_block_check_challenger(chain: &Chain, proposer: Address) -> Option<Address> {

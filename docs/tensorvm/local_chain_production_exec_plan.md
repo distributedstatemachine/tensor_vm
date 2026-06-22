@@ -5,10 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 187 complete: Chain-Owned Verifier Bandwidth Evidence.
-- Current status: chain status and explorer overview now expose verifier bandwidth evidence derived from
-  live job and receipt shapes, including estimated verification bytes, per-validator bandwidth, and
-  verification-to-execution ratios by primitive.
+- Active feature: Iteration 188 complete: Public Evidence Raw Operational Record Gate.
+- Current status: full-spec public evidence evaluation now requires raw data-availability, invalid-work,
+  and reward-settlement operational records whose aggregate roots match the signed public evidence
+  summaries. The validator runtime also delays empty fallback proposer rewards while a local synthetic
+  job producer has no settled receipts, and VRF key registration is scoped to real attestation/proposal
+  work so failed remote tensor fetch status updates do not persist chain state.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
   - Deployed full VRF construction, deployed commit-reveal lifecycle evidence, and public/CUDA graph
@@ -33,6 +35,87 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 188: Public Evidence Raw Operational Record Gate
+
+Feature capability: require full-spec public evidence bundles to include raw accepted data-availability,
+invalid-work, and reward-settlement records whose aggregate roots match their signed summaries, instead of
+letting signed counters and artifact locators alone satisfy those operational gates.
+
+Readiness requirements covered: `goal.md`/`mvp_spec.md` Acceptance Criterion 13 independently checkable
+public-run evidence, raw supporting records behind summary roots, and the local/full boundary that no
+public run has happened yet.
+
+Canonical owner: `testnet` public evidence bundle evaluation and manifest parsing own public-run evidence
+claims.
+
+Adapter callers: `tvmd public evidence validate` and docs/deploy examples consume the parsed
+`PublicTestnetEvidenceBundle`; adapters may not promote summary-only operational evidence to full-spec
+completion.
+
+Old shortcut being removed: full-spec evaluation could accept signed data-availability, invalid-work, and
+reward-settlement summary roots without inspecting raw manifest-level records for those operational
+evidence kinds.
+
+Regression tests that prove the shortcut is gone: add public evidence bundle and manifest tests proving
+full-spec evidence fails without raw operational records, fails when they do not aggregate to the signed
+roots, and still parses the documented pending manifests as non-full-spec.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run evidence validation.
+
+Behavior for producer and non-producer roles: unchanged; the validation concerns public evidence bundles,
+not runtime role logic.
+
+Structured evidence source: repeated `data_availability_measurement`, `invalid_work_rejection`, and
+`reward_settlement` manifest lines, their aggregate roots, and the signed public evidence bundle report.
+
+Finality source: unchanged; this validates post-run evidence for finalized public runs.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC wire format changes.
+
+Parallel subagents to run: none. The available subagent tool policy requires explicit user delegation; this
+slice is confined to public evidence parsing/evaluation, tests, and docs/status alignment.
+
+Parallelizable implementation workstreams: not split; one writer owns the manifest/evidence structs and
+fixture updates.
+
+Tests/checkers/docs to add or update: public evidence bundle/manifest tests, public evidence docs,
+`coverage_matrix.md`, `implementation_status.md`, `tarpaulin_report.md` if coverage changes, and this exec
+plan.
+
+Narrow validation commands: `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib`
+and `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because evidence tests and reportable coverage change.
+
+Expected observable evidence: `public_evidence_full_spec` remains false unless raw DA, invalid-work, and
+reward-settlement records are present in the manifest and aggregate to their signed summary roots.
+
+Validation evidence:
+
+- Required first executable on this resume, before implementation:
+  `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026.
+- Narrow evidence gates passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires --lib`, and
+  `cargo test -p tensor_vm public_testnet_evidence_manifest --lib`.
+- Release smoke gates passed after delaying empty fallback proposer rewards for local synthetic producers:
+  `cargo test -p tensor_vm --test tvmd_cli validator_run_with_synthetic_job_producer_publishes_jobs_without_empty_fallback_blocks --release -- --nocapture`,
+  `cargo test -p tensor_vm --test tvmd_runtime runtime_persistence::validator_remote_tensor_fetch_status_does_not_persist_chain --release -- --nocapture`, and
+  `cargo test -p tensor_vm --test tvmd_runtime runtime_roles::selected_validator_proposer_emits_idle_fallback_block --release -- --nocapture`.
+- Broad gate passed:
+  `cargo fmt --all -- --check && git diff --check && cargo test -p tensor_vm --lib && cargo test -p tensor_vm local_testnet --release && cargo test --workspace --release && cargo clippy --workspace --all-targets -- -D warnings`.
+- Tarpaulin passed:
+  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
+  565 instrumented tests and 84.74% line coverage, 23056/27207 lines covered.
+
+Out of scope: generating real public operational evidence, CUDA evidence, changing runtime evidence
+admission beyond the local synthetic-producer fallback reward delay, or changing local CPU checker
+behavior.
+
+Split trigger: split only if manifest compatibility requires a larger evidence schema migration.
 
 ### Iteration 187: Chain-Owned Verifier Bandwidth Evidence
 

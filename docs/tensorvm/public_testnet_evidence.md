@@ -101,8 +101,9 @@ External evidence can be represented as a line-oriented manifest parsed by
 must be exact with no leading or trailing whitespace around the key before `=`. Scalar manifest fields must
 appear exactly once, and scalar values are parsed exactly with no leading or trailing whitespace; repeated
 record fields are allowed only for `auditor`, `record_artifact`, `operator`, `network_runtime_observation`,
-`randomness_beacon_record`, `node`, `service`, and `service_content`. The comma-separated values inside those repeated public-evidence
-records must also be exact, nonempty, and free of leading or trailing whitespace. For `record_artifact`, the full
+`randomness_beacon_record`, `data_availability_measurement`, `invalid_work_rejection`,
+`reward_settlement`, `node`, `service`, and `service_content`. The comma-separated values inside those
+repeated public-evidence records must also be exact, nonempty, and free of leading or trailing whitespace. For `record_artifact`, the full
 independently checkable gate requires exactly one valid line for each required supporting-record kind and
 rejects extra artifact locators. The manifest signature covers the bundle ID, public URI, manifest
 signature count, and independent auditor count. The current manifest format carries exactly one
@@ -211,6 +212,7 @@ randomness_beacon_record=<source-id-hex>,1,<randomness-root-hex>,<proof-root-hex
 data_availability_measurement_records=1000
 data_availability_measurement_root=<da-root-hex>
 data_availability_measurement_signature=<da-signature-hex>
+data_availability_measurement=<receipt-root-hex>,available,<observed-block>
 libp2p_runtime_used=true
 peer_discovery_observed=true
 gossip_propagation_observed=true
@@ -228,9 +230,11 @@ invalid_receipts_rejected=1
 invalid_work_rejection_records=1
 invalid_work_rejection_root=<invalid-work-root-hex>
 invalid_work_rejection_signature=<invalid-work-signature-hex>
+invalid_work_rejection=<receipt-root-hex>,rejected,<observed-block>
 reward_settlement_records=1
 reward_settlement_root=<reward-settlement-root-hex>
 reward_settlement_signature=<reward-settlement-signature-hex>
+reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<observed-block>
 node=miner,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
 node=validator,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
 service=rpc,<endpoint-id-hex>,https://rpc.tensorvm.net/health,/health,0,100799,<reachable-count>,<signed-health-check-count>,<health-signature-hex>
@@ -522,11 +526,13 @@ summary roots and artifact locators without hand-copying individual `record_root
 Whitespace-padded record lines and empty fields are rejected.
 
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
-public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`, and
-manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record. Those
-full-spec randomness records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
-`local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public
-randomness evidence.
+public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
+manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
+manifest-level raw `data_availability_measurement=...`, `invalid_work_rejection=...`, and
+`reward_settlement=...` lines whose aggregate roots match the signed operational summaries. Full-spec
+randomness records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
+`local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public randomness
+evidence.
 Relaxed local harness criteria can exercise the validator but cannot set the full-spec flag. The
 `external_operator_evidence` field is true only when enough signed node evidence and matching signed
 operator identity attestation records are present.

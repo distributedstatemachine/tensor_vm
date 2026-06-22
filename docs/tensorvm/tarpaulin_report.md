@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 187 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 188 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,21 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-564 tests passed under instrumentation:
+565 tests passed under instrumentation:
 - 14 experiments library tests
-- 549 tensor_vm library tests
+- 550 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
 84.74% workspace line coverage
-22957/27091 workspace lines covered
+23056/27207 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 188 coverage-changing work added raw public operational evidence records for full-spec public
+evidence: data-availability measurements, invalid-work rejections, and reward-settlement records must now
+aggregate to their signed summary roots before full-spec evidence can pass.
 
 Iteration 187 coverage-changing work added chain-owned verifier bandwidth evidence from live job and
 receipt shapes, rendered through status and explorer overview.

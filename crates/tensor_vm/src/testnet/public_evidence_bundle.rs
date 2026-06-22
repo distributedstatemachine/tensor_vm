@@ -169,6 +169,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.data_availability_measurement_root,
                 record_summaries.data_availability_measurement_records,
             ),
+            data_availability_raw_records: Vec::new(),
             invalid_work_rejection_records: record_summaries.invalid_work_rejection_records,
             invalid_work_rejection_root: record_summaries.invalid_work_rejection_root,
             invalid_work_rejection_signature: sign_public_evidence_record(
@@ -178,6 +179,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.invalid_work_rejection_root,
                 record_summaries.invalid_work_rejection_records,
             ),
+            invalid_work_raw_records: Vec::new(),
             reward_settlement_root: record_summaries.reward_settlement_root,
             reward_settlement_signature: sign_public_evidence_record(
                 &signer,
@@ -186,6 +188,7 @@ impl PublicTestnetEvidenceBundle {
                 &record_summaries.reward_settlement_root,
                 reward_settlement_records,
             ),
+            reward_settlement_raw_records: Vec::new(),
         }
     }
 
@@ -263,6 +266,7 @@ impl PublicTestnetEvidenceBundle {
                 &self.randomness_beacon_signature,
             );
         let has_public_randomness_beacon_records = self.has_public_randomness_beacon_records();
+        let has_public_operational_records = self.has_public_operational_records();
         let has_data_availability_measurements = self.run.checked_receipts > 0
             && self.data_availability_measurement_records == self.run.checked_receipts
             && self.public_record_signature_valid(
@@ -349,7 +353,8 @@ impl PublicTestnetEvidenceBundle {
         let full_spec_evidence_met = public_testnet_criteria_are_full_spec(criteria)
             && run_evidence.public_criterion_met
             && independently_checkable
-            && has_public_randomness_beacon_records;
+            && has_public_randomness_beacon_records
+            && has_public_operational_records;
         PublicTestnetEvidenceBundleReport {
             run_evidence,
             has_published_evidence_bundle,
@@ -436,6 +441,49 @@ impl PublicTestnetEvidenceBundle {
             &record_roots,
         )
         .is_ok_and(|record_root| record_root == self.randomness_beacon_root)
+    }
+
+    fn has_public_operational_records(&self) -> bool {
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+            self.data_availability_measurement_records,
+            &self.data_availability_measurement_root,
+            self.data_availability_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        ) && self.raw_operational_records_match(
+            PublicEvidenceRecordKind::InvalidWorkRejections,
+            self.invalid_work_rejection_records,
+            &self.invalid_work_rejection_root,
+            self.invalid_work_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        ) && self.raw_operational_records_match(
+            PublicEvidenceRecordKind::RewardSettlements,
+            self.run.reward_settlement_records,
+            &self.reward_settlement_root,
+            self.reward_settlement_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn raw_operational_records_match(
+        &self,
+        kind: PublicEvidenceRecordKind,
+        expected_count: u64,
+        expected_root: &Hash,
+        record_roots: impl Iterator<Item = Hash>,
+    ) -> bool {
+        if expected_count == 0 {
+            return false;
+        }
+        let record_roots = record_roots.collect::<Vec<_>>();
+        if record_roots.len() as u64 != expected_count {
+            return false;
+        }
+        aggregate_public_evidence_record_roots(kind, &record_roots)
+            .is_ok_and(|record_root| record_root == *expected_root)
     }
 
     fn public_run_window_signature_valid(&self) -> bool {
