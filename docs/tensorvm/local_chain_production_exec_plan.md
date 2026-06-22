@@ -49,7 +49,14 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Active Feature Iteration
 
+No active feature is checkpointed. Start the next slice with the required Gate 0 command and a fresh
+checkpoint before edits.
+
+## Recent Iterations
+
 ### Iteration 161: Trace-Bisection Chain Admission
+
+Commit: `f1372a4` (pushed `main` -> `main`).
 
 Feature capability: signed trace-bisection sessions and rounds should be admitted through the canonical
 chain command path, recorded in state-rooted dispute records, and exposed as chain events before any node,
@@ -89,8 +96,6 @@ Validation passed on June 22, 2026:
 
 Coverage command remained environmentally blocked on June 22, 2026:
 `cargo tarpaulin --workspace --offline` returned `error: no such command: tarpaulin`.
-
-## Recent Iterations
 
 ### Iteration 160: Trace-Bisection P2P Wire Payloads
 
