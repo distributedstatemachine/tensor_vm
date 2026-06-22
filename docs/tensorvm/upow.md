@@ -95,8 +95,9 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > exact Tier-A matrix-contraction `einsum`, plus multi-output expected tensors for exact per-channel int8
 > quantize scale output. `int8`, `uint8`, and `bool` dtype tags are implemented, exact
 > `quantize_int8_per_channel`/`dequantize_int8_per_channel` vectors are CPU-conformance covered, and
-> `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Broader
-> admitted-registry vectors, CUDA pass evidence, and Tier-C/transcendental vector references remain TODO
+> `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Fixed-scale
+> comparison masks and int8 selection are also conformance covered. CUDA pass evidence and
+> Tier-C/transcendental vector references remain TODO
 > before claiming complete §3.3 coverage for every runtime.
 
 ---
@@ -398,8 +399,8 @@ This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used fo
 > admitted as exact modular-inverse replay, and `Fixed32` `div` is admitted as signed reciprocal
 > division that returns to the lhs/output scale with round-half-even semantics.
 > Packed tensor chunking/public-artifact APIs exist for packed payload artifacts, and local CPU graph
-> receipt verification scenarios cover every current consensus-admitted exact op. Additional mixed-dtype
-> vectors plus CUDA/deployed verifier evidence remain TODO.
+> receipt verification scenarios cover every current consensus-admitted exact op. Fixed-scale comparison
+> masks and int8 selection are also conformance covered; CUDA/public deployment evidence remains TODO.
 
 ---
 
@@ -672,8 +673,8 @@ This section is non-normative guidance on how the spec components partition into
 ## 16. Open Problems / TODO
 
 - [~] **Determinism conformance suite**: current executable TensorOp/LinearTrainingStep exact-op `F_p`
-  vectors exist and gate those receipt verifiers; broader admitted-op and CUDA/Tier-C coverage remains
-  blocking for full §3.3 safety.
+  vectors exist and gate those receipt validation paths; CUDA evidence and Tier-C/transcendental coverage
+  remain blocking for full §3.3 safety.
 - [~] Exact `F_p` choice and fixed-point scale discipline: runtime tensor scale metadata, input-scale
   enforcement, fixed-point `cast`/`round` round-half-even rescale, mixed-scale `Fixed32` `add`/`sub`
   RHS-to-lhs/output rescale, mixed-scale `Fixed32` `mul` rescale from product scale back to the declared
@@ -689,8 +690,9 @@ This section is non-normative guidance on how the spec components partition into
   frozen-registry metadata classifies every op and keeps `gather`/`scatter`/`embedding` non-admitted until
   index-consistency proofs exist; graph-backed exact replay now covers the current unary, structural,
   comparison, generator, reduction, fixed-point `cast`/`round`, mixed-scale `add`/`sub`, mixed-scale
-  `mul`, and `Fixed32` `matmul` rescale surface with conformance gating where the vector schema fits, plus exact per-channel and byte-packed int8 quantization. Additional
-  mixed-dtype vectors and CUDA/deployed verifier evidence remain TODO (§7).
+  `mul`, and `Fixed32` `matmul` rescale surface with conformance gating where the vector schema fits,
+  plus exact per-channel and byte-packed int8 quantization, fixed-scale comparison masks, and int8
+  selection. CUDA/public deployment evidence remains TODO (§7).
 - [~] Fraud-proof game: signed trace-bisection session and round state now provide a deterministic
   message/hash boundary over verified `IrTraceOpening`s, with response deadlines and challenger/responder
   bond envelope fields. Bounded p2p round payloads now reuse the trace-opening codec, verify responder

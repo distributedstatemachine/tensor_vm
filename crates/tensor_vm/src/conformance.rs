@@ -561,6 +561,34 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[2, 3],
         ),
         scaled_vector(
+            "fixed32-gt-same-scale-broadcast-mask-v1",
+            "gt",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[2, 2],
+            &[],
+            &[&[8, p - 4], &[0, 8, 9]],
+            DType::Int32,
+            0,
+            &[1, 0, 0, 1, 1, 1],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "fixed32-le-same-scale-broadcast-mask-v1",
+            "le",
+            "B",
+            &[&[2, 1], &[1, 3]],
+            &[DType::Fixed32, DType::Fixed32],
+            &[2, 2],
+            &[],
+            &[&[8, p - 4], &[0, 8, 9]],
+            DType::Int32,
+            0,
+            &[0, 1, 1, 0, 0, 0],
+            &[2, 3],
+        ),
+        scaled_vector(
             "bool-eq-broadcast-mask-v1",
             "eq",
             "B",
@@ -585,6 +613,20 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[&[1, 0, 1, 0, 1, 0], &[4, p - 6], &[1, p - 1, 8]],
             DType::Fixed32,
             1,
+            &[4, p - 1, 4, 1, p - 6, 8],
+            &[2, 3],
+        ),
+        scaled_vector(
+            "int8-where-mask-broadcast-v1",
+            "where",
+            "B",
+            &[&[2, 3], &[2, 1], &[1, 3]],
+            &[DType::Int32, DType::Int8, DType::Int8],
+            &[0, 0, 0],
+            &[],
+            &[&[1, 0, 1, 0, 1, 0], &[4, p - 6], &[1, p - 1, 8]],
+            DType::Int8,
+            0,
             &[4, p - 1, 4, 1, p - 6, 8],
             &[2, 3],
         ),
@@ -1846,6 +1888,18 @@ mod tests {
                 && vector.expected_scale == 0
         }));
         assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-gt-same-scale-broadcast-mask-v1"
+                && vector.input_dtypes == vec![DType::Fixed32, DType::Fixed32]
+                && vector.input_scales == vec![2, 2]
+                && vector.expected_dtype == DType::Int32
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "fixed32-le-same-scale-broadcast-mask-v1"
+                && vector.input_dtypes == vec![DType::Fixed32, DType::Fixed32]
+                && vector.input_scales == vec![2, 2]
+                && vector.expected_dtype == DType::Int32
+        }));
+        assert!(vectors.iter().any(|vector| {
             vector.id == "fixed32-matmul-mixed-scale-accumulate-half-even-v1"
                 && vector.input_scales == vec![0, 1]
                 && vector.expected_dtype == DType::Fixed32
@@ -1862,6 +1916,11 @@ mod tests {
                 && vector.expected_outputs.len() == 2
                 && vector.expected_outputs[0].shape == vec![2, 1]
                 && vector.expected_outputs[1].shape == vec![2, 3]
+        }));
+        assert!(vectors.iter().any(|vector| {
+            vector.id == "int8-where-mask-broadcast-v1"
+                && vector.input_dtypes == vec![DType::Int32, DType::Int8, DType::Int8]
+                && vector.expected_dtype == DType::Int8
         }));
         assert_eq!(conformance_suite_hash(), conformance_suite_hash());
     }

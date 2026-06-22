@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 184 complete: Trace-Bisection DoS Admission Bounds.
+- Active feature: Iteration 185 complete: Mixed-Dtype Conformance Vector Coverage.
 - Current status: the local CPU checker requires live TensorOp, LinearTrainingStep, and GraphExecution
   receipt/block evidence. Graph receipt verification test scenarios cover every consensus-admitted frozen
   registry op locally, and explorer WebSocket jobs/receipts now expose the same `graph_execution`
@@ -34,6 +34,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 185: Mixed-Dtype Conformance Vector Coverage
+
+Feature capability: strengthen the canonical `F_p` conformance suite with additional mixed dtype/scale
+vectors for already-admitted exact ops, without changing consensus semantics or admitting new Tier-C
+vocabulary.
+
+Readiness requirements covered: `goal.md`/`upow.md` determinism contract, per-op conformance vectors, and
+the local/full boundary that CPU reference evidence is not CUDA evidence.
+
+Canonical owner: `conformance` owns the vector corpus, suite hash, CPU reference profile, and receipt
+gating evidence.
+
+Adapter callers: receipt validation and runtime reporting paths that consume `ConformanceProfile`; no
+adapter may bypass the suite hash or per-op pass set.
+
+Old shortcut being removed: the suite covered the admitted op spelling surface, but mixed dtype/scale
+coverage still relied on a small set of vectors around fixed-point arithmetic, quantization, equality, and
+selection.
+
+Regression tests that prove the shortcut is gone:
+`conformance::tests::conformance_vectors_are_stable_and_cover_current_ops` now requires the new fixed-scale
+comparison and int8 selection vectors, while `conformance::tests::cpu_reference_passes_all_vectors` proves
+the CPU reference executes the enlarged suite.
+
+Behavior with local synthetic block production disabled: unchanged; conformance vectors are local
+verification inputs and do not synthesize chain work.
+
+Behavior for producer and non-producer roles: unchanged; receipt verification uses the same suite hash and
+profile regardless of role.
+
+Structured evidence source: vector IDs, suite hash, CPU reference profile, receipt conformance gate tests,
+and this exec plan.
+
+Finality source: unchanged; this is pre-admission deterministic execution evidence.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC wire format changes.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to conformance vectors,
+focused tests, and docs/status alignment.
+
+Tests/checkers/docs to add or update: conformance vectors/tests, `upow.md`, `coverage_matrix.md`,
+`implementation_status.md`, `tarpaulin_report.md`, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm conformance_vectors_are_stable_and_cover_current_ops --lib`
+and `cargo test -p tensor_vm cpu_reference_passes_all_vectors --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because the vector corpus and suite hash change.
+
+Expected observable evidence: suite hash changes, CPU reference passes the enlarged vector set, required
+op profile gating still covers all admitted ops, and CUDA remains explicitly unproven in default builds.
+
+Out of scope: CUDA pass evidence, Tier-C/transcendental admission, changing comparison ordering semantics,
+and new validation binaries or runtime surfaces.
+
+Split trigger: split only if a new vector reveals an execution semantic mismatch requiring IR/tensor
+behavior changes.
+
+Validation evidence on June 22, 2026:
+- First executable Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused conformance checks passed: `conformance_vectors_are_stable_and_cover_current_ops`,
+  `cpu_reference_passes_all_vectors`, and `required_conformance_gates_current_jobs`.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 548 tests.
+- `cargo test -p tensor_vm local_testnet --release` passed: 5 release library local-testnet tests plus
+  `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 563
+  instrumented tests, 84.61% workspace line coverage, 22662/26784 lines covered.
+- Manual ownership-boundary review: no standalone verifier binary exists or was added; validation used
+  Rust tests, shell checks, clippy, tarpaulin, and receipt conformance gate tests.
 
 ### Iteration 184: Trace-Bisection DoS Admission Bounds
 
@@ -93,7 +169,7 @@ expectation replay stays accepted, conflicting pending expectation overwrites fa
 round-response progression still clears the pending expectation.
 
 Out of scope: public/CUDA deployed dispute evidence, new p2p payload types, per-profile cap tuning, and
-new standalone verifier binaries.
+new validation binaries.
 
 Split trigger: split only if the cap must become a persisted chain parameter or wire field.
 
@@ -338,7 +414,7 @@ receipts response includes a GraphExecution receipt, and docs no longer show a t
 `PrimitiveType` contract.
 
 Out of scope: changing graph execution semantics, block selection, checker thresholds, CUDA graph
-execution, public deployment evidence, and new standalone verifier binaries.
+execution, public deployment evidence, and new validation binaries.
 
 Split trigger: split only if the WebSocket renderer itself cannot expose graph receipts without changing
 RPC schemas or explorer UI contracts.

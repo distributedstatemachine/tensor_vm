@@ -118,8 +118,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   mixed-scale `add`/`sub` vectors, mixed-scale `mul` vectors, `Fixed32` reciprocal `div` vectors, and
   `Fixed32` `matmul` accumulation/rescale vectors,
   multi-output expected tensors for exact quantize scale output and dynamic-output `split`, exact
-  field modular-inverse and `Fixed32` reciprocal `div`, Tier-A matrix-contraction `einsum`, field-order comparison/selection/clamp
-  vectors, row-major structural vectors, and byte-exact packed payload vectors, with a stable suite hash,
+  field modular-inverse and `Fixed32` reciprocal `div`, Tier-A matrix-contraction `einsum`, field-order
+  comparison/selection/clamp vectors, fixed-scale comparison mask and int8 selection vectors, row-major
+  structural vectors, and byte-exact packed payload vectors, with a stable suite hash,
   CPU reference backend pass reporting with unique vector IDs,
   default-build CUDA non-admission, a registry-derived guard that requires every consensus-admitted frozen
   op spelling to have vector and CPU profile evidence, an explicit auxiliary boundary for non-registry

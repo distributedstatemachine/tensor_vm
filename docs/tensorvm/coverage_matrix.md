@@ -169,9 +169,10 @@ Focused evidence:
 `verify::tests::tensor_op_verifier_requires_conformance_profile`, and
 `verify::tests::linear_training_verifier_requires_conformance_profile`.
 
-Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding`,
-additional mixed-dtype conformance vectors, and CUDA conformance evidence when `cuda-kernels` is not
-compiled in this environment. Automatic runtime referee witness generation is covered locally for isolated
+Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding` and
+CUDA conformance evidence when `cuda-kernels` is not compiled in this environment; fixed-scale comparison
+masks and int8 selection now have mixed dtype/scale vectors. Automatic runtime referee witness generation
+is covered locally for isolated
 transcripts whose stored opening input roots match canonical graph replay, isolated transcripts that pass
 their deadline without a referee witness now close by challenger-forfeit timeout without voiding the
 responder receipt path, and trace-bisection admission now bounds worst-case midpoint rounds while rejecting

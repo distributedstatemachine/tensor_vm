@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 184 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 185 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -14,12 +14,15 @@ Result:
 - 548 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.59% workspace line coverage
-22635/26757 workspace lines covered
+84.61% workspace line coverage
+22662/26784 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 185 coverage-changing work added mixed dtype/scale conformance vector coverage for fixed-scale
+comparison masks and int8 selection, while keeping CUDA evidence explicitly out of the default CPU proof.
 
 Iteration 184 coverage-changing work added trace-bisection DoS admission coverage for oversized
 worst-case bisection depth, duplicate pending expectation replay, and conflicting pending expectation
