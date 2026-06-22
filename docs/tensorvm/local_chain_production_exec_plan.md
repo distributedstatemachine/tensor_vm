@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 182 complete: Reward Sweep Boundary Naming.
+- Active feature: Iteration 183 complete: Isolated Trace-Bisection Timeout Policy.
 - Current status: the local CPU checker requires live TensorOp, LinearTrainingStep, and GraphExecution
   receipt/block evidence. Graph receipt verification test scenarios cover every consensus-admitted frozen
   registry op locally, and explorer WebSocket jobs/receipts now expose the same `graph_execution`
@@ -27,7 +27,7 @@ archive commit anchors only.
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection expectations/rounds/referees, drand, and validator reveals | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof or remaining fraud-proof DoS policy |
-| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence, multi-round trace-bisection DoS policy, and incomplete-transcript handling |
+| Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios for every consensus-admitted op, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence and multi-round trace-bisection DoS policy |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, and delayed pending reward holds | Continue Tier-C committee policy and deployed public-operator evidence |
 | Per-op `F_p` conformance vectors | Partial | Registry guard, CPU profile evidence, vectors for current admitted ops, receipt verification scenario drift coverage for every admitted op; default CUDA non-admission | Add CUDA conformance evidence and deployed CUDA profile evidence |
 | Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Add deployed full VRF construction and deployed commit-reveal lifecycle |
@@ -35,6 +35,87 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 183: Isolated Trace-Bisection Timeout Policy
+
+Feature capability: close incomplete trace-bisection transcripts after the final op is isolated. Active
+sessions still time out against a non-responsive responder, while isolated sessions that pass their
+deadline without a referee witness time out against the challenger so bonds and receipt state cannot remain
+stuck indefinitely.
+
+Readiness requirements covered: `goal.md`/`upow.md` fraud-proof game liveness, incomplete-transcript
+handling, delayed challenge rewards, and chain-owned challenge finality.
+
+Canonical owner: `chain::challenges::record_trace_bisection_timeout` owns timeout settlement for both
+active and isolated trace-bisection records.
+
+Adapter callers: existing `ChainCommand::RecordTraceBisectionTimeout` callers; no new runtime, p2p, RPC,
+or storage command surface is required.
+
+Old shortcut being removed: an isolated record could only be refereed; if the challenger did not submit the
+single-op witness after the responder supplied the final opening, the challenge could stay isolated with
+unsettled bonds.
+
+Regression test that proves the shortcut is gone:
+`chain::tests::isolated_trace_bisection_timeout_slashes_incomplete_challenger` isolates a one-op dispute,
+rejects timeout before the deadline, advances past the deadline, then requires the challenger to forfeit
+without voiding the responder/miner receipt reward path or issuing a challenger bounty.
+
+Behavior with local synthetic block production disabled: unchanged; the timeout is a chain-state command
+over an existing challenge record.
+
+Behavior for producer and non-producer roles: unchanged; any role that submits the shared chain command
+observes the same canonical state transition.
+
+Structured evidence source: trace-bisection record status, stake/treasury changes, pending reward ledgers,
+state root/snapshot persistence, and this exec plan.
+
+Finality source: chain height relative to the trace-bisection response deadline.
+
+Wire-size and codec boundary: unchanged; reuses the existing `TimedOut` status and command/event surface.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to chain timeout policy,
+focused chain tests, and docs/status alignment.
+
+Tests/checkers/docs to add or update: chain timeout test, `upow.md`, `coverage_matrix.md`,
+`implementation_status.md`, `tarpaulin_report.md`, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm
+isolated_trace_bisection_timeout_slashes_incomplete_challenger --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin because the test count/coverage changes.
+
+Expected observable evidence: isolated trace-bisection timeout emits `TraceBisectionTimedOut` with the
+challenger as forfeiting party, slashes the challenger bond to treasury, leaves receipt rewards unvoided,
+and creates no pending challenger reward.
+
+Out of scope: public/CUDA deployed dispute evidence, new p2p payloads, max-round admission caps, and new
+standalone verifier binaries.
+
+Split trigger: split only if isolated timeout requires new storage or wire variants; the current design
+should reuse existing state variants.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm isolated_trace_bisection_timeout_slashes_incomplete_challenger --lib`
+  passed.
+- `cargo test -p tensor_vm trace_bisection_chain_admission_rejects_mismatch_and_records_timeout --lib`
+  passed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 547 library tests.
+- Post-change release gate `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed: 562
+  workspace tests under instrumentation, 84.59% line coverage, 22621/26741 lines covered.
+- Manual ownership-boundary review: no standalone verifier binary was used or added; timeout finality
+  remains chain-owned through `ChainCommand::RecordTraceBisectionTimeout`; active sessions still punish
+  non-responsive responders; isolated sessions that pass the deadline punish incomplete challengers without
+  voiding the responder/miner receipt reward path; no p2p, storage, or RPC wire format changed.
 
 ### Iteration 182: Reward Sweep Boundary Naming
 
@@ -233,9 +314,8 @@ Commit `be4af33` (`Cover admitted graph verifier ops`) pushed to `origin/main`.
   claim/state transitions. Valid matured claims become spendable only through beneficiary `ClaimReward`.
 - Bounded p2p/node payloads remain the only network wire surface for randomness, reveal records, graph
   jobs/receipts, and trace-bisection expectation/round/referee evidence.
-- Public 7-day evidence, CUDA evidence, deployed full VRF construction, incomplete-transcript
-  final-opening automation, and multi-round DoS policy remain deployment or future-feature gates, not
-  local-completion claims.
+- Public 7-day evidence, CUDA evidence, deployed full VRF construction, deployed dispute evidence, and
+  multi-round DoS policy remain deployment or future-feature gates, not local-completion claims.
 - There is no standalone `tensorvm-verifier` binary. Validation uses shell checks, Rust tests, clippy,
   tarpaulin, and manual ownership-boundary review.
 

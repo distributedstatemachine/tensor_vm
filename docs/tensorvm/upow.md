@@ -706,7 +706,10 @@ This section is non-normative guidance on how the spec components partition into
   bond envelope, affected receipt rewards and pending TensorWork are voided when the responder/miner loses,
   treasury receives the net slash, and a winning challenger receives only a delayed
   `PendingChallengeReward` claim that remains non-spendable until the normal reward maturity plus
-  beneficiary `ClaimReward` boundary.
+  beneficiary `ClaimReward` boundary. Isolated sessions that pass the response deadline without a
+  referee witness now time out against the challenger through the same chain command, slash the challenger
+  bond to treasury, leave the responder/miner receipt path unvoided, and close the transcript instead of
+  leaving bonds unresolved.
   Bounded p2p referee-witness payloads now route through the shared node pending queue into the same chain
   command, with dedicated ingest/application counters. Runtime challenger nodes now derive one-op referee
   witnesses from local graph replay for isolated sessions whose stored opening input roots match the
@@ -719,8 +722,8 @@ This section is non-normative guidance on how the spec components partition into
   evidence, runtime challenger expected-root generation/gossip from local replay, runtime responder round
   generation from committed local traces, runtime challenger referee-witness generation/gossip from local
   replay, challenger-signed expected midpoint roots enforced by chain admission before responder rounds can
-  advance, and snapshot persistence. Multi-round DoS policy and deployed public/CUDA dispute evidence
-  remain TODO (§8.2).
+  advance, isolated-timeout challenger forfeiture, and snapshot persistence. Multi-round DoS policy and
+  deployed public/CUDA dispute evidence remain TODO (§8.2).
 - [~] Block-check transcript openings: selected-receipt block openings now expose typed transcript fields
   (beacon, parent, check seed, selected receipt leaf, receipt checks root, and receipt metadata) whose
   commitment is the Merkle-proven `check_leaf`; the full interactive fraud-proof game remains TODO.

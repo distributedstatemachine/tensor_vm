@@ -656,14 +656,25 @@ pub fn record_trace_bisection_timeout(
         .get(&challenge_id)
         .cloned()
         .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
-    if record.status != TraceBisectionStatus::Active {
-        return Err(TvmError::InvalidReceipt("trace bisection is closed"));
-    }
-    let Some(TraceBisectionStep::TimedOut {
-        forfeiting_party, ..
-    }) = record.state.timeout_step(chain.state.height)
-    else {
-        return Err(TvmError::InvalidReceipt("trace bisection deadline pending"));
+    let forfeiting_party = match record.status {
+        TraceBisectionStatus::Active => {
+            let Some(TraceBisectionStep::TimedOut {
+                forfeiting_party, ..
+            }) = record.state.timeout_step(chain.state.height)
+            else {
+                return Err(TvmError::InvalidReceipt("trace bisection deadline pending"));
+            };
+            forfeiting_party
+        }
+        TraceBisectionStatus::Isolated { .. } => {
+            if !record.state.timed_out(chain.state.height) {
+                return Err(TvmError::InvalidReceipt("trace bisection deadline pending"));
+            }
+            record.state.challenger
+        }
+        TraceBisectionStatus::Refereed { .. } | TraceBisectionStatus::TimedOut { .. } => {
+            return Err(TvmError::InvalidReceipt("trace bisection is closed"));
+        }
     };
     settle_trace_bisection_loss(chain, challenge_id, &record, forfeiting_party)?;
     let updated = chain
@@ -671,7 +682,10 @@ pub fn record_trace_bisection_timeout(
         .trace_bisection_challenges
         .get_mut(&challenge_id)
         .ok_or(TvmError::InvalidReceipt("unknown trace bisection"))?;
-    if updated.status != TraceBisectionStatus::Active {
+    if !matches!(
+        updated.status,
+        TraceBisectionStatus::Active | TraceBisectionStatus::Isolated { .. }
+    ) {
         return Err(TvmError::InvalidReceipt("trace bisection is closed"));
     }
     updated.status = TraceBisectionStatus::TimedOut { forfeiting_party };

@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 181 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 183 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,21 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-561 tests passed under instrumentation:
+562 tests passed under instrumentation:
 - 14 experiments library tests
-- 546 tensor_vm library tests
+- 547 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.58% workspace line coverage
-22613/26736 workspace lines covered
+84.59% workspace line coverage
+22621/26741 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 183 coverage-changing work added isolated trace-bisection timeout coverage for incomplete
+challenger transcripts, proving that isolated sessions close by challenger forfeiture without voiding the
+responder receipt path or issuing a challenger bounty.
 
 Iteration 181 coverage-changing work extended explorer WebSocket regression coverage to first-class
 `GraphExecution` jobs and receipts, raising `crates/tensor_vm/src/rpc/explorer.rs` coverage to 247/250

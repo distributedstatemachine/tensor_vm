@@ -804,6 +804,132 @@ fn trace_bisection_chain_admission_rejects_mismatch_and_records_timeout() {
 }
 
 #[test]
+fn isolated_trace_bisection_timeout_slashes_incomplete_challenger() {
+    let (mut chain, receipt, execution, x, y) = two_op_trace_bisection_fixture();
+    let challenger = address(b"trace-bisection-isolated-timeout-challenger");
+    chain.register_validator(challenger, 10_000).unwrap();
+    let pending_receipt_claim = hash_bytes(b"test", &[b"isolated-timeout-pending-receipt-reward"]);
+    chain.mark_receipt_settled_for_testing(receipt.receipt_id);
+    chain.insert_pending_receipt_reward_for_testing(PendingReceiptReward {
+        claim_id: pending_receipt_claim,
+        receipt_id: receipt.receipt_id,
+        beneficiary: receipt.miner,
+        amount: 13,
+        kind: ReceiptRewardKind::Miner,
+        maturity: ReceiptRewardMaturity::ClaimableAt(0),
+        voided_by_challenge: false,
+    });
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+        panic!("expected trace bisection open event");
+    };
+    let challenge_id = *challenge_id;
+
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = execution.trace_opening(0).unwrap();
+    let wrong_expected = vec![hash_bytes(
+        b"test",
+        &[b"isolated-timeout-wrong-expected-root"],
+    )];
+    submit_trace_bisection_expectation(&mut chain, challenge_id, wrong_expected.clone());
+    let round = TraceBisectionRound::new(&state, wrong_expected, opening).unwrap();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionIsolated { op_index: 0, .. }]
+    ));
+    assert_eq!(
+        chain.apply_command(ChainCommand::RecordTraceBisectionTimeout { challenge_id }),
+        Err(TvmError::InvalidReceipt("trace bisection deadline pending"))
+    );
+
+    chain.set_position_for_testing(10, 0);
+    let timeout_events = chain
+        .apply_command(ChainCommand::RecordTraceBisectionTimeout { challenge_id })
+        .unwrap();
+    assert!(matches!(
+        timeout_events.as_slice(),
+        [ChainEvent::TraceBisectionTimedOut {
+            forfeiting_party,
+            ..
+        }] if *forfeiting_party == challenger
+    ));
+    assert!(matches!(
+        chain
+            .state()
+            .trace_bisection_challenges()
+            .get(&challenge_id)
+            .unwrap()
+            .status,
+        TraceBisectionStatus::TimedOut { forfeiting_party } if forfeiting_party == challenger
+    ));
+    assert_eq!(
+        chain.state().validators().get(&challenger).unwrap().stake,
+        9_993
+    );
+    assert_eq!(chain.state().rewards().treasury(), 7);
+    assert!(chain.state().pending_challenge_rewards().is_empty());
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    assert!(
+        !chain
+            .state()
+            .challenged_receipts()
+            .contains(&receipt.receipt_id)
+    );
+    let receipt_reward = chain
+        .state()
+        .pending_receipt_rewards()
+        .get(&pending_receipt_claim)
+        .unwrap();
+    assert!(!receipt_reward.voided_by_challenge);
+    assert_eq!(
+        receipt_reward.maturity,
+        ReceiptRewardMaturity::ClaimableAt(0)
+    );
+    assert_eq!(
+        chain.apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness: IrOpRefereeWitness {
+                op_index: 0,
+                input_values: vec![IrOpWitnessValue::Tensor(x), IrOpWitnessValue::Tensor(y)],
+            },
+        }),
+        Err(TvmError::InvalidReceipt("trace bisection is not isolated"))
+    );
+
+    let encoded = encode_chain_state_snapshot(chain.state());
+    let decoded = decode_chain_state_snapshot(&encoded).unwrap();
+    assert_eq!(
+        decoded.trace_bisection_challenges(),
+        chain.state().trace_bisection_challenges()
+    );
+}
+
+#[test]
 fn challenge_outcome_slashes_miner_and_credits_treasury() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let mut chain = Chain::new(beacon);
