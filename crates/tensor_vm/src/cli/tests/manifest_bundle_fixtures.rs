@@ -109,6 +109,7 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
         validator_vrf_lifecycle_records: 20,
+        detection_measurement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
     PublicTestnetEvidenceBundle::new(
@@ -129,6 +130,8 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
             invalid_work_rejection_records: 1,
             invalid_work_rejection_root: hash_bytes(b"test", &[b"invalid-work-root"]),
             reward_settlement_root: hash_bytes(b"test", &[b"reward-settlement-root"]),
+            detection_measurement_records: 1,
+            detection_measurement_root: hash_bytes(b"test", &[b"detection-measurement-root"]),
         },
     )
 }

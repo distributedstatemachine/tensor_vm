@@ -85,6 +85,18 @@ fn direct_public_record_line_rejections_report_invalid_receipts() {
                 "validator,0"
             ),
         ),
+        (
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            "detection_measurement=FullFreivalds,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,20,20,0",
+        ),
+        (
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            "detection_measurement=full-freivalds,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,0,0,0",
+        ),
+        (
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            "detection_measurement=full-freivalds,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,1,2,0",
+        ),
     ];
     for (kind, raw_line) in malformed_supporting_record_cases {
         assert!(matches!(

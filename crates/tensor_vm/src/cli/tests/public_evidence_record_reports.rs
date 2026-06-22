@@ -44,6 +44,14 @@ fn execute_public_evidence_record_reports_outputs() {
             ),
             "reward_settlement",
         ),
+        (
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            concat!(
+                "detection_measurement=full-freivalds,",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,20,20,0"
+            ),
+            "detection_measurement",
+        ),
     ];
     for (kind, raw_line, field_prefix) in supporting_record_cases {
         let raw_root = supporting_record_root_from_line(

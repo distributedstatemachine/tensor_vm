@@ -203,5 +203,8 @@ pub(super) fn record_kind_arg(kind: PublicEvidenceRecordKind) -> PublicEvidenceR
         PublicEvidenceRecordKind::RewardSettlements => {
             PublicEvidenceRecordKindArg::RewardSettlement
         }
+        PublicEvidenceRecordKind::DetectionMeasurements => {
+            PublicEvidenceRecordKindArg::DetectionMeasurement
+        }
     }
 }

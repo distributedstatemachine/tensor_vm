@@ -18,6 +18,7 @@ pub(super) fn supporting_record_line_prefix(
         }
         PublicEvidenceRecordKind::InvalidWorkRejections => Some("invalid_work_rejection="),
         PublicEvidenceRecordKind::RewardSettlements => Some("reward_settlement="),
+        PublicEvidenceRecordKind::DetectionMeasurements => Some("detection_measurement="),
     }
 }
 
@@ -100,12 +101,37 @@ pub(super) fn validate_supporting_record_payload(
             parse_hash_field(fields[2])?;
             parse_u64_field(fields[3])?;
         }
+        PublicEvidenceRecordKind::DetectionMeasurements => {
+            let fields = exact_comma_fields(payload, 5, INVALID_SUPPORTING_RECORD)?;
+            require_detection_measurement_mechanism(fields[0])?;
+            parse_hash_field(fields[1])?;
+            let sample_count = parse_u64_field(fields[2])?;
+            let detected_count = parse_u64_field(fields[3])?;
+            if sample_count == 0 || detected_count > sample_count {
+                return Err(TvmError::InvalidReceipt(INVALID_SUPPORTING_RECORD));
+            }
+            parse_u64_field(fields[4])?;
+        }
     }
     Ok(())
 }
 
 fn require_supporting_record_status(status: &str, allowed: &[&str]) -> Result<()> {
     if !allowed.contains(&status) {
+        return Err(TvmError::InvalidReceipt(
+            "invalid public evidence supporting record line",
+        ));
+    }
+    Ok(())
+}
+
+fn require_detection_measurement_mechanism(mechanism: &str) -> Result<()> {
+    if mechanism.is_empty()
+        || mechanism.trim() != mechanism
+        || !mechanism
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
         return Err(TvmError::InvalidReceipt(
             "invalid public evidence supporting record line",
         ));

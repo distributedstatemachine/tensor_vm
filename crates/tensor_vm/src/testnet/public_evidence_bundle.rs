@@ -98,6 +98,11 @@ impl PublicTestnetEvidenceBundle {
                 record_summaries.reward_settlement_root,
                 reward_settlement_records,
             ),
+            (
+                PublicEvidenceRecordKind::DetectionMeasurements,
+                record_summaries.detection_measurement_root,
+                record_summaries.detection_measurement_records,
+            ),
         ]
         .into_iter()
         .map(|(kind, record_root, record_count)| {
@@ -191,6 +196,16 @@ impl PublicTestnetEvidenceBundle {
                 reward_settlement_records,
             ),
             reward_settlement_raw_records: Vec::new(),
+            detection_measurement_records: record_summaries.detection_measurement_records,
+            detection_measurement_root: record_summaries.detection_measurement_root,
+            detection_measurement_signature: sign_public_evidence_record(
+                &signer,
+                &bundle_id,
+                PublicEvidenceRecordKind::DetectionMeasurements,
+                &record_summaries.detection_measurement_root,
+                record_summaries.detection_measurement_records,
+            ),
+            detection_measurement_raw_records: Vec::new(),
         }
     }
 
@@ -294,6 +309,15 @@ impl PublicTestnetEvidenceBundle {
                 self.run.reward_settlement_records,
                 &self.reward_settlement_signature,
             );
+        let has_deployed_detection_measurement_records = run_evidence
+            .has_deployed_detection_measurements
+            && self.detection_measurement_records == self.run.detection_measurement_records
+            && self.public_record_signature_valid(
+                PublicEvidenceRecordKind::DetectionMeasurements,
+                &self.detection_measurement_root,
+                self.detection_measurement_records,
+                &self.detection_measurement_signature,
+            );
         let required_supporting_artifacts = [
             (
                 PublicEvidenceRecordKind::BlockHistory,
@@ -330,6 +354,11 @@ impl PublicTestnetEvidenceBundle {
                 &self.reward_settlement_root,
                 self.run.reward_settlement_records,
             ),
+            (
+                PublicEvidenceRecordKind::DetectionMeasurements,
+                &self.detection_measurement_root,
+                self.detection_measurement_records,
+            ),
         ];
         let has_public_supporting_record_artifacts = self.supporting_artifacts.len()
             == required_supporting_artifacts.len()
@@ -353,12 +382,14 @@ impl PublicTestnetEvidenceBundle {
             && has_data_availability_measurements
             && has_invalid_work_rejection_records
             && has_reward_settlement_record_summary
+            && has_deployed_detection_measurement_records
             && has_public_supporting_record_artifacts;
         let full_spec_evidence_met = public_testnet_criteria_are_full_spec(criteria)
             && run_evidence.public_criterion_met
             && run_evidence.has_cuda_verified_miners
             && run_evidence.has_cuda_graph_execution_evidence
             && run_evidence.has_validator_vrf_lifecycle_evidence
+            && run_evidence.has_deployed_detection_measurements
             && independently_checkable
             && has_public_randomness_beacon_records
             && has_public_chain_history_records
@@ -378,6 +409,7 @@ impl PublicTestnetEvidenceBundle {
             has_data_availability_measurements,
             has_invalid_work_rejection_records,
             has_reward_settlement_record_summary,
+            has_deployed_detection_measurement_records,
             has_public_supporting_record_artifacts,
             has_cuda_verified_miners,
             has_cuda_graph_execution_evidence,
@@ -475,6 +507,13 @@ impl PublicTestnetEvidenceBundle {
             self.run.reward_settlement_records,
             &self.reward_settlement_root,
             self.reward_settlement_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        ) && self.raw_operational_records_match(
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            self.detection_measurement_records,
+            &self.detection_measurement_root,
+            self.detection_measurement_raw_records
                 .iter()
                 .map(|record| record.record_root()),
         )

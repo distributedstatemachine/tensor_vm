@@ -53,6 +53,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         report.has_reward_settlement_record_summary,
     );
     output.field(
+        "signed_detection_measurement_records",
+        report.has_deployed_detection_measurement_records,
+    );
+    output.field(
         "supporting_record_artifacts",
         report.has_public_supporting_record_artifacts,
     );
@@ -94,6 +98,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         "validator_vrf_lifecycle_records",
         run.validator_vrf_lifecycle_records,
     );
+    output.field(
+        "detection_measurement_records",
+        run.detection_measurement_records,
+    );
     output.field("external_operator_evidence", run.external_operator_evidence);
     output.field("required_miners", run.has_required_miners);
     output.field("required_validators", run.has_required_validators);
@@ -120,6 +128,10 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
     output.field(
         "validator_vrf_lifecycle_record_evidence",
         run.has_validator_vrf_lifecycle_evidence,
+    );
+    output.field(
+        "deployed_detection_measurement_evidence",
+        run.has_deployed_detection_measurements,
     );
     output.field(
         "production_libp2p_runtime",

@@ -50,6 +50,7 @@ pub(super) fn public_evidence_record_kind_tag(kind: PublicEvidenceRecordKind) ->
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => "data-availability",
         PublicEvidenceRecordKind::InvalidWorkRejections => "invalid-work",
         PublicEvidenceRecordKind::RewardSettlements => "reward-settlement",
+        PublicEvidenceRecordKind::DetectionMeasurements => "detection-measurement",
     }
 }
 
@@ -62,6 +63,7 @@ pub(super) fn public_evidence_record_field_prefix(kind: PublicEvidenceRecordKind
         PublicEvidenceRecordKind::DataAvailabilityMeasurements => "data_availability_measurement",
         PublicEvidenceRecordKind::InvalidWorkRejections => "invalid_work_rejection",
         PublicEvidenceRecordKind::RewardSettlements => "reward_settlement",
+        PublicEvidenceRecordKind::DetectionMeasurements => "detection_measurement",
     }
 }
 

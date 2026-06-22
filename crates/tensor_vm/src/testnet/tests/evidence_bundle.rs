@@ -1008,6 +1008,62 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
 }
 
 #[test]
+fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec() {
+    let full_spec_criteria = PublicTestnetCriteria::default();
+    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(full_spec_report.has_deployed_detection_measurement_records);
+    assert!(full_spec_report.independently_checkable);
+    assert!(full_spec_report.full_spec_evidence_met);
+
+    let mut no_run_measurements = full_spec_bundle.clone();
+    no_run_measurements.run.detection_measurement_records = 0;
+    let report = no_run_measurements.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(!report.has_deployed_detection_measurement_records);
+    assert!(!report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut missing_summary = full_spec_bundle.clone();
+    let detection_root = missing_summary.detection_measurement_root;
+    resign_record_summary_and_artifact(
+        &mut missing_summary,
+        PublicEvidenceRecordKind::DetectionMeasurements,
+        detection_root,
+        0,
+    );
+    let report = missing_summary.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(!report.has_deployed_detection_measurement_records);
+    assert!(!report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut missing_raw_records = full_spec_bundle.clone();
+    missing_raw_records
+        .detection_measurement_raw_records
+        .clear();
+    let report = missing_raw_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_raw_root = full_spec_bundle;
+    let record_count = mismatched_raw_root.detection_measurement_records;
+    resign_record_summary_and_artifact(
+        &mut mismatched_raw_root,
+        PublicEvidenceRecordKind::DetectionMeasurements,
+        hash_bytes(
+            b"test",
+            &[b"summary-root-not-derived-from-raw-detection-measurements"],
+        ),
+        record_count,
+    );
+    let report = mismatched_raw_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+}
+
+#[test]
 fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = ChainParams::default().block_time_seconds;

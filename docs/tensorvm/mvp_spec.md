@@ -2375,16 +2375,17 @@ do not show `command=service_serve` and `p2p_runtime=libp2p`, and it still requi
 public listen multiaddr above; a loopback or private service log cannot be promoted into public evidence.
 The `evidence record summary` command emits the exact `<record>_records`, `<record>_root`, and
 `<record>_signature` manifest lines for block history, finality history, production libp2p network
-observations, randomness-beacon evidence, data-availability measurements, invalid-work rejections, or
-reward settlements. Supported record kinds are `block-history`, `finality-history`, `network-runtime`,
-`randomness-beacon`, `data-availability`, `invalid-work`, and `reward-settlement`.
+observations, randomness-beacon evidence, data-availability measurements, invalid-work rejections,
+reward settlements, or deployed detection measurements. Supported record kinds are `block-history`,
+`finality-history`, `network-runtime`, `randomness-beacon`, `data-availability`, `invalid-work`,
+`reward-settlement`, and `detection-measurement`.
 The `network-runtime` record count must equal the counted independent public miner plus validator operator
 total; signed undercounts or overcounts cannot satisfy independently checkable evidence.
 The `evidence record artifact` command emits a signed `record_artifact=...` line that binds an external raw-record
 artifact URI to the record kind, root, and count; independently checkable public evidence requires one
-valid artifact locator for every required supporting-record summary root and exactly seven supporting
+valid artifact locator for every required supporting-record summary root and exactly eight supporting
 artifact locators total: block history, finality history, network runtime, randomness beacon, data
-availability, invalid work, and reward settlement.
+availability, invalid work, reward settlement, and detection measurement.
 The `evidence record artifact-roots` command derives the same aggregate root and count as
 `evidence record summary-roots` before signing the artifact locator, so the summary line and artifact locator
 can be generated from the same raw record-root list.
@@ -2398,8 +2399,8 @@ supporting-record root files use `record_root=<hex>` lines, and network-runtime 
 exact signed `network_runtime_observation=...` lines emitted by `evidence network observation` or
 `evidence network from-service-log`. Non-network supporting-record files may contain exact
 `block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
-`data_availability_measurement=...`, `invalid_work_rejection=...`, or `reward_settlement=...` raw record
-lines. Those typed raw lines are
+`data_availability_measurement=...`, `invalid_work_rejection=...`, `reward_settlement=...`, or
+`detection_measurement=...` raw record lines. Those typed raw lines are
 validated against the selected record kind before hashing with the record kind and exact line bytes, so
 operators can derive summary roots and artifact locators from captured records without precomputing each
 `record_root=<hex>` by hand. The accepted typed fields are
@@ -2408,9 +2409,11 @@ operators can derive summary roots and artifact locators from captured records w
 `randomness_beacon_record=<source-id-hex>,<round>,<randomness-root-hex>,<proof-root-hex>,drand-v1|validator-vrf-v1|local-deterministic-fixture-v1,<observed-block>,accepted|rejected`,
 `data_availability_measurement=<receipt-root-hex>,available|unavailable,<block>`,
 `invalid_work_rejection=<receipt-root-hex>,rejected,<block>`, and
-`reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<block>`. Whitespace-padded record
-lines or empty fields are rejected, and reward-settlement participant IDs must be valid 64-character hex
-IDs.
+`reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<block>`, and
+`detection_measurement=<mechanism>,<subject-root-hex>,<sample-count>,<detected-count>,<block>`.
+Whitespace-padded record lines or empty fields are rejected, reward-settlement participant IDs must be
+valid 64-character hex IDs, detection mechanisms must be lowercase ASCII letters, digits, or `-`,
+sample count must be nonzero, and detected count cannot exceed sample count.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
 The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and
@@ -2418,10 +2421,11 @@ device checks for the counted public miner set, `cuda_graph_execution_receipts`,
 graph-execution receipt checks in the public run, and `validator_vrf_lifecycle_records`, derived from
 deployed validator VRF commit→reveal lifecycle records for checked receipts. Full-spec evidence requires
 the CUDA miner count to cover the counted public miners, the CUDA graph-execution receipt count to be
-positive without exceeding checked or available receipt counts, and the validator VRF lifecycle record
-count to equal the checked receipt count; a public run with otherwise valid services, operators, network
-observations, and raw supporting records but missing, undercounted, or overcounted CUDA/graph/VRF-lifecycle
-evidence must report
+positive without exceeding checked or available receipt counts, the validator VRF lifecycle record count
+to equal the checked receipt count, and positive signed deployed detection-measurement records with raw
+records that aggregate to the signed detection summary; a public run with otherwise valid services,
+operators, network observations, and raw supporting records but missing, undercounted, or overcounted
+CUDA/graph/VRF-lifecycle/detection evidence must report
 `public_evidence_full_spec=false`.
 `public_evidence_full_spec=true` is reserved for default-or-stricter public-testnet criteria; shortened or
 relaxed local harness criteria may exercise the validator but must not mark evidence as full-spec.
@@ -2687,7 +2691,8 @@ the evidence bundle includes a signed wall-clock run window proving the 7-day du
 block-count evidence
 the evidence bundle includes post-run signed independent auditor records, signed node heartbeats,
 block/finality history, operator identity attestations that exactly match the counted public operators,
-data-availability measurements, invalid-work rejection evidence, and reward-settlement records
+data-availability measurements, invalid-work rejection evidence, reward-settlement records, and deployed
+detection-measurement records
 the evidence bundle includes signed external artifact locators for every raw supporting-record summary root
 the evidence bundle is stored or linked from docs/tensorvm/implementation_status.md
 ```
@@ -2988,7 +2993,7 @@ the evidence bundle includes exactly one manifest publication signature in the c
 HTTPS public evidence URIs include concrete query-free paths
 the evidence includes a signed wall-clock run window; expected block count alone is not sufficient
 the evidence includes signed external artifact locators for the raw supporting records behind summary roots
-run-derived block/finality/randomness-beacon/data-availability/invalid-work summary counts match the signed run counters exactly
+run-derived block/finality/randomness-beacon/data-availability/invalid-work/detection summary counts match the signed run counters exactly
 the required Cargo workspace structure is present
 the required verification commands have been executed and their results are documented
 ```

@@ -5,10 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 195 complete: Reward Delay Spec Alignment.
+- Active feature: Iteration 196 complete: Public Detection Measurement Evidence Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
-  `validator_vrf_lifecycle_records` covering checked receipts exactly before
+  `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds positive signed
+  deployed detection-measurement summaries and matching raw detection records before
   `public_evidence_full_spec=true` can pass. Signed randomness-beacon summary evidence also requires an
   explicit run-coverage count match so undercounted or overcounted beacon records cannot satisfy
   independently checkable public evidence.
@@ -16,7 +17,7 @@ archive commit anchors only.
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
   - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: continue deployed public/CUDA evidence work, especially real public VRF lifecycle artifacts.
+- Next action: continue real public VRF/CUDA/deployed-run artifact work.
 
 ## Readiness Matrix
 
@@ -35,6 +36,52 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 196: Public Detection Measurement Evidence Gate
+
+Feature capability: require full-spec public evidence to include positive signed deployed
+detection-measurement records and raw detection records that aggregate to the signed detection summary.
+
+Readiness requirements covered: the public economics/slashing invariant must be backed by deployed-run
+detection measurements, not only local calculator estimates or signed reward-settlement summaries.
+
+Canonical owner: `PublicTestnetRunEvidence::evaluate` owns run-level positive detection-measurement
+evidence; `PublicTestnetEvidenceBundle::evaluate` owns independently checkable/full-spec admission and raw
+record root matching; the manifest parser and `tvmd public evidence record ...` commands own typed
+syntax/signing.
+
+Old shortcut being removed: otherwise complete full-spec public evidence could pass without any deployed
+detection-measurement record set behind the economics/detection claims.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec` proves missing
+run counts, missing signed summaries, missing raw detection records, and mismatched raw detection roots keep
+otherwise complete evidence non-full-spec.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; this iteration only changes public evidence
+validation and CLI/documented manifest generation.
+
+Structured evidence source: `detection_measurement_records`,
+`detection_measurement_root`, `detection_measurement_signature`, and typed raw
+`detection_measurement=<mechanism>,<subject-root>,<sample-count>,<detected-count>,<block>` records.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Validation passed on June 22, 2026: first executable Gate 0 was attempted first and exposed the expected
+in-progress compile gap before the new record-kind CLI argument was wired; after implementation,
+`cargo fmt --all -- --check`, `git diff --check`,
+`public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`,
+`public_testnet_evidence_manifest_parses_into_bundle`,
+`validate_public_evidence_manifest_reports_default_criteria_status`,
+`execute_public_evidence_record_reports_outputs`, `deployment_docs`, `cargo test -p tensor_vm --lib`,
+`cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`,
+`cargo clippy --workspace --all-targets -- -D warnings`, and
+`cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed.
+
+Tarpaulin passed with 573 instrumented tests and 84.81% line coverage, 23261/27428 lines covered.
 
 ### Iteration 195: Reward Delay Spec Alignment
 
@@ -181,21 +228,22 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 
 ## Validation Evidence
 
-- Current Iteration 194 first executable Gate 0 passed on June 22, 2026:
+- Current Iteration 196 first executable Gate 0 was run first on June 22, 2026 and initially exposed the
+  in-progress compile gap for the new public record kind; after the CLI enum wiring, the release local
+  testnet gate passed:
   `cargo test -p tensor_vm local_testnet --release`.
-- Current Iteration 194 focused validation passed on June 22, 2026:
-  `public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec`,
-  `public_testnet_evidence_manifest_parses_into_bundle`, and
-  `validate_public_evidence_manifest_reports_default_criteria_status`.
-- Current Iteration 194 broad validation passed on June 22, 2026:
+- Current Iteration 196 focused validation passed on June 22, 2026:
+  `public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`,
+  `public_testnet_evidence_manifest_parses_into_bundle`,
+  `validate_public_evidence_manifest_reports_default_criteria_status`,
+  `execute_public_evidence_record_reports_outputs`, and `deployment_docs`.
+- Current Iteration 196 broad validation passed on June 22, 2026:
   `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
   `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
   `cargo clippy --workspace --all-targets -- -D warnings`.
-- Current Iteration 194 tarpaulin passed on June 22, 2026:
+- Current Iteration 196 tarpaulin passed on June 22, 2026:
   `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
-  572 instrumented tests and 84.82% line coverage, 23183/27332 lines covered.
-- Current Iteration 194 feature commit `5a101b5` (`Require VRF lifecycle evidence for full spec`) pushed
-  to `origin/main` on June 22, 2026.
+  573 instrumented tests and 84.81% line coverage, 23261/27428 lines covered.
 
 ## Archive
 

@@ -188,6 +188,11 @@ pub(super) fn resign_record_summary_and_artifact(
             bundle.reward_settlement_root = record_root;
             bundle.reward_settlement_signature = summary_signature;
         }
+        PublicEvidenceRecordKind::DetectionMeasurements => {
+            bundle.detection_measurement_records = record_count;
+            bundle.detection_measurement_root = record_root;
+            bundle.detection_measurement_signature = summary_signature;
+        }
     }
     if let Some(artifact) = bundle
         .supporting_artifacts
@@ -221,6 +226,7 @@ manifest_signature={}
 manifest_signature_count=1
 independent_auditor_count=1
 auditor={},{},1700000060,{}
+{}
 {}
 {}
 {}
@@ -268,6 +274,9 @@ invalid_work_rejection_signature={}
 reward_settlement_records=1
 reward_settlement_root={}
 reward_settlement_signature={}
+detection_measurement_records=1
+detection_measurement_root={}
+detection_measurement_signature={}
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
 validator_vrf_lifecycle_records=20
@@ -324,6 +333,11 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
             b"reward-settlement-root",
             1,
         ),
+        manifest_artifact_line(
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            b"detection-measurement-root",
+            1,
+        ),
         manifest_hash(b"test", b"block-history-root"),
         hex(&manifest_bundle().block_history_signature),
         manifest_hash(b"test", b"finality-history-root"),
@@ -356,6 +370,8 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
         hex(&manifest_bundle().invalid_work_rejection_signature),
         manifest_hash(b"test", b"reward-settlement-root"),
         hex(&manifest_bundle().reward_settlement_signature),
+        manifest_hash(b"test", b"detection-measurement-root"),
+        hex(&manifest_bundle().detection_measurement_signature),
         manifest_address(b"miner-a"),
         manifest_hash(b"test", b"miner-a-operator"),
         manifest_node_signature(PublicNodeRole::Miner, b"miner-a", b"miner-a-operator"),

@@ -9,10 +9,11 @@ use super::public_manifest_fields::{
 use super::{
     PUBLIC_TESTNET_EVIDENCE_MANIFEST_VERSION, PublicBlockHistoryRecord,
     PublicDataAvailabilityMeasurementRecord, PublicDataAvailabilityStatus,
-    PublicEvidenceAuditorRecord, PublicEvidencePublication, PublicEvidenceSupportingArtifact,
-    PublicFinalityHistoryRecord, PublicFinalityHistoryStatus, PublicInvalidWorkRejectionRecord,
-    PublicNetworkRuntimeEvidence, PublicNetworkRuntimeObservation, PublicNodeEvidence,
-    PublicNodeRole, PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
+    PublicDetectionMeasurementRecord, PublicEvidenceAuditorRecord, PublicEvidencePublication,
+    PublicEvidenceSupportingArtifact, PublicFinalityHistoryRecord, PublicFinalityHistoryStatus,
+    PublicInvalidWorkRejectionRecord, PublicNetworkRuntimeEvidence,
+    PublicNetworkRuntimeObservation, PublicNodeEvidence, PublicNodeRole,
+    PublicOperatorIdentityAttestation, PublicRandomnessBeaconProofKind,
     PublicRandomnessBeaconRecord, PublicRandomnessBeaconRecordStatus, PublicRewardSettlementRecord,
     PublicServiceContentEvidence, PublicServiceEndpoint, PublicServiceEvidence,
     PublicTestnetEvidenceBundle, PublicTestnetRunEvidence,
@@ -46,6 +47,7 @@ fn public_evidence_manifest_field_allows_repeated(key: &str) -> bool {
             | "data_availability_measurement"
             | "invalid_work_rejection"
             | "reward_settlement"
+            | "detection_measurement"
             | "node"
             | "service"
             | "service_content"
@@ -92,6 +94,10 @@ struct PublicEvidenceManifestBuilder {
     reward_settlement_root: Option<Hash>,
     reward_settlement_signature: Option<Signature>,
     reward_settlement_raw_records: Vec<PublicRewardSettlementRecord>,
+    detection_measurement_records: Option<u64>,
+    detection_measurement_root: Option<Hash>,
+    detection_measurement_signature: Option<Signature>,
+    detection_measurement_raw_records: Vec<PublicDetectionMeasurementRecord>,
     run_started_at_unix_seconds: Option<u64>,
     run_ended_at_unix_seconds: Option<u64>,
     run_window_signature: Option<Signature>,
@@ -224,6 +230,18 @@ impl PublicEvidenceManifestBuilder {
             "reward_settlement" => self
                 .reward_settlement_raw_records
                 .push(parse_manifest_reward_settlement(value)?),
+            "detection_measurement_records" => {
+                self.detection_measurement_records = Some(parse_manifest_u64(scalar)?);
+            }
+            "detection_measurement_root" => {
+                self.detection_measurement_root = Some(parse_hash_hex(scalar)?);
+            }
+            "detection_measurement_signature" => {
+                self.detection_measurement_signature = Some(parse_hash_hex(scalar)?);
+            }
+            "detection_measurement" => self
+                .detection_measurement_raw_records
+                .push(parse_manifest_detection_measurement(value)?),
             "run_started_at_unix_seconds" => {
                 self.run_started_at_unix_seconds = Some(parse_manifest_u64(scalar)?);
             }
@@ -308,6 +326,7 @@ impl PublicEvidenceManifestBuilder {
                 validator_vrf_lifecycle_records: required_u64(
                     self.validator_vrf_lifecycle_records,
                 )?,
+                detection_measurement_records: required_u64(self.detection_measurement_records)?,
             },
             publication: {
                 let mut publication = PublicEvidencePublication::new(
@@ -364,6 +383,10 @@ impl PublicEvidenceManifestBuilder {
             reward_settlement_root: required_hash(self.reward_settlement_root)?,
             reward_settlement_signature: required_hash(self.reward_settlement_signature)?,
             reward_settlement_raw_records: self.reward_settlement_raw_records,
+            detection_measurement_records: required_u64(self.detection_measurement_records)?,
+            detection_measurement_root: required_hash(self.detection_measurement_root)?,
+            detection_measurement_signature: required_hash(self.detection_measurement_signature)?,
+            detection_measurement_raw_records: self.detection_measurement_raw_records,
         })
     }
 }
@@ -471,6 +494,31 @@ fn parse_manifest_reward_settlement(value: &str) -> Result<PublicRewardSettlemen
         miner_id: parse_hash_hex(fields[1])?,
         validator_id: parse_hash_hex(fields[2])?,
         observed_block: parse_manifest_u64(fields[3])?,
+    })
+}
+
+fn parse_manifest_detection_measurement(value: &str) -> Result<PublicDetectionMeasurementRecord> {
+    let fields = exact_manifest_record_fields(value, 5, "malformed detection measurement")?;
+    if fields[0].is_empty()
+        || !fields[0]
+            .bytes()
+            .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+    {
+        return Err(TvmError::InvalidReceipt(
+            "unknown detection measurement mechanism",
+        ));
+    }
+    let sample_count = parse_manifest_u64(fields[2])?;
+    let detected_count = parse_manifest_u64(fields[3])?;
+    if sample_count == 0 || detected_count > sample_count {
+        return Err(TvmError::InvalidReceipt("malformed detection measurement"));
+    }
+    Ok(PublicDetectionMeasurementRecord {
+        mechanism: fields[0].to_owned(),
+        subject_root: parse_hash_hex(fields[1])?,
+        sample_count,
+        detected_count,
+        observed_block: parse_manifest_u64(fields[4])?,
     })
 }
 

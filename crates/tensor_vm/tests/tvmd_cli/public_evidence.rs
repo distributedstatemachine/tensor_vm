@@ -141,6 +141,7 @@ fn generated_public_evidence_manifest_round_trips_through_tvmd_validator() {
         ("data-availability", "77".repeat(32), "20"),
         ("invalid-work", "88".repeat(32), "1"),
         ("reward-settlement", "99".repeat(32), "1"),
+        ("detection-measurement", "cc".repeat(32), "1"),
     ] {
         summary_lines.push(trimmed_tvmd(&[
             "public",
@@ -595,6 +596,11 @@ validator_vrf_lifecycle_records=20
     );
     assert_eq!(
         stdout_value(&report, "validator_vrf_lifecycle_record_evidence"),
+        "true"
+    );
+    assert_eq!(stdout_value(&report, "detection_measurement_records"), "1");
+    assert_eq!(
+        stdout_value(&report, "deployed_detection_measurement_evidence"),
         "true"
     );
     assert_eq!(stdout_value(&report, "required_run_duration"), "false");

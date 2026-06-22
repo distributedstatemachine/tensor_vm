@@ -71,6 +71,7 @@ pub enum PublicEvidenceRecordKind {
     DataAvailabilityMeasurements,
     InvalidWorkRejections,
     RewardSettlements,
+    DetectionMeasurements,
 }
 
 impl PublicEvidenceRecordKind {
@@ -83,6 +84,7 @@ impl PublicEvidenceRecordKind {
             Self::DataAvailabilityMeasurements => b"data-availability-measurements",
             Self::InvalidWorkRejections => b"invalid-work-rejections",
             Self::RewardSettlements => b"reward-settlements",
+            Self::DetectionMeasurements => b"detection-measurements",
         }
     }
 
@@ -95,6 +97,7 @@ impl PublicEvidenceRecordKind {
             Self::DataAvailabilityMeasurements => "data-availability",
             Self::InvalidWorkRejections => "invalid-work",
             Self::RewardSettlements => "reward-settlement",
+            Self::DetectionMeasurements => "detection-measurement",
         }
     }
 }
@@ -110,6 +113,7 @@ pub(super) fn parse_public_evidence_record_kind_tag(
         "data-availability" => Ok(PublicEvidenceRecordKind::DataAvailabilityMeasurements),
         "invalid-work" => Ok(PublicEvidenceRecordKind::InvalidWorkRejections),
         "reward-settlement" => Ok(PublicEvidenceRecordKind::RewardSettlements),
+        "detection-measurement" => Ok(PublicEvidenceRecordKind::DetectionMeasurements),
         _ => Err(TvmError::InvalidReceipt(
             "invalid public evidence record kind",
         )),

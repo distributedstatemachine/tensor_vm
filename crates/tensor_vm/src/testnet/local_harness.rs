@@ -503,6 +503,8 @@ impl LocalTestnet {
             has_cuda_graph_execution_evidence: false,
             validator_vrf_lifecycle_records: 0,
             has_validator_vrf_lifecycle_evidence: false,
+            detection_measurement_records: 0,
+            has_deployed_detection_measurements: false,
             public_criterion_met,
         }
     }

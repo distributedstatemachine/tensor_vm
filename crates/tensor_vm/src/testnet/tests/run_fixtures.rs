@@ -181,6 +181,7 @@ pub(super) fn complete_public_run_evidence() -> PublicTestnetRunEvidence {
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
         validator_vrf_lifecycle_records: 20,
+        detection_measurement_records: 1,
     }
 }
 
@@ -211,6 +212,8 @@ pub(super) fn complete_public_evidence_bundle() -> PublicTestnetEvidenceBundle {
             invalid_work_rejection_records: 1,
             invalid_work_rejection_root: hash_bytes(b"test", &[b"invalid-work-root"]),
             reward_settlement_root: hash_bytes(b"test", &[b"reward-settlement-root"]),
+            detection_measurement_records: 1,
+            detection_measurement_root: hash_bytes(b"test", &[b"detection-measurement-root"]),
         },
     )
 }
@@ -298,6 +301,7 @@ pub(super) fn full_spec_public_evidence_bundle(
         cuda_verified_miner_count: criteria.min_miners as u64,
         cuda_graph_execution_receipts: 1,
         validator_vrf_lifecycle_records: checked_receipts,
+        detection_measurement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
     let block_history_raw_records = full_spec_block_history_records(observed_blocks);
@@ -354,6 +358,15 @@ pub(super) fn full_spec_public_evidence_bundle(
             .collect::<Vec<_>>(),
     )
     .expect("generated reward settlement roots should aggregate");
+    let detection_measurement_raw_records = full_spec_detection_measurement_records();
+    let detection_measurement_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::DetectionMeasurements,
+        &detection_measurement_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("generated detection measurement roots should aggregate");
     let mut bundle = PublicTestnetEvidenceBundle::new(
         run,
         PublicEvidencePublication::new(
@@ -378,6 +391,8 @@ pub(super) fn full_spec_public_evidence_bundle(
             invalid_work_rejection_records: 1,
             invalid_work_rejection_root,
             reward_settlement_root,
+            detection_measurement_records: 1,
+            detection_measurement_root,
         },
     );
     bundle.block_history_raw_records = block_history_raw_records;
@@ -386,6 +401,7 @@ pub(super) fn full_spec_public_evidence_bundle(
     bundle.data_availability_raw_records = data_availability_raw_records;
     bundle.invalid_work_raw_records = invalid_work_raw_records;
     bundle.reward_settlement_raw_records = reward_settlement_raw_records;
+    bundle.detection_measurement_raw_records = detection_measurement_raw_records;
     bundle
 }
 
@@ -468,6 +484,16 @@ pub(super) fn full_spec_reward_settlement_records() -> Vec<PublicRewardSettlemen
         receipt_root: hash_bytes(b"test", &[b"full-spec-reward-settlement-receipt"]),
         miner_id: address(b"full-spec-reward-settlement-miner"),
         validator_id: address(b"full-spec-reward-settlement-validator"),
+        observed_block: 1,
+    }]
+}
+
+pub(super) fn full_spec_detection_measurement_records() -> Vec<PublicDetectionMeasurementRecord> {
+    vec![PublicDetectionMeasurementRecord {
+        mechanism: String::from("full-freivalds"),
+        subject_root: hash_bytes(b"test", &[b"full-spec-detection-measurement"]),
+        sample_count: 20,
+        detected_count: 20,
         observed_block: 1,
     }]
 }

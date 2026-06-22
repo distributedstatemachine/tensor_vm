@@ -221,6 +221,8 @@ pub struct PublicTestnetEvidence {
     pub has_cuda_graph_execution_evidence: bool,
     pub validator_vrf_lifecycle_records: u64,
     pub has_validator_vrf_lifecycle_evidence: bool,
+    pub detection_measurement_records: u64,
+    pub has_deployed_detection_measurements: bool,
     pub public_criterion_met: bool,
 }
 
@@ -242,6 +244,7 @@ pub struct PublicTestnetRunEvidence {
     pub cuda_verified_miner_count: u64,
     pub cuda_graph_execution_receipts: u64,
     pub validator_vrf_lifecycle_records: u64,
+    pub detection_measurement_records: u64,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -260,6 +263,8 @@ pub struct PublicEvidenceRecordSummaries {
     pub invalid_work_rejection_records: u64,
     pub invalid_work_rejection_root: Hash,
     pub reward_settlement_root: Hash,
+    pub detection_measurement_records: u64,
+    pub detection_measurement_root: Hash,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -298,6 +303,10 @@ pub struct PublicTestnetEvidenceBundle {
     pub reward_settlement_root: Hash,
     pub reward_settlement_signature: Signature,
     pub reward_settlement_raw_records: Vec<PublicRewardSettlementRecord>,
+    pub detection_measurement_records: u64,
+    pub detection_measurement_root: Hash,
+    pub detection_measurement_signature: Signature,
+    pub detection_measurement_raw_records: Vec<PublicDetectionMeasurementRecord>,
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
@@ -314,6 +323,7 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_data_availability_measurements: bool,
     pub has_invalid_work_rejection_records: bool,
     pub has_reward_settlement_record_summary: bool,
+    pub has_deployed_detection_measurement_records: bool,
     pub has_public_supporting_record_artifacts: bool,
     pub has_cuda_verified_miners: bool,
     pub has_cuda_graph_execution_evidence: bool,
@@ -382,6 +392,15 @@ pub struct PublicRewardSettlementRecord {
     pub receipt_root: Hash,
     pub miner_id: Hash,
     pub validator_id: Hash,
+    pub observed_block: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct PublicDetectionMeasurementRecord {
+    pub mechanism: String,
+    pub subject_root: Hash,
+    pub sample_count: u64,
+    pub detected_count: u64,
     pub observed_block: u64,
 }
 
@@ -466,6 +485,26 @@ impl PublicRewardSettlementRecord {
     pub fn record_root(&self) -> Hash {
         supporting_record_root(
             PublicEvidenceRecordKind::RewardSettlements,
+            &self.record_line(),
+        )
+    }
+}
+
+impl PublicDetectionMeasurementRecord {
+    pub fn record_line(&self) -> String {
+        format!(
+            "detection_measurement={},{},{},{},{}",
+            self.mechanism,
+            hex(&self.subject_root),
+            self.sample_count,
+            self.detected_count,
+            self.observed_block
+        )
+    }
+
+    pub fn record_root(&self) -> Hash {
+        supporting_record_root(
+            PublicEvidenceRecordKind::DetectionMeasurements,
             &self.record_line(),
         )
     }
