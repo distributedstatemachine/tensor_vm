@@ -1343,6 +1343,9 @@ pub(super) fn materialize_finalized_proposer_rewards(
         if block.proposer_reward == 0
             || !state.finalized_blocks.contains(&block_hash)
             || state.pending_proposer_rewards.contains_key(&block.height)
+            || state
+                .released_proposer_reward_blocks
+                .contains(&block.height)
         {
             continue;
         }
@@ -1360,9 +1363,6 @@ pub(super) fn materialize_finalized_proposer_rewards(
         };
         let claimable_at_height =
             reward_context.proposer_claimable_at_height(block.height, params.epoch_length);
-        if state.height > claimable_at_height {
-            continue;
-        }
         state.pending_proposer_rewards.insert(
             block.height,
             PendingProposerReward {

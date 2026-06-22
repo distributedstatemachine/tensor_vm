@@ -30,6 +30,10 @@ pub(super) fn reward_root(state: &ChainState) -> Hash {
     parts.extend_from_slice(&pending_proposer_reward_root(
         &state.pending_proposer_rewards,
     ));
+    parts.extend_from_slice(&u64_set_root(
+        b"tensor-vm-released-proposer-reward-root-v1",
+        &state.released_proposer_reward_blocks,
+    ));
     parts.extend_from_slice(&pending_receipt_reward_root(&state.pending_receipt_rewards));
     parts.extend_from_slice(&pending_challenge_reward_root(
         &state.pending_challenge_rewards,
@@ -102,6 +106,10 @@ pub(super) fn state_root(state: &ChainState) -> Hash {
     ));
     parts.extend_from_slice(&pending_proposer_reward_root(
         &state.pending_proposer_rewards,
+    ));
+    parts.extend_from_slice(&u64_set_root(
+        b"tensor-vm-released-proposer-reward-root-v1",
+        &state.released_proposer_reward_blocks,
     ));
     parts.extend_from_slice(&pending_receipt_reward_root(&state.pending_receipt_rewards));
     parts.extend_from_slice(&pending_challenge_reward_root(
@@ -497,6 +505,14 @@ pub(super) fn pending_proposer_reward_root(rewards: &BTreeMap<u64, PendingPropos
         encoded.push(u8::from(reward.voided_by_challenge));
     }
     hash_bytes(b"tensor-vm-pending-proposer-reward-root-v1", &[&encoded])
+}
+
+pub(super) fn u64_set_root(domain: &[u8], items: &BTreeSet<u64>) -> Hash {
+    let mut encoded = Vec::new();
+    for item in items {
+        encoded.extend_from_slice(&item.to_le_bytes());
+    }
+    hash_bytes(domain, &[&encoded])
 }
 
 pub(super) fn pending_receipt_reward_root(rewards: &BTreeMap<Hash, PendingReceiptReward>) -> Hash {

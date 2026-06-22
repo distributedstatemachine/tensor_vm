@@ -1084,6 +1084,71 @@ fn block_transition_preserves_matured_rewards_until_claim() {
 }
 
 #[test]
+fn late_finalized_proposer_reward_materializes_as_delayed_claim_once() {
+    let beacon = hash_bytes(b"test", &[b"late-finalized-reward-delay"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        reward_settlement_delay_epochs: 1,
+        challenge_window_epochs: 1,
+        proposer_reward_hold_epochs: 0,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let proposer = address(b"late-finalized-reward-proposer");
+    chain
+        .register_validator(proposer, chain.params().validator_min_stake)
+        .unwrap();
+    add_settled_receipt_for_blockspace(&mut chain, &beacon);
+
+    let block = chain
+        .produce_block_with_rewards(proposer, 1_000, 400, 100)
+        .unwrap();
+    assert!(chain.state().pending_proposer_rewards().is_empty());
+    let claimable_at_height = block
+        .height
+        .saturating_add(chain.params().proposer_reward_maturity_delay_blocks());
+    chain.set_position_for_testing(claimable_at_height.saturating_add(3), 0);
+
+    finalize_reward_test_block(&mut chain, &block);
+    let pending = chain
+        .state()
+        .pending_proposer_rewards()
+        .get(&block.height)
+        .expect("late finality must still materialize a delayed claim");
+    assert_eq!(pending.claimable_at_height, claimable_at_height);
+    assert_eq!(pending.amount, 500);
+    assert_eq!(chain.state().rewards().balance(&proposer), 0);
+
+    chain
+        .apply_command(ChainCommand::ClaimReward(proposer))
+        .unwrap();
+    assert!(
+        chain
+            .state()
+            .released_proposer_reward_blocks()
+            .contains(&block.height)
+    );
+    assert!(
+        !chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+
+    crate::chain::blocks::materialize_finalized_proposer_rewards(
+        &mut chain.state,
+        &chain.blocks,
+        &chain.params,
+    );
+    assert!(
+        !chain
+            .state()
+            .pending_proposer_rewards()
+            .contains_key(&block.height)
+    );
+}
+
+#[test]
 fn block_transition_preserves_matured_receipt_rewards_until_claim() {
     let beacon = hash_bytes(b"test", &[b"receipt-reward-block-transition-release"]);
     let params = ChainParams {

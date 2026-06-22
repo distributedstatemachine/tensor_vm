@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 189 with:
+Latest completed run: June 22, 2026 from the workspace root during Iteration 190 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,21 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-566 tests passed under instrumentation:
+567 tests passed under instrumentation:
 - 14 experiments library tests
-- 551 tensor_vm library tests
+- 552 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.78% workspace line coverage
-23111/27259 workspace lines covered
+84.80% workspace line coverage
+23142/27291 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 190 coverage-changing work added state-rooted released proposer reward block tracking for
+late-finalized proposer rewards. The new reward regression proves late finality still creates a delayed
+claim and later materialization cannot recreate an already claimed proposer reward.
 
 Iteration 189 coverage-changing work added raw public chain-history evidence records for full-spec public
 evidence: block-history and finality-history records must now aggregate to their signed summary roots

@@ -171,6 +171,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   Validator-owned useful proposals and empty fallback proposals now both create proposer claims with the
   explicit full reward-maturity delay plus a proposer-specific hold, with fallback claims carrying the reduced reward amount. Pending
   proposer reward state, roots, and storage no longer carry a later-useful-block release latch.
+  Late-finalized rewarded proposer blocks now still materialize delayed pending proposer claims even when
+  finality arrives after the nominal claimable height; claimed or voided proposer rewards persist their
+  block heights in the state-rooted and snapshot-persisted released proposer reward set, so later
+  materialization cannot recreate an already released claim.
   Receipt, challenge, and generic credit reward claims are state-rooted and persisted. Receipt rewards
   become claimable only after the receipt is included in canonical blockspace and the inclusion-based
   maturity height has elapsed; pre-inclusion receipt claims do not carry a normal claimable height, so the

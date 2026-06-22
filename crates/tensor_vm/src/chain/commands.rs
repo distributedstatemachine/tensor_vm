@@ -622,6 +622,7 @@ fn release_matured_proposer_rewards_for_beneficiary(
         .collect::<Vec<_>>();
     for (block_height, proposer, amount, voided_by_challenge) in matured {
         state.pending_proposer_rewards.remove(&block_height);
+        state.released_proposer_reward_blocks.insert(block_height);
         if voided_by_challenge {
             continue;
         }

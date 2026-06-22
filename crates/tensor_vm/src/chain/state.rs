@@ -1440,6 +1440,7 @@ pub struct ChainState {
     pub(in crate::chain) proposer_penalty_until: BTreeMap<Address, u64>,
     pub(in crate::chain) proposer_cadence_last_proposed: BTreeMap<Address, u64>,
     pub(in crate::chain) pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
+    pub(in crate::chain) released_proposer_reward_blocks: BTreeSet<u64>,
     pub(in crate::chain) pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub(in crate::chain) pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
     pub(in crate::chain) pending_credit_rewards: BTreeMap<Hash, PendingCreditReward>,
@@ -1486,6 +1487,7 @@ pub(crate) struct ChainStateParts {
     pub proposer_penalty_until: BTreeMap<Address, u64>,
     pub proposer_cadence_last_proposed: BTreeMap<Address, u64>,
     pub pending_proposer_rewards: BTreeMap<u64, PendingProposerReward>,
+    pub released_proposer_reward_blocks: BTreeSet<u64>,
     pub pending_receipt_rewards: BTreeMap<Hash, PendingReceiptReward>,
     pub pending_challenge_rewards: BTreeMap<Hash, PendingChallengeReward>,
     pub pending_credit_rewards: BTreeMap<Hash, PendingCreditReward>,
@@ -1533,6 +1535,7 @@ impl ChainState {
             proposer_penalty_until: parts.proposer_penalty_until,
             proposer_cadence_last_proposed: parts.proposer_cadence_last_proposed,
             pending_proposer_rewards: parts.pending_proposer_rewards,
+            released_proposer_reward_blocks: parts.released_proposer_reward_blocks,
             pending_receipt_rewards: parts.pending_receipt_rewards,
             pending_challenge_rewards: parts.pending_challenge_rewards,
             pending_credit_rewards: parts.pending_credit_rewards,
@@ -1809,6 +1812,10 @@ impl ChainState {
 
     pub fn pending_proposer_rewards(&self) -> &BTreeMap<u64, PendingProposerReward> {
         &self.pending_proposer_rewards
+    }
+
+    pub fn released_proposer_reward_blocks(&self) -> &BTreeSet<u64> {
+        &self.released_proposer_reward_blocks
     }
 
     pub fn pending_receipt_rewards(&self) -> &BTreeMap<Hash, PendingReceiptReward> {

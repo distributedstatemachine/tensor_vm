@@ -263,6 +263,7 @@ fn encode_chain_state(out: &mut Vec<u8>, state: &ChainState) {
     encode_u64_by_hash_map(out, state.proposer_penalty_until());
     encode_u64_by_hash_map(out, state.proposer_cadence_last_proposed());
     encode_pending_proposer_rewards(out, state.pending_proposer_rewards());
+    encode_u64_set(out, state.released_proposer_reward_blocks());
     encode_pending_receipt_rewards(out, state.pending_receipt_rewards());
     encode_pending_challenge_rewards(out, state.pending_challenge_rewards());
     encode_pending_credit_rewards(out, state.pending_credit_rewards());
@@ -322,6 +323,7 @@ fn decode_chain_state(reader: &mut StateReader<'_>) -> Result<ChainState> {
         proposer_penalty_until: decode_u64_by_hash_map(reader)?,
         proposer_cadence_last_proposed: decode_u64_by_hash_map(reader)?,
         pending_proposer_rewards: decode_pending_proposer_rewards(reader)?,
+        released_proposer_reward_blocks: decode_u64_set(reader)?,
         pending_receipt_rewards: decode_pending_receipt_rewards(reader)?,
         pending_challenge_rewards: decode_pending_challenge_rewards(reader)?,
         pending_credit_rewards: decode_pending_credit_rewards(reader)?,
@@ -1553,6 +1555,21 @@ fn decode_u64_by_hash_map(reader: &mut StateReader<'_>) -> Result<BTreeMap<Hash,
     let mut items = BTreeMap::new();
     for _ in 0..reader.read_len()? {
         items.insert(reader.read_hash()?, reader.read_u64()?);
+    }
+    Ok(items)
+}
+
+fn encode_u64_set(out: &mut Vec<u8>, items: &BTreeSet<u64>) {
+    write_len(out, items.len());
+    for item in items {
+        write_u64(out, *item);
+    }
+}
+
+fn decode_u64_set(reader: &mut StateReader<'_>) -> Result<BTreeSet<u64>> {
+    let mut items = BTreeSet::new();
+    for _ in 0..reader.read_len()? {
+        items.insert(reader.read_u64()?);
     }
     Ok(items)
 }
