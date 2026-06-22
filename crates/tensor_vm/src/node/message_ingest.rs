@@ -5,9 +5,9 @@ use super::{
         apply_network_attestation_payload, apply_network_block_check_challenge_payload,
         apply_network_block_vote_payload, apply_network_external_randomness_beacon_payload,
         apply_network_job_payload, apply_network_observed_block_check_challenge_payload,
-        apply_network_receipt_payload, apply_network_trace_bisection_referee_payload,
-        apply_network_trace_bisection_round_payload, apply_network_validator_audit_report_payload,
-        apply_network_validator_vrf_reveal_payload,
+        apply_network_receipt_payload, apply_network_trace_bisection_open_payload,
+        apply_network_trace_bisection_referee_payload, apply_network_trace_bisection_round_payload,
+        apply_network_validator_audit_report_payload, apply_network_validator_vrf_reveal_payload,
         apply_network_verified_chained_drand_beacon_payload,
         apply_network_verified_drand_beacon_payload,
     },
@@ -441,6 +441,53 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewTraceBisectionOpenPayload {
+                challenge_id,
+                receipt_id,
+                trace_root,
+                challenger,
+                responder,
+                payload,
+            } => {
+                ingested.block_announcements = ingested.block_announcements.saturating_add(1);
+                ingested.trace_bisection_opens = ingested.trace_bisection_opens.saturating_add(1);
+                if challenge_id == [0; 32]
+                    || receipt_id == [0; 32]
+                    || trace_root == [0; 32]
+                    || challenger == [0; 32]
+                    || responder == [0; 32]
+                {
+                    ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    continue;
+                }
+                match apply_network_trace_bisection_open_payload(
+                    context.chain(),
+                    challenge_id,
+                    receipt_id,
+                    trace_root,
+                    challenger,
+                    responder,
+                    &payload,
+                ) {
+                    NetworkPayloadApply::Applied => {
+                        ingested.trace_bisection_opens_applied =
+                            ingested.trace_bisection_opens_applied.saturating_add(1);
+                    }
+                    NetworkPayloadApply::Pending => {
+                        pending_payloads.queue_trace_bisection_open(
+                            challenge_id,
+                            receipt_id,
+                            trace_root,
+                            challenger,
+                            responder,
+                            payload,
+                        );
+                    }
+                    NetworkPayloadApply::Invalid => {
+                        ingested.invalid_events = ingested.invalid_events.saturating_add(1);
+                    }
+                }
+            }
             P2pMessage::NewTraceBisectionRefereePayload {
                 challenge_id,
                 receipt_id,
@@ -548,6 +595,7 @@ fn is_block_payload(message: &P2pMessage) -> bool {
         P2pMessage::NewBlockPayload { .. }
             | P2pMessage::NewBlockCheckChallengePayload { .. }
             | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
+            | P2pMessage::NewTraceBisectionOpenPayload { .. }
             | P2pMessage::NewTraceBisectionRoundPayload { .. }
             | P2pMessage::NewTraceBisectionRefereePayload { .. }
     )
@@ -567,7 +615,7 @@ mod tests {
             ExternalRandomnessBeaconProof, JobState, TraceBisectionStatus, ValidatorAuditReport,
             verified_chained_drand_source_id, verified_drand_source_id,
         },
-        challenge::{TraceBisectionConfig, TraceBisectionRound},
+        challenge::{TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound},
         ir::{
             GraphOutput, IrOpRefereeWitness, IrOpWitnessValue, IrRef, OpNode, TensorGraph,
             TensorSpec,
@@ -576,10 +624,10 @@ mod tests {
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload,
             encode_block_payload_with_selected_receipts, encode_external_randomness_beacon_payload,
-            encode_job_payload, encode_receipt_payload, encode_trace_bisection_referee_payload,
-            encode_trace_bisection_round_payload, encode_validator_audit_report_payload,
-            encode_validator_vrf_reveal_payload, encode_verified_chained_drand_beacon_payload,
-            encode_verified_drand_beacon_payload,
+            encode_job_payload, encode_receipt_payload, encode_trace_bisection_open_payload,
+            encode_trace_bisection_referee_payload, encode_trace_bisection_round_payload,
+            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
+            encode_verified_chained_drand_beacon_payload, encode_verified_drand_beacon_payload,
         },
         scheduler::{JobScheduler, SyntheticLocalJobSource},
         tensor::{DType, Tensor},
@@ -1759,6 +1807,80 @@ mod tests {
         .unwrap();
         assert_eq!(duplicate.trace_bisection_referees, 1);
         assert_eq!(duplicate.trace_bisection_referees_applied, 1);
+        assert_eq!(duplicate.invalid_events, 0);
+        assert!(pending.is_empty());
+    }
+
+    #[test]
+    fn network_event_driver_applies_and_retries_trace_bisection_open_payloads() {
+        let (mut context, config, _round, _round_payload) = trace_bisection_round_context();
+        let open = TraceBisectionOpen::new(config.clone());
+        let challenge_id = open.challenge_id();
+        let payload = encode_trace_bisection_open_payload(&open);
+        let receipt = context
+            .chain
+            .state()
+            .receipts()
+            .get(&config.receipt_id)
+            .expect("fixture should have a receipt")
+            .clone();
+        context.chain.remove_receipt_for_testing(&config.receipt_id);
+        let mut pending = PendingNetworkPayloads::default();
+
+        let ingested = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewTraceBisectionOpenPayload {
+                challenge_id,
+                receipt_id: config.receipt_id,
+                trace_root: config.trace_root,
+                challenger: config.challenger,
+                responder: config.responder,
+                payload: payload.clone(),
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+
+        assert_eq!(ingested.trace_bisection_opens, 1);
+        assert_eq!(ingested.trace_bisection_opens_applied, 0);
+        assert_eq!(ingested.invalid_events, 0);
+        assert_eq!(pending.pending_trace_bisection_open_count(), 1);
+
+        context
+            .chain
+            .apply_command(ChainCommand::SubmitReceipt(receipt))
+            .unwrap();
+        let mut processor = ChainNetworkPayloadProcessor::new(&mut context.chain);
+        let retried = pending.retry_with(&mut processor);
+
+        assert_eq!(retried.trace_bisection_opens_applied, 1);
+        assert_eq!(retried.invalid_events, 0);
+        assert!(pending.is_empty());
+        assert!(
+            context
+                .chain
+                .state()
+                .trace_bisection_challenges()
+                .contains_key(&challenge_id)
+        );
+
+        let duplicate = ingest_network_messages(
+            &mut context,
+            vec![P2pMessage::NewTraceBisectionOpenPayload {
+                challenge_id,
+                receipt_id: config.receipt_id,
+                trace_root: config.trace_root,
+                challenger: config.challenger,
+                responder: config.responder,
+                payload,
+            }],
+            false,
+            &mut pending,
+        )
+        .unwrap();
+        assert_eq!(duplicate.trace_bisection_opens, 1);
+        assert_eq!(duplicate.trace_bisection_opens_applied, 1);
         assert_eq!(duplicate.invalid_events, 0);
         assert!(pending.is_empty());
     }

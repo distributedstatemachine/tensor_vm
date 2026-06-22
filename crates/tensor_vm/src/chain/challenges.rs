@@ -5,7 +5,8 @@ use super::state::{
 use super::{Chain, blocks, settlement};
 use crate::challenge::{
     BlockCheckChallenge, BlockCheckChallengeInput, ChallengeOutcome, TraceBisectionConfig,
-    TraceBisectionRound, TraceBisectionState, TraceBisectionStep, trace_bisection_challenge_id,
+    TraceBisectionOpen, TraceBisectionRound, TraceBisectionState, TraceBisectionStep,
+    trace_bisection_challenge_id,
 };
 use crate::error::{Result, TvmError};
 use crate::ir::{IrOpRefereeWitness, TensorGraph};
@@ -364,6 +365,18 @@ pub fn open_trace_bisection(
         .trace_bisection_challenges
         .insert(challenge_id, record.clone());
     Ok(record)
+}
+
+pub fn open_signed_trace_bisection(
+    chain: &mut Chain,
+    open: TraceBisectionOpen,
+) -> Result<TraceBisectionRecord> {
+    if !open.verify_signature() {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection open signature mismatch",
+        ));
+    }
+    open_trace_bisection(chain, open.config)
 }
 
 pub fn submit_trace_bisection_round(

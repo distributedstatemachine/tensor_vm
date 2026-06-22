@@ -416,6 +416,19 @@ impl ChainEngine for Chain {
                     transcript_root: record.state.transcript_root,
                 }])
             }
+            ChainCommand::OpenSignedTraceBisection(open) => {
+                let record = challenges::open_signed_trace_bisection(self, open)?;
+                Ok(vec![ChainEvent::TraceBisectionOpened {
+                    challenge_id: record.challenge_id,
+                    receipt_id: record.state.receipt_id,
+                    trace_root: record.state.trace_root,
+                    challenger: record.state.challenger,
+                    responder: record.state.responder,
+                    low_op: record.state.low_op,
+                    high_op: record.state.high_op,
+                    transcript_root: record.state.transcript_root,
+                }])
+            }
             ChainCommand::SubmitTraceBisectionRound(round) => {
                 let record = challenges::submit_trace_bisection_round(self, round)?;
                 let event = match record.status {

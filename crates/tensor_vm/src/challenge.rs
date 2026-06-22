@@ -88,6 +88,44 @@ pub struct TraceBisectionConfig {
     pub responder_bond: u64,
 }
 
+#[derive(Clone, Debug, Eq, PartialEq)]
+pub struct TraceBisectionOpen {
+    pub config: TraceBisectionConfig,
+    pub challenger_signature: Signature,
+}
+
+impl TraceBisectionOpen {
+    pub fn new(config: TraceBisectionConfig) -> Self {
+        let message_hash = trace_bisection_open_hash(&config);
+        let challenger_signature = sign(&config.challenger, &message_hash);
+        Self {
+            config,
+            challenger_signature,
+        }
+    }
+
+    pub fn message_hash(&self) -> Hash {
+        trace_bisection_open_hash(&self.config)
+    }
+
+    pub fn challenge_id(&self) -> Hash {
+        trace_bisection_challenge_id(
+            &self.config.receipt_id,
+            &self.config.trace_root,
+            &self.config.challenger,
+            &self.config.responder,
+        )
+    }
+
+    pub fn verify_signature(&self) -> bool {
+        verify_signature(
+            &self.config.challenger,
+            &self.message_hash(),
+            &self.challenger_signature,
+        )
+    }
+}
+
 pub fn trace_bisection_challenge_id(
     receipt_id: &Hash,
     trace_root: &Hash,
@@ -98,6 +136,19 @@ pub fn trace_bisection_challenge_id(
         b"tensor-vm-trace-bisection-challenge-id-v1",
         &[receipt_id, trace_root, challenger, responder],
     )
+}
+
+fn trace_bisection_open_hash(config: &TraceBisectionConfig) -> Hash {
+    let mut encoded = Vec::new();
+    encoded.extend_from_slice(&config.receipt_id);
+    encoded.extend_from_slice(&config.trace_root);
+    encoded.extend_from_slice(&config.challenger);
+    encoded.extend_from_slice(&config.responder);
+    encoded.extend_from_slice(&config.op_count.to_le_bytes());
+    encoded.extend_from_slice(&config.response_deadline_height.to_le_bytes());
+    encoded.extend_from_slice(&config.challenger_bond.to_le_bytes());
+    encoded.extend_from_slice(&config.responder_bond.to_le_bytes());
+    hash_bytes(b"tensor-vm-trace-bisection-open-v1", &[&encoded])
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]

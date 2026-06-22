@@ -14,6 +14,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         block_check_challenges_applied: 1,
         trace_bisection_rounds: 1,
         trace_bisection_rounds_applied: 1,
+        trace_bisection_opens: 1,
+        trace_bisection_opens_applied: 1,
         trace_bisection_referees: 1,
         trace_bisection_referees_applied: 1,
         jobs: 1,
@@ -47,6 +49,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
         block_check_challenges_applied: 2,
         trace_bisection_rounds: 2,
         trace_bisection_rounds_applied: 2,
+        trace_bisection_opens: 2,
+        trace_bisection_opens_applied: 2,
         trace_bisection_referees: 2,
         trace_bisection_referees_applied: 2,
         jobs: 0,
@@ -81,6 +85,8 @@ fn network_event_ingest_accumulates_runtime_counters() {
     assert_eq!(cumulative.block_check_challenges_applied, 3);
     assert_eq!(cumulative.trace_bisection_rounds, 3);
     assert_eq!(cumulative.trace_bisection_rounds_applied, 3);
+    assert_eq!(cumulative.trace_bisection_opens, 3);
+    assert_eq!(cumulative.trace_bisection_opens_applied, 3);
     assert_eq!(cumulative.trace_bisection_referees, 3);
     assert_eq!(cumulative.trace_bisection_referees_applied, 3);
     assert_eq!(cumulative.jobs, 1);

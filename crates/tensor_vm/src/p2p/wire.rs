@@ -4,8 +4,8 @@ use crate::chain::{
     ValidatorVrfRevealRecord,
 };
 use crate::challenge::{
-    BlockCheckChallenge, TraceBisectionRound, block_check_challenge_id,
-    trace_bisection_challenge_id,
+    BlockCheckChallenge, TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound,
+    block_check_challenge_id, trace_bisection_challenge_id,
 };
 use crate::codec::{self, CodecError};
 use crate::error::{Result as TvmResult, TvmError};
@@ -28,6 +28,7 @@ const MAX_TRACE_PROOF_SIBLINGS: usize = 64;
 const TRACE_OPENING_PAYLOAD_LEN: usize =
     8 + 8 + 8 + 8 + MAX_TRACE_OUTPUT_ROOTS * 32 + 8 + 8 + MAX_TRACE_PROOF_SIBLINGS * 32;
 const MAX_TRACE_BISECTION_EXPECTED_ROOTS: usize = MAX_TRACE_OUTPUT_ROOTS;
+const TRACE_BISECTION_OPEN_PAYLOAD_LEN: usize = 32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + 32;
 const TRACE_BISECTION_ROUND_PAYLOAD_MAX_LEN: usize = 32
     + 32
     + 32
@@ -120,6 +121,7 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::NewBlockCheckChallenge(_)
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
+        | P2pMessage::NewTraceBisectionOpenPayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
         | P2pMessage::NewTraceBisectionRefereePayload { .. } => Some(GossipTopic::Blocks),
         P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
@@ -176,6 +178,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewBlockCheckChallenge(_)
         | P2pMessage::NewBlockCheckChallengePayload { .. }
         | P2pMessage::NewObservedBlockCheckChallengePayload { .. }
+        | P2pMessage::NewTraceBisectionOpenPayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
         | P2pMessage::NewTraceBisectionRefereePayload { .. }
         | P2pMessage::NewJob(_)
@@ -286,6 +289,22 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
             write_hash(&mut out, challenger);
             write_bytes(&mut out, observed_block_payload);
             write_bytes(&mut out, challenge_payload);
+        }
+        P2pMessage::NewTraceBisectionOpenPayload {
+            challenge_id,
+            receipt_id,
+            trace_root,
+            challenger,
+            responder,
+            payload,
+        } => {
+            out.push(33);
+            write_hash(&mut out, challenge_id);
+            write_hash(&mut out, receipt_id);
+            write_hash(&mut out, trace_root);
+            write_hash(&mut out, challenger);
+            write_hash(&mut out, responder);
+            write_bytes(&mut out, payload);
         }
         P2pMessage::NewTraceBisectionRoundPayload {
             receipt_id,
@@ -588,6 +607,33 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
                 challenger,
                 observed_block_payload,
                 challenge_payload,
+            }
+        }
+        33 => {
+            let challenge_id = reader.read_hash()?;
+            let receipt_id = reader.read_hash()?;
+            let trace_root = reader.read_hash()?;
+            let challenger = reader.read_hash()?;
+            let responder = reader.read_hash()?;
+            let payload = reader.read_bytes_with_max(TRACE_BISECTION_OPEN_PAYLOAD_LEN)?;
+            let open = decode_trace_bisection_open_payload(&payload)?;
+            if open.challenge_id() != challenge_id
+                || open.config.receipt_id != receipt_id
+                || open.config.trace_root != trace_root
+                || open.config.challenger != challenger
+                || open.config.responder != responder
+            {
+                return Err(TvmError::InvalidReceipt(
+                    "trace bisection open payload announcement mismatch",
+                ));
+            }
+            P2pMessage::NewTraceBisectionOpenPayload {
+                challenge_id,
+                receipt_id,
+                trace_root,
+                challenger,
+                responder,
+                payload,
             }
         }
         31 => {
@@ -1007,6 +1053,50 @@ pub fn decode_trace_opening_payload(input: &[u8]) -> TvmResult<IrTraceOpening> {
         return Err(TvmError::InvalidReceipt("invalid trace opening payload"));
     }
     Ok(opening)
+}
+
+pub fn encode_trace_bisection_open_payload(open: &TraceBisectionOpen) -> Vec<u8> {
+    let mut out = Vec::new();
+    write_hash(&mut out, &open.config.receipt_id);
+    write_hash(&mut out, &open.config.trace_root);
+    write_hash(&mut out, &open.config.challenger);
+    write_hash(&mut out, &open.config.responder);
+    write_u64(&mut out, open.config.op_count);
+    write_u64(&mut out, open.config.response_deadline_height);
+    write_u64(&mut out, open.config.challenger_bond);
+    write_u64(&mut out, open.config.responder_bond);
+    write_hash(&mut out, &open.challenger_signature);
+    out
+}
+
+pub fn decode_trace_bisection_open_payload(input: &[u8]) -> TvmResult<TraceBisectionOpen> {
+    let mut reader = Reader::new(input);
+    let config = TraceBisectionConfig {
+        receipt_id: reader.read_hash()?,
+        trace_root: reader.read_hash()?,
+        challenger: reader.read_hash()?,
+        responder: reader.read_hash()?,
+        op_count: reader.read_u64()?,
+        response_deadline_height: reader.read_u64()?,
+        challenger_bond: reader.read_u64()?,
+        responder_bond: reader.read_u64()?,
+    };
+    let challenger_signature = reader.read_hash()?;
+    if !reader.is_done() {
+        return Err(TvmError::InvalidReceipt(
+            "trailing trace bisection open payload bytes",
+        ));
+    }
+    let open = TraceBisectionOpen {
+        config,
+        challenger_signature,
+    };
+    if !open.verify_signature() {
+        return Err(TvmError::InvalidReceipt(
+            "trace bisection open signature mismatch",
+        ));
+    }
+    Ok(open)
 }
 
 pub fn encode_trace_bisection_round_payload(round: &TraceBisectionRound) -> Vec<u8> {
@@ -1523,8 +1613,8 @@ mod tests {
         BlockVote, Chain, JobState, ReceiptState, TensorBlock, ValidatorAuditReport,
     };
     use crate::challenge::{
-        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionRound,
-        TraceBisectionState, block_check_challenge_id,
+        BlockCheckChallenge, BlockCheckChallengeInput, TraceBisectionConfig, TraceBisectionOpen,
+        TraceBisectionRound, TraceBisectionState, block_check_challenge_id,
     };
     use crate::codec;
     use crate::jobs::{
@@ -1607,6 +1697,18 @@ mod tests {
         let trace_bisection_round = trace_bisection_round_fixture();
         let trace_bisection_round_payload =
             encode_trace_bisection_round_payload(&trace_bisection_round);
+        let trace_bisection_open = TraceBisectionOpen::new(TraceBisectionConfig {
+            receipt_id: trace_bisection_round.receipt_id,
+            trace_root: trace_bisection_round.trace_root,
+            challenger: trace_bisection_round.challenger,
+            responder: trace_bisection_round.responder,
+            op_count: trace_bisection_round.high_op.saturating_add(1),
+            response_deadline_height: trace_bisection_round.response_deadline_height,
+            challenger_bond: trace_bisection_round.challenger_bond,
+            responder_bond: trace_bisection_round.responder_bond,
+        });
+        let trace_bisection_open_payload =
+            encode_trace_bisection_open_payload(&trace_bisection_open);
         let job = JobState::TensorOp(MatmulJob::synthetic(0, 1, 2, 3, 4, &h, 10));
         let miner = address(b"payload-miner");
         let receipt = ReceiptState::TensorOp(
@@ -1792,6 +1894,14 @@ mod tests {
                 responder: trace_bisection_round.responder,
                 transcript_leaf: trace_bisection_round.transcript_leaf(),
                 payload: trace_bisection_round_payload,
+            },
+            P2pMessage::NewTraceBisectionOpenPayload {
+                challenge_id: trace_bisection_open.challenge_id(),
+                receipt_id: trace_bisection_open.config.receipt_id,
+                trace_root: trace_bisection_open.config.trace_root,
+                challenger: trace_bisection_open.config.challenger,
+                responder: trace_bisection_open.config.responder,
+                payload: trace_bisection_open_payload,
             },
             P2pMessage::NewTraceBisectionRefereePayload {
                 challenge_id: referee_challenge_id,
@@ -2252,6 +2362,82 @@ mod tests {
             decode_trace_bisection_round_payload(&oversized_expected_roots),
             Err(TvmError::InvalidReceipt(
                 "trace bisection expected roots too large"
+            ))
+        );
+    }
+
+    #[test]
+    fn trace_bisection_open_payloads_roundtrip_and_reject_malformed_edges() {
+        let round = trace_bisection_round_fixture();
+        let open = TraceBisectionOpen::new(TraceBisectionConfig {
+            receipt_id: round.receipt_id,
+            trace_root: round.trace_root,
+            challenger: round.challenger,
+            responder: round.responder,
+            op_count: round.high_op.saturating_add(1),
+            response_deadline_height: round.response_deadline_height,
+            challenger_bond: round.challenger_bond,
+            responder_bond: round.responder_bond,
+        });
+        let payload = encode_trace_bisection_open_payload(&open);
+        assert_eq!(decode_trace_bisection_open_payload(&payload).unwrap(), open);
+
+        let message = P2pMessage::NewTraceBisectionOpenPayload {
+            challenge_id: open.challenge_id(),
+            receipt_id: open.config.receipt_id,
+            trace_root: open.config.trace_root,
+            challenger: open.config.challenger,
+            responder: open.config.responder,
+            payload: payload.clone(),
+        };
+        assert_eq!(decode_message(&encode_message(&message)).unwrap(), message);
+
+        let wrong_challenge = encode_message(&P2pMessage::NewTraceBisectionOpenPayload {
+            challenge_id: hash_bytes(b"test", &[b"wrong-open-challenge"]),
+            receipt_id: open.config.receipt_id,
+            trace_root: open.config.trace_root,
+            challenger: open.config.challenger,
+            responder: open.config.responder,
+            payload: payload.clone(),
+        });
+        assert_eq!(
+            decode_message(&wrong_challenge),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection open payload announcement mismatch"
+            ))
+        );
+
+        let wrong_responder = encode_message(&P2pMessage::NewTraceBisectionOpenPayload {
+            challenge_id: open.challenge_id(),
+            receipt_id: open.config.receipt_id,
+            trace_root: open.config.trace_root,
+            challenger: open.config.challenger,
+            responder: address(b"wrong-open-responder"),
+            payload: payload.clone(),
+        });
+        assert_eq!(
+            decode_message(&wrong_responder),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection open payload announcement mismatch"
+            ))
+        );
+
+        let mut tampered_signature = payload.clone();
+        let last = tampered_signature.len() - 1;
+        tampered_signature[last] = tampered_signature[last].wrapping_add(1);
+        assert_eq!(
+            decode_trace_bisection_open_payload(&tampered_signature),
+            Err(TvmError::InvalidReceipt(
+                "trace bisection open signature mismatch"
+            ))
+        );
+
+        let mut trailing = payload.clone();
+        trailing.push(1);
+        assert_eq!(
+            decode_trace_bisection_open_payload(&trailing),
+            Err(TvmError::InvalidReceipt(
+                "trailing trace bisection open payload bytes"
             ))
         );
     }
@@ -3011,6 +3197,29 @@ mod tests {
             Some(GossipTopic::Attestations)
         );
         assert_eq!(request_response_protocol_for_message(&reveal_message), None);
+        let open = TraceBisectionOpen::new(TraceBisectionConfig {
+            receipt_id: hash_bytes(b"test", &[b"mapping-trace-open-receipt"]),
+            trace_root: hash_bytes(b"test", &[b"mapping-trace-open-root"]),
+            challenger: address(b"mapping-trace-open-challenger"),
+            responder: address(b"mapping-trace-open-responder"),
+            op_count: 3,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        });
+        let open_message = P2pMessage::NewTraceBisectionOpenPayload {
+            challenge_id: open.challenge_id(),
+            receipt_id: open.config.receipt_id,
+            trace_root: open.config.trace_root,
+            challenger: open.config.challenger,
+            responder: open.config.responder,
+            payload: encode_trace_bisection_open_payload(&open),
+        };
+        assert_eq!(
+            gossip_topic_for_message(&open_message),
+            Some(GossipTopic::Blocks)
+        );
+        assert_eq!(request_response_protocol_for_message(&open_message), None);
         assert_eq!(
             gossip_topic_for_message(&P2pMessage::NewJob(h)),
             Some(GossipTopic::Jobs)

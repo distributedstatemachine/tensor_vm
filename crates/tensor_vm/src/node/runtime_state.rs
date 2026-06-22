@@ -13,6 +13,8 @@ pub struct NetworkEventIngest {
     pub block_votes_applied: usize,
     pub block_check_challenges: usize,
     pub block_check_challenges_applied: usize,
+    pub trace_bisection_opens: usize,
+    pub trace_bisection_opens_applied: usize,
     pub trace_bisection_rounds: usize,
     pub trace_bisection_rounds_applied: usize,
     pub trace_bisection_referees: usize,
@@ -49,6 +51,7 @@ impl NetworkEventIngest {
             || self.block_payloads_applied > 0
             || self.block_votes_applied > 0
             || self.block_check_challenges_applied > 0
+            || self.trace_bisection_opens_applied > 0
             || self.trace_bisection_rounds_applied > 0
             || self.trace_bisection_referees_applied > 0
             || self.invalid_events > 0
@@ -75,6 +78,12 @@ impl NetworkEventIngest {
         self.block_check_challenges_applied = self
             .block_check_challenges_applied
             .saturating_add(other.block_check_challenges_applied);
+        self.trace_bisection_opens = self
+            .trace_bisection_opens
+            .saturating_add(other.trace_bisection_opens);
+        self.trace_bisection_opens_applied = self
+            .trace_bisection_opens_applied
+            .saturating_add(other.trace_bisection_opens_applied);
         self.trace_bisection_rounds = self
             .trace_bisection_rounds
             .saturating_add(other.trace_bisection_rounds);

@@ -9,9 +9,10 @@ use crate::{
         decode_attestation_payload, decode_block_check_challenge_payload,
         decode_block_payload_with_selected_receipts, decode_block_vote_payload,
         decode_external_randomness_beacon_payload, decode_job_payload, decode_receipt_payload,
-        decode_trace_bisection_referee_payload, decode_trace_bisection_round_payload,
-        decode_validator_audit_report_payload, decode_validator_vrf_reveal_payload,
-        decode_verified_chained_drand_beacon_payload, decode_verified_drand_beacon_payload,
+        decode_trace_bisection_open_payload, decode_trace_bisection_referee_payload,
+        decode_trace_bisection_round_payload, decode_validator_audit_report_payload,
+        decode_validator_vrf_reveal_payload, decode_verified_chained_drand_beacon_payload,
+        decode_verified_drand_beacon_payload,
     },
     scheduler::SyntheticLocalJobSource,
     types::{Hash, hash_bytes},
@@ -662,6 +663,55 @@ pub fn apply_network_trace_bisection_round_payload(
         .unwrap_or(NetworkPayloadApply::Invalid)
 }
 
+pub fn apply_network_trace_bisection_open_payload(
+    chain: &mut Chain,
+    challenge_id: Hash,
+    receipt_id: Hash,
+    trace_root: Hash,
+    challenger: Hash,
+    responder: Hash,
+    payload: &[u8],
+) -> NetworkPayloadApply {
+    if challenge_id == [0; 32]
+        || receipt_id == [0; 32]
+        || trace_root == [0; 32]
+        || challenger == [0; 32]
+        || responder == [0; 32]
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if trace_bisection_challenge_id(&receipt_id, &trace_root, &challenger, &responder)
+        != challenge_id
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    let Ok(open) = decode_trace_bisection_open_payload(payload) else {
+        return NetworkPayloadApply::Invalid;
+    };
+    if open.challenge_id() != challenge_id
+        || open.config.receipt_id != receipt_id
+        || open.config.trace_root != trace_root
+        || open.config.challenger != challenger
+        || open.config.responder != responder
+    {
+        return NetworkPayloadApply::Invalid;
+    }
+    if chain
+        .state()
+        .trace_bisection_challenges()
+        .contains_key(&challenge_id)
+    {
+        return NetworkPayloadApply::Applied;
+    }
+    if !chain.state().receipts().contains_key(&receipt_id) {
+        return NetworkPayloadApply::Pending;
+    }
+    chain
+        .apply_command(ChainCommand::OpenSignedTraceBisection(open))
+        .map(|_| NetworkPayloadApply::Applied)
+        .unwrap_or(NetworkPayloadApply::Invalid)
+}
+
 pub fn apply_network_trace_bisection_referee_payload(
     chain: &mut Chain,
     challenge_id: Hash,
@@ -753,7 +803,7 @@ mod tests {
             ReceiptState, TensorBlock, ValidatorAuditReport,
         },
         challenge::{
-            BlockCheckChallenge, TraceBisectionConfig, TraceBisectionRound,
+            BlockCheckChallenge, TraceBisectionConfig, TraceBisectionOpen, TraceBisectionRound,
             block_check_challenge_id,
         },
         jobs::{GraphJob, GraphReceipt, MatmulJob, PrimitiveType, TensorOpReceipt},
@@ -764,8 +814,9 @@ mod tests {
         p2p::{
             encode_attestation_payload, encode_block_check_challenge_payload, encode_block_payload,
             encode_block_payload_with_selected_receipts, encode_block_vote_payload,
-            encode_job_payload, encode_receipt_payload, encode_trace_bisection_round_payload,
-            encode_validator_audit_report_payload, encode_validator_vrf_reveal_payload,
+            encode_job_payload, encode_receipt_payload, encode_trace_bisection_open_payload,
+            encode_trace_bisection_round_payload, encode_validator_audit_report_payload,
+            encode_validator_vrf_reveal_payload,
         },
         profile::ChainProfile,
         scheduler::{JobScheduler, SyntheticLocalJobSource},
@@ -2022,6 +2073,112 @@ mod tests {
                 conflicting.responder,
                 conflicting.transcript_leaf(),
                 &conflicting_payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+    }
+
+    #[test]
+    fn trace_bisection_open_payload_application_reports_pending_applied_and_invalid_edges() {
+        let (chain, config, _round, _payload) = trace_bisection_round_chain();
+        let open = TraceBisectionOpen::new(config.clone());
+        let challenge_id = open.challenge_id();
+        let payload = encode_trace_bisection_open_payload(&open);
+
+        let mut missing_receipt = chain.clone();
+        missing_receipt.remove_receipt_for_testing(&config.receipt_id);
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut missing_receipt,
+                challenge_id,
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &payload,
+            ),
+            NetworkPayloadApply::Pending
+        );
+
+        let mut apply_chain = chain.clone();
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                challenge_id,
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert!(
+            apply_chain
+                .state()
+                .trace_bisection_challenges()
+                .contains_key(&challenge_id)
+        );
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                challenge_id,
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &payload,
+            ),
+            NetworkPayloadApply::Applied
+        );
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                [0; 32],
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                challenge_id,
+                config.receipt_id,
+                hash_bytes(b"test", &[b"wrong-open-trace-root"]),
+                config.challenger,
+                config.responder,
+                &payload,
+            ),
+            NetworkPayloadApply::Invalid
+        );
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                challenge_id,
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &[1, 2, 3],
+            ),
+            NetworkPayloadApply::Invalid
+        );
+
+        let mut tampered = open.clone();
+        tampered.config.responder = address(b"wrong-signed-open-responder");
+        assert_eq!(
+            apply_network_trace_bisection_open_payload(
+                &mut apply_chain,
+                challenge_id,
+                config.receipt_id,
+                config.trace_root,
+                config.challenger,
+                config.responder,
+                &encode_trace_bisection_open_payload(&tampered),
             ),
             NetworkPayloadApply::Invalid
         );

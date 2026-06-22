@@ -5,7 +5,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 
 ## Current State
 
-- Active feature: none; Iteration 167 implementation, validation, commit, and push are complete.
+- Active feature: none; Iteration 168 implementation, validation, commit, and push are in progress.
 - Current status: delayed proposer, receipt, challenge, validator-audit, and credit rewards are chain-owned
   pending claims. Maturity release commands cannot move active matured rewards into spendable balances;
   explicit beneficiary `ClaimReward` remains the canonical spendability boundary. The trace-bisection path
@@ -14,9 +14,7 @@ current status, active/recent iterations, validation evidence, blockers, and arc
   chain-owned slashing plus delayed challenger reward claims.
 - Current blockers:
   - Public 7-day external deployment evidence and CUDA miner evidence remain outside the local CPU proof.
-- Next action: choose the next feature-sized slice. Current high-value options are trace-bisection
-  session-open/runtime challenge generation, multi-round DoS policy, deployed full VRF lifecycle evidence,
-  public/CUDA deployment evidence, or remaining exact Tier-B/CUDA conformance.
+- Next action: choose the next feature-sized slice after Iteration 168 is committed and pushed.
 
 ## Readiness Matrix
 
@@ -38,6 +36,112 @@ current status, active/recent iterations, validation evidence, blockers, and arc
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 168: Signed Trace-Bisection Session-Open Gossip
+
+Feature capability: a trace-bisection dispute session can be opened from a bounded, signed p2p gossip
+payload and applied through the shared node pending queue into canonical chain state. Network peers must
+not be able to open a challenge on behalf of an arbitrary challenger without that challenger's signature.
+
+Readiness requirements covered: `upow.md` §8.2 interactive fraud-proof setup over `trace_root`,
+`upow.md` §9 verification-time trace availability, `mvp_spec.md` §4.6 canonical runtime/transition
+boundary, and the exec-plan gap for trace-bisection session-open gossip.
+
+Files/modules likely touched: `challenge.rs` for a signed open wrapper, `chain::engine/commands/challenges`
+for a signed open command path, `api.rs` and `p2p/wire.rs` for bounded gossip payloads,
+`node/message_ingest.rs`, `node/payload_application.rs`, `node/payload_processor.rs`,
+`node/pending_payloads.rs`, `node/runtime_state.rs` for application/retry/counters, chain/node/p2p tests,
+and this execution plan.
+
+Canonical owner: `chain::challenges` remains the canonical owner of session admission, duplicate
+rejection, receipt/responder/deadline validation, and state-rooted challenge records. Signature verification
+for network-opened sessions is owned by the new signed chain command before it delegates to the existing
+open transition.
+
+Adapter callers: p2p decode, node ingest, and pending retry submit only the signed session-open payload to
+the chain command. Runtime/checker surfaces only observe counters and chain state.
+
+Old shortcut being removed: there is currently no network session-open path; direct callers can open from
+an unsigned `TraceBisectionConfig`. The new network path must not reuse that unsigned config as a gossip
+authorization boundary.
+
+Regression test that proves the shortcut is gone: a session-open payload with a tampered challenger
+signature is rejected by wire decode or node application; a valid signed open payload queues when the
+receipt is unknown, applies after the receipt arrives, records the same `TraceBisectionOpened` state as the
+direct chain command, and duplicate replay is idempotent.
+
+Behavior with local synthetic block production disabled: unchanged; session-open admission depends only on
+chain receipt state and the signed payload, not local producer mode or synthetic jobs.
+
+Behavior for producer and non-producer roles: both roles apply the same signed payload through the shared
+node driver and `ChainCommand`; producer capability does not change inbound session-open application.
+
+Structured evidence source: `trace_bisection_challenges`, `NetworkEventIngest` trace-bisection open
+counters, pending payload counts, chain events, state roots, p2p roundtrip tests, and focused chain/node
+tests.
+
+Finality source: unchanged block append/vote/finality; opening a challenge is a normal chain state
+transition and does not finalize a fraud outcome.
+
+Wire-size and codec boundary: add one bounded gossipsub payload type on the existing blocks topic. The
+payload encodes fixed-width hashes/addresses/u64s plus one 32-byte challenger signature and is decoded with
+a max length before allocation.
+
+Parallel subagents to run: skipped; available subagent tooling requires explicit user authorization.
+Read-only discovery is parallelized with local shell tools.
+
+Parallelizable implementation workstreams: signed open type/chain command, bounded p2p codec, node
+pending/application counters, and focused tests are separable, but the parent remains the single writer
+because the type and command names are shared.
+
+Tests/checkers/docs to add or update: chain tests for signed open admission/rejection, p2p wire
+roundtrip/malformed tests, node driver pending/retry tests for session-open payloads, and this execution
+plan.
+
+Narrow validation commands:
+- `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`
+- `cargo test -p tensor_vm trace_bisection_open --lib -- --nocapture`
+- `cargo test -p tensor_vm p2p_messages_roundtrip --lib -- --nocapture`
+- `cargo test -p tensor_vm pending_payloads --lib -- --nocapture`
+
+Broad validation commands before commit:
+- `cargo fmt --check --all`
+- `cargo check -p tensor_vm --tests`
+- `git diff --check`
+- `cargo test -p tensor_vm --lib`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo tarpaulin --workspace --offline`
+
+Expected observable evidence: `NewTraceBisectionOpenPayload` is bounded, announcement fields must match
+the decoded signed open, the challenger signature is verified before canonical admission, node ingest
+tracks observed/applied open counters, and pending retry applies opens once prerequisite receipts exist.
+
+Out of scope: automatic runtime challenge generation, multi-round DoS policy, timeout gossip, public/CUDA
+evidence, and changing round/referee payload formats.
+
+Split trigger: if signed-open admission requires migrating existing persisted trace-bisection records or
+changing the existing direct `OpenTraceBisection` tests, split the chain authentication migration from the
+p2p/node payload work.
+
+Validation started on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused trace-bisection gate: `cargo test -p tensor_vm trace_bisection --lib -- --nocapture`
+  passed, including signed-open wire, node application, and node ingest retry tests.
+- Signed-open focused gate: `cargo test -p tensor_vm trace_bisection_open --lib -- --nocapture`
+  passed: 3 tests.
+- Wire roundtrip gate: `cargo test -p tensor_vm p2p_messages_roundtrip --lib -- --nocapture` passed.
+- Pending queue gate: `cargo test -p tensor_vm pending_payloads --lib -- --nocapture` passed: 5 tests.
+- Format gate: `cargo fmt --all -- --check` passed after applying rustfmt.
+- Compile gate: `cargo check -p tensor_vm --tests` passed.
+- Full library gate: `cargo test -p tensor_vm --lib` passed: 530 tests.
+- Release local-testnet gate: `cargo test -p tensor_vm local_testnet --release` passed, including 5
+  release lib tests and the CLI local-testnet gateway test.
+- Coverage gate: `cargo tarpaulin --workspace --offline` passed with 84.65% line coverage.
+- Diff hygiene gate: `git diff --check` passed.
+- Manual verifier-style integrated diff review: ownership remains canonical in `chain::challenges`;
+  p2p decode enforces bounded payloads and signed-open envelope matching; node ingest/retry routes only
+  through the shared signed payload application path; tests cover tampered signatures, unknown-receipt
+  queuing, retry application, and duplicate replay.
 
 ### Iteration 167: Explicit Challenge Reward Claim Boundary
 
