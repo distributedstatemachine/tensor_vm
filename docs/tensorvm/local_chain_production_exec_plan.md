@@ -103,6 +103,8 @@ Validation completed on June 22, 2026:
 - Manual verifier-style review: no standalone verifier binary was used or added; the change stays in node
   dependency classification, uses existing bounded receipt payload decoding, preserves
   `ChainCommand::SubmitReceipt` as canonical graph receipt admission, and adds no new wire format.
+- Feature commit `1006b70` pushed to `main` on June 22, 2026:
+  `git push` returned `ee329bc..1006b70  main -> main`.
 
 Out of scope: new graph-program gossip message, CUDA graph execution evidence, public deployment evidence,
 and changing graph receipt verification semantics.
