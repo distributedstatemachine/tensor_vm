@@ -77,6 +77,8 @@ Validation completed on June 22, 2026:
   inputs from local graph replay and submits the existing chain-owned `RefereeTraceBisection` command;
   chain admission still validates op index, input roots, canonical op output roots, slashing, and delayed
   challenger reward settlement.
+- Feature commit `b5bf0d9` pushed to `main` on June 22, 2026:
+  `git push` returned `2d353a8..b5bf0d9  main -> main`.
 
 Out of scope: adding a standalone verifier binary, changing trace-bisection economics, multi-round DoS
 policy, incomplete-transcript final-opening automation when isolation advances past the last opened op, and
@@ -134,6 +136,7 @@ local-testnet, tarpaulin, and manual review. Feature commit `6901655` pushed to 
 - Iteration 174 validation passed on June 22, 2026: first executable Gate 0; focused referee/IR/runtime
   state tests; trace-bisection filtered tests; fmt/check/diff; clippy; `cargo test -p tensor_vm --lib`
   (538 passed); release local-testnet; tarpaulin 84.48%; and manual chain/runtime boundary review.
+  Feature commit `b5bf0d9` pushed to `main` (`2d353a8..b5bf0d9`).
 - Iteration 173 validation passed on June 22, 2026: first executable Gate 0; focused reward-boundary and
   reward module tests; broad fmt/check/diff/lib (537 passed), release local-testnet, tarpaulin 84.52%, and
   manual review. Feature commit `919f77f` pushed to `main` (`8b94508..919f77f`).
