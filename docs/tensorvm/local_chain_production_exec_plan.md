@@ -59,7 +59,7 @@ checkpoint before edits.
 
 ### Iteration 164: Trace-Bisection Referee Payload Gossip And Node Application
 
-Commit: pending.
+Commit: `e42ad44` (pending push).
 
 Feature capability: a one-op referee witness for an isolated trace-bisection dispute should cross node
 boundaries as a bounded gossip payload and be admitted only through the shared node pending queue plus
