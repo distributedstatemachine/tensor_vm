@@ -1,17 +1,20 @@
 use super::{
-    BlockVote, Chain, ExternalRandomnessBeaconRecord, InvalidOutputSlashRecord, ReceiptRewardKind,
-    ValidatorAuditAppeal, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
-    ValidatorAuditAssignment, ValidatorAuditReport, ValidatorAuditResult,
-    ValidatorAuditSlashRecord, ValidatorVrfRevealRecord, blocks, settlement,
+    BlockVote, Chain, ExternalRandomnessBeaconProof, ExternalRandomnessBeaconRecord,
+    InvalidOutputSlashRecord, ReceiptRewardKind, ValidatorAuditAppeal, ValidatorAuditAppealRecord,
+    ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditReport,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorVrfRevealRecord, blocks, settlement,
 };
 use crate::error::{Result, TvmError};
 use crate::scheduler::JobScheduler;
 use crate::types::{Address, Hash, hash_bytes, sign, verify_signature};
 use crate::verify::{ValidatorAttestation, VerificationResult};
+use drand_verify::{G1Pubkey, Pubkey, derive_randomness};
 use std::collections::BTreeSet;
 
 const VALIDATOR_AUDIT_APPEAL_REASON_MAX_BYTES: usize = 256;
 const EXTERNAL_RANDOMNESS_SOURCE_ID_MAX_BYTES: usize = 96;
+const DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES: usize = 48;
+const DRAND_PEDERSEN_BLS_SIGNATURE_BYTES: usize = 96;
 pub const RANDOMNESS_BEACON_SOURCE: &str = "local_finalized_chain_beacon_v1";
 pub const RANDOMNESS_DRAND_ROUND_MAPPING: &str =
     "local_finalized_height_to_beacon_round_v1:round=receipt_submission_finalized_beacon_round";
@@ -30,6 +33,83 @@ pub fn submit_external_randomness_beacon(
     beacon_round: u64,
     randomness: Hash,
     proof_hash: Hash,
+) -> Result<ExternalRandomnessBeaconRecord> {
+    record_external_randomness_beacon(
+        chain,
+        source_id,
+        beacon_round,
+        randomness,
+        proof_hash,
+        ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1,
+    )
+}
+
+pub fn submit_verified_drand_beacon(
+    chain: &mut Chain,
+    source_id: String,
+    beacon_round: u64,
+    public_key: Vec<u8>,
+    signature: Vec<u8>,
+) -> Result<ExternalRandomnessBeaconRecord> {
+    if public_key.len() != DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES {
+        return Err(TvmError::InvalidReceipt("drand public key length mismatch"));
+    }
+    if signature.len() != DRAND_PEDERSEN_BLS_SIGNATURE_BYTES {
+        return Err(TvmError::InvalidReceipt("drand signature length mismatch"));
+    }
+    let mut public_key_bytes = [0; DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES];
+    public_key_bytes.copy_from_slice(&public_key);
+    let public_key = G1Pubkey::from_fixed(public_key_bytes)
+        .map_err(|_| TvmError::InvalidReceipt("invalid drand public key"))?;
+    let verified = public_key
+        .verify(beacon_round, b"", &signature)
+        .map_err(|_| TvmError::InvalidReceipt("invalid drand signature point"))?;
+    if !verified {
+        return Err(TvmError::InvalidReceipt(
+            "drand signature verification failed",
+        ));
+    }
+    let randomness = derive_randomness(&signature);
+    let public_key_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
+        &[&public_key_bytes],
+    );
+    let signature_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-unchained-signature-v1",
+        &[&signature],
+    );
+    let proof_hash = hash_bytes(
+        b"tensor-vm-drand-pedersen-bls-unchained-proof-v1",
+        &[
+            source_id.as_bytes(),
+            &beacon_round.to_le_bytes(),
+            &public_key_hash,
+            &signature_hash,
+            &randomness,
+        ],
+    );
+    record_external_randomness_beacon(
+        chain,
+        source_id,
+        beacon_round,
+        randomness,
+        proof_hash,
+        ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+            public_key_hash,
+            signature_hash,
+            public_key_len: DRAND_PEDERSEN_BLS_PUBLIC_KEY_BYTES as u64,
+            signature_len: DRAND_PEDERSEN_BLS_SIGNATURE_BYTES as u64,
+        },
+    )
+}
+
+fn record_external_randomness_beacon(
+    chain: &mut Chain,
+    source_id: String,
+    beacon_round: u64,
+    randomness: Hash,
+    proof_hash: Hash,
+    proof: ExternalRandomnessBeaconProof,
 ) -> Result<ExternalRandomnessBeaconRecord> {
     if source_id.is_empty() || source_id.len() > EXTERNAL_RANDOMNESS_SOURCE_ID_MAX_BYTES {
         return Err(TvmError::InvalidReceipt(
@@ -60,6 +140,7 @@ pub fn submit_external_randomness_beacon(
         beacon_round,
         randomness,
         proof_hash,
+        proof,
         observed_at_height: chain.state.height,
     };
     chain.state.finalized_beacon_round = beacon_round;

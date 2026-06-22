@@ -68,6 +68,12 @@ pub enum ChainCommand {
         randomness: Hash,
         proof_hash: Hash,
     },
+    SubmitVerifiedDrandBeacon {
+        source_id: String,
+        beacon_round: u64,
+        public_key: Vec<u8>,
+        signature: Vec<u8>,
+    },
     SubmitValidatorVrfReveal(ValidatorVrfRevealRecord),
     Transfer {
         from: Address,

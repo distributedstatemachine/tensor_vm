@@ -12,6 +12,7 @@ cuda-kernels = []
 
 [dependencies]
 clap = { version = "4", features = ["derive", "env"] }
+drand-verify = "0.6.2"
 futures = "0.3"
 # Mandatory TensorVM runtime dependency. `default-features = false` only limits the
 # upstream libp2p protocol surface; libp2p itself is not a TensorVM feature gate.

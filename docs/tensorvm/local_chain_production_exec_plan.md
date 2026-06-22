@@ -669,6 +669,22 @@ cargo tarpaulin --workspace --offline
 error: no such command: `tarpaulin`
 ```
 
+Iteration 147 adds a production-aligned drand randomness admission boundary instead of treating
+`proof_hash` as the proof. The chain now exposes `SubmitVerifiedDrandBeacon` for bounded
+`pedersen-bls-unchained` drand evidence, verifies the BLS signature with `drand-verify`, derives the
+admitted randomness from the signature, and commits typed proof metadata into the external randomness
+record, durable state encoding, and state root. The existing `SubmitExternalRandomnessBeacon` command is
+kept as the explicit `local-deterministic-fixture-v1` path for local testnet fixtures only.
+
+Iteration 147 validation checkpoint:
+
+```text
+cargo test -p tensor_vm chain::tests::proposers --lib -- --nocapture
+cargo test -p tensor_vm storage::chain_state --lib -- --nocapture
+cargo test -p tensor_vm app::randomness_beacon --lib -- --nocapture
+cargo test -p tensor_vm p2p::wire --lib -- --nocapture
+```
+
 ## Archive
 
 - Iterations 73-103: validator-audit calibration/appeal, diagnostic block-check challenges, fallback

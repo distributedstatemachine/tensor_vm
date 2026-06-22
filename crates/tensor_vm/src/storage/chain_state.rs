@@ -1,12 +1,12 @@
 use crate::chain::{
     AccountState, BlockCheckChallengeRecord, BlockVote, Chain, ChainParams, ChainParts, ChainState,
-    ChainStateParts, DataUnavailabilitySlashRecord, ExternalRandomnessBeaconRecord, HardwareClass,
-    InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
-    PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
-    ReceiptRewardKind, ReceiptRewardMaturity, ReceiptState, RedundantSettlementDelayRecord,
-    RewardState, TensorBlock, ValidatorAuditAppealRecord, ValidatorAuditAppealResolution,
-    ValidatorAuditAssignment, ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState,
-    ValidatorVrfRevealRecord,
+    ChainStateParts, DataUnavailabilitySlashRecord, ExternalRandomnessBeaconProof,
+    ExternalRandomnessBeaconRecord, HardwareClass, InvalidOutputSlashRecord, JobState, MinerState,
+    ModelState, PendingChallengeReward, PendingCreditReward, PendingProposerReward,
+    PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptRewardKind, ReceiptRewardMaturity,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, TensorBlock,
+    ValidatorAuditAppealRecord, ValidatorAuditAppealResolution, ValidatorAuditAssignment,
+    ValidatorAuditResult, ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
 };
 use crate::codec::{
     self as payload_codec, primitive_type_from_tag, primitive_type_tag,
@@ -630,7 +630,31 @@ fn encode_external_randomness_beacons(
         write_u64(out, beacon.beacon_round);
         write_hash(out, &beacon.randomness);
         write_hash(out, &beacon.proof_hash);
+        encode_external_randomness_beacon_proof(out, &beacon.proof);
         write_u64(out, beacon.observed_at_height);
+    }
+}
+
+fn encode_external_randomness_beacon_proof(
+    out: &mut Vec<u8>,
+    proof: &ExternalRandomnessBeaconProof,
+) {
+    match proof {
+        ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1 => {
+            out.push(0);
+        }
+        ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+            public_key_hash,
+            signature_hash,
+            public_key_len,
+            signature_len,
+        } => {
+            out.push(1);
+            write_hash(out, public_key_hash);
+            write_hash(out, signature_hash);
+            write_u64(out, *public_key_len);
+            write_u64(out, *signature_len);
+        }
     }
 }
 
@@ -647,6 +671,7 @@ fn decode_external_randomness_beacons(
         let beacon_round = reader.read_u64()?;
         let randomness = reader.read_hash()?;
         let proof_hash = reader.read_hash()?;
+        let proof = decode_external_randomness_beacon_proof(reader)?;
         let observed_at_height = reader.read_u64()?;
         beacons.insert(
             key,
@@ -655,11 +680,29 @@ fn decode_external_randomness_beacons(
                 beacon_round,
                 randomness,
                 proof_hash,
+                proof,
                 observed_at_height,
             },
         );
     }
     Ok(beacons)
+}
+
+fn decode_external_randomness_beacon_proof(
+    reader: &mut StateReader<'_>,
+) -> Result<ExternalRandomnessBeaconProof> {
+    match reader.read_u8()? {
+        0 => Ok(ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1),
+        1 => Ok(ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+            public_key_hash: reader.read_hash()?,
+            signature_hash: reader.read_hash()?,
+            public_key_len: reader.read_u64()?,
+            signature_len: reader.read_u64()?,
+        }),
+        _ => Err(TvmError::Storage(
+            "unknown external randomness beacon proof tag",
+        )),
+    }
 }
 
 fn encode_attestations(

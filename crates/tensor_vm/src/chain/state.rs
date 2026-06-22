@@ -633,11 +633,32 @@ pub struct RandomnessBindingEvidence {
 }
 
 #[derive(Clone, Debug, Eq, PartialEq)]
+pub enum ExternalRandomnessBeaconProof {
+    LocalDeterministicFixtureV1,
+    DrandPedersenBlsUnchainedV1 {
+        public_key_hash: Hash,
+        signature_hash: Hash,
+        public_key_len: u64,
+        signature_len: u64,
+    },
+}
+
+impl ExternalRandomnessBeaconProof {
+    pub fn label(&self) -> &'static str {
+        match self {
+            Self::LocalDeterministicFixtureV1 => "local-deterministic-fixture-v1",
+            Self::DrandPedersenBlsUnchainedV1 { .. } => "drand-pedersen-bls-unchained-v1",
+        }
+    }
+}
+
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ExternalRandomnessBeaconRecord {
     pub source_id: String,
     pub beacon_round: u64,
     pub randomness: Hash,
     pub proof_hash: Hash,
+    pub proof: ExternalRandomnessBeaconProof,
     pub observed_at_height: u64,
 }
 

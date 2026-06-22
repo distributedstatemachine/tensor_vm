@@ -1,5 +1,18 @@
 use super::*;
 
+fn hex_bytes(input: &str) -> Vec<u8> {
+    assert_eq!(input.len() % 2, 0);
+    input
+        .as_bytes()
+        .chunks_exact(2)
+        .map(|pair| {
+            let high = (pair[0] as char).to_digit(16).expect("hex high nibble");
+            let low = (pair[1] as char).to_digit(16).expect("hex low nibble");
+            ((high << 4) | low) as u8
+        })
+        .collect()
+}
+
 #[test]
 fn validation_seed_is_bound_to_finalized_randomness_and_receipt() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
@@ -73,6 +86,10 @@ fn external_randomness_beacon_command_advances_receipt_anchor_source() {
     assert_eq!(record.source_id, "drand-mainnet-round-v1");
     assert_eq!(record.randomness, external_beacon);
     assert_eq!(record.proof_hash, proof_hash);
+    assert_eq!(
+        record.proof,
+        ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1
+    );
     let evidence = chain.state().randomness_binding_evidence();
     assert_eq!(evidence.external_beacon_record_count, 1);
     assert_eq!(evidence.latest_external_beacon_round, 7);
@@ -91,6 +108,102 @@ fn external_randomness_beacon_command_advances_receipt_anchor_source() {
         .expect("receipt should anchor to current external beacon");
     assert_eq!(anchor.beacon_round, 7);
     assert_eq!(anchor.finalized_randomness, external_beacon);
+}
+
+#[test]
+fn verified_drand_beacon_command_derives_and_records_randomness() {
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"verified-drand-genesis"]));
+    let public_key = hex_bytes(
+        "8200fc249deb0148eb918d6e213980c5d01acd7fc251900d9260136da3b54836ce125172399ddc69c4e3e11429b62c11",
+    );
+    let signature = hex_bytes(
+        "94f6b85df7cce7237e8e7df66d794ddad092de5d8bb6a791b97e905aa89852e506ac36a792eba7021e22eebf34891f8914bf9a8dd9233ea0a4c5ca00ef8404999f899073dd2eade61fe54077fee8168f83dcb61a758b6883b38904054e64a433",
+    );
+    let expected_randomness: Hash =
+        hex_bytes("f3d6adf1daa2c7877f90fb0f1a675ab0a42653a1e2a9b66fee0749d47a47bc57")
+            .try_into()
+            .unwrap();
+
+    let events = chain
+        .apply_command(ChainCommand::SubmitVerifiedDrandBeacon {
+            source_id: "drand-testnet-unchained".to_owned(),
+            beacon_round: 223_344,
+            public_key: public_key.clone(),
+            signature: signature.clone(),
+        })
+        .unwrap();
+
+    assert_eq!(
+        events,
+        vec![ChainEvent::ExternalRandomnessBeaconAccepted {
+            source_id: "drand-testnet-unchained".to_owned(),
+            beacon_round: 223_344,
+            randomness: expected_randomness,
+        }]
+    );
+    assert_eq!(chain.state().finalized_beacon_round(), 223_344);
+    assert_eq!(chain.state().finalized_randomness(), expected_randomness);
+    let record = chain
+        .state()
+        .external_randomness_beacons()
+        .get(&223_344)
+        .expect("verified drand beacon should be recorded");
+    assert_eq!(record.randomness, expected_randomness);
+    assert_ne!(record.proof_hash, [0; 32]);
+    assert_eq!(
+        record.proof,
+        ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+            public_key_hash: hash_bytes(
+                b"tensor-vm-drand-pedersen-bls-unchained-public-key-v1",
+                &[&public_key],
+            ),
+            signature_hash: hash_bytes(
+                b"tensor-vm-drand-pedersen-bls-unchained-signature-v1",
+                &[&signature],
+            ),
+            public_key_len: 48,
+            signature_len: 96,
+        }
+    );
+}
+
+#[test]
+fn verified_drand_beacon_command_rejects_wrong_round_and_signature() {
+    let public_key = hex_bytes(
+        "8200fc249deb0148eb918d6e213980c5d01acd7fc251900d9260136da3b54836ce125172399ddc69c4e3e11429b62c11",
+    );
+    let signature = hex_bytes(
+        "94f6b85df7cce7237e8e7df66d794ddad092de5d8bb6a791b97e905aa89852e506ac36a792eba7021e22eebf34891f8914bf9a8dd9233ea0a4c5ca00ef8404999f899073dd2eade61fe54077fee8168f83dcb61a758b6883b38904054e64a433",
+    );
+    let wrong_signature = hex_bytes(
+        "86ecea71376e78abd19aaf0ad52f462a6483626563b1023bd04815a7b953da888c74f5bf6ee672a5688603ab310026230522898f33f23a7de363c66f90ffd49ec77ebf7f6c1478a9ecd6e714b4d532ab43d044da0a16fed13b4791d7fc999e2b",
+    );
+
+    let mut wrong_round_chain = Chain::new(hash_bytes(b"test", &[b"wrong-drand-round"]));
+    assert_eq!(
+        wrong_round_chain.apply_command(ChainCommand::SubmitVerifiedDrandBeacon {
+            source_id: "drand-testnet-unchained".to_owned(),
+            beacon_round: 223_343,
+            public_key: public_key.clone(),
+            signature: signature.clone(),
+        }),
+        Err(TvmError::InvalidReceipt(
+            "drand signature verification failed"
+        ))
+    );
+
+    let mut wrong_signature_chain = Chain::new(hash_bytes(b"test", &[b"wrong-drand-signature"]));
+    assert_eq!(
+        wrong_signature_chain.apply_command(ChainCommand::SubmitVerifiedDrandBeacon {
+            source_id: "drand-testnet-unchained".to_owned(),
+            beacon_round: 223_344,
+            public_key,
+            signature: wrong_signature,
+        }),
+        Err(TvmError::InvalidReceipt(
+            "drand signature verification failed"
+        ))
+    );
 }
 
 #[test]

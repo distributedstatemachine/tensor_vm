@@ -1,9 +1,9 @@
 use super::{
     AccountState, BlockCheckChallengeRecord, BlockCheckTranscript, BlockVote, ChainState,
-    DataUnavailabilitySlashRecord, ExternalRandomnessBeaconRecord, InvalidOutputSlashRecord,
-    JobState, MinerState, ModelState, PendingChallengeReward, PendingCreditReward,
-    PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor, ReceiptState,
-    RedundantSettlementDelayRecord, RewardState, ValidatorAuditAppealRecord,
+    DataUnavailabilitySlashRecord, ExternalRandomnessBeaconProof, ExternalRandomnessBeaconRecord,
+    InvalidOutputSlashRecord, JobState, MinerState, ModelState, PendingChallengeReward,
+    PendingCreditReward, PendingProposerReward, PendingReceiptReward, ReceiptRandomnessAnchor,
+    ReceiptState, RedundantSettlementDelayRecord, RewardState, ValidatorAuditAppealRecord,
     ValidatorAuditAppealResolution, ValidatorAuditAssignment, ValidatorAuditResult,
     ValidatorAuditSlashRecord, ValidatorState, ValidatorVrfRevealRecord,
 };
@@ -133,9 +133,33 @@ pub(super) fn external_randomness_beacon_root(
         encoded.extend_from_slice(&beacon.beacon_round.to_le_bytes());
         encoded.extend_from_slice(&beacon.randomness);
         encoded.extend_from_slice(&beacon.proof_hash);
+        encode_external_randomness_beacon_proof(&mut encoded, &beacon.proof);
         encoded.extend_from_slice(&beacon.observed_at_height.to_le_bytes());
     }
     hash_bytes(b"tensor-vm-external-randomness-beacon-root-v1", &[&encoded])
+}
+
+fn encode_external_randomness_beacon_proof(
+    encoded: &mut Vec<u8>,
+    proof: &ExternalRandomnessBeaconProof,
+) {
+    match proof {
+        ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1 => {
+            encoded.push(0);
+        }
+        ExternalRandomnessBeaconProof::DrandPedersenBlsUnchainedV1 {
+            public_key_hash,
+            signature_hash,
+            public_key_len,
+            signature_len,
+        } => {
+            encoded.push(1);
+            encoded.extend_from_slice(public_key_hash);
+            encoded.extend_from_slice(signature_hash);
+            encoded.extend_from_slice(&public_key_len.to_le_bytes());
+            encoded.extend_from_slice(&signature_len.to_le_bytes());
+        }
+    }
 }
 
 pub(super) fn validator_vrf_reveal_root(

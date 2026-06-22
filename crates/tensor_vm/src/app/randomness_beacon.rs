@@ -299,6 +299,7 @@ mod tests {
             beacon_round: config.beacon_round,
             randomness: config.randomness,
             proof_hash: config.proof_hash,
+            proof: crate::chain::ExternalRandomnessBeaconProof::LocalDeterministicFixtureV1,
             observed_at_height: 3,
         };
         assert!(external_randomness_beacon_matches_config(&record, &config));
