@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 181 complete: Explorer WebSocket GraphExecution Evidence.
+- Active feature: Iteration 182 complete: Reward Sweep Boundary Naming.
 - Current status: the local CPU checker requires live TensorOp, LinearTrainingStep, and GraphExecution
   receipt/block evidence. Graph receipt verification test scenarios cover every consensus-admitted frozen
   registry op locally, and explorer WebSocket jobs/receipts now expose the same `graph_execution`
@@ -35,6 +35,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 182: Reward Sweep Boundary Naming
+
+Feature capability: make the chain reward command surface explicit that delayed rewards are not paid by
+maintenance release/sweep commands; non-voided proposer, receipt, challenge, and credit rewards stay
+pending until the beneficiary submits `ClaimReward`.
+
+Readiness requirements covered: `goal.md`/`upow.md` economics, delayed reward maturity, claim-owned
+spendability, and the local/full boundary that rewards are chain-owned pending claims rather than adapter
+workarounds.
+
+Canonical owner: `chain::commands` owns delayed reward claim release, voided/prunable maintenance sweeps,
+and spendable reward crediting.
+
+Adapter callers: transaction submission, node/runtime command callers, tests, and status/explorer readers
+that observe pending reward ledgers.
+
+Old shortcut being removed: ambiguous internal helper names made the public `ReleaseMatured*` commands look
+like a payout path, even though live matured rewards already remain pending for `ClaimReward`.
+
+Regression test that proves the shortcut is gone:
+`chain::tests::reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim` covers
+non-voided proposer, receipt, challenge, and credit rewards and requires every `ReleaseMatured*` command to
+leave those claims pending until `ClaimReward`.
+
+Behavior with local synthetic block production disabled: unchanged; reward release is chain state only and
+does not depend on synthetic production.
+
+Behavior for producer and non-producer roles: unchanged; producer and non-producer block application both
+preserve non-voided mature claims until the beneficiary claim command.
+
+Structured evidence source: chain command events, pending reward ledgers, reward root/state root, and this
+exec plan.
+
+Finality source: unchanged; finalized/admitted block state may mature claims, but spendability still
+requires `ClaimReward`.
+
+Wire-size and codec boundary: unchanged; no p2p/storage/RPC wire format changes.
+
+Parallel subagents to run: none. The multi-agent tool policy only permits spawning when the user
+explicitly asks for delegated agent work; this pass remains single-writer.
+
+Parallelizable implementation workstreams: not split; the slice is confined to command naming/docs and
+focused reward-boundary tests already in the chain suite.
+
+Tests/checkers/docs to add or update: command enum docs, private helper names, this exec plan, and reward
+boundary validation.
+
+Narrow validation commands: `cargo test -p tensor_vm reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim --lib`.
+
+Broad validation commands before commit: fmt/check/diff, library tests, release local-testnet, clippy, and
+tarpaulin if coverage-affecting tests change.
+
+Expected observable evidence: release/sweep commands return no payout events for live matured claims,
+pending ledgers remain populated, and `ClaimReward` emits the reward release plus claim events.
+
+Out of scope: changing maturity heights, public/CUDA deployment evidence, VRF construction, or reward
+amount formulas.
+
+Split trigger: split only if helper renaming uncovers a runtime call site that still depends on immediate
+crediting of non-voided rewards.
+
+Validation completed on June 22, 2026:
+- First executable gate before edits: `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo test -p tensor_vm reward_release_commands_preserve_live_matured_claims_until_beneficiary_claim --lib`
+  passed.
+- `cargo fmt --all -- --check` passed.
+- `git diff --check` passed.
+- `cargo test -p tensor_vm --lib` passed: 546 library tests.
+- Post-change release gate `cargo test -p tensor_vm local_testnet --release` passed.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Tarpaulin was not rerun because this iteration only added command documentation, renamed private helpers,
+  and reused existing reward-boundary coverage without changing executable test count or coverage scope.
+- Manual ownership-boundary review: no standalone verifier binary was used or added; reward claim release
+  remains chain-owned, release/sweep commands are maintenance-only for voided/prunable ledgers, adapters do
+  not credit rewards directly, and no p2p, storage, or RPC wire format changed.
 
 ### Iteration 181: Explorer WebSocket GraphExecution Evidence
 
@@ -164,10 +240,10 @@ Commit `be4af33` (`Cover admitted graph verifier ops`) pushed to `origin/main`.
 
 ## Validation Evidence
 
-- Current Iteration 181 first executable Gate 0 passed on June 22, 2026.
-- Current Iteration 181 validation passed on June 22, 2026: focused WebSocket graph test; fmt/check/diff;
-  `cargo test -p tensor_vm --lib` (546 passed); release local-testnet; clippy; tarpaulin 84.58%
-  (22613/26736, 561 instrumented tests). Commit `932c69c` pushed to `origin/main`.
+- Current Iteration 182 first executable Gate 0 passed on June 22, 2026.
+- Current Iteration 182 validation passed on June 22, 2026: focused reward-boundary test; fmt/check/diff;
+  `cargo test -p tensor_vm --lib` (546 passed); release local-testnet; clippy. Tarpaulin was not rerun
+  because executable coverage scope did not change.
 
 ## Archive
 

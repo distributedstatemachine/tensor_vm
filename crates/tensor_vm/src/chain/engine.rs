@@ -128,9 +128,20 @@ pub enum ChainCommand {
         fixed_block_reward: u64,
         fee_share: u64,
     },
+    /// Maintenance sweep for mature voided/prunable proposer rewards only.
+    ///
+    /// Non-voided rewards remain pending until the beneficiary submits `ClaimReward`.
     ReleaseMaturedProposerRewards,
+    /// Maintenance sweep for mature voided/prunable receipt rewards only.
+    ///
+    /// Non-voided rewards remain pending until the beneficiary submits `ClaimReward`.
     ReleaseMaturedReceiptRewards,
+    /// Maintenance sweep for mature voided challenge rewards only.
+    ///
+    /// Non-voided rewards remain pending until the beneficiary submits `ClaimReward`.
     ReleaseMaturedChallengeRewards,
+    /// Maintenance compatibility command. Credit rewards never release through a sweep;
+    /// they remain pending until the beneficiary submits `ClaimReward`.
     ReleaseMaturedCreditRewards,
     RegisterModel {
         model_id: Hash,

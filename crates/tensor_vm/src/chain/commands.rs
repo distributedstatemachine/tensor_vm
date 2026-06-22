@@ -297,16 +297,16 @@ impl ChainEngine for Chain {
                 }])
             }
             ChainCommand::ReleaseMaturedProposerRewards => {
-                Ok(release_matured_proposer_rewards(&mut self.state))
+                Ok(sweep_matured_voided_proposer_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedReceiptRewards => {
-                Ok(release_matured_receipt_rewards(&mut self.state))
+                Ok(sweep_matured_prunable_receipt_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedChallengeRewards => {
-                Ok(release_matured_challenge_rewards(&mut self.state))
+                Ok(sweep_matured_voided_challenge_rewards(&mut self.state))
             }
             ChainCommand::ReleaseMaturedCreditRewards => {
-                Ok(release_matured_credit_rewards(&mut self.state))
+                Ok(sweep_matured_credit_rewards(&mut self.state))
             }
             ChainCommand::RegisterModel {
                 model_id,
@@ -593,7 +593,7 @@ fn prune_matured_voided_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     events
 }
 
-fn release_matured_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+fn sweep_matured_voided_proposer_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     release_matured_proposer_rewards_for_beneficiary(state, None, true)
 }
 
@@ -639,7 +639,7 @@ fn release_matured_proposer_rewards_for_beneficiary(
     events
 }
 
-fn release_matured_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+fn sweep_matured_prunable_receipt_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     release_matured_receipt_rewards_with_policy(state, true, false, None, true, false)
 }
 
@@ -783,7 +783,7 @@ fn release_pending_miner_tensor_work(
     }
 }
 
-fn release_matured_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
+fn sweep_matured_voided_challenge_rewards(state: &mut ChainState) -> Vec<ChainEvent> {
     release_matured_challenge_rewards_for_beneficiary(state, None, true)
 }
 
@@ -831,7 +831,7 @@ fn release_matured_challenge_rewards_for_beneficiary(
     events
 }
 
-fn release_matured_credit_rewards(_state: &mut ChainState) -> Vec<ChainEvent> {
+fn sweep_matured_credit_rewards(_state: &mut ChainState) -> Vec<ChainEvent> {
     Vec::new()
 }
 
