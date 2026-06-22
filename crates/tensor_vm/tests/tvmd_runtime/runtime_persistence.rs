@@ -66,6 +66,19 @@ fn public_drand_default_round_config(
     .unwrap()
 }
 
+fn with_public_drand_observation(
+    mut config: RandomnessBeaconRuntimeConfig,
+    expected_latest_round: u64,
+    max_round_lag: u64,
+) -> RandomnessBeaconRuntimeConfig {
+    config.drand_genesis_time = 1_595_431_050;
+    config.drand_period = 30;
+    config.drand_expected_latest_round = expected_latest_round;
+    config.drand_round_lag = expected_latest_round.saturating_sub(config.beacon_round);
+    config.drand_max_round_lag = max_round_lag;
+    config
+}
+
 struct ScriptedDrandClient {
     responses: std::sync::Mutex<
         std::collections::VecDeque<std::result::Result<RandomnessBeaconRuntimeConfig, String>>,
@@ -300,7 +313,7 @@ fn role_runtime_public_drand_fetch_tick_persists_chain_and_status() {
     .unwrap();
     config.randomness_beacon.drand_poll_interval_ticks = 1;
     config.randomness_beacon.drand_failure_backoff_max_ticks = 4;
-    let fetched_config = public_drand_default_round_1_config();
+    let fetched_config = with_public_drand_observation(public_drand_default_round_1_config(), 2, 2);
     let expected_source_id = fetched_config.source_id.clone();
     let expected_randomness = fetched_config.randomness;
     let expected_proof_hash = fetched_config.proof_hash;
@@ -355,6 +368,32 @@ fn role_runtime_public_drand_fetch_tick_persists_chain_and_status() {
         report_u64(&status, "role_randomness_public_drand_fetch_successes"),
         1
     );
+    assert_eq!(
+        report_u64(
+            &status,
+            "role_randomness_public_drand_expected_latest_round"
+        ),
+        2
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetched_round_lag"),
+        1
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_max_round_lag"),
+        2
+    );
+    assert_eq!(
+        report_u64(
+            &status,
+            "role_randomness_public_drand_rounds_per_chain_epoch"
+        ),
+        20
+    );
+    assert_eq!(
+        report_field(&status, "role_randomness_public_drand_fresh"),
+        "true"
+    );
 
     drop(runtime);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
@@ -373,8 +412,8 @@ fn role_runtime_public_drand_polling_skips_stale_rounds_and_backs_off_failures()
     .unwrap();
     config.randomness_beacon.drand_poll_interval_ticks = 1;
     config.randomness_beacon.drand_failure_backoff_max_ticks = 4;
-    let round_1 = public_drand_default_round_1_config();
-    let round_2 = public_drand_default_round_2_config();
+    let round_1 = with_public_drand_observation(public_drand_default_round_1_config(), 2, 2);
+    let round_2 = with_public_drand_observation(public_drand_default_round_2_config(), 2, 2);
     let expected_source_id = round_2.source_id.clone();
     let expected_randomness = round_2.randomness;
     let chain = config
@@ -456,7 +495,84 @@ fn role_runtime_public_drand_polling_skips_stale_rounds_and_backs_off_failures()
         ),
         1
     );
+    assert_eq!(
+        report_u64(
+            &status,
+            "role_randomness_public_drand_expected_latest_round"
+        ),
+        2
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetched_round_lag"),
+        0
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_max_round_lag"),
+        2
+    );
+    assert_eq!(
+        report_field(&status, "role_randomness_public_drand_fresh"),
+        "true"
+    );
     assert!(expected_source_id.starts_with("drand-pedersen-bls-chained-v1:"));
+
+    drop(runtime);
+    std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
+}
+
+#[test]
+fn role_runtime_public_drand_skips_newer_round_outside_freshness_window() {
+    let data_dir = unique_temp_data_dir("role-runtime-public-drand-stale-mapping");
+    let _ = std::fs::remove_dir_all(&data_dir);
+    let mut config = test_service_runtime_config(&data_dir, "secret");
+    config.randomness_beacon = RandomnessBeaconRuntimeConfig::public_drand(
+        PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL,
+        PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+        1_000,
+    )
+    .unwrap();
+    config.randomness_beacon.drand_poll_interval_ticks = 1;
+    config.randomness_beacon.drand_failure_backoff_max_ticks = 4;
+    config.randomness_beacon.drand_max_round_lag = 2;
+    let stale_round = with_public_drand_observation(public_drand_default_round_2_config(), 9, 2);
+    let chain = config.node.build_chain(hash_bytes(
+        b"test",
+        &[b"runtime-public-drand-stale-mapping"],
+    ));
+    let store = NodeStore::open(data_dir.clone());
+    store.persist_chain(&chain).unwrap();
+
+    let mut runtime = RoleRuntimeLoop::start(config).unwrap();
+    runtime
+        .tick_randomness_beacon_once_with_client(&ScriptedDrandClient::new(vec![Ok(stale_round)]))
+        .unwrap();
+
+    let persisted = store.load_chain().unwrap();
+    assert_eq!(persisted.state().finalized_beacon_round(), 0);
+    assert!(persisted.state().external_randomness_beacons().is_empty());
+    let status = std::fs::read_to_string(data_dir.join("role-runtime.status")).unwrap();
+    assert_eq!(report_u64(&status, "role_randomness_beacons_observed"), 1);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_applied"), 0);
+    assert_eq!(report_u64(&status, "role_randomness_beacons_skipped"), 1);
+    assert_eq!(
+        report_u64(
+            &status,
+            "role_randomness_public_drand_expected_latest_round"
+        ),
+        9
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_fetched_round_lag"),
+        7
+    );
+    assert_eq!(
+        report_u64(&status, "role_randomness_public_drand_max_round_lag"),
+        2
+    );
+    assert_eq!(
+        report_field(&status, "role_randomness_public_drand_fresh"),
+        "false"
+    );
 
     drop(runtime);
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");

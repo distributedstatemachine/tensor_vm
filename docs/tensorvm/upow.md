@@ -460,9 +460,11 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > signature, and storing typed `DrandPedersenBlsUnchainedV1` proof metadata. Public drand mode now polls
 > the default-chain v2 HTTP endpoint, verifies `pedersen-bls-chained` responses using
 > `previous_signature`, applies only strictly newer finalized beacon rounds through the same chain
-> command, skips stale rounds, and exposes poll/backoff counters. External drand round-to-epoch mapping,
-> production validator VRF signatures, and deployed commit-reveal lifecycle evidence remain TODO before
-> claiming the full §10 construction.
+> command, skips stale rounds, computes endpoint-observed expected latest round and chain-epoch mapping
+> evidence, rejects locally fetched public rounds outside the configured freshness lag, and exposes
+> poll/backoff/freshness counters. Consensus-level chain-genesis-time drand epoch mapping, production
+> validator VRF signatures, and deployed commit-reveal lifecycle evidence remain TODO before claiming the
+> full §10 construction.
 
 ---
 
@@ -682,8 +684,8 @@ This section is non-normative guidance on how the spec components partition into
   ingest a deterministic drand-style external beacon fixture and expose checker-gated applied-record
   evidence. Chain and p2p/node admission can now verify bounded `pedersen-bls-unchained` drand evidence.
   Public drand mode now polls and verifies newer default-chain `pedersen-bls-chained` rounds with stale
-  skip and backoff evidence. External drand round ↔ epoch mapping and validator VRF construction remain
-  TODO (§10).
+  skip, backoff, endpoint expected-round, chain-epoch, and freshness-lag evidence. Consensus-level drand
+  round ↔ epoch mapping and validator VRF construction remain TODO (§10).
 - [ ] DA: erasure-coding rate, custody set size, light-client sampling guarantees (§9).
 - [~] Retention evidence: selected-receipt block openings now anchor `expires_at_block` to receipt
   submission height plus the configured tensor-retention window, so delayed inclusion cannot extend the

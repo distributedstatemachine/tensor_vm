@@ -60,6 +60,12 @@ pub struct RuntimeStatusSnapshot {
     pub(super) randomness_public_drand_fetch_stale: usize,
     pub(super) randomness_public_drand_consecutive_failures: usize,
     pub(super) randomness_public_drand_backoff_remaining_ticks: u64,
+    pub(super) randomness_public_drand_expected_latest_round: u64,
+    pub(super) randomness_public_drand_fetched_round_lag: u64,
+    pub(super) randomness_public_drand_max_round_lag: u64,
+    pub(super) randomness_public_drand_rounds_per_chain_epoch: u64,
+    pub(super) randomness_public_drand_chain_epoch: u64,
+    pub(super) randomness_public_drand_fresh: bool,
     pub(super) validator_attestations_submitted: usize,
     pub(super) validator_audit_work_ready: bool,
     pub(super) validator_assigned_audits_seen: usize,
@@ -171,6 +177,15 @@ impl RuntimeStatusSnapshot {
                 .randomness_public_drand_consecutive_failures(),
             randomness_public_drand_backoff_remaining_ticks: state
                 .randomness_public_drand_backoff_remaining_ticks(),
+            randomness_public_drand_expected_latest_round: state
+                .randomness_public_drand_expected_latest_round(),
+            randomness_public_drand_fetched_round_lag: state
+                .randomness_public_drand_fetched_round_lag(),
+            randomness_public_drand_max_round_lag: state.randomness_public_drand_max_round_lag(),
+            randomness_public_drand_rounds_per_chain_epoch: state
+                .randomness_public_drand_rounds_per_chain_epoch(),
+            randomness_public_drand_chain_epoch: state.randomness_public_drand_chain_epoch(),
+            randomness_public_drand_fresh: state.randomness_public_drand_fresh(),
             validator_attestations_submitted: state.validator_attestations_submitted(),
             validator_audit_work_ready: state.validator_audit_work_ready(),
             validator_assigned_audits_seen: state.validator_assigned_audits_seen(),

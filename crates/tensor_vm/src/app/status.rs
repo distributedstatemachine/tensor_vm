@@ -96,6 +96,12 @@ const ROLE_RUNTIME_STATUS_FIELDS: &[&str] = &[
     "role_randomness_public_drand_fetch_stale",
     "role_randomness_public_drand_consecutive_failures",
     "role_randomness_public_drand_backoff_remaining_ticks",
+    "role_randomness_public_drand_expected_latest_round",
+    "role_randomness_public_drand_fetched_round_lag",
+    "role_randomness_public_drand_max_round_lag",
+    "role_randomness_public_drand_rounds_per_chain_epoch",
+    "role_randomness_public_drand_chain_epoch",
+    "role_randomness_public_drand_fresh",
     "role_validator_audit_work_ready",
     "role_validator_assigned_audits_seen",
     "role_validator_unreported_audits",
@@ -1078,6 +1084,17 @@ role_randomness_beacon_failures=0
 role_randomness_latest_source_id=local_drand_fixture_v1
 role_randomness_latest_round=1000
 role_randomness_last_error=none
+role_randomness_public_drand_fetch_attempts=4
+role_randomness_public_drand_fetch_successes=2
+role_randomness_public_drand_fetch_stale=1
+role_randomness_public_drand_consecutive_failures=0
+role_randomness_public_drand_backoff_remaining_ticks=5
+role_randomness_public_drand_expected_latest_round=1002
+role_randomness_public_drand_fetched_round_lag=2
+role_randomness_public_drand_max_round_lag=3
+role_randomness_public_drand_rounds_per_chain_epoch=20
+role_randomness_public_drand_chain_epoch=7
+role_randomness_public_drand_fresh=true
 ",
         )
         .unwrap();
@@ -1110,6 +1127,42 @@ role_randomness_last_error=none
         );
         assert_eq!(fields.value("role_randomness_latest_round"), Some("1000"));
         assert_eq!(fields.value("role_randomness_last_error"), Some("none"));
+        assert_eq!(
+            fields.value("role_randomness_public_drand_fetch_attempts"),
+            Some("4")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_fetch_successes"),
+            Some("2")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_fetch_stale"),
+            Some("1")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_expected_latest_round"),
+            Some("1002")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_fetched_round_lag"),
+            Some("2")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_max_round_lag"),
+            Some("3")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_rounds_per_chain_epoch"),
+            Some("20")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_chain_epoch"),
+            Some("7")
+        );
+        assert_eq!(
+            fields.value("role_randomness_public_drand_fresh"),
+            Some("true")
+        );
 
         let _ = std::fs::remove_dir_all(data_dir);
     }

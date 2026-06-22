@@ -14,7 +14,7 @@ use crate::{
     types::{Hash, hash_bytes, parse_hash_hex},
 };
 use serde::Deserialize;
-use std::time::Duration;
+use std::time::{Duration, SystemTime, UNIX_EPOCH};
 
 pub const PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL: &str = "https://api.drand.sh/v2";
 pub const PUBLIC_DRAND_DEFAULT_CHAIN_HASH: &str =
@@ -22,6 +22,7 @@ pub const PUBLIC_DRAND_DEFAULT_CHAIN_HASH: &str =
 const PUBLIC_DRAND_DEFAULT_TIMEOUT_MS: u64 = 5_000;
 const PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS: u64 = 1_200;
 const PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS: u64 = 9_600;
+const PUBLIC_DRAND_DEFAULT_MAX_ROUND_LAG: u64 = 2;
 const PUBLIC_DRAND_CHAINED_SCHEME: &str = "pedersen-bls-chained";
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
@@ -58,6 +59,11 @@ pub struct RandomnessBeaconRuntimeConfig {
     pub drand_fetch_timeout_ms: u64,
     pub drand_poll_interval_ticks: u64,
     pub drand_failure_backoff_max_ticks: u64,
+    pub drand_genesis_time: u64,
+    pub drand_period: u64,
+    pub drand_expected_latest_round: u64,
+    pub drand_round_lag: u64,
+    pub drand_max_round_lag: u64,
 }
 
 impl RandomnessBeaconRuntimeConfig {
@@ -76,6 +82,11 @@ impl RandomnessBeaconRuntimeConfig {
             drand_fetch_timeout_ms: 0,
             drand_poll_interval_ticks: 0,
             drand_failure_backoff_max_ticks: 0,
+            drand_genesis_time: 0,
+            drand_period: 0,
+            drand_expected_latest_round: 0,
+            drand_round_lag: 0,
+            drand_max_round_lag: 0,
         }
     }
 
@@ -104,6 +115,11 @@ impl RandomnessBeaconRuntimeConfig {
             drand_fetch_timeout_ms: 0,
             drand_poll_interval_ticks: 0,
             drand_failure_backoff_max_ticks: 0,
+            drand_genesis_time: 0,
+            drand_period: 0,
+            drand_expected_latest_round: 0,
+            drand_round_lag: 0,
+            drand_max_round_lag: 0,
         }
     }
 
@@ -156,6 +172,11 @@ impl RandomnessBeaconRuntimeConfig {
             drand_fetch_timeout_ms: 0,
             drand_poll_interval_ticks: 0,
             drand_failure_backoff_max_ticks: 0,
+            drand_genesis_time: 0,
+            drand_period: 0,
+            drand_expected_latest_round: 0,
+            drand_round_lag: 0,
+            drand_max_round_lag: 0,
         })
     }
 
@@ -217,6 +238,11 @@ impl RandomnessBeaconRuntimeConfig {
             drand_fetch_timeout_ms: 0,
             drand_poll_interval_ticks: 0,
             drand_failure_backoff_max_ticks: 0,
+            drand_genesis_time: 0,
+            drand_period: 0,
+            drand_expected_latest_round: 0,
+            drand_round_lag: 0,
+            drand_max_round_lag: 0,
         })
     }
 
@@ -252,6 +278,11 @@ impl RandomnessBeaconRuntimeConfig {
             drand_fetch_timeout_ms: fetch_timeout_ms,
             drand_poll_interval_ticks: PUBLIC_DRAND_DEFAULT_POLL_INTERVAL_TICKS,
             drand_failure_backoff_max_ticks: PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS,
+            drand_genesis_time: 0,
+            drand_period: 0,
+            drand_expected_latest_round: 0,
+            drand_round_lag: 0,
+            drand_max_round_lag: PUBLIC_DRAND_DEFAULT_MAX_ROUND_LAG,
         })
     }
 
@@ -362,6 +393,10 @@ impl RandomnessBeaconRuntimeConfig {
                             .to_owned(),
                     );
                 }
+                config.drand_max_round_lag = parse_optional_env_u64(
+                    "TENSORVM_RANDOMNESS_BEACON_DRAND_MAX_ROUND_LAG",
+                    PUBLIC_DRAND_DEFAULT_MAX_ROUND_LAG,
+                )?;
                 Ok(config)
             }
             other => Err(format!(
@@ -386,6 +421,15 @@ fn parse_optional_positive_env_u64(name: &str, default: u64) -> std::result::Res
             }
             Ok(parsed)
         }
+        Err(_) => Ok(default),
+    }
+}
+
+fn parse_optional_env_u64(name: &str, default: u64) -> std::result::Result<u64, String> {
+    match std::env::var(name) {
+        Ok(value) => value
+            .parse::<u64>()
+            .map_err(|error| format!("invalid {name}: {error}")),
         Err(_) => Ok(default),
     }
 }
@@ -455,10 +499,34 @@ pub fn drand_round_for_unix_time(
     Ok(((unix_time - genesis_time) / period).saturating_add(1))
 }
 
+pub fn drand_rounds_per_chain_epoch(
+    drand_period: u64,
+    block_time_seconds: u64,
+    epoch_length: u64,
+) -> std::result::Result<u64, String> {
+    if drand_period == 0 {
+        return Err("drand period must be greater than zero".to_owned());
+    }
+    let epoch_seconds = block_time_seconds
+        .max(1)
+        .saturating_mul(epoch_length.max(1));
+    Ok(epoch_seconds.saturating_add(drand_period.saturating_sub(1)) / drand_period)
+}
+
+#[cfg(test)]
 fn public_drand_config_from_json(
     expected_chain_hash: &str,
     info_json: &str,
     round_json: &str,
+) -> std::result::Result<RandomnessBeaconRuntimeConfig, String> {
+    public_drand_config_from_json_at_time(expected_chain_hash, info_json, round_json, None)
+}
+
+fn public_drand_config_from_json_at_time(
+    expected_chain_hash: &str,
+    info_json: &str,
+    round_json: &str,
+    observed_unix_time: Option<u64>,
 ) -> std::result::Result<RandomnessBeaconRuntimeConfig, String> {
     let info: DrandChainInfoResponse = serde_json::from_str(info_json)
         .map_err(|error| format!("invalid drand info response JSON: {error}"))?;
@@ -486,12 +554,22 @@ fn public_drand_config_from_json(
             .as_deref()
             .ok_or_else(|| "drand chained response missing previous_signature".to_owned())?,
     )?;
-    RandomnessBeaconRuntimeConfig::verified_chained_drand(
+    let mut config = RandomnessBeaconRuntimeConfig::verified_chained_drand(
         round.round,
         public_key,
         signature,
         previous_signature,
-    )
+    )?;
+    config.drand_genesis_time = info.genesis_time;
+    config.drand_period = info.period;
+    if let Some(unix_time) = observed_unix_time {
+        config.drand_expected_latest_round =
+            drand_round_for_unix_time(info.genesis_time, info.period, unix_time)?;
+        config.drand_round_lag = config
+            .drand_expected_latest_round
+            .saturating_sub(config.beacon_round);
+    }
+    Ok(config)
 }
 
 pub trait DrandBeaconClient {
@@ -529,13 +607,22 @@ impl DrandBeaconClient for HttpDrandBeaconClient {
             .map_err(|error| format!("failed to fetch drand latest round: {error}"))?
             .into_string()
             .map_err(|error| format!("failed to read drand latest round response: {error}"))?;
-        let mut fetched =
-            public_drand_config_from_json(&config.drand_chain_hash, &info_json, &round_json)?;
+        let observed_unix_time = SystemTime::now()
+            .duration_since(UNIX_EPOCH)
+            .map_err(|error| format!("system clock is before UNIX epoch: {error}"))?
+            .as_secs();
+        let mut fetched = public_drand_config_from_json_at_time(
+            &config.drand_chain_hash,
+            &info_json,
+            &round_json,
+            Some(observed_unix_time),
+        )?;
         fetched.drand_http_base_url = config.drand_http_base_url.clone();
         fetched.drand_chain_hash = config.drand_chain_hash.clone();
         fetched.drand_fetch_timeout_ms = config.drand_fetch_timeout_ms;
         fetched.drand_poll_interval_ticks = config.drand_poll_interval_ticks;
         fetched.drand_failure_backoff_max_ticks = config.drand_failure_backoff_max_ticks;
+        fetched.drand_max_round_lag = config.drand_max_round_lag;
         Ok(fetched)
     }
 }
@@ -626,6 +713,34 @@ pub fn tick_randomness_beacon_once_with_client(
     }
     runtime_state.record_randomness_beacon_observed(&config.source_id, config.beacon_round);
     let chain = &mut server.gateway_mut().node.chain;
+    if public_drand_poll {
+        let rounds_per_chain_epoch = drand_rounds_per_chain_epoch(
+            config.drand_period,
+            chain.params().block_time_seconds,
+            chain.params().epoch_length,
+        )
+        .unwrap_or_default();
+        let chain_epoch = chain
+            .state()
+            .height()
+            .checked_div(chain.params().epoch_length.max(1))
+            .unwrap_or_default();
+        runtime_state.record_randomness_public_drand_mapping_observation(
+            config.drand_expected_latest_round,
+            config.drand_round_lag,
+            config.drand_max_round_lag,
+            rounds_per_chain_epoch,
+            chain_epoch,
+        );
+        if config.drand_expected_latest_round > 0
+            && config.drand_round_lag > config.drand_max_round_lag
+        {
+            runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
+            runtime_state
+                .record_randomness_public_drand_fetch_stale(config.drand_poll_interval_ticks);
+            return Ok(true);
+        }
+    }
     if public_drand_poll && config.beacon_round <= chain.state().finalized_beacon_round() {
         runtime_state.record_randomness_beacon_skipped(&config.source_id, config.beacon_round);
         runtime_state.record_randomness_public_drand_fetch_stale(config.drand_poll_interval_ticks);
@@ -888,6 +1003,7 @@ mod tests {
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_FETCH_TIMEOUT_MS");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_POLL_INTERVAL_TICKS");
             std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS");
+            std::env::remove_var("TENSORVM_RANDOMNESS_BEACON_DRAND_MAX_ROUND_LAG");
         }
     }
 
@@ -1036,6 +1152,10 @@ mod tests {
             config.drand_failure_backoff_max_ticks,
             PUBLIC_DRAND_DEFAULT_FAILURE_BACKOFF_MAX_TICKS
         );
+        assert_eq!(
+            config.drand_max_round_lag,
+            PUBLIC_DRAND_DEFAULT_MAX_ROUND_LAG
+        );
 
         clear_randomness_beacon_env();
     }
@@ -1051,11 +1171,13 @@ mod tests {
                 "TENSORVM_RANDOMNESS_BEACON_DRAND_FAILURE_BACKOFF_MAX_TICKS",
                 "28",
             );
+            std::env::set_var("TENSORVM_RANDOMNESS_BEACON_DRAND_MAX_ROUND_LAG", "3");
         }
 
         let config = RandomnessBeaconRuntimeConfig::from_env().unwrap();
         assert_eq!(config.drand_poll_interval_ticks, 7);
         assert_eq!(config.drand_failure_backoff_max_ticks, 28);
+        assert_eq!(config.drand_max_round_lag, 3);
 
         unsafe {
             std::env::set_var(
@@ -1110,6 +1232,25 @@ mod tests {
         assert_eq!(decoded.public_key, config.drand_public_key);
         assert_eq!(decoded.signature, config.drand_signature);
         assert_eq!(decoded.previous_signature, config.drand_previous_signature);
+    }
+
+    #[test]
+    fn public_drand_fetch_json_records_round_freshness_at_observed_time() {
+        let config = public_drand_config_from_json_at_time(
+            PUBLIC_DRAND_DEFAULT_CHAIN_HASH,
+            PUBLIC_DRAND_DEFAULT_INFO_JSON,
+            PUBLIC_DRAND_DEFAULT_ROUND_1_JSON,
+            Some(1_595_431_080),
+        )
+        .unwrap();
+
+        assert_eq!(config.beacon_round, 1);
+        assert_eq!(config.drand_genesis_time, 1_595_431_050);
+        assert_eq!(config.drand_period, 30);
+        assert_eq!(config.drand_expected_latest_round, 2);
+        assert_eq!(config.drand_round_lag, 1);
+        assert_eq!(drand_rounds_per_chain_epoch(30, 6, 100).unwrap(), 20);
+        assert_eq!(drand_rounds_per_chain_epoch(31, 6, 100).unwrap(), 20);
     }
 
     #[test]

@@ -149,6 +149,30 @@ pub fn format_role_runtime_report(
         snapshot.randomness_public_drand_backoff_remaining_ticks,
     );
     report.field(
+        "randomness_public_drand_expected_latest_round",
+        snapshot.randomness_public_drand_expected_latest_round,
+    );
+    report.field(
+        "randomness_public_drand_fetched_round_lag",
+        snapshot.randomness_public_drand_fetched_round_lag,
+    );
+    report.field(
+        "randomness_public_drand_max_round_lag",
+        snapshot.randomness_public_drand_max_round_lag,
+    );
+    report.field(
+        "randomness_public_drand_rounds_per_chain_epoch",
+        snapshot.randomness_public_drand_rounds_per_chain_epoch,
+    );
+    report.field(
+        "randomness_public_drand_chain_epoch",
+        snapshot.randomness_public_drand_chain_epoch,
+    );
+    report.field(
+        "randomness_public_drand_fresh",
+        snapshot.randomness_public_drand_fresh,
+    );
+    report.field(
         "validator_attestations_submitted",
         snapshot.validator_attestations_submitted,
     );
@@ -535,6 +559,30 @@ pub fn write_role_runtime_status(
     report.field(
         "role_randomness_public_drand_backoff_remaining_ticks",
         snapshot.randomness_public_drand_backoff_remaining_ticks,
+    );
+    report.field(
+        "role_randomness_public_drand_expected_latest_round",
+        snapshot.randomness_public_drand_expected_latest_round,
+    );
+    report.field(
+        "role_randomness_public_drand_fetched_round_lag",
+        snapshot.randomness_public_drand_fetched_round_lag,
+    );
+    report.field(
+        "role_randomness_public_drand_max_round_lag",
+        snapshot.randomness_public_drand_max_round_lag,
+    );
+    report.field(
+        "role_randomness_public_drand_rounds_per_chain_epoch",
+        snapshot.randomness_public_drand_rounds_per_chain_epoch,
+    );
+    report.field(
+        "role_randomness_public_drand_chain_epoch",
+        snapshot.randomness_public_drand_chain_epoch,
+    );
+    report.field(
+        "role_randomness_public_drand_fresh",
+        snapshot.randomness_public_drand_fresh,
     );
     report.field(
         "role_validator_attestations_submitted",

@@ -158,6 +158,12 @@ pub struct NodeRuntimeState {
     randomness_public_drand_fetch_stale: usize,
     randomness_public_drand_consecutive_failures: usize,
     randomness_public_drand_backoff_remaining_ticks: u64,
+    randomness_public_drand_expected_latest_round: u64,
+    randomness_public_drand_fetched_round_lag: u64,
+    randomness_public_drand_max_round_lag: u64,
+    randomness_public_drand_rounds_per_chain_epoch: u64,
+    randomness_public_drand_chain_epoch: u64,
+    randomness_public_drand_fresh: bool,
 }
 
 impl NodeRuntimeState {
@@ -355,6 +361,30 @@ impl NodeRuntimeState {
 
     pub fn randomness_public_drand_backoff_remaining_ticks(&self) -> u64 {
         self.randomness_public_drand_backoff_remaining_ticks
+    }
+
+    pub fn randomness_public_drand_expected_latest_round(&self) -> u64 {
+        self.randomness_public_drand_expected_latest_round
+    }
+
+    pub fn randomness_public_drand_fetched_round_lag(&self) -> u64 {
+        self.randomness_public_drand_fetched_round_lag
+    }
+
+    pub fn randomness_public_drand_max_round_lag(&self) -> u64 {
+        self.randomness_public_drand_max_round_lag
+    }
+
+    pub fn randomness_public_drand_rounds_per_chain_epoch(&self) -> u64 {
+        self.randomness_public_drand_rounds_per_chain_epoch
+    }
+
+    pub fn randomness_public_drand_chain_epoch(&self) -> u64 {
+        self.randomness_public_drand_chain_epoch
+    }
+
+    pub fn randomness_public_drand_fresh(&self) -> bool {
+        self.randomness_public_drand_fresh
     }
 
     pub fn randomness_beacon_published(&self, source_id: &str, beacon_round: u64) -> bool {
@@ -609,6 +639,22 @@ impl NodeRuntimeState {
             .min(max_backoff_ticks);
         self.randomness_public_drand_backoff_remaining_ticks = backoff.max(1);
     }
+
+    pub fn record_randomness_public_drand_mapping_observation(
+        &mut self,
+        expected_latest_round: u64,
+        fetched_round_lag: u64,
+        max_round_lag: u64,
+        rounds_per_chain_epoch: u64,
+        chain_epoch: u64,
+    ) {
+        self.randomness_public_drand_expected_latest_round = expected_latest_round;
+        self.randomness_public_drand_fetched_round_lag = fetched_round_lag;
+        self.randomness_public_drand_max_round_lag = max_round_lag;
+        self.randomness_public_drand_rounds_per_chain_epoch = rounds_per_chain_epoch;
+        self.randomness_public_drand_chain_epoch = chain_epoch;
+        self.randomness_public_drand_fresh = fetched_round_lag <= max_round_lag;
+    }
 }
 
 #[cfg(test)]
@@ -699,6 +745,7 @@ mod tests {
         state.record_randomness_beacon_failure("fixture", 8, "bad proof");
         state.record_randomness_public_drand_fetch_attempt();
         state.record_randomness_public_drand_fetch_success(3);
+        state.record_randomness_public_drand_mapping_observation(10, 1, 2, 20, 4);
         assert!(!state.randomness_public_drand_poll_due());
         assert!(!state.randomness_public_drand_poll_due());
         assert!(state.randomness_public_drand_poll_due());
@@ -714,6 +761,12 @@ mod tests {
         assert_eq!(state.randomness_public_drand_fetch_successes(), 1);
         assert_eq!(state.randomness_public_drand_consecutive_failures(), 1);
         assert_eq!(state.randomness_public_drand_backoff_remaining_ticks(), 3);
+        assert_eq!(state.randomness_public_drand_expected_latest_round(), 10);
+        assert_eq!(state.randomness_public_drand_fetched_round_lag(), 1);
+        assert_eq!(state.randomness_public_drand_max_round_lag(), 2);
+        assert_eq!(state.randomness_public_drand_rounds_per_chain_epoch(), 20);
+        assert_eq!(state.randomness_public_drand_chain_epoch(), 4);
+        assert!(state.randomness_public_drand_fresh());
     }
 
     #[test]

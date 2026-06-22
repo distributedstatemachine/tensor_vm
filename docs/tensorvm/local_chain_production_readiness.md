@@ -261,8 +261,10 @@ The local bundle is useful and should remain the first operational target:
   count/latest-round and validator-reveal count evidence. Chain and p2p/node paths now admit bounded
   `pedersen-bls-unchained` drand evidence through signature verification and typed proof metadata. Public
   drand mode now polls the default-chain v2 endpoint, verifies chained proofs, skips stale rounds, backs
-  off after failures, and exposes status counters for attempts/successes/stale/failure backoff. External
-  drand round mapping, production validator VRF signatures, and deployed lifecycle evidence remain open.
+  off after failures, computes endpoint expected-round and chain-epoch freshness evidence, rejects locally
+  fetched rounds beyond the configured lag, and exposes status counters for
+  attempts/successes/stale/failure backoff/freshness. Consensus-level public drand epoch mapping,
+  production validator VRF signatures, and deployed lifecycle evidence remain open.
   Deployed-run measured detection records and remaining fraud paths remain open
   economics work.
 
