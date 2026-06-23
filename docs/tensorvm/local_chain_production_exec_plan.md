@@ -191,6 +191,7 @@ Validation evidence:
 - Lints: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Final format/whitespace and post-doc Gate 0: `cargo fmt --check`, `git diff --check`, and
   `cargo test -p tensor_vm local_testnet --release` passed.
+- Commit `eb6ac34` (`Tighten CUDA graph conformance boundary`) pushed to `origin/main` on June 23, 2026.
 
 ### Iteration 228: CUDA GraphExecution Miner Receipts
 
