@@ -122,6 +122,9 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `34ce0da` (`Add runtime bootstrap peer policy`).
+- Validation metadata commit: `2065652` (`Record runtime bootstrap validation`).
+- Push result: `git push origin main` succeeded on June 23, 2026, updating `main` from `58c1c3f` to
+  `2065652`.
 
 ### Iteration 209: Profile-Scoped Local Runtime Knobs
 
