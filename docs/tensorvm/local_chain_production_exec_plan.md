@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 208 in progress: Public Preflight Service URL Diversity Gate.
+- Active feature: Iteration 208 pushed: Public Preflight Service URL Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
@@ -105,6 +105,8 @@ Split trigger: split if enforcing URL diversity requires active network probes i
 URL validation.
 
 Commit `3d4789f` (`Validate public preflight service URLs`) prepared on June 23, 2026.
+Metadata commit `2e52ef5` (`Record public preflight URL validation`) pushed to `origin/main` on
+June 23, 2026.
 
 ### Iteration 207: Public Supporting Artifact URI Diversity Gate
 
@@ -1112,6 +1114,9 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
   `git diff --check`.
 - Current Iteration 208 feature commit `3d4789f`
   (`Validate public preflight service URLs`) prepared on June 23, 2026.
+- Current Iteration 208 validation metadata commit `2e52ef5`
+  (`Record public preflight URL validation`) pushed to `origin/main` on June 23, 2026.
+- Current Iteration 208 push result on June 23, 2026: `c822222..2e52ef5 main -> main`.
 - Current Iteration 207 Gate 0 release local-testnet validation passed first on June 23, 2026:
   `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
   `local_testnet_service_gateway_does_not_produce_local_blocks` passing.
