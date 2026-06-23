@@ -756,6 +756,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release`.
 - Current Iteration 203 lint validation passed on June 23, 2026:
   `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+- Current Iteration 203 feature commit `81e673c`
+  (`Validate public randomness coverage`) prepared on June 23, 2026.
 
 ## Archive
 
