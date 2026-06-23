@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 199 in progress: Unique Data Availability Receipt Coverage Gate.
+- Active feature: Iteration 199 pushed: Unique Data Availability Receipt Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -109,6 +109,8 @@ Validation evidence, June 22, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `9bd11cb` (`Require unique data availability receipts`).
+- Validation metadata commit: `8cf0f75` (`Record data availability receipt validation`).
+- Push: `git push origin main` succeeded on June 22, 2026 (`2ccf292..8cf0f75  main -> main`).
 
 ### Iteration 198: Unique VRF Lifecycle Receipt Coverage Gate
 
