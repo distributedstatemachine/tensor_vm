@@ -56,7 +56,8 @@ impl PublicTestnetRunEvidence {
             self.reward_settlement_records >= criteria.min_reward_settlement_records;
         let has_cuda_verified_miners =
             miner_count > 0 && self.cuda_verified_miner_count >= miner_count as u64;
-        let has_cuda_graph_execution_evidence = self.cuda_graph_execution_receipts > 0
+        let has_cuda_graph_execution_evidence = has_cuda_verified_miners
+            && self.cuda_graph_execution_receipts > 0
             && self.cuda_graph_execution_receipts <= self.checked_receipts
             && self.cuda_graph_execution_receipts <= self.available_receipts;
         let has_validator_vrf_lifecycle_evidence = self.checked_receipts > 0

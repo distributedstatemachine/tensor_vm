@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 210 in validation: Runtime Bootstrap Peer Policy.
+- Active feature: Iteration 211 in progress: CUDA Graph Evidence Requires CUDA Miner Coverage.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
@@ -49,6 +49,74 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 211: CUDA Graph Evidence Requires CUDA Miner Coverage
+
+Feature capability: make the CUDA graph-execution evidence flag depend on counted CUDA-verified public
+miner coverage as well as positive, checked, and available CUDA graph receipt counts.
+
+Readiness requirements covered: public full-spec evidence must prove real CUDA miner/runtime evidence, not
+only scalar CUDA graph receipt counts disconnected from counted CUDA-capable public miners.
+
+Canonical owner: `PublicTestnetRunEvidence::evaluate` owns public run scalar evidence admission.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the report.
+
+Old shortcut being removed: `has_cuda_graph_execution_evidence` could report true when
+`cuda_graph_execution_receipts` was positive and bounded by checked/available receipts even if
+`cuda_verified_miner_count` did not cover counted public miners.
+
+Regression test that proves the shortcut is gone: mutate an otherwise full-spec public evidence bundle so
+CUDA graph receipts stay positive but `cuda_verified_miner_count` is zero, then assert both CUDA miner and
+CUDA graph evidence flags are false and full-spec evidence remains false.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence.
+
+Structured evidence source: `cuda_verified_miner_count`, counted public miner operators, and
+`cuda_graph_execution_receipts`.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence
+evaluation.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Tests/checkers/docs to add or update: public run evidence/bundle regression, public evidence docs/status,
+and this exec plan.
+
+Narrow validation commands: focused public CUDA evidence tests.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, and diff check.
+
+Expected observable evidence: positive CUDA graph receipt counts do not set
+`cuda_graph_execution_evidence=true` unless the same public run also proves CUDA verified miner coverage.
+
+Out of scope: generating real CUDA receipts, CUDA kernel changes, or external public deployment evidence.
+
+Split trigger: split if coupling the evidence flags requires changing public manifest syntax or adding raw
+CUDA receipt identities rather than scalar consistency.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused run-evidence regression passed:
+  `cargo test -p tensor_vm public_testnet_run_evidence_requires_independent_external_operators --lib`.
+- Focused CUDA miner/graph bundle regressions passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec --lib`
+  and
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec --lib`.
+- `cargo test -p tensor_vm --lib` passed: 564 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 210: Runtime Bootstrap Peer Policy
 

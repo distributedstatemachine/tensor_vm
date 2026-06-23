@@ -563,7 +563,7 @@ Whitespace-padded record lines and empty fields are rejected.
 The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
 public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
 `cuda_verified_miner_count` covering the counted public miners, positive `cuda_graph_execution_receipts`
-that do not exceed checked or available receipt counts,
+that do not exceed checked or available receipt counts and are backed by that CUDA miner coverage,
 signed `validator_vrf_lifecycle_records` with raw `validator_vrf_lifecycle=...` lines covering every
 checked receipt's deployed commit-to-reveal lifecycle, using distinct nonzero receipt roots, and
 aggregating to the signed lifecycle root,

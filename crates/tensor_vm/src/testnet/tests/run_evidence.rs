@@ -179,6 +179,13 @@ fn public_testnet_run_evidence_requires_independent_external_operators() {
     assert!(sufficient.has_deployed_public_services);
     assert!(sufficient.public_criterion_met);
 
+    let mut graph_without_cuda_miners = run.clone();
+    graph_without_cuda_miners.cuda_verified_miner_count = 0;
+    let graph_without_cuda_miners = graph_without_cuda_miners.evaluate(&criteria, 6, true);
+    assert!(!graph_without_cuda_miners.has_cuda_verified_miners);
+    assert!(!graph_without_cuda_miners.has_cuda_graph_execution_evidence);
+    assert!(graph_without_cuda_miners.public_criterion_met);
+
     let mut over_finalized = run.clone();
     over_finalized.finalized_blocks = over_finalized.observed_blocks + 1;
     let over_finalized = over_finalized.evaluate(&criteria, 6, true);

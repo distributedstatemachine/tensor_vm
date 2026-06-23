@@ -1392,6 +1392,7 @@ fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() 
     assert!(missing_cuda_report.run_evidence.public_criterion_met);
     assert!(missing_cuda_report.independently_checkable);
     assert!(!missing_cuda_report.has_cuda_verified_miners);
+    assert!(!missing_cuda_report.has_cuda_graph_execution_evidence);
     assert!(!missing_cuda_report.full_spec_evidence_met);
 
     let mut undercounted_cuda = full_spec_bundle;
