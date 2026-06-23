@@ -41,7 +41,7 @@ fn validate_public_evidence_manifest_reports_default_criteria_status() {
             ("reward_settlement_records", "1"),
             ("cuda_verified_miner_count", "2"),
             ("cuda_graph_execution_receipts", "1"),
-            ("validator_vrf_lifecycle_records", "20"),
+            ("validator_vrf_lifecycle_records", "40"),
             ("external_operator_evidence", "true"),
             ("required_miners", "false"),
             ("required_validators", "false"),

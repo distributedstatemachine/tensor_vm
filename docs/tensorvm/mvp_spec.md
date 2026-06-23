@@ -2439,7 +2439,8 @@ reward-settlement records to use distinct nonzero receipt roots and nonzero sett
 raw detection-measurement records to use valid mechanism labels, nonzero subject roots, nonzero samples,
 and detected counts not exceeding samples,
 signed validator VRF lifecycle
-records to equal the checked receipt count only when every checked receipt is available, use distinct
+records to equal two records per checked receipt only when every checked receipt is available, include one
+`committed` and one `revealed` record with the same validator ID and beacon round for each receipt, use
 receipt roots that exactly match the raw data-availability measurement receipt-root set, and aggregate to
 the signed lifecycle root,
 and positive signed deployed detection-measurement records with raw

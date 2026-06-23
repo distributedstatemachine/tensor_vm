@@ -60,9 +60,10 @@ impl PublicTestnetRunEvidence {
             && self.cuda_graph_execution_receipts > 0
             && self.cuda_graph_execution_receipts <= self.checked_receipts
             && self.cuda_graph_execution_receipts <= self.available_receipts;
+        let expected_validator_vrf_lifecycle_records = self.checked_receipts.saturating_mul(2);
         let has_validator_vrf_lifecycle_evidence = self.checked_receipts > 0
             && self.available_receipts == self.checked_receipts
-            && self.validator_vrf_lifecycle_records == self.checked_receipts;
+            && self.validator_vrf_lifecycle_records == expected_validator_vrf_lifecycle_records;
         let has_deployed_detection_measurements = self.detection_measurement_records > 0;
         let external_operator_evidence =
             external_operator_evidence && miner_count > 0 && validator_count > 0;

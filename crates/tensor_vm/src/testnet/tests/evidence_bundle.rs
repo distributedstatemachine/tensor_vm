@@ -1507,6 +1507,7 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
     undercounted_lifecycle.run.validator_vrf_lifecycle_records = undercounted_lifecycle
         .run
         .checked_receipts
+        .saturating_mul(2)
         .saturating_sub(1);
     let undercounted_lifecycle_report =
         undercounted_lifecycle.evaluate(&full_spec_criteria, full_spec_block_time);
@@ -1525,8 +1526,11 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
     assert!(!undercounted_lifecycle_report.full_spec_evidence_met);
 
     let mut overcounted_lifecycle = full_spec_bundle;
-    overcounted_lifecycle.run.validator_vrf_lifecycle_records =
-        overcounted_lifecycle.run.checked_receipts.saturating_add(1);
+    overcounted_lifecycle.run.validator_vrf_lifecycle_records = overcounted_lifecycle
+        .run
+        .checked_receipts
+        .saturating_mul(2)
+        .saturating_add(1);
     let overcounted_lifecycle_report =
         overcounted_lifecycle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(
@@ -1565,6 +1569,34 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     assert!(report.has_validator_vrf_lifecycle_record_summary);
     assert!(!report.full_spec_evidence_met);
 
+    let mut reveal_only_records = full_spec_bundle.clone();
+    reveal_only_records
+        .validator_vrf_lifecycle_raw_records
+        .retain(|record| record.phase == PublicValidatorVrfLifecyclePhase::Revealed);
+    let reveal_only_lifecycle_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        &reveal_only_records
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("reveal-only lifecycle records still aggregate");
+    let reveal_only_record_count = reveal_only_records
+        .validator_vrf_lifecycle_raw_records
+        .len() as u64;
+    reveal_only_records.run.validator_vrf_lifecycle_records = reveal_only_record_count;
+    resign_record_summary_and_artifact(
+        &mut reveal_only_records,
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        reveal_only_lifecycle_root,
+        reveal_only_record_count,
+    );
+    let report = reveal_only_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(!report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_raw_records = full_spec_bundle.clone();
     mismatched_raw_records.validator_vrf_lifecycle_raw_records[0].receipt_root =
         hash_bytes(b"test", &[b"mismatched-vrf-lifecycle-receipt"]);
@@ -1601,8 +1633,10 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     assert!(!report.full_spec_evidence_met);
 
     let mut duplicate_receipt_records = full_spec_bundle.clone();
-    duplicate_receipt_records.validator_vrf_lifecycle_raw_records[1].receipt_root =
+    duplicate_receipt_records.validator_vrf_lifecycle_raw_records[2].receipt_root =
         duplicate_receipt_records.validator_vrf_lifecycle_raw_records[0].receipt_root;
+    duplicate_receipt_records.validator_vrf_lifecycle_raw_records[3].receipt_root =
+        duplicate_receipt_records.validator_vrf_lifecycle_raw_records[1].receipt_root;
     let duplicate_lifecycle_root = aggregate_public_evidence_record_roots(
         PublicEvidenceRecordKind::ValidatorVrfLifecycle,
         &duplicate_receipt_records
@@ -1626,7 +1660,7 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     assert!(!report.full_spec_evidence_met);
 
     let mut incomplete_lifecycle_records = full_spec_bundle;
-    incomplete_lifecycle_records.validator_vrf_lifecycle_raw_records[0].phase =
+    incomplete_lifecycle_records.validator_vrf_lifecycle_raw_records[1].phase =
         PublicValidatorVrfLifecyclePhase::Committed;
     let report = incomplete_lifecycle_records.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(report.run_evidence.public_criterion_met);

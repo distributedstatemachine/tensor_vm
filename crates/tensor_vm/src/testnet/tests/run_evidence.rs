@@ -33,7 +33,7 @@ fn public_testnet_run_evidence_requires_independent_external_operators() {
         reward_settlement_records: 3,
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
-        validator_vrf_lifecycle_records: 20,
+        validator_vrf_lifecycle_records: 40,
         detection_measurement_records: 1,
     };
 

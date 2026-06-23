@@ -639,26 +639,38 @@ impl PublicTestnetEvidenceBundle {
         {
             return false;
         }
-        if !self
-            .validator_vrf_lifecycle_raw_records
-            .iter()
-            .all(|record| {
-                record.receipt_root != [0; 32]
-                    && record.validator_id != [0; 32]
-                    && record.phase == PublicValidatorVrfLifecyclePhase::Revealed
-            })
+        let available_receipt_roots = self.available_receipt_roots();
+        if available_receipt_roots.is_empty()
+            || self.validator_vrf_lifecycle_records
+                != (available_receipt_roots.len() as u64).saturating_mul(2)
         {
             return false;
         }
-        let mut receipt_roots = BTreeSet::new();
-        if self
-            .validator_vrf_lifecycle_raw_records
-            .iter()
-            .any(|record| !receipt_roots.insert(record.receipt_root))
+        let mut lifecycle_by_receipt = BTreeMap::<Hash, ValidatorVrfLifecycleEvidence>::new();
+        for record in &self.validator_vrf_lifecycle_raw_records {
+            if record.receipt_root == [0; 32] || record.validator_id == [0; 32] {
+                return false;
+            }
+            let lifecycle = lifecycle_by_receipt.entry(record.receipt_root).or_default();
+            if !lifecycle.record(record) {
+                return false;
+            }
+        }
+        if lifecycle_by_receipt
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != available_receipt_roots
         {
             return false;
         }
-        if receipt_roots != self.available_receipt_roots() {
+        if !lifecycle_by_receipt.values().all(|lifecycle| {
+            lifecycle.committed
+                && lifecycle.revealed
+                && lifecycle.committed_validator_id == lifecycle.revealed_validator_id
+                && lifecycle.committed_beacon_round == lifecycle.revealed_beacon_round
+                && lifecycle.committed_observed_block <= lifecycle.revealed_observed_block
+        }) {
             return false;
         }
         self.raw_operational_records_match(
@@ -872,5 +884,43 @@ impl PublicTestnetEvidenceBundle {
                 &record_roots,
             )
             .is_ok_and(|record_root| record_root == self.network_runtime_observation_root)
+    }
+}
+
+#[derive(Default)]
+struct ValidatorVrfLifecycleEvidence {
+    committed: bool,
+    revealed: bool,
+    committed_validator_id: Hash,
+    revealed_validator_id: Hash,
+    committed_beacon_round: u64,
+    revealed_beacon_round: u64,
+    committed_observed_block: u64,
+    revealed_observed_block: u64,
+}
+
+impl ValidatorVrfLifecycleEvidence {
+    fn record(&mut self, record: &super::PublicValidatorVrfLifecycleRecord) -> bool {
+        match record.phase {
+            PublicValidatorVrfLifecyclePhase::Committed => {
+                if self.committed {
+                    return false;
+                }
+                self.committed = true;
+                self.committed_validator_id = record.validator_id;
+                self.committed_beacon_round = record.beacon_round;
+                self.committed_observed_block = record.observed_block;
+            }
+            PublicValidatorVrfLifecyclePhase::Revealed => {
+                if self.revealed {
+                    return false;
+                }
+                self.revealed = true;
+                self.revealed_validator_id = record.validator_id;
+                self.revealed_beacon_round = record.beacon_round;
+                self.revealed_observed_block = record.observed_block;
+            }
+        }
+        true
     }
 }

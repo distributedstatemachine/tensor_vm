@@ -91,7 +91,7 @@ validator_vrf_lifecycle_root={}
 validator_vrf_lifecycle_signature={}
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
-validator_vrf_lifecycle_records=20
+validator_vrf_lifecycle_records=40
 node=miner,{},{},0,9,10,{}
 node=miner,{},{},0,9,10,{}
 node=validator,{},{},0,9,10,{}
@@ -153,7 +153,7 @@ service=telemetry,{},https://telemetry.tensorvm.net/health,/health,0,9,10,10,{}
         manifest_artifact_line(
             PublicEvidenceRecordKind::ValidatorVrfLifecycle,
             b"validator-vrf-lifecycle-root",
-            20
+            40
         ),
         manifest_hash(b"block-history-root"),
         hex(&manifest_bundle().block_history_signature),

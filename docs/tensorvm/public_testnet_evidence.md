@@ -98,7 +98,7 @@ data-availability measurement count must match
 checked receipts and use distinct nonzero receipt roots, invalid-work rejection record count must match
 invalid receipts submitted and use distinct nonzero receipt roots,
 detection-measurement record count must be positive for full-spec evidence, validator-VRF-lifecycle
-record count must match checked receipts, reward-settlement raw records must use distinct nonzero receipt
+record count must include committed and revealed records for each checked receipt, reward-settlement raw records must use distinct nonzero receipt
 roots and nonzero miner/validator IDs, and the
 production-libp2p network-runtime observation count must match the counted independent miner and validator
 operator total exactly and use distinct public peer IDs and listen multiaddrs. Raw randomness-beacon
@@ -259,9 +259,10 @@ detection_measurement_signature=<detection-signature-hex>
 detection_measurement=<mechanism>,<subject-root-hex>,<sample-count>,<detected-count>,<observed-block>
 cuda_verified_miner_count=<counted-public-miners>
 cuda_graph_execution_receipts=<cuda-graph-receipt-count>
-validator_vrf_lifecycle_records=<checked-receipt-count>
+validator_vrf_lifecycle_records=<checked-receipt-count * 2>
 validator_vrf_lifecycle_root=<validator-vrf-lifecycle-root-hex>
 validator_vrf_lifecycle_signature=<validator-vrf-lifecycle-signature-hex>
+validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,committed,<observed-block>
 validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,revealed,<observed-block>
 node=miner,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
 node=validator,<address-hex>,<operator-id-hex>,0,100799,<heartbeat-count>,<heartbeat-signature-hex>
@@ -566,7 +567,8 @@ public-testnet criteria or stricter criteria, `public_criterion=true`, `independ
 that do not exceed checked or available receipt counts and are backed by that CUDA miner coverage,
 signed `validator_vrf_lifecycle_records` with raw `validator_vrf_lifecycle=...` lines covering every
 checked and available receipt's deployed commit-to-reveal lifecycle, requiring `available_receipts` to
-equal `checked_receipts`, using distinct nonzero receipt roots that exactly match the raw
+equal `checked_receipts`, including one `committed` and one `revealed` record with the same validator ID
+and beacon round for each receipt root, using nonzero receipt roots that exactly match the raw
 data-availability measurement receipt-root set, and
 aggregating to the signed lifecycle root,
 positive signed deployed `detection_measurement_records`,
@@ -624,7 +626,7 @@ invalid_work_rejection_rate_bps=10000
 reward_settlement_records=1
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
-validator_vrf_lifecycle_records=20
+validator_vrf_lifecycle_records=40
 external_operator_evidence=true
 required_miners=false
 required_validators=false

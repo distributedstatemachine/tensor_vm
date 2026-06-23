@@ -269,7 +269,7 @@ proves that otherwise complete full-spec public evidence remains non-full-spec u
 `cuda_graph_execution_receipts` is positive and does not exceed checked or available receipt counts. The
 `testnet::tests::public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec` now proves
 that otherwise complete full-spec public evidence remains non-full-spec unless signed
-`validator_vrf_lifecycle_records` exactly cover checked receipts,
+`validator_vrf_lifecycle_records` exactly cover committed and revealed phases for checked receipts,
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_operational_records` now proves raw
 data-availability, invalid-work, and reward-settlement records cannot repeat receipt roots to pad deployed
 receipt coverage and that reward settlements cannot use zero participant IDs, and
@@ -281,9 +281,10 @@ status counts matching the run evidence, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_randomness_records` now proves raw public
 randomness records must cover each observed block exactly once with distinct source/round pairs, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`
-proves the full-spec gate also requires raw revealed lifecycle records that aggregate to the signed
-lifecycle summary root, cannot repeat receipt roots to pad checked-receipt coverage, and cover the same
-receipt-root set as raw data-availability measurements.
+proves the full-spec gate also requires raw committed and revealed lifecycle records that aggregate to the
+signed lifecycle summary root, cannot use reveal-only records, cannot repeat receipt roots to pad
+checked-receipt coverage, and cover the same receipt-root set as raw data-availability measurements with
+matching validator and beacon-round pairs.
 `testnet::tests::public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`
 now proves that otherwise complete full-spec public evidence remains non-full-spec unless it has positive
 signed deployed detection-measurement records and raw detection records that aggregate to the signed

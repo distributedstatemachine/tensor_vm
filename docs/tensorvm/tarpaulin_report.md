@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 217 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 218 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -14,12 +14,17 @@ Result:
 - 567 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-85.02% workspace line coverage
-23593/27749 workspace lines covered
+85.03% workspace line coverage
+23616/27775 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 218 coverage-changing work tightened full-spec public validator VRF lifecycle evidence so signed
+and raw lifecycle records must include one `committed` and one `revealed` record with matching validator ID
+and beacon round for each checked available receipt. Reveal-only lifecycle records no longer satisfy the
+public full-spec gate.
 
 Iteration 217 coverage-changing work tightened validator reward release for registered-key validators. A
 legacy unkeyed reveal recorded before key registration no longer makes a validator receipt reward

@@ -55,7 +55,7 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
             .run_evidence
             .has_cuda_graph_execution_evidence
     );
-    assert_eq!(parsed.run.validator_vrf_lifecycle_records, 20);
+    assert_eq!(parsed.run.validator_vrf_lifecycle_records, 40);
     assert!(
         parsed
             .evaluate(&criteria, 6)
@@ -292,7 +292,7 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
             "cuda_graph_execution_receipts=abc",
         ),
         manifest.replace(
-            "validator_vrf_lifecycle_records=20",
+            "validator_vrf_lifecycle_records=40",
             "validator_vrf_lifecycle_records=abc",
         ),
         manifest.replace("dos_controls_enabled=true", "dos_controls_enabled=maybe"),

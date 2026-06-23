@@ -5,9 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 217 implemented and validated locally: Keyed VRF Reveals Gate Validator Reward
-  Release.
-- Current status: public evidence remains deployment-gated; Iteration 217 tightens validator reward
+- Active feature: Iteration 218 implemented and validated locally: Public VRF Lifecycle Requires
+  Commit/Reveal Pairs.
+- Current status: public evidence remains deployment-gated; Iteration 218 tightens public full-spec
+  validator VRF lifecycle evidence so checked available receipts require both deployed `committed` and
+  `revealed` lifecycle records with matching validator IDs and beacon rounds. Iteration 217 tightens validator reward
   release so a validator with a registered VRF key cannot release a pending receipt reward using an earlier
   legacy unkeyed reveal. Iteration 216 keeps the full-spec public
   evidence criteria intact while reducing the raw record cardinality of test-only full-spec fixtures so
@@ -23,7 +25,7 @@ archive commit anchors only.
   prevents later proposer reward materialization after finality instead of relying on adapter-side or timing
   workarounds. Post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
-  `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
+  committed/revealed `validator_vrf_lifecycle_records` covering each checked receipt. Iteration 207 tightened the
   independently checkable supporting-artifact gate so signed raw-record artifact URIs must be distinct
   across required public record kinds before `public_evidence_full_spec=true` can pass.
   Iteration 198 tightened the VRF-lifecycle gate so raw lifecycle records must cover distinct checked receipt
@@ -59,11 +61,83 @@ archive commit anchors only.
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof and deployed dispute evidence |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
-| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates, and public full-spec evidence now requires checked-receipt VRF lifecycle coverage | Add real deployed full VRF construction artifacts and public lifecycle records |
+| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates, and public full-spec evidence now requires committed/revealed VRF lifecycle pairs for checked available receipts | Add real deployed full VRF construction artifacts and public lifecycle records |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 218: Public VRF Lifecycle Requires Commit/Reveal Pairs
+
+Feature capability: require full-spec public validator VRF lifecycle evidence to prove both deployed
+`committed` and `revealed` phases for each checked available receipt.
+
+Readiness requirements covered: `upow.md` §10 commit-to-reveal randomness binding and public evidence
+requirements in `mvp_spec.md`.
+
+Canonical owner: `PublicTestnetRunEvidence::evaluate` owns scalar run evidence, and
+`PublicTestnetEvidenceBundle::evaluate` owns raw public full-spec admission.
+
+Adapter callers: manifest validation, `tvmd public evidence validate`, public evidence docs/reports.
+
+Old shortcut being removed: one revealed raw lifecycle line per receipt could satisfy full-spec lifecycle
+evidence without any committed-phase evidence.
+
+Regression test that proves the shortcut is gone: an otherwise full-spec bundle with only revealed
+lifecycle records, properly re-signed and artifact-bound, no longer reaches `public_evidence_full_spec=true`.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run public evidence
+validation.
+
+Behavior for producer and non-producer roles: unchanged; this consumes deployed evidence records only.
+
+Structured evidence source:
+`validator_vrf_lifecycle_records`, `validator_vrf_lifecycle_root`, and raw
+`validator_vrf_lifecycle=<receipt-root>,<validator-id>,<beacon-round>,committed|revealed,<block>`
+records.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection was parallelized; code/docs edits are
+single-writer.
+
+Tests/checkers/docs to add or update: public run evidence count gate, raw lifecycle pair gate, public
+manifest/CLI fixtures, MVP/public evidence docs, coverage/status/tarpaulin notes, and this exec plan.
+
+Narrow validation commands: focused public lifecycle, manifest, and run-evidence tests.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, diff check, and tarpaulin/report update.
+
+Expected observable evidence: `public_evidence_full_spec=true` requires two validator VRF lifecycle
+records per checked available receipt and rejects reveal-only lifecycle evidence.
+
+Out of scope: generating real deployed VRF records, changing live local VRF behavior, or changing p2p
+payload encoding.
+
+Split trigger: split if deployed lifecycle pair validation requires a manifest schema change.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused public evidence checks passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`,
+  `cargo test -p tensor_vm public_testnet_run_evidence_requires_independent_external_operators --lib`,
+  and `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+- Broad lib validation passed: `cargo test -p tensor_vm --lib` reported 567 passed, 0 failed.
+- Hygiene passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy -p tensor_vm
+  --all-targets -- -D warnings`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+  target/tarpaulin` produced 85.03% workspace line coverage, 23616/27775 lines covered.
+- Implementation commit: pending.
 
 ### Iteration 217: Keyed VRF Reveals Gate Validator Reward Release
 

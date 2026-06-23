@@ -108,7 +108,7 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
         reward_settlement_records: 1,
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
-        validator_vrf_lifecycle_records: 20,
+        validator_vrf_lifecycle_records: 40,
         detection_measurement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
@@ -132,7 +132,7 @@ pub(super) fn manifest_bundle() -> PublicTestnetEvidenceBundle {
             reward_settlement_root: hash_bytes(b"test", &[b"reward-settlement-root"]),
             detection_measurement_records: 1,
             detection_measurement_root: hash_bytes(b"test", &[b"detection-measurement-root"]),
-            validator_vrf_lifecycle_records: 20,
+            validator_vrf_lifecycle_records: 40,
             validator_vrf_lifecycle_root: hash_bytes(b"test", &[b"validator-vrf-lifecycle-root"]),
         },
     )

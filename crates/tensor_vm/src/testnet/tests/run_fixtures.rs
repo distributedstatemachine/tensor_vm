@@ -180,7 +180,7 @@ pub(super) fn complete_public_run_evidence() -> PublicTestnetRunEvidence {
         reward_settlement_records: 1,
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
-        validator_vrf_lifecycle_records: 20,
+        validator_vrf_lifecycle_records: 40,
         detection_measurement_records: 1,
     }
 }
@@ -214,7 +214,7 @@ pub(super) fn complete_public_evidence_bundle() -> PublicTestnetEvidenceBundle {
             reward_settlement_root: hash_bytes(b"test", &[b"reward-settlement-root"]),
             detection_measurement_records: 1,
             detection_measurement_root: hash_bytes(b"test", &[b"detection-measurement-root"]),
-            validator_vrf_lifecycle_records: 20,
+            validator_vrf_lifecycle_records: 40,
             validator_vrf_lifecycle_root: hash_bytes(b"test", &[b"validator-vrf-lifecycle-root"]),
         },
     )
@@ -306,7 +306,7 @@ pub(super) fn full_spec_public_evidence_bundle(
         reward_settlement_records: 1,
         cuda_verified_miner_count: criteria.min_miners as u64,
         cuda_graph_execution_receipts: 1,
-        validator_vrf_lifecycle_records: checked_receipts,
+        validator_vrf_lifecycle_records: checked_receipts.saturating_mul(2),
         detection_measurement_records: 1,
     };
     let network_runtime_observation_root = network_runtime_root_for_run(&run);
@@ -410,7 +410,7 @@ pub(super) fn full_spec_public_evidence_bundle(
             reward_settlement_root,
             detection_measurement_records: 1,
             detection_measurement_root,
-            validator_vrf_lifecycle_records: checked_receipts,
+            validator_vrf_lifecycle_records: checked_receipts.saturating_mul(2),
             validator_vrf_lifecycle_root,
         },
     );
@@ -517,12 +517,27 @@ pub(super) fn full_spec_validator_vrf_lifecycle_records(
     checked_receipts: u64,
 ) -> Vec<PublicValidatorVrfLifecycleRecord> {
     (0..checked_receipts)
-        .map(|index| PublicValidatorVrfLifecycleRecord {
-            receipt_root: full_spec_checked_receipt_root(index),
-            validator_id: address(format!("full-spec-vrf-lifecycle-validator-{index}").as_bytes()),
-            beacon_round: index + 1,
-            phase: PublicValidatorVrfLifecyclePhase::Revealed,
-            observed_block: index,
+        .flat_map(|index| {
+            let receipt_root = full_spec_checked_receipt_root(index);
+            let validator_id =
+                address(format!("full-spec-vrf-lifecycle-validator-{index}").as_bytes());
+            let beacon_round = index + 1;
+            [
+                PublicValidatorVrfLifecycleRecord {
+                    receipt_root,
+                    validator_id,
+                    beacon_round,
+                    phase: PublicValidatorVrfLifecyclePhase::Committed,
+                    observed_block: index,
+                },
+                PublicValidatorVrfLifecycleRecord {
+                    receipt_root,
+                    validator_id,
+                    beacon_round,
+                    phase: PublicValidatorVrfLifecyclePhase::Revealed,
+                    observed_block: index + 1,
+                },
+            ]
         })
         .collect()
 }

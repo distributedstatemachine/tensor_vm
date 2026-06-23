@@ -49,7 +49,7 @@ fn public_testnet_run_evidence_requires_production_runtime_and_reachable_service
         reward_settlement_records: 1,
         cuda_verified_miner_count: 2,
         cuda_graph_execution_receipts: 1,
-        validator_vrf_lifecycle_records: 20,
+        validator_vrf_lifecycle_records: 40,
         detection_measurement_records: 1,
     };
 
