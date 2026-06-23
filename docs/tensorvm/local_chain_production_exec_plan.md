@@ -134,6 +134,7 @@ or public report output formats beyond a boolean report field.
 
 Validation evidence (June 23, 2026):
 
+- Implementation commit: `0545df6` (`Require public service evidence for independent bundles`).
 - Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
   local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
 - Focused public evidence checks passed:
