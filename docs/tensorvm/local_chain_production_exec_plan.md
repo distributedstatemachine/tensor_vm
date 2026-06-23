@@ -141,8 +141,8 @@ Validation evidence:
 - `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings` passed on
   June 23, 2026 after rerunning once to avoid a concurrent Tarpaulin target-directory clean.
 - `git diff --check` passed on June 23, 2026.
-- Commit: pending.
-- Push: pending.
+- Commit: `c720931` (`Add CUDA field squeeze graph support`).
+- Push: `c720931` pushed to `origin/main` on June 23, 2026.
 
 ## Recent Iterations
 
