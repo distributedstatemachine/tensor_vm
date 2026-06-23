@@ -112,6 +112,7 @@ Validation evidence, June 23, 2026:
 - Release CLI evidence validation:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- Commit: `134b0bb` (`Validate public detection measurement records`).
 
 ### Iteration 200: Unique Public Settlement Receipt Coverage Gate
 
