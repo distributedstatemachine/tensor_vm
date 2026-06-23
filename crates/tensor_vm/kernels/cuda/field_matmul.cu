@@ -24,6 +24,24 @@ __device__ uint64_t field_relu(uint64_t value) {
     return normalized > kModulus / 2 ? 0 : normalized;
 }
 
+__device__ uint64_t field_neg(uint64_t value) {
+    uint64_t normalized = value % kModulus;
+    return normalized == 0 ? 0 : kModulus - normalized;
+}
+
+__device__ uint64_t field_abs(uint64_t value) {
+    uint64_t normalized = value % kModulus;
+    return normalized > kModulus / 2 ? field_neg(normalized) : normalized;
+}
+
+__device__ uint64_t field_sign(uint64_t value) {
+    uint64_t normalized = value % kModulus;
+    if (normalized == 0) {
+        return 0;
+    }
+    return normalized > kModulus / 2 ? kModulus - 1 : 1;
+}
+
 __global__ void field_matmul_kernel(
     const uint64_t* lhs,
     const uint64_t* rhs,
@@ -87,6 +105,46 @@ __global__ void field_relu_kernel(
     uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
     if (index < len) {
         out[index] = field_relu(input[index]);
+    }
+}
+
+__global__ void field_identity_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = input[index] % kModulus;
+    }
+}
+
+__global__ void field_neg_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = field_neg(input[index]);
+    }
+}
+
+__global__ void field_abs_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = field_abs(input[index]);
+    }
+}
+
+__global__ void field_sign_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = field_sign(input[index]);
     }
 }
 
@@ -168,6 +226,84 @@ int select_device(uint32_t device_index) {
 uint64_t block_count(uint64_t elements) {
     constexpr uint64_t threads_per_block = 256;
     return (elements + threads_per_block - 1) / threads_per_block;
+}
+
+enum class UnaryOp {
+    Identity,
+    Neg,
+    Abs,
+    Sign,
+    Relu,
+};
+
+int launch_unary_kernel(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len,
+    UnaryOp op) {
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        switch (op) {
+            case UnaryOp::Identity:
+                field_identity_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_input, device_out, len);
+                break;
+            case UnaryOp::Neg:
+                field_neg_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_input, device_out, len);
+                break;
+            case UnaryOp::Abs:
+                field_abs_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_input, device_out, len);
+                break;
+            case UnaryOp::Sign:
+                field_sign_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_input, device_out, len);
+                break;
+            case UnaryOp::Relu:
+                field_relu_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_input, device_out, len);
+                break;
+        }
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
+    return fail(status, -5);
 }
 
 }  // namespace
@@ -474,50 +610,39 @@ extern "C" int tensor_vm_cuda_field_relu(
     const uint64_t* input,
     uint64_t* out,
     uint64_t len) {
-    if (input == nullptr || out == nullptr) {
-        return -1;
-    }
-    int device_status = select_device(device_index);
-    if (device_status != 0) {
-        return device_status;
-    }
-    if (len == 0) {
-        return 0;
-    }
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Relu);
+}
 
-    uint64_t* device_input = nullptr;
-    uint64_t* device_out = nullptr;
-    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
-    cudaError_t status = cudaMalloc(&device_input, bytes);
-    if (status != cudaSuccess) {
-        return -3;
-    }
-    status = cudaMalloc(&device_out, bytes);
-    if (status != cudaSuccess) {
-        cudaFree(device_input);
-        return -3;
-    }
+extern "C" int tensor_vm_cuda_field_identity(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Identity);
+}
 
-    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
-    if (status == cudaSuccess) {
-        constexpr uint64_t threads_per_block = 256;
-        uint64_t blocks = block_count(len);
-        field_relu_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
-            device_input,
-            device_out,
-            len);
-        status = cudaGetLastError();
-    }
-    if (status == cudaSuccess) {
-        status = cudaDeviceSynchronize();
-    }
-    if (status == cudaSuccess) {
-        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
-    }
+extern "C" int tensor_vm_cuda_field_neg(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Neg);
+}
 
-    cudaFree(device_input);
-    cudaFree(device_out);
-    return fail(status, -5);
+extern "C" int tensor_vm_cuda_field_abs(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Abs);
+}
+
+extern "C" int tensor_vm_cuda_field_sign(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Sign);
 }
 
 extern "C" int tensor_vm_cuda_field_scalar_mul(

@@ -375,6 +375,26 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(tensor)?;
             cuda::field_relu(device_index, tensor)?
         }
+        "identity" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            cuda::field_identity(device_index, tensor)?
+        }
+        "neg" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            cuda::field_neg(device_index, tensor)?
+        }
+        "abs" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            cuda::field_abs(device_index, tensor)?
+        }
+        "sign" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            cuda::field_sign(device_index, tensor)?
+        }
         "scalar_mul" => {
             let (tensor, scalar) = graph_tensor_and_scalar_values(args)?;
             require_graph_field_tensor(tensor)?;
@@ -509,7 +529,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
         if expected_graph != actual_graph {
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
-        passed_ops.extend(["add", "mul", "relu"]);
+        passed_ops.extend(["add", "mul", "identity", "neg", "abs", "sign", "relu"]);
 
         Ok(ConformanceProfile {
             suite_hash: conformance_suite_hash(),
@@ -524,11 +544,14 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
 }
 
 #[cfg(feature = "cuda-kernels")]
-fn supported_cuda_graph_conformance_case() -> Result<(
+type CudaGraphConformanceCase = (
     TensorGraph,
     BTreeMap<String, Tensor>,
     BTreeMap<String, Elem>,
-)> {
+);
+
+#[cfg(feature = "cuda-kernels")]
+fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
     let graph = TensorGraph {
         ir_version: 1,
         inputs: vec![
@@ -617,10 +640,38 @@ fn supported_cuda_graph_conformance_case() -> Result<(
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("activated", vec![2, 2])],
             },
+            OpNode {
+                id: 7,
+                op: "neg".to_owned(),
+                args: vec![IrRef::Op { id: 6, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("negated", vec![2, 2])],
+            },
+            OpNode {
+                id: 8,
+                op: "abs".to_owned(),
+                args: vec![IrRef::Op { id: 7, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("absolute", vec![2, 2])],
+            },
+            OpNode {
+                id: 9,
+                op: "sign".to_owned(),
+                args: vec![IrRef::Op { id: 8, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("signed", vec![2, 2])],
+            },
+            OpNode {
+                id: 10,
+                op: "identity".to_owned(),
+                args: vec![IrRef::Op { id: 9, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("identity", vec![2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "activated".to_owned(),
-            value: IrRef::Op { id: 6, idx: 0 },
+            name: "identity".to_owned(),
+            value: IrRef::Op { id: 10, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -678,6 +729,30 @@ mod cuda {
             len: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_relu(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_identity(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_neg(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_abs(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_sign(
             device_index: u32,
             input: *const u64,
             out: *mut u64,
@@ -820,6 +895,22 @@ mod cuda {
         Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
     }
 
+    pub fn field_identity(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        field_unary(device_index, input, tensor_vm_cuda_field_identity)
+    }
+
+    pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        field_unary(device_index, input, tensor_vm_cuda_field_neg)
+    }
+
+    pub fn field_abs(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        field_unary(device_index, input, tensor_vm_cuda_field_abs)
+    }
+
+    pub fn field_sign(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        field_unary(device_index, input, tensor_vm_cuda_field_sign)
+    }
+
     pub fn field_scalar_mul(device_index: u32, input: &Tensor, scalar: Elem) -> Result<Tensor> {
         let mut out = vec![0; input.len()];
         let code = unsafe {
@@ -872,6 +963,27 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Ok(out)
+    }
+
+    fn field_unary(
+        device_index: u32,
+        input: &Tensor,
+        kernel: unsafe extern "C" fn(u32, *const u64, *mut u64, u64) -> i32,
+    ) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        let mut out = vec![0; input.len()];
+        let code = unsafe {
+            kernel(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
     }
 
     pub fn field_mse_loss(device_index: u32, y: &Tensor, target: &Tensor) -> Result<Hash> {
@@ -1074,6 +1186,10 @@ mod tests {
             "sub",
             "matmul",
             "mul",
+            "identity",
+            "neg",
+            "abs",
+            "sign",
             "transpose",
             "relu",
             "scalar_mul",
@@ -1263,6 +1379,59 @@ mod tests {
         )
         .unwrap();
         assert_eq!(relu, expected_relu);
+
+        let identity = cuda::field_identity(0, &lhs).unwrap();
+        assert_eq!(identity, lhs);
+
+        let neg = cuda::field_neg(0, &lhs).unwrap();
+        let expected_neg = Tensor::from_vec(
+            lhs.shape().to_vec(),
+            lhs.dtype(),
+            lhs.as_slice()
+                .iter()
+                .map(|value| if *value == 0 { 0 } else { MODULUS - *value })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(neg, expected_neg);
+
+        let abs = cuda::field_abs(0, &lhs).unwrap();
+        let expected_abs = Tensor::from_vec(
+            lhs.shape().to_vec(),
+            lhs.dtype(),
+            lhs.as_slice()
+                .iter()
+                .map(|value| {
+                    if *value > MODULUS / 2 {
+                        MODULUS - *value
+                    } else {
+                        *value
+                    }
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(abs, expected_abs);
+
+        let sign = cuda::field_sign(0, &lhs).unwrap();
+        let expected_sign = Tensor::from_vec(
+            lhs.shape().to_vec(),
+            lhs.dtype(),
+            lhs.as_slice()
+                .iter()
+                .map(|value| {
+                    if *value == 0 {
+                        0
+                    } else if *value > MODULUS / 2 {
+                        MODULUS - 1
+                    } else {
+                        1
+                    }
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(sign, expected_sign);
 
         let scaled = cuda::field_scalar_mul(0, &lhs, MODULUS + 2).unwrap();
         assert_eq!(scaled, lhs.scalar_mul(MODULUS + 2).unwrap());

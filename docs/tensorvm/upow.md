@@ -102,7 +102,7 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
 > config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
 > synthetic GraphExecution shape (`add` -> `relu`) plus a focused supported-op CUDA graph
-> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`) through the CUDA miner backend with bit-exact
+> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`) through the CUDA miner backend with bit-exact
 > CPU/GPU receipt roots. CUDA conformance reporting is limited to the exercised CUDA subset instead of
 > over-claiming the full CPU reference profile. The full frozen-registry CUDA vector suite and
 > Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage for every
@@ -178,7 +178,8 @@ Graph {
 > registered canonical graph bodies, execute locally through miner role loops, attest through validator
 > role loops, cross the shared p2p/node payload path, settle through delayed receipt rewards, and surface
 > through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution now covers the current
-> local synthetic GraphExecution shape and a supported field-op graph including elementwise `mul` through
+> local synthetic GraphExecution shape and a supported field-op graph including elementwise `mul` plus
+> exact field `identity`/`neg`/`abs`/`sign` through
 > miner-role `cuda:N` backend selection; broader CUDA graph op coverage and public deployed graph evidence
 > remain TODO.
 

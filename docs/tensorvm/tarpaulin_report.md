@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 230 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 231 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -21,10 +21,13 @@ Result:
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
+Iteration 231 coverage-changing work added CUDA-feature-only same-shape field `identity`, `neg`, `abs`,
+and `sign` graph execution support and conformance coverage. The default Tarpaulin run passed under the
+portable feature set and does not instrument the native CUDA path, so the new CUDA unary evidence is
+recorded through separate `--features cuda-kernels` runtime and miner-role tests in the execution plan.
+
 Iteration 230 coverage-changing work added CUDA-feature-only field `mul` graph execution support and
-conformance coverage. The default Tarpaulin run passed under the portable feature set and does not
-instrument the native CUDA path, so the new CUDA `mul` evidence is recorded through separate
-`--features cuda-kernels` runtime and miner-role tests in the execution plan.
+conformance coverage.
 
 Iteration 222 coverage-changing work split public randomness/validator-VRF raw record shape from
 chain-accepted deployed evidence for full-spec admission. The new regressions prove otherwise complete
@@ -341,8 +344,8 @@ the portable default feature set:
 
 ```text
 cargo test -p tensor_vm --features cuda-kernels --release
-182 tensor_vm tests passed, including native CUDA field-matmul and linear-step tensor-op checks against
-canonical CPU output
+580 tensor_vm library tests and 54 tvmd runtime tests passed, including native CUDA field-matmul,
+same-shape field graph, field unary, and linear-step tensor-op checks against canonical CPU output
 ```
 
 Tarpaulin reports line coverage here. Its branch coverage flag is currently listed as not implemented by the installed tool.

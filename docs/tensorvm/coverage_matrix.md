@@ -319,7 +319,7 @@ registered-key validator reward that only has an earlier legacy reveal is re-hel
 until a keyed Ed25519 reveal matching the registered validator key is submitted.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul,
-  same-shape field graph `add`/`sub`/`mul`/`relu`/`scalar_mul`/`transpose`, plus linear-step
+  same-shape field graph `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`scalar_mul`/`transpose`, plus linear-step
   sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.
   Miner CLI startup reports CPU reference readiness for `--device cpu` and rejects `--device cuda:N`
   unless CUDA kernels are compiled and the requested device is available.

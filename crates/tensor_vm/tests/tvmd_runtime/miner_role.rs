@@ -100,10 +100,38 @@ fn supported_cuda_graph_execution_case() -> (
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("activated", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 7,
+                op: "neg".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 6, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("negated", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 8,
+                op: "abs".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 7, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("absolute", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 9,
+                op: "sign".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 8, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("signed", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 10,
+                op: "identity".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 9, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("identity", vec![2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "activated".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 6, idx: 0 },
+            name: "identity".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 10, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([
