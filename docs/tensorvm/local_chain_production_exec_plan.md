@@ -117,6 +117,7 @@ Validation evidence (June 23, 2026):
 - `cargo test -p tensor_vm --lib` passed: 564 passed, 0 failed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `511f6d6` (`Require CUDA miner coverage for graph evidence`).
 
 ### Iteration 210: Runtime Bootstrap Peer Policy
 
