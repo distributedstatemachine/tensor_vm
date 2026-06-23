@@ -103,6 +103,8 @@ Out of scope: requiring canonical hosted paths or fetching artifact content.
 Split trigger: split if URI diversity requires active artifact download or content hashing rather than
 validating signed locator metadata.
 
+Commit `452c57d` (`Validate public artifact URIs`) prepared on June 23, 2026.
+
 ### Iteration 206: Reward-Finality Formal Status Alignment
 
 Feature capability: align formal proof-status documents with the current local reward-finality runtime:
@@ -1049,6 +1051,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 - Current Iteration 207 lint and hygiene validation passed on June 23, 2026:
   `cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
   `git diff --check`.
+- Current Iteration 207 feature commit `452c57d`
+  (`Validate public artifact URIs`) prepared on June 23, 2026.
 - Current Iteration 203 focused validation passed on June 23, 2026:
   `cargo fmt --all && cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`.
 - Current Iteration 203 hygiene validation passed on June 23, 2026:
