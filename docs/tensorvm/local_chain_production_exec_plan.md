@@ -5,8 +5,8 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 215 implemented locally with tarpaulin refresh blocked: VRF Lifecycle Records
-  Must Match Available Receipt Roots.
+- Active feature: Iteration 215 implemented and pushed with tarpaulin refresh blocked: VRF Lifecycle
+  Records Must Match Available Receipt Roots.
 - Current status: public evidence remains deployment-gated; Iteration 215 ties raw validator-VRF lifecycle
   records to the same checked available receipt roots proven by raw data-availability records. Iteration
   214 tightens the scalar
@@ -139,6 +139,8 @@ Validation evidence (June 23, 2026):
   tarpaulin run remains the June 22, 2026 report in `docs/tensorvm/tarpaulin_report.md`.
 - Iteration status: implementation and non-coverage validation are complete locally; coverage refresh is
   blocked by the reproducible tarpaulin instrumentation stall, so this iteration is not marked complete.
+- Implementation/blocker-record commit pushed to `main`: `cc009ad`
+  (`Require VRF lifecycle roots to match available receipts`), range `3e9311b..cc009ad`.
 
 ### Iteration 214: Validator VRF Lifecycle Requires Available Receipts
 
