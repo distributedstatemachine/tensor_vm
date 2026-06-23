@@ -126,6 +126,7 @@ Validation evidence:
 - Full CUDA-feature release sweep: `cargo test -p tensor_vm --features cuda-kernels --release` passed with
   580 TensorVM library tests and 54 `tvmd_runtime` tests, including CUDA miner-role TensorOp,
   LinearTrainingStep, local graph, and supported multi-op graph execution through `GpuMinerBackend`.
+- Commit `d4d2b57` (`Add CUDA field where graph support`) pushed to `origin/main` on June 23, 2026.
 
 ### Iteration 232: CUDA Field Comparison Graph Kernels/Conformance
 
