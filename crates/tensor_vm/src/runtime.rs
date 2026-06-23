@@ -9,7 +9,7 @@ use crate::error::{Result, TvmError};
 #[cfg(feature = "cuda-kernels")]
 use crate::field::Elem;
 #[cfg(feature = "cuda-kernels")]
-use crate::ir::{GraphOutput, IrOpTrace, IrRef, OpNode, ParamSpec, TensorSpec};
+use crate::ir::{GraphOutput, IrLiteral, IrOpTrace, IrRef, IrValue, OpNode, ParamSpec, TensorSpec};
 use crate::ir::{IrExecution, TensorGraph};
 use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepOutput, MatmulJob};
 #[cfg(feature = "cuda-kernels")]
@@ -210,7 +210,7 @@ impl GpuMinerBackend {
                 .iter()
                 .map(GraphRuntimeValue::commitment_root)
                 .collect::<Vec<Hash>>();
-            let outputs = execute_cuda_graph_op(device_index, op.op.as_str(), &args)?;
+            let outputs = execute_cuda_graph_op(device_index, op.op.as_str(), &args, &op.kwargs)?;
             let output_roots = outputs
                 .iter()
                 .map(|value| match value {
@@ -339,6 +339,7 @@ fn execute_cuda_graph_op(
     device_index: u32,
     op: &str,
     args: &[GraphRuntimeValue],
+    kwargs: &BTreeMap<String, IrValue>,
 ) -> Result<Vec<GraphRuntimeValue>> {
     let output = match op {
         "add" => {
@@ -438,6 +439,16 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(tensor)?;
             cuda::field_sign(device_index, tensor)?
         }
+        "clamp" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let min = graph_field_kwarg(kwargs, "min")?;
+            let max = graph_field_kwarg(kwargs, "max")?;
+            if min > max {
+                return Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"));
+            }
+            cuda::field_clamp(device_index, tensor, min, max)?
+        }
         "scalar_mul" => {
             let (tensor, scalar) = graph_tensor_and_scalar_values(args)?;
             require_graph_field_tensor(tensor)?;
@@ -446,6 +457,16 @@ fn execute_cuda_graph_op(
         _ => return Err(TvmError::InvalidReceipt("cuda graph op not supported")),
     };
     Ok(vec![GraphRuntimeValue::Tensor(output)])
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn graph_field_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Elem> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::Field(value))) => Ok(*value),
+        Some(IrValue::Literal(IrLiteral::Int(value))) if *value >= 0 => Ok(*value as Elem),
+        Some(IrValue::Literal(IrLiteral::Uint(value))) => Ok(*value as Elem),
+        _ => Err(TvmError::InvalidReceipt("tensor ir expected field kwarg")),
+    }
 }
 
 #[cfg(feature = "cuda-kernels")]
@@ -598,8 +619,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
         passed_ops.extend([
-            "add", "mul", "div", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg", "abs",
-            "sign", "relu",
+            "add", "mul", "div", "clamp", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg",
+            "abs", "sign", "relu",
         ]);
 
         Ok(ConformanceProfile {
@@ -849,10 +870,20 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("quotient", vec![2, 2])],
             },
+            OpNode {
+                id: 18,
+                op: "clamp".to_owned(),
+                args: vec![IrRef::Op { id: 17, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    ("min".to_owned(), IrValue::Literal(IrLiteral::Field(2))),
+                    ("max".to_owned(), IrValue::Literal(IrLiteral::Field(100))),
+                ]),
+                out: vec![TensorSpec::field("clamped", vec![2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "quotient".to_owned(),
-            value: IrRef::Op { id: 17, idx: 0 },
+            name: "clamped".to_owned(),
+            value: IrRef::Op { id: 18, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -988,6 +1019,14 @@ mod cuda {
             input: *const u64,
             out: *mut u64,
             len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_clamp(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+            min: u64,
+            max: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_scalar_mul(
             device_index: u32,
@@ -1208,6 +1247,28 @@ mod cuda {
 
     pub fn field_sign(device_index: u32, input: &Tensor) -> Result<Tensor> {
         field_unary(device_index, input, tensor_vm_cuda_field_sign)
+    }
+
+    pub fn field_clamp(device_index: u32, input: &Tensor, min: Elem, max: Elem) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if min > max {
+            return Err(TvmError::InvalidReceipt("tensor ir clamp bounds mismatch"));
+        }
+        let mut out = vec![0; input.len()];
+        let code = unsafe {
+            tensor_vm_cuda_field_clamp(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                min,
+                max,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
     }
 
     pub fn field_scalar_mul(device_index: u32, input: &Tensor, scalar: Elem) -> Result<Tensor> {
@@ -1842,6 +1903,18 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sign, expected_sign);
+
+        let clamped = cuda::field_clamp(0, &lhs, 2, 100).unwrap();
+        let expected_clamp = Tensor::from_vec(
+            lhs.shape().to_vec(),
+            lhs.dtype(),
+            lhs.as_slice()
+                .iter()
+                .map(|value| (*value % MODULUS).clamp(2, 100))
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(clamped, expected_clamp);
 
         let scaled = cuda::field_scalar_mul(0, &lhs, MODULUS + 2).unwrap();
         assert_eq!(scaled, lhs.scalar_mul(MODULUS + 2).unwrap());

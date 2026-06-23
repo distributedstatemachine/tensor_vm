@@ -21,6 +21,12 @@ Result:
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
+Iteration 235 coverage-changing work added CUDA-feature-only same-shape scalar-bounds field `clamp` graph
+execution support and conformance coverage. The default Tarpaulin run passed under the portable feature
+set and does not instrument the native CUDA path, so the new CUDA `clamp` evidence is recorded through
+separate `--features cuda-kernels` runtime and miner-role tests in the execution plan. The portable
+coverage numbers remained 85.03%, 23831/28028 lines, with 588 instrumented tests.
+
 Iteration 234 coverage-changing work added CUDA-feature-only same-shape field `div` graph execution
 support and conformance coverage with explicit CUDA zero-denominator error propagation. The default
 Tarpaulin run passed under the portable feature set and does not instrument the native CUDA path, so the
@@ -363,7 +369,7 @@ the portable default feature set:
 ```text
 cargo test -p tensor_vm --features cuda-kernels --release
 580 tensor_vm library tests and 54 tvmd runtime tests passed, including native CUDA field-matmul,
-same-shape field graph, field unary, field comparison, field division, and linear-step tensor-op checks against canonical CPU output
+same-shape field graph, field unary, field comparison, field division, scalar-bounds field clamp, and linear-step tensor-op checks against canonical CPU output
 ```
 
 Tarpaulin reports line coverage here. Its branch coverage flag is currently listed as not implemented by the installed tool.

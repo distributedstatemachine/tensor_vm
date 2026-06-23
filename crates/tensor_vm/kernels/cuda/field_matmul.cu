@@ -262,6 +262,25 @@ __global__ void field_scalar_mul_kernel(
     }
 }
 
+__global__ void field_clamp_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len,
+    uint64_t min,
+    uint64_t max) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        uint64_t value = input[index] % kModulus;
+        if (value < min) {
+            out[index] = min;
+        } else if (value > max) {
+            out[index] = max;
+        } else {
+            out[index] = value;
+        }
+    }
+}
+
 __global__ void field_transpose_kernel(
     const uint64_t* input,
     uint64_t* out,
@@ -1065,6 +1084,61 @@ extern "C" int tensor_vm_cuda_field_sign(
     uint64_t* out,
     uint64_t len) {
     return launch_unary_kernel(device_index, input, out, len, UnaryOp::Sign);
+}
+
+extern "C" int tensor_vm_cuda_field_clamp(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len,
+    uint64_t min,
+    uint64_t max) {
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        field_clamp_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_input,
+            device_out,
+            len,
+            min,
+            max);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
+    return fail(status, -5);
 }
 
 extern "C" int tensor_vm_cuda_field_scalar_mul(

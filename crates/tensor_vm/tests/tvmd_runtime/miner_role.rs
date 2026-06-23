@@ -238,10 +238,26 @@ fn supported_cuda_graph_execution_case() -> (
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("quotient", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 18,
+                op: "clamp".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 17, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    (
+                        "min".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Field(2)),
+                    ),
+                    (
+                        "max".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Field(100)),
+                    ),
+                ]),
+                out: vec![tensor_vm::TensorSpec::field("clamped", vec![2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "quotient".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 17, idx: 0 },
+            name: "clamped".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 18, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

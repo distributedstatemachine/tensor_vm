@@ -172,7 +172,8 @@ Focused evidence:
 Remaining Tensor IR/conformance gaps: index-consistency proofs for `gather`/`scatter`/`embedding` and
 full frozen-registry CUDA conformance beyond the current CUDA-feature field subset; fixed-scale comparison
 masks and int8 selection now have mixed dtype/scale vectors. CUDA-feature evidence now covers
-same-shape field `mul`, same-shape field modular-inverse `div`, same-shape field comparison masks
+same-shape field `mul`, same-shape field modular-inverse `div`, same-shape scalar-bounds field `clamp`,
+same-shape field comparison masks
 (`eq`, `gt`, `lt`, `ge`, `le`), and same-shape field `where` selection from an `Int32` mask in the direct CUDA kernel tests, supported multi-op CPU/GPU
 graph parity, GPU conformance profile assertions, and miner-role CUDA GraphExecution receipt tests, while
 the portable default build still rejects CUDA
@@ -322,7 +323,7 @@ until a keyed Ed25519 reveal matching the registered validator key is submitted.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul,
   same-shape field graph
-  `add`/`sub`/`mul`/`div`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`, plus linear-step
+  `add`/`sub`/`mul`/`div`/`clamp`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`, plus linear-step
   sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.
   Miner CLI startup reports CPU reference readiness for `--device cpu` and rejects `--device cuda:N`
   unless CUDA kernels are compiled and the requested device is available.
