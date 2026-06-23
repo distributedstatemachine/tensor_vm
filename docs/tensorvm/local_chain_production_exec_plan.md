@@ -5,14 +5,17 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 230 in progress: CUDA Field Mul Graph Kernel/Conformance.
+- Active feature: Iteration 230 complete: CUDA Field Mul Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
   CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
   Iteration 228 routes miner-role GraphExecution jobs for the current local synthetic graph shape through
   `GpuMinerBackend` when `tvmd miner run --device cuda:N` is selected, using CUDA `add`/`relu` kernels and
   preserving bit-exact CPU/GPU receipt ids, output roots, and trace roots.
-  Iteration 226 installs the local CUDA toolkit path into executable evidence by replacing the broken
+  Iteration 230 adds a same-shape CUDA field `mul` kernel and routes field `mul` GraphExecution ops through
+  `GpuMinerBackend`, so the supported CUDA graph/conformance subset now covers
+  `matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu` without claiming fixed-point or broader
+  frozen-registry CUDA coverage. Iteration 226 installs the local CUDA toolkit path into executable evidence by replacing the broken
   default `-arch native` CUDA build with A100-compatible architecture detection/fallback, and focused
   CUDA-feature tests now pass on the local A100 host. Iteration 227 wires `tvmd miner run --device
   cuda:N` through the role runtime config into miner receipt execution for current TensorOp and
@@ -78,9 +81,9 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: implement and validate CUDA field `mul` graph execution/conformance as the next admitted
-  exact Tier-B op, without overclaiming fixed-point `mul` or unsupported frozen-registry coverage. Stop the
-  public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
+- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
+  fallback or overclaiming unsupported frozen-registry coverage. Stop the public-evidence-validator
+  tightening loop; redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
 
@@ -209,6 +212,8 @@ Validation evidence:
   passed after regenerating raw evidence records in the fixture.
 - Workspace broad gates: `cargo test --workspace --release` passed, and
   `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Commit `78540b2` (`Add CUDA field mul graph support`) pushed to `origin/main` on June 23, 2026.
+- Push result on June 23, 2026: `131bd10..78540b2 main -> main`.
 
 ### Iteration 229: CUDA Supported Graph Op Conformance Boundary
 
