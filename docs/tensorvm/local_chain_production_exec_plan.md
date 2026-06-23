@@ -122,6 +122,7 @@ Validation evidence (June 23, 2026):
 - `cargo test -p tensor_vm --lib` passed: 566 passed, 0 failed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `a12d4d9` (`Reject index-consistency graphs at registration`).
 
 ### Iteration 212: Block-Check Challenges Block Late Proposer Reward Materialization
 
