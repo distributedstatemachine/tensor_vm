@@ -272,9 +272,11 @@ that otherwise complete full-spec public evidence remains non-full-spec unless s
 `validator_vrf_lifecycle_records` exactly cover committed and revealed phases for checked receipts,
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_operational_records` now proves raw
 data-availability, invalid-work, and reward-settlement records cannot repeat receipt roots to pad deployed
-receipt coverage and that reward settlements cannot use zero participant IDs, and
+receipt coverage, cannot use out-of-run observed block indexes, and that reward settlements cannot use
+zero participant IDs, and
 `testnet::tests::public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`
-now proves raw detection-measurement records cannot bypass manifest field validation when directly bundled, and
+now proves raw detection-measurement records cannot bypass manifest field validation or out-of-run
+observed block rejection when directly bundled, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_chain_history_records` now proves raw
 block/finality history must use distinct nonzero block roots, matching block/finality roots, and finalized
 status counts matching the run evidence, and
@@ -284,7 +286,7 @@ randomness records must cover each observed block exactly once with distinct sou
 proves the full-spec gate also requires raw committed and revealed lifecycle records that aggregate to the
 signed lifecycle summary root, cannot use reveal-only records, cannot repeat receipt roots to pad
 checked-receipt coverage, and cover the same receipt-root set as raw data-availability measurements with
-matching validator and beacon-round pairs.
+matching validator and beacon-round pairs inside the signed observed-block window.
 `testnet::tests::public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`
 now proves that otherwise complete full-spec public evidence remains non-full-spec unless it has positive
 signed deployed detection-measurement records and raw detection records that aggregate to the signed

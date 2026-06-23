@@ -535,7 +535,7 @@ pub(super) fn full_spec_validator_vrf_lifecycle_records(
                     validator_id,
                     beacon_round,
                     phase: PublicValidatorVrfLifecyclePhase::Revealed,
-                    observed_block: index + 1,
+                    observed_block: index,
                 },
             ]
         })

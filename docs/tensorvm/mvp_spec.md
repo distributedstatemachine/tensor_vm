@@ -2420,7 +2420,10 @@ operators can derive summary roots and artifact locators from captured records w
 Whitespace-padded record lines or empty fields are rejected, reward-settlement participant IDs must be
 valid 64-character hex IDs, detection mechanisms must be lowercase ASCII letters, digits, or `-`,
 sample count must be nonzero, detected count cannot exceed sample count, and detection measurement
-subject roots must be nonzero.
+subject roots must be nonzero. Raw data-availability, invalid-work, reward-settlement,
+detection-measurement, and validator-VRF-lifecycle records must also use `observed_block` values inside
+the signed run window (`observed_block < observed_blocks`); re-signed records outside that window cannot
+satisfy full-spec public evidence.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
 Raw block-history and finality-history records must cover distinct nonzero block roots, agree on the block
@@ -2434,7 +2437,7 @@ graph-execution receipt checks in the public run, and signed `validator_vrf_life
 reward-delay lifecycle for checked and available receipts with distinct receipt roots. Full-spec evidence requires
 the CUDA miner count to cover the counted public miners, the CUDA graph-execution receipt count to be
 positive without exceeding checked or available receipt counts, raw data-availability measurement records
-to equal the checked receipt count with distinct nonzero receipt roots, raw invalid-work and
+to equal the checked receipt count with distinct nonzero receipt roots and in-window observed blocks, raw invalid-work and
 reward-settlement records to use distinct nonzero receipt roots and nonzero settlement participant IDs,
 raw detection-measurement records to use valid mechanism labels, nonzero subject roots, nonzero samples,
 and detected counts not exceeding samples,

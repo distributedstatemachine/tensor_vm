@@ -452,9 +452,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   per-operator production libp2p network-observation records, signed
   block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary roots, manifest-level raw accepted
   public `drand-v1` or `validator-vrf-v1` randomness records plus raw block-history, finality-history,
-  data-availability, invalid-work, reward-settlement, deployed detection-measurement, and revealed
+  data-availability, invalid-work, reward-settlement, deployed detection-measurement, and committed/revealed
   validator VRF lifecycle records whose receipt roots must match the raw data-availability measurement
-  receipt-root set and whose aggregate roots must match their signed summaries before
+  receipt-root set, whose observed blocks must be inside the signed run window, and whose aggregate roots must match their signed summaries before
   full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind and distinct artifact URIs across those kinds, well-formed whitespace-free
@@ -475,9 +475,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   checked or available receipt counts, raw public randomness records to cover each observed block exactly
   once with distinct source/round pairs, raw block/finality history to cover distinct nonzero block roots
   with matching block roots and finalized status counts, raw data-availability measurement records to cover checked receipts
-  with distinct nonzero receipt roots, raw invalid-work and reward-settlement records to use distinct
-  nonzero receipt roots with nonzero settlement participant IDs, raw detection-measurement records to match
-  manifest field semantics, and signed `validator_vrf_lifecycle_records` with raw committed and revealed
+  with distinct nonzero receipt roots and in-window observed blocks, raw invalid-work and reward-settlement records to use distinct
+  nonzero receipt roots with nonzero settlement participant IDs and in-window observed blocks, raw detection-measurement records to match
+  manifest field semantics with in-window observed blocks, and signed `validator_vrf_lifecycle_records` with raw committed and revealed
   lifecycle records to cover every checked available receipt's deployed validator VRF commit-to-reveal
   reward-delay lifecycle with one matching validator/beacon pair per receipt, receipt roots exactly
   matching the raw data-availability measurement receipt-root set, and aggregate to the signed lifecycle

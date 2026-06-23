@@ -5,9 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 218 implemented and validated locally: Public VRF Lifecycle Requires
-  Commit/Reveal Pairs.
-- Current status: public evidence remains deployment-gated; Iteration 218 tightens public full-spec
+- Active feature: Iteration 219 implemented and validated locally: Public Raw Records Bound Observed
+  Blocks To Run Window.
+- Current status: public evidence remains deployment-gated; Iteration 219 tightens public full-spec raw
+  operational, detection-measurement, and validator-VRF-lifecycle evidence so signed records cannot satisfy
+  full-spec evidence with `observed_block` values outside the signed run's `observed_blocks` range.
+  Iteration 218 tightens public full-spec
   validator VRF lifecycle evidence so checked available receipts require both deployed `committed` and
   `revealed` lifecycle records with matching validator IDs and beacon rounds. Iteration 217 tightens validator reward
   release so a validator with a registered VRF key cannot release a pending receipt reward using an earlier
@@ -66,6 +69,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 219: Public Raw Records Bound Observed Blocks To Run Window
+
+Feature capability: require full-spec public raw operational, deployed detection-measurement, and
+validator-VRF-lifecycle evidence to use observed block indexes inside the signed run window.
+
+Readiness requirements covered: public evidence integrity for `mvp_spec.md` post-run artifacts and
+`upow.md` §10/§12 deployed randomness/economics evidence.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns raw public full-spec evidence admission.
+
+Adapter callers: manifest validation, `tvmd public evidence validate`, public evidence docs/reports.
+
+Old shortcut being removed: a signed raw-record summary could aggregate otherwise well-formed records with
+`observed_block >= observed_blocks`, making evidence from outside the signed run appear to support the
+full-spec public gate.
+
+Regression test that proves the shortcut is gone: focused public evidence tests re-sign out-of-window raw
+data-availability, invalid-work, reward-settlement, detection-measurement, and validator-VRF-lifecycle
+records and prove `public_evidence_full_spec=false`.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run public evidence
+validation.
+
+Behavior for producer and non-producer roles: unchanged; this consumes deployed evidence records only.
+
+Structured evidence source: raw
+`data_availability_measurement=<receipt-root>,available|unavailable,<block>`,
+`invalid_work_rejection=<receipt-root>,rejected,<block>`,
+`reward_settlement=<receipt-root>,<miner-id>,<validator-id>,<block>`,
+`detection_measurement=<mechanism>,<subject-root>,<sample-count>,<detected-count>,<block>`, and
+`validator_vrf_lifecycle=<receipt-root>,<validator-id>,<beacon-round>,committed|revealed,<block>`
+records.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection and focused validation were parallelized;
+code/docs edits are single-writer.
+
+Tests/checkers/docs to add or update: public evidence bundle regressions, public evidence/MVP docs,
+coverage/status/tarpaulin notes, and this exec plan.
+
+Narrow validation commands: focused public raw operational, detection-measurement, and validator VRF
+lifecycle bundle tests.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, diff check, and tarpaulin/report update.
+
+Expected observable evidence: `public_evidence_full_spec=true` rejects otherwise signed raw records whose
+observation block lies outside the signed observed run.
+
+Out of scope: generating real deployed public records, changing live local VRF/reward behavior, or changing
+p2p payload encoding.
+
+Split trigger: split if binding observed blocks requires a manifest schema change.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused public evidence checks passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec --lib`,
+  and
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec --lib`.
+- Broad lib validation passed: `cargo test -p tensor_vm --lib` reported 567 passed, 0 failed.
+- Hygiene passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy -p tensor_vm
+  --all-targets -- -D warnings`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+  target/tarpaulin` produced 85.04% workspace line coverage, 23627/27785 lines covered.
+- Implementation commit: `991afcd` (`Bind public raw records to run window`).
 
 ### Iteration 218: Public VRF Lifecycle Requires Commit/Reveal Pairs
 

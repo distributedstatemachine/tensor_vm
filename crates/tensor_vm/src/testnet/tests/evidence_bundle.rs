@@ -263,6 +263,83 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let mut out_of_window_data_availability = full_spec_bundle.clone();
+    out_of_window_data_availability.data_availability_raw_records[0].observed_block =
+        out_of_window_data_availability.run.observed_blocks;
+    let out_of_window_data_roots = out_of_window_data_availability
+        .data_availability_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let out_of_window_data_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        &out_of_window_data_roots,
+    )
+    .unwrap();
+    let out_of_window_data_count =
+        out_of_window_data_availability.data_availability_measurement_records;
+    resign_record_summary_and_artifact(
+        &mut out_of_window_data_availability,
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        out_of_window_data_root,
+        out_of_window_data_count,
+    );
+    let report =
+        out_of_window_data_availability.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut out_of_window_invalid_work = full_spec_bundle.clone();
+    out_of_window_invalid_work.invalid_work_raw_records[0].observed_block =
+        out_of_window_invalid_work.run.observed_blocks;
+    let out_of_window_invalid_roots = out_of_window_invalid_work
+        .invalid_work_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let out_of_window_invalid_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        &out_of_window_invalid_roots,
+    )
+    .unwrap();
+    let out_of_window_invalid_count = out_of_window_invalid_work.invalid_work_rejection_records;
+    resign_record_summary_and_artifact(
+        &mut out_of_window_invalid_work,
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        out_of_window_invalid_root,
+        out_of_window_invalid_count,
+    );
+    let report = out_of_window_invalid_work.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut out_of_window_reward_settlement = full_spec_bundle.clone();
+    out_of_window_reward_settlement.reward_settlement_raw_records[0].observed_block =
+        out_of_window_reward_settlement.run.observed_blocks;
+    let out_of_window_reward_roots = out_of_window_reward_settlement
+        .reward_settlement_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let out_of_window_reward_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RewardSettlements,
+        &out_of_window_reward_roots,
+    )
+    .unwrap();
+    let out_of_window_reward_count = out_of_window_reward_settlement
+        .run
+        .reward_settlement_records;
+    resign_record_summary_and_artifact(
+        &mut out_of_window_reward_settlement,
+        PublicEvidenceRecordKind::RewardSettlements,
+        out_of_window_reward_root,
+        out_of_window_reward_count,
+    );
+    let report =
+        out_of_window_reward_settlement.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut duplicate_data_receipt = full_spec_bundle.clone();
     duplicate_data_receipt.data_availability_raw_records[1].receipt_root =
         duplicate_data_receipt.data_availability_raw_records[0].receipt_root;
@@ -1358,6 +1435,15 @@ fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_f
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let mut out_of_window_observation = full_spec_bundle.clone();
+    out_of_window_observation.detection_measurement_raw_records[0].observed_block =
+        out_of_window_observation.run.observed_blocks;
+    resign_detection_records(&mut out_of_window_observation);
+    let report = out_of_window_observation.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_raw_root = full_spec_bundle;
     let record_count = mismatched_raw_root.detection_measurement_records;
     resign_record_summary_and_artifact(
@@ -1654,6 +1740,33 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
         duplicate_record_count,
     );
     let report = duplicate_receipt_records.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut out_of_window_lifecycle_records = full_spec_bundle.clone();
+    out_of_window_lifecycle_records.validator_vrf_lifecycle_raw_records[0].observed_block =
+        out_of_window_lifecycle_records.run.observed_blocks;
+    let out_of_window_lifecycle_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        &out_of_window_lifecycle_records
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("out-of-window lifecycle records still aggregate");
+    let out_of_window_record_count =
+        out_of_window_lifecycle_records.validator_vrf_lifecycle_records;
+    resign_record_summary_and_artifact(
+        &mut out_of_window_lifecycle_records,
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        out_of_window_lifecycle_root,
+        out_of_window_record_count,
+    );
+    let report =
+        out_of_window_lifecycle_records.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(report.run_evidence.public_criterion_met);
     assert!(report.independently_checkable);
     assert!(report.has_validator_vrf_lifecycle_record_summary);

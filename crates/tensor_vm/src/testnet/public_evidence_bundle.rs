@@ -550,7 +550,9 @@ impl PublicTestnetEvidenceBundle {
     fn has_public_data_availability_measurement_records(&self) -> bool {
         let mut receipt_roots = BTreeSet::new();
         if self.data_availability_raw_records.iter().any(|record| {
-            record.receipt_root == [0; 32] || !receipt_roots.insert(record.receipt_root)
+            !self.observed_block_in_run(record.observed_block)
+                || record.receipt_root == [0; 32]
+                || !receipt_roots.insert(record.receipt_root)
         }) {
             return false;
         }
@@ -567,7 +569,9 @@ impl PublicTestnetEvidenceBundle {
     fn has_public_invalid_work_rejection_records(&self) -> bool {
         let mut receipt_roots = BTreeSet::new();
         if self.invalid_work_raw_records.iter().any(|record| {
-            record.receipt_root == [0; 32] || !receipt_roots.insert(record.receipt_root)
+            !self.observed_block_in_run(record.observed_block)
+                || record.receipt_root == [0; 32]
+                || !receipt_roots.insert(record.receipt_root)
         }) {
             return false;
         }
@@ -584,7 +588,8 @@ impl PublicTestnetEvidenceBundle {
     fn has_public_reward_settlement_records(&self) -> bool {
         let mut receipt_roots = BTreeSet::new();
         if self.reward_settlement_raw_records.iter().any(|record| {
-            record.receipt_root == [0; 32]
+            !self.observed_block_in_run(record.observed_block)
+                || record.receipt_root == [0; 32]
                 || record.miner_id == [0; 32]
                 || record.validator_id == [0; 32]
                 || !receipt_roots.insert(record.receipt_root)
@@ -605,7 +610,7 @@ impl PublicTestnetEvidenceBundle {
         if !self
             .detection_measurement_raw_records
             .iter()
-            .all(Self::detection_measurement_record_fields_valid)
+            .all(|record| self.detection_measurement_record_fields_valid(record))
         {
             return false;
         }
@@ -620,9 +625,11 @@ impl PublicTestnetEvidenceBundle {
     }
 
     fn detection_measurement_record_fields_valid(
+        &self,
         record: &super::PublicDetectionMeasurementRecord,
     ) -> bool {
-        !record.mechanism.is_empty()
+        self.observed_block_in_run(record.observed_block)
+            && !record.mechanism.is_empty()
             && record
                 .mechanism
                 .bytes()
@@ -648,7 +655,10 @@ impl PublicTestnetEvidenceBundle {
         }
         let mut lifecycle_by_receipt = BTreeMap::<Hash, ValidatorVrfLifecycleEvidence>::new();
         for record in &self.validator_vrf_lifecycle_raw_records {
-            if record.receipt_root == [0; 32] || record.validator_id == [0; 32] {
+            if !self.observed_block_in_run(record.observed_block)
+                || record.receipt_root == [0; 32]
+                || record.validator_id == [0; 32]
+            {
                 return false;
             }
             let lifecycle = lifecycle_by_receipt.entry(record.receipt_root).or_default();
@@ -736,6 +746,10 @@ impl PublicTestnetEvidenceBundle {
                 .iter()
                 .map(|record| record.record_root()),
         )
+    }
+
+    fn observed_block_in_run(&self, observed_block: u64) -> bool {
+        observed_block < self.run.observed_blocks
     }
 
     fn raw_operational_records_match(

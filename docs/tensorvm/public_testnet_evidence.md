@@ -103,7 +103,9 @@ roots and nonzero miner/validator IDs, and the
 production-libp2p network-runtime observation count must match the counted independent miner and validator
 operator total exactly and use distinct public peer IDs and listen multiaddrs. Raw randomness-beacon
 records must be accepted public `drand-v1` or `validator-vrf-v1` records covering each observed block
-exactly once with distinct source/round pairs.
+exactly once with distinct source/round pairs. Raw data-availability, invalid-work, reward-settlement,
+detection-measurement, and validator-VRF-lifecycle observations must use block indexes inside the signed
+run window (`observed_block < observed_blocks`).
 
 ## Manifest Format
 
@@ -557,7 +559,9 @@ with the record kind and exact line bytes only after the file parser validates t
 `validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,committed|revealed,<block>`.
 Reward-settlement participant IDs must be valid 64-character hex IDs, detection mechanisms must be
 lowercase ASCII letters, digits, or `-`, sample count must be nonzero, and detected count cannot exceed
-sample count. Detection measurement subject roots must be nonzero. Saved raw artifacts can therefore produce matching
+sample count. Detection measurement subject roots must be nonzero. Raw data-availability, invalid-work,
+reward-settlement, detection-measurement, and validator-VRF-lifecycle records must also use observed block
+indexes inside the signed run window. Saved raw artifacts can therefore produce matching
 summary roots and artifact locators without hand-copying individual `record_root=<hex>` values.
 Whitespace-padded record lines and empty fields are rejected.
 
@@ -581,7 +585,8 @@ nonzero block roots, matching block numbers/roots, and finalized status counts m
 `invalid_work_rejection=...` lines with distinct nonzero receipt roots,
 `reward_settlement=...` lines with distinct nonzero receipt roots and nonzero miner/validator IDs, and
 `detection_measurement=...` lines with valid mechanism labels, nonzero subject roots, nonzero samples,
-and detected counts not exceeding samples, plus raw `validator_vrf_lifecycle=...` lines with distinct
+detected counts not exceeding samples, and in-window observed blocks across those operational and
+detection records, plus raw `validator_vrf_lifecycle=...` lines with distinct
 receipt roots exactly matching the raw data-availability measurement receipt-root set and whose aggregate
 roots match the signed lifecycle summary. Full-spec randomness
 records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
