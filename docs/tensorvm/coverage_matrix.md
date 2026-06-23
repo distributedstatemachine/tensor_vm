@@ -184,6 +184,9 @@ commitment URI, with shape/dtype/root checks during exact graph replay. Evidence
 `roles::tests::cpu_roles_execute_and_verify_graph_jobs_with_const_blob`.
 Tier-C, index-consistency, transcendental, and order-dependent ops remain registry vocabulary only and are
 still gated out of consensus when their verifier class is deferred.
+Chain command registration also rejects index-consistency graphs before they can become state-rooted
+program bodies. Evidence:
+`chain::tests::commands::chain_engine_rejects_index_consistency_ops_at_program_registration`.
 
 ## Local CPU Compose Gate
 

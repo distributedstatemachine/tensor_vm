@@ -5,8 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 212 complete and pushed: Block-Check Challenges Block Late Proposer Reward Materialization.
-- Current status: reward-delay work is implemented locally for receipt, proposer, and challenge rewards;
+- Active feature: Iteration 213 in progress: Index-Consistency Ops Rejected at Program Registration.
+- Current status: index-consistency Tensor IR ops are registry vocabulary only; this iteration adds
+  chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
+  program bodies until their index-consistency proofs exist. Reward-delay work is implemented locally for
+  receipt, proposer, and challenge rewards;
   Iteration 212 closes the pre-finality block-check edge so a successful canonical block-check challenge
   prevents later proposer reward materialization after finality instead of relying on adapter-side or timing
   workarounds. Post-run public evidence requires `cuda_verified_miner_count` to cover counted public
@@ -52,6 +55,73 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 213: Index-Consistency Ops Rejected at Program Registration
+
+Feature capability: prove at the chain command boundary that index-consistency-gated Tensor IR ops remain
+non-admitted vocabulary and cannot enter state-rooted registered program bodies.
+
+Readiness requirements covered: `upow.md` §7 requires `gather`/`scatter`/`embedding` to stay out of v0
+consensus until index-consistency arguments exist.
+
+Canonical owner: `TensorGraph::validate_for_consensus` and `chain::receipts::register_program_body` own
+consensus graph admission.
+
+Adapter callers: `ChainCommand::RegisterProgramBody`, p2p graph job hydration, RPC submission, and role
+startup program hydration all reach the same chain registration path.
+
+Old shortcut being removed: only the IR unit test proved the vocabulary classification; the chain command
+surface did not have a direct regression showing non-admitted index ops cannot be registered as program
+bodies.
+
+Regression test that proves the shortcut is gone: a graph body containing `gather` parses and validates in
+non-consensus mode, but `ChainCommand::RegisterProgramBody` rejects it with
+`tensor ir op is not consensus admitted` and leaves `program_bodies` empty.
+
+Behavior with local synthetic block production disabled: unchanged; graph admission is independent of
+synthetic job production.
+
+Behavior for producer and non-producer roles: unchanged; all roles use the same registered program-body
+state.
+
+Structured evidence source: chain command result and `ChainState::program_bodies`.
+
+Finality source: unchanged; no block/finality behavior changes.
+
+Wire-size and codec boundary: no wire format changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only source/test/doc inspection was parallelized; edits are
+single-writer in chain tests and docs.
+
+Tests/checkers/docs to add or update: chain command regression, coverage matrix evidence, and this exec
+plan.
+
+Narrow validation commands: focused command regression.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, and diff check.
+
+Expected observable evidence: index-consistency-gated ops remain parseable vocabulary but cannot be
+state-registered through the chain consensus command path.
+
+Out of scope: implementing index-consistency proofs, admitting `gather`/`scatter`/`embedding`, changing
+graph canonical JSON, or changing p2p codecs.
+
+Split trigger: split if command-boundary coverage requires changing graph admission semantics rather than
+adding the missing regression.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused command-boundary regression passed:
+  `cargo test -p tensor_vm chain_engine_rejects_index_consistency_ops_at_program_registration --lib`.
+- `cargo test -p tensor_vm --lib` passed: 566 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 212: Block-Check Challenges Block Late Proposer Reward Materialization
 
@@ -125,7 +195,7 @@ Validation evidence (June 23, 2026):
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `c4ec55a` (`Delay pre-finality block-check rewards`).
 - Validation metadata commit: `bbfabac` (`Record block-check reward validation`).
-- Pushed to `main`: `635e97f..bbfabac`.
+- Pushed to `main`: `635e97f..33be5c3`.
 
 ### Iteration 211: CUDA Graph Evidence Requires CUDA Miner Coverage
 

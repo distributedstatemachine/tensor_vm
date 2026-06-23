@@ -1,5 +1,6 @@
 use super::*;
 use crate::canonical_matmul_graph;
+use crate::ir::{GraphOutput, IrLiteral, IrRef, IrValue, OpNode, TensorGraph, TensorSpec};
 use crate::jobs::{GraphJob, GraphReceipt};
 use crate::tensor::{DType, Tensor};
 use std::collections::BTreeMap;
@@ -471,6 +472,66 @@ fn chain_engine_rejects_invalid_or_conflicting_program_bodies() {
         }),
         Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"))
     );
+}
+
+#[test]
+fn chain_engine_rejects_index_consistency_ops_at_program_registration() {
+    let beacon = hash_bytes(b"test", &[b"chain-engine-index-consistency-program"]);
+    let mut chain = Chain::new(beacon);
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![
+            TensorSpec {
+                name: "a".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::FieldElement,
+                scale: 0,
+            },
+            TensorSpec {
+                name: "index".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Int64,
+                scale: 0,
+            },
+        ],
+        params: Vec::new(),
+        ops: vec![OpNode {
+            id: 0,
+            op: "gather".to_owned(),
+            args: vec![
+                IrRef::Input {
+                    name: "a".to_owned(),
+                },
+                IrRef::Input {
+                    name: "index".to_owned(),
+                },
+            ],
+            kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
+            out: vec![TensorSpec {
+                name: "gathered".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::FieldElement,
+                scale: 0,
+            }],
+        }],
+        outputs: vec![GraphOutput {
+            name: "gathered".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    assert!(graph.validate(false).is_ok());
+    let graph_id = graph.graph_id();
+
+    assert_eq!(
+        chain.apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        }),
+        Err(TvmError::InvalidReceipt(
+            "tensor ir op is not consensus admitted"
+        ))
+    );
+    assert!(chain.state().program_bodies().is_empty());
 }
 
 #[test]
