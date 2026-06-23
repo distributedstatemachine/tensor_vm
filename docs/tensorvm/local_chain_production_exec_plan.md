@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 226 in progress: CUDA A100 Build and Conformance Evidence.
+- Active feature: Iteration 226 complete: CUDA A100 Build and Conformance Evidence.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
   CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
@@ -199,6 +199,7 @@ Validation evidence:
 - Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
 - Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
   `cargo fmt --check`, and `git diff --check` passed.
+- Commit `5eadf1d` (`Unblock local CUDA A100 conformance`) pushed to `origin/main`.
 
 ### Iteration 225: CUDA Readiness Requires Runtime Conformance
 
