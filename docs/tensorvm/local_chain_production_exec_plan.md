@@ -5,8 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 214 complete locally, pending validation metadata push: Validator VRF Lifecycle
-  Requires Available Receipts.
+- Active feature: Iteration 214 complete and pushed: Validator VRF Lifecycle Requires Available Receipts.
 - Current status: public evidence remains deployment-gated; Iteration 214 tightens the scalar
   validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
   artifacts. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
@@ -131,6 +130,8 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `b0040b7` (`Require availability for VRF lifecycle evidence`).
+- Validation metadata commit: `d6b3348` (`Record VRF lifecycle availability validation`).
+- Pushed to `main`: `18774f0..d6b3348`.
 
 ### Iteration 213: Index-Consistency Ops Rejected at Program Registration
 
