@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 204 in progress: Public Network Runtime Endpoint Diversity Gate.
+- Active feature: Iteration 204 pushed: Public Network Runtime Endpoint Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -120,6 +120,8 @@ Validation evidence, June 23, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `882b3e7` (`Validate public network endpoints`).
+- Validation metadata commit: `b11d8cf` (`Record public network validation`).
+- Push: `git push origin main` succeeded on June 23, 2026 (`127e542..b11d8cf  main -> main`).
 
 ### Iteration 203: Public Randomness Beacon Coverage Gate
 
