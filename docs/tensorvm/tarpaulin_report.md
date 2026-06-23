@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 22, 2026 from the workspace root during Iteration 197 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 216 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,26 +9,30 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-574 tests passed under instrumentation:
+581 tests passed under instrumentation:
 - 14 experiments library tests
-- 559 tensor_vm library tests
+- 566 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.77% workspace line coverage
-23329/27520 workspace lines covered
+85.00% workspace line coverage
+23562/27721 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
+Iteration 216 compacted full-spec public evidence bundle fixtures for coverage runs. Full-spec tests still
+evaluate default `PublicTestnetCriteria` and require full-spec evidence, but they use a test-only block
+time that keeps the seven-day signed run window while reducing generated raw record count from 100,800 to
+20 per full-spec bundle. This cleared the Iteration 215 instrumentation stall and refreshed workspace
+coverage with the command above.
+
 Iteration 215 coverage-changing work tightened public validator VRF lifecycle evidence so raw revealed
 `validator_vrf_lifecycle=...` receipt roots must exactly match the raw data-availability measurement
 receipt-root set before full-spec evidence can pass. The new regression proves internally valid,
 re-signed lifecycle records over a different receipt set still leave `public_evidence_full_spec=false`.
-Fresh workspace Tarpaulin refresh was attempted twice on June 23, 2026 with the command above, but both
-attempts stalled in the instrumented `tensor_vm` public-evidence bundle tail for more than ten minutes and
-were interrupted with exit code 130 before a coverage summary was produced; the latest completed coverage
-summary remains the June 22, 2026 run above.
+Fresh workspace tarpaulin refresh was initially blocked by the pre-Iteration 216 full-spec fixture scale;
+Iteration 216 resolved that test harness issue and produced the June 23, 2026 coverage summary above.
 
 Iteration 196 coverage-changing work added a public deployed detection-measurement evidence gate for
 full-spec evidence. The new regression proves otherwise complete public evidence cannot set

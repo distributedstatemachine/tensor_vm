@@ -31,7 +31,7 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(!complete.full_spec_evidence_met);
 
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.run_evidence.public_criterion_met);
@@ -117,7 +117,7 @@ fn public_testnet_evidence_bundle_requires_randomness_records_for_full_run() {
 #[test]
 fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     assert!(
         full_spec_bundle
@@ -230,7 +230,7 @@ fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
 #[test]
 fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     assert!(
         full_spec_bundle
@@ -1265,7 +1265,7 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
 #[test]
 fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.has_deployed_detection_measurement_records);
@@ -1378,7 +1378,7 @@ fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_f
 #[test]
 fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.run_evidence.public_criterion_met);
@@ -1415,7 +1415,7 @@ fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() 
 #[test]
 fn public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.run_evidence.public_criterion_met);
@@ -1459,7 +1459,7 @@ fn public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec() 
 #[test]
 fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.run_evidence.public_criterion_met);
@@ -1547,7 +1547,7 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
 #[test]
 fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     assert!(
         full_spec_bundle
@@ -1638,7 +1638,7 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
 #[test]
 fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
-    let full_spec_block_time = ChainParams::default().block_time_seconds;
+    let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
     assert!(
         full_spec_bundle

@@ -220,6 +220,10 @@ pub(super) fn complete_public_evidence_bundle() -> PublicTestnetEvidenceBundle {
     )
 }
 
+pub(super) fn compact_full_spec_block_time_seconds() -> u64 {
+    required_duration_seconds_for_days(PublicTestnetCriteria::default().duration_days) / 20
+}
+
 pub(super) fn full_spec_public_evidence_bundle(
     block_time_seconds: u64,
 ) -> PublicTestnetEvidenceBundle {

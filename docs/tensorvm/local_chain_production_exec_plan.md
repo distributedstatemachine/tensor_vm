@@ -5,9 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 215 implemented and pushed with tarpaulin refresh blocked: VRF Lifecycle
-  Records Must Match Available Receipt Roots.
-- Current status: public evidence remains deployment-gated; Iteration 215 ties raw validator-VRF lifecycle
+- Active feature: Iteration 216 implemented locally with validation complete: Compact Full-Spec Evidence
+  Fixtures For Coverage Runs.
+- Current status: public evidence remains deployment-gated; Iteration 216 keeps the full-spec public
+  evidence criteria intact while reducing the raw record cardinality of test-only full-spec fixtures so
+  coverage instrumentation can complete. Iteration 215 ties raw validator-VRF lifecycle
   records to the same checked available receipt roots proven by raw data-availability records. Iteration
   214 tightens the scalar
   validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
@@ -60,6 +62,76 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 216: Compact Full-Spec Evidence Fixtures For Coverage Runs
+
+Feature capability: keep full-spec public evidence tests semantically full-spec while avoiding
+coverage-time fixture explosions from 100,800 raw public evidence records per full-spec bundle.
+
+Readiness requirements covered: coverage validation must exercise the same public evidence gates without
+turning fixture construction into the blocker.
+
+Canonical owner: `crates/tensor_vm/src/testnet/tests/run_fixtures.rs` owns test-only public evidence
+fixture cardinality.
+
+Adapter callers: public evidence bundle tests only.
+
+Old shortcut being removed: none in production behavior; this removes a test harness scale problem that
+made tarpaulin unable to refresh after Iteration 215.
+
+Regression test that proves behavior is preserved: full-spec public evidence bundle tests still evaluate
+default `PublicTestnetCriteria` with `full_spec_evidence_met=true`.
+
+Behavior with local synthetic block production disabled: unchanged; this is test fixture construction only.
+
+Behavior for producer and non-producer roles: unchanged.
+
+Structured evidence source: unchanged public evidence raw records, with fewer test fixture records derived
+from a test-only block time.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection was parallelized; code/docs edits are
+single-writer.
+
+Tests/checkers/docs to add or update: compact full-spec fixture helper, public evidence bundle call sites,
+tarpaulin report if coverage can complete, and this exec plan.
+
+Narrow validation commands: focused full-spec public evidence bundle tests covering raw randomness and raw
+validator VRF lifecycle records.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, diff check, and tarpaulin/report update.
+
+Expected observable evidence: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+target/tarpaulin` completes instead of stalling in the instrumented public evidence bundle tail.
+
+Out of scope: changing production `PublicTestnetCriteria`, public evidence manifest requirements, or
+weakening any public evidence full-spec gate.
+
+Split trigger: split if tarpaulin still stalls after compacting fixture cardinality.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused full-spec fixture regressions passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec --lib`,
+  and
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_publication_and_audit_records --lib`.
+- `cargo test -p tensor_vm --lib` passed: 566 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` completed
+  successfully after the fixture compaction: 581 instrumented tests passed, 85.00% workspace line
+  coverage, 23,562/27,721 lines covered.
+- Implementation commit pending.
 
 ### Iteration 215: VRF Lifecycle Records Must Match Available Receipt Roots
 
