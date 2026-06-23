@@ -509,6 +509,26 @@ fn execute_cuda_graph_op(
             let diagonal = graph_i64_kwarg(kwargs, "diagonal")?;
             cuda::field_triu(device_index, tensor, diagonal)?
         }
+        "concat" => {
+            let tensors = graph_tensor_values(args)?;
+            for tensor in &tensors {
+                require_graph_field_tensor(tensor)?;
+            }
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir concat requires explicit dim"),
+            )?;
+            cuda::field_concat(device_index, &tensors, dim)?
+        }
+        "stack" => {
+            let tensors = graph_tensor_values(args)?;
+            for tensor in &tensors {
+                require_graph_field_tensor(tensor)?;
+            }
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir stack requires explicit dim"),
+            )?;
+            cuda::field_stack(device_index, &tensors, dim)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -585,6 +605,24 @@ fn graph_shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Ve
             .collect(),
         _ => Err(TvmError::InvalidReceipt("missing tensor ir shape kwarg")),
     }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn graph_tensor_values(values: &[GraphRuntimeValue]) -> Result<Vec<&Tensor>> {
+    if values.is_empty() {
+        return Err(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ));
+    }
+    values
+        .iter()
+        .map(|value| match value {
+            GraphRuntimeValue::Tensor(tensor) => Ok(tensor),
+            GraphRuntimeValue::Field(_) => Err(TvmError::InvalidReceipt(
+                "tensor ir expected tensor arguments",
+            )),
+        })
+        .collect()
 }
 
 #[cfg(feature = "cuda-kernels")]
@@ -749,6 +787,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "slice",
             "tril",
             "triu",
+            "concat",
+            "stack",
             "broadcast",
             "eq",
             "gt",
@@ -1109,10 +1149,24 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 )]),
                 out: vec![TensorSpec::field("triangular", vec![1, 2])],
             },
+            OpNode {
+                id: 29,
+                op: "concat".to_owned(),
+                args: vec![IrRef::Op { id: 28, idx: 0 }, IrRef::Op { id: 28, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
+                out: vec![TensorSpec::field("concatenated", vec![2, 2])],
+            },
+            OpNode {
+                id: 30,
+                op: "stack".to_owned(),
+                args: vec![IrRef::Op { id: 29, idx: 0 }, IrRef::Op { id: 29, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
+                out: vec![TensorSpec::field("stacked", vec![2, 2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "triangular".to_owned(),
-            value: IrRef::Op { id: 28, idx: 0 },
+            name: "stacked".to_owned(),
+            value: IrRef::Op { id: 30, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1248,6 +1302,31 @@ mod cuda {
             rank: u64,
             dim: u64,
             start: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_concat(
+            device_index: u32,
+            inputs: *const u64,
+            out: *mut u64,
+            input_len: u64,
+            out_len: u64,
+            input_offsets: *const u64,
+            input_dim_sizes: *const u64,
+            output_shape: *const u64,
+            input_count: u64,
+            rank: u64,
+            dim: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_stack(
+            device_index: u32,
+            inputs: *const u64,
+            out: *mut u64,
+            input_len: u64,
+            out_len: u64,
+            input_offsets: *const u64,
+            output_shape: *const u64,
+            input_count: u64,
+            rank: u64,
+            dim: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_neg(
             device_index: u32,
@@ -1605,6 +1684,66 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(shape, input.dtype(), out)
+    }
+
+    pub fn field_concat(device_index: u32, tensors: &[&Tensor], dim: usize) -> Result<Tensor> {
+        let output_shape = infer_concat_shape(tensors, dim)?;
+        let out_len = checked_shape_product(&output_shape)?;
+        let output_shape_u64 = shape_as_u64(&output_shape)?;
+        let input_dim_sizes = tensors
+            .iter()
+            .map(|tensor| {
+                u64::try_from(tensor.shape()[dim])
+                    .map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))
+            })
+            .collect::<Result<Vec<_>>>()?;
+        let (inputs, input_offsets) = flatten_cuda_inputs(tensors)?;
+        let mut out = vec![0; out_len];
+        let code = unsafe {
+            tensor_vm_cuda_field_concat(
+                device_index,
+                inputs.as_ptr(),
+                out.as_mut_ptr(),
+                inputs.len() as u64,
+                out_len as u64,
+                input_offsets.as_ptr(),
+                input_dim_sizes.as_ptr(),
+                output_shape_u64.as_ptr(),
+                tensors.len() as u64,
+                output_shape.len() as u64,
+                dim as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(output_shape, tensors[0].dtype(), out)
+    }
+
+    pub fn field_stack(device_index: u32, tensors: &[&Tensor], dim: usize) -> Result<Tensor> {
+        let output_shape = infer_stack_shape(tensors, dim)?;
+        let out_len = checked_shape_product(&output_shape)?;
+        let output_shape_u64 = shape_as_u64(&output_shape)?;
+        let (inputs, input_offsets) = flatten_cuda_inputs(tensors)?;
+        let mut out = vec![0; out_len];
+        let code = unsafe {
+            tensor_vm_cuda_field_stack(
+                device_index,
+                inputs.as_ptr(),
+                out.as_mut_ptr(),
+                inputs.len() as u64,
+                out_len as u64,
+                input_offsets.as_ptr(),
+                output_shape_u64.as_ptr(),
+                tensors.len() as u64,
+                output_shape.len() as u64,
+                dim as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(output_shape, tensors[0].dtype(), out)
     }
 
     pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -1972,6 +2111,75 @@ mod cuda {
         }
     }
 
+    fn infer_concat_shape(tensors: &[&Tensor], dim: usize) -> Result<Vec<usize>> {
+        let first = tensors.first().ok_or(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ))?;
+        require_field_element_tensor(first)?;
+        if dim >= first.shape().len() {
+            return Err(TvmError::InvalidReceipt("tensor ir concat dim mismatch"));
+        }
+        let mut shape = first.shape().to_vec();
+        for tensor in &tensors[1..] {
+            require_field_element_tensor(tensor)?;
+            if tensor.dtype() != first.dtype()
+                || tensor.scale() != first.scale()
+                || tensor.shape().len() != first.shape().len()
+            {
+                return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+            }
+            for (axis, shape_dim) in shape.iter_mut().enumerate() {
+                if axis == dim {
+                    *shape_dim = shape_dim
+                        .checked_add(tensor.shape()[axis])
+                        .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))?;
+                } else if tensor.shape()[axis] != first.shape()[axis] {
+                    return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+                }
+            }
+        }
+        Ok(shape)
+    }
+
+    fn infer_stack_shape(tensors: &[&Tensor], dim: usize) -> Result<Vec<usize>> {
+        let first = tensors.first().ok_or(TvmError::InvalidReceipt(
+            "tensor ir variadic op requires args",
+        ))?;
+        require_field_element_tensor(first)?;
+        if dim > first.shape().len() {
+            return Err(TvmError::InvalidReceipt("tensor ir stack dim mismatch"));
+        }
+        for tensor in &tensors[1..] {
+            require_field_element_tensor(tensor)?;
+            if tensor.dtype() != first.dtype()
+                || tensor.scale() != first.scale()
+                || tensor.shape() != first.shape()
+            {
+                return Err(TvmError::InvalidReceipt("tensor ir shape mismatch"));
+            }
+        }
+        let mut shape = first.shape().to_vec();
+        shape.insert(dim, tensors.len());
+        Ok(shape)
+    }
+
+    fn flatten_cuda_inputs(tensors: &[&Tensor]) -> Result<(Vec<u64>, Vec<u64>)> {
+        let total_len = tensors.iter().try_fold(0usize, |len, tensor| {
+            len.checked_add(tensor.len())
+                .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))
+        })?;
+        let mut inputs = Vec::with_capacity(total_len);
+        let mut offsets = Vec::with_capacity(tensors.len());
+        for tensor in tensors {
+            offsets.push(
+                u64::try_from(inputs.len())
+                    .map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))?,
+            );
+            inputs.extend_from_slice(tensor.as_slice());
+        }
+        Ok((inputs, offsets))
+    }
+
     fn validate_broadcast_shape(input_shape: &[usize], output_shape: &[usize]) -> Result<()> {
         if input_shape.len() > output_shape.len() {
             return Err(TvmError::InvalidReceipt(
@@ -2188,7 +2396,7 @@ mod tests {
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "concat"] {
+        for op in ["einsum", "quantize_int8_per_channel", "split"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -2264,23 +2472,30 @@ mod tests {
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "concat".to_owned(),
-                args: vec![
-                    IrRef::Input {
-                        name: "x".to_owned(),
-                    },
-                    IrRef::Input {
-                        name: "x".to_owned(),
-                    },
+                op: "split".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::from([
+                    (
+                        "dim".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
+                    ),
+                    (
+                        "sizes".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::List(vec![
+                            crate::ir::IrLiteral::Uint(1),
+                            crate::ir::IrLiteral::Uint(1),
+                        ])),
+                    ),
+                ]),
+                out: vec![
+                    TensorSpec::field("first", vec![1, 2]),
+                    TensorSpec::field("second", vec![1, 2]),
                 ],
-                kwargs: BTreeMap::from([(
-                    "dim".to_owned(),
-                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
-                )]),
-                out: vec![TensorSpec::field("concatenated", vec![4, 2])],
             }],
             outputs: vec![GraphOutput {
-                name: "concatenated".to_owned(),
+                name: "first".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
@@ -2509,6 +2724,28 @@ mod tests {
             Err(TvmError::InvalidReceipt(
                 "tensor ir triangular rank mismatch"
             ))
+        ));
+
+        let concat_left = Tensor::from_vec(vec![1, 2], lhs.dtype(), vec![1, 2]).unwrap();
+        let concat_right = Tensor::from_vec(vec![2, 2], lhs.dtype(), vec![3, 4, 5, 6]).unwrap();
+        let concat = cuda::field_concat(0, &[&concat_left, &concat_right], 0).unwrap();
+        let expected_concat =
+            Tensor::from_vec(vec![3, 2], lhs.dtype(), vec![1, 2, 3, 4, 5, 6]).unwrap();
+        assert_eq!(concat, expected_concat);
+        assert!(matches!(
+            cuda::field_concat(0, &[&concat_left, &rank_three], 0),
+            Err(TvmError::InvalidReceipt("tensor ir shape mismatch"))
+        ));
+
+        let stack_first = Tensor::from_vec(vec![2, 2], lhs.dtype(), vec![1, 2, 3, 4]).unwrap();
+        let stack_second = Tensor::from_vec(vec![2, 2], lhs.dtype(), vec![5, 6, 7, 8]).unwrap();
+        let stack = cuda::field_stack(0, &[&stack_first, &stack_second], 1).unwrap();
+        let expected_stack =
+            Tensor::from_vec(vec![2, 2, 2], lhs.dtype(), vec![1, 2, 5, 6, 3, 4, 7, 8]).unwrap();
+        assert_eq!(stack, expected_stack);
+        assert!(matches!(
+            cuda::field_stack(0, &[&stack_first, &concat_left], 0),
+            Err(TvmError::InvalidReceipt("tensor ir shape mismatch"))
         ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();

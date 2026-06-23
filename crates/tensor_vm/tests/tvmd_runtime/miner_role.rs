@@ -369,10 +369,36 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("triangular", vec![1, 2])],
             },
+            tensor_vm::OpNode {
+                id: 29,
+                op: "concat".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 28, idx: 0 },
+                    tensor_vm::IrRef::Op { id: 28, idx: 0 },
+                ],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("concatenated", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 30,
+                op: "stack".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 29, idx: 0 },
+                    tensor_vm::IrRef::Op { id: 29, idx: 0 },
+                ],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("stacked", vec![2, 2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "triangular".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 28, idx: 0 },
+            name: "stacked".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 30, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([
