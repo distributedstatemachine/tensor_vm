@@ -123,6 +123,7 @@ Validation evidence (June 23, 2026):
 - `cargo test -p tensor_vm --lib` passed: 565 passed, 0 failed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `c4ec55a` (`Delay pre-finality block-check rewards`).
 
 ### Iteration 211: CUDA Graph Evidence Requires CUDA Miner Coverage
 
