@@ -174,6 +174,7 @@ Validation evidence:
   failed in `build.rs` because `nvcc` was not found (`No such file or directory`). `nvidia-smi` shows
   eight NVIDIA A100-SXM4-80GB GPUs, so the current blocker is the missing CUDA toolkit/compiler, not GPU
   absence.
+- Commit `66cddd5` (`Require CUDA readiness conformance`) pushed to `origin/main`.
 
 ### Iteration 224: Live Verified Drand Consensus Randomness
 
