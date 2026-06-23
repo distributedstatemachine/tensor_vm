@@ -108,6 +108,7 @@ Validation evidence, June 22, 2026:
 - Release CLI evidence validation:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- Commit: `9bd11cb` (`Require unique data availability receipts`).
 
 ### Iteration 198: Unique VRF Lifecycle Receipt Coverage Gate
 
