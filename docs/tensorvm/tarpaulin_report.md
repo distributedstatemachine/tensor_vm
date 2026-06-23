@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 231 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 232 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -15,11 +15,16 @@ Result:
 - 1 tensor_vm_explorer library test
 
 85.03% workspace line coverage
-23831/28026 workspace lines covered
+23831/28027 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 232 coverage-changing work added CUDA-feature-only same-shape field comparison `eq`, `gt`, `lt`,
+`ge`, and `le` graph execution support and conformance coverage. The default Tarpaulin run passed under
+the portable feature set and does not instrument the native CUDA path, so the new CUDA comparison evidence
+is recorded through separate `--features cuda-kernels` runtime and miner-role tests in the execution plan.
 
 Iteration 231 coverage-changing work added CUDA-feature-only same-shape field `identity`, `neg`, `abs`,
 and `sign` graph execution support and conformance coverage. The default Tarpaulin run passed under the
@@ -345,7 +350,7 @@ the portable default feature set:
 ```text
 cargo test -p tensor_vm --features cuda-kernels --release
 580 tensor_vm library tests and 54 tvmd runtime tests passed, including native CUDA field-matmul,
-same-shape field graph, field unary, and linear-step tensor-op checks against canonical CPU output
+same-shape field graph, field unary, field comparison, and linear-step tensor-op checks against canonical CPU output
 ```
 
 Tarpaulin reports line coverage here. Its branch coverage flag is currently listed as not implemented by the installed tool.

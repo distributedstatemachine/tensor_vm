@@ -102,9 +102,10 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
 > config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
 > synthetic GraphExecution shape (`add` -> `relu`) plus a focused supported-op CUDA graph
-> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`) through the CUDA miner backend with bit-exact
-> CPU/GPU receipt roots. CUDA conformance reporting is limited to the exercised CUDA subset instead of
-> over-claiming the full CPU reference profile. The full frozen-registry CUDA vector suite and
+> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`)
+> through the CUDA miner backend with bit-exact CPU/GPU receipt roots. CUDA conformance reporting is
+> limited to the exercised same-shape field subset instead of over-claiming broadcasting, fixed-point
+> comparisons, or the full CPU reference profile. The full frozen-registry CUDA vector suite and
 > Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage for every
 > runtime.
 
@@ -178,10 +179,10 @@ Graph {
 > registered canonical graph bodies, execute locally through miner role loops, attest through validator
 > role loops, cross the shared p2p/node payload path, settle through delayed receipt rewards, and surface
 > through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution now covers the current
-> local synthetic GraphExecution shape and a supported field-op graph including elementwise `mul` plus
-> exact field `identity`/`neg`/`abs`/`sign` through
-> miner-role `cuda:N` backend selection; broader CUDA graph op coverage and public deployed graph evidence
-> remain TODO.
+> local synthetic GraphExecution shape and a supported same-shape field-op graph including elementwise
+> `mul`, exact field `identity`/`neg`/`abs`/`sign`, and field comparison masks
+> `eq`/`gt`/`lt`/`ge`/`le` through miner-role `cuda:N` backend selection; broader CUDA graph op coverage
+> and public deployed graph evidence remain TODO.
 
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):

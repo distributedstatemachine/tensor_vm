@@ -359,6 +359,36 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(rhs)?;
             cuda::field_mul(device_index, lhs, rhs)?
         }
+        "eq" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_eq(device_index, lhs, rhs)?
+        }
+        "gt" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_gt(device_index, lhs, rhs)?
+        }
+        "lt" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_lt(device_index, lhs, rhs)?
+        }
+        "ge" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_ge(device_index, lhs, rhs)?
+        }
+        "le" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_le(device_index, lhs, rhs)?
+        }
         "matmul" => {
             let [lhs, rhs] = two_graph_tensor_values(args)?;
             require_graph_field_tensor(lhs)?;
@@ -529,7 +559,9 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
         if expected_graph != actual_graph {
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
-        passed_ops.extend(["add", "mul", "identity", "neg", "abs", "sign", "relu"]);
+        passed_ops.extend([
+            "add", "mul", "eq", "gt", "lt", "ge", "le", "identity", "neg", "abs", "sign", "relu",
+        ]);
 
         Ok(ConformanceProfile {
             suite_hash: conformance_suite_hash(),
@@ -668,10 +700,95 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("identity", vec![2, 2])],
             },
+            OpNode {
+                id: 11,
+                op: "eq".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Int32,
+                    scale: 0,
+                }],
+            },
+            OpNode {
+                id: 12,
+                op: "gt".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "greater_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Int32,
+                    scale: 0,
+                }],
+            },
+            OpNode {
+                id: 13,
+                op: "lt".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "less_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Int32,
+                    scale: 0,
+                }],
+            },
+            OpNode {
+                id: 14,
+                op: "ge".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "greater_equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Int32,
+                    scale: 0,
+                }],
+            },
+            OpNode {
+                id: 15,
+                op: "le".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "less_equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Int32,
+                    scale: 0,
+                }],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "identity".to_owned(),
-            value: IrRef::Op { id: 10, idx: 0 },
+            name: "less_equal_mask".to_owned(),
+            value: IrRef::Op { id: 15, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -722,6 +839,41 @@ mod cuda {
             len: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_mul(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_eq(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_gt(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_lt(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_ge(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_le(
             device_index: u32,
             lhs: *const u64,
             rhs: *const u64,
@@ -878,6 +1030,26 @@ mod cuda {
         Tensor::from_vec(lhs.shape().to_vec(), lhs.dtype(), out)
     }
 
+    pub fn field_eq(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_eq)
+    }
+
+    pub fn field_gt(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_gt)
+    }
+
+    pub fn field_lt(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_lt)
+    }
+
+    pub fn field_ge(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_ge)
+    }
+
+    pub fn field_le(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_le)
+    }
+
     pub fn field_relu(device_index: u32, input: &Tensor) -> Result<Tensor> {
         require_field_element_tensor(input)?;
         let mut out = vec![0; input.len()];
@@ -984,6 +1156,31 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
+    }
+
+    fn field_compare(
+        device_index: u32,
+        lhs: &Tensor,
+        rhs: &Tensor,
+        kernel: unsafe extern "C" fn(u32, *const u64, *const u64, *mut u64, u64) -> i32,
+    ) -> Result<Tensor> {
+        require_same_shape(lhs, rhs)?;
+        require_field_element_tensor(lhs)?;
+        require_field_element_tensor(rhs)?;
+        let mut out = vec![0; lhs.len()];
+        let code = unsafe {
+            kernel(
+                device_index,
+                lhs.as_slice().as_ptr(),
+                rhs.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                lhs.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(lhs.shape().to_vec(), DType::Int32, out)
     }
 
     pub fn field_mse_loss(device_index: u32, y: &Tensor, target: &Tensor) -> Result<Hash> {
@@ -1186,6 +1383,11 @@ mod tests {
             "sub",
             "matmul",
             "mul",
+            "eq",
+            "gt",
+            "lt",
+            "ge",
+            "le",
             "identity",
             "neg",
             "abs",
@@ -1203,7 +1405,6 @@ mod tests {
             "mean",
             "einsum",
             "quantize_int8_per_channel",
-            "gt",
             "reshape",
         ] {
             assert!(
@@ -1367,6 +1568,45 @@ mod tests {
 
         let multiplied = cuda::field_mul(0, &lhs, &rhs).unwrap();
         assert_eq!(multiplied, lhs.mul(&rhs).unwrap());
+
+        let expected_compare = |predicate: fn(Elem, Elem) -> bool| {
+            Tensor::from_vec(
+                lhs.shape().to_vec(),
+                DType::Int32,
+                lhs.as_slice()
+                    .iter()
+                    .zip(rhs.as_slice())
+                    .map(|(left, right)| {
+                        if predicate(*left % MODULUS, *right % MODULUS) {
+                            1
+                        } else {
+                            0
+                        }
+                    })
+                    .collect(),
+            )
+            .unwrap()
+        };
+        assert_eq!(
+            cuda::field_eq(0, &lhs, &rhs).unwrap(),
+            expected_compare(|left, right| left == right)
+        );
+        assert_eq!(
+            cuda::field_gt(0, &lhs, &rhs).unwrap(),
+            expected_compare(|left, right| left > right)
+        );
+        assert_eq!(
+            cuda::field_lt(0, &lhs, &rhs).unwrap(),
+            expected_compare(|left, right| left < right)
+        );
+        assert_eq!(
+            cuda::field_ge(0, &lhs, &rhs).unwrap(),
+            expected_compare(|left, right| left >= right)
+        );
+        assert_eq!(
+            cuda::field_le(0, &lhs, &rhs).unwrap(),
+            expected_compare(|left, right| left <= right)
+        );
 
         let relu = cuda::field_relu(0, &lhs).unwrap();
         let expected_relu = Tensor::from_vec(

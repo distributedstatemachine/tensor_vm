@@ -128,10 +128,95 @@ fn supported_cuda_graph_execution_case() -> (
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("identity", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 11,
+                op: "eq".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 10, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec {
+                    name: "equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: tensor_vm::DType::Int32,
+                    scale: 0,
+                }],
+            },
+            tensor_vm::OpNode {
+                id: 12,
+                op: "gt".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 10, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec {
+                    name: "greater_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: tensor_vm::DType::Int32,
+                    scale: 0,
+                }],
+            },
+            tensor_vm::OpNode {
+                id: 13,
+                op: "lt".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 10, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec {
+                    name: "less_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: tensor_vm::DType::Int32,
+                    scale: 0,
+                }],
+            },
+            tensor_vm::OpNode {
+                id: 14,
+                op: "ge".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 10, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec {
+                    name: "greater_equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: tensor_vm::DType::Int32,
+                    scale: 0,
+                }],
+            },
+            tensor_vm::OpNode {
+                id: 15,
+                op: "le".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 10, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec {
+                    name: "less_equal_mask".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: tensor_vm::DType::Int32,
+                    scale: 0,
+                }],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "identity".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 10, idx: 0 },
+            name: "less_equal_mask".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 15, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

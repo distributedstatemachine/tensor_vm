@@ -106,9 +106,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
   graph program, tensor artifacts, and trace-opening samples is implemented locally. CUDA graph execution
   locally covers the current synthetic graph shape and a same-shape field-op subset
-  (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`) through `GpuMinerBackend`; the full
-  interactive dispute game, fixed-point CUDA graph ops, and full frozen-registry CUDA graph execution
-  remain open.
+  (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`)
+  through `GpuMinerBackend`; the full interactive dispute game, CUDA broadcasting, fixed-point CUDA graph
+  ops, and full frozen-registry CUDA graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
@@ -422,7 +422,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   readiness
 - Optional `cuda-kernels` feature that builds `kernels/cuda/field_matmul.cu` with `nvcc`, routes the
   `GpuMinerBackend` matmul path, same-shape field graph
-  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`scalar_mul`/`transpose`
+  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`scalar_mul`/`transpose`
   ops, and LinearTrainingStep forward, backward, error, update, transpose, and loss substeps through
   native CUDA kernels, and checks CUDA outputs against canonical CPU outputs
 - Restartable `NodeStore` data directory that persists chain snapshots, append-only block logs, and the
@@ -767,11 +767,11 @@ loopback listen address instead of counting local service startup as public netw
 The current instrumented Tarpaulin line coverage is documented in
 [`tarpaulin_report.md`](tarpaulin_report.md):
 
-- 84.58% workspace line coverage
-- 22613/26736 workspace lines covered
-- 561 instrumented tests passed
-- `crates/tensor_vm/src/rpc/explorer.rs` coverage is 247/250 after adding WebSocket GraphExecution
-  job/receipt evidence
+- 85.03% workspace line coverage
+- 23831/28027 workspace lines covered
+- 588 instrumented tests passed
+- `crates/tensor_vm/src/rpc/explorer.rs` coverage is 258/261 after adding WebSocket GraphExecution
+  job/receipt evidence and later local evidence coverage
 
 The CUDA feature gate was also checked locally with native CUDA kernels:
 

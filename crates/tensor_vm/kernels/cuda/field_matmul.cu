@@ -98,6 +98,61 @@ __global__ void field_mul_kernel(
     }
 }
 
+__global__ void field_eq_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = (lhs[index] % kModulus) == (rhs[index] % kModulus) ? 1 : 0;
+    }
+}
+
+__global__ void field_gt_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = (lhs[index] % kModulus) > (rhs[index] % kModulus) ? 1 : 0;
+    }
+}
+
+__global__ void field_lt_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = (lhs[index] % kModulus) < (rhs[index] % kModulus) ? 1 : 0;
+    }
+}
+
+__global__ void field_ge_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = (lhs[index] % kModulus) >= (rhs[index] % kModulus) ? 1 : 0;
+    }
+}
+
+__global__ void field_le_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = (lhs[index] % kModulus) <= (rhs[index] % kModulus) ? 1 : 0;
+    }
+}
+
 __global__ void field_relu_kernel(
     const uint64_t* input,
     uint64_t* out,
@@ -236,6 +291,14 @@ enum class UnaryOp {
     Relu,
 };
 
+enum class CompareOp {
+    Eq,
+    Gt,
+    Lt,
+    Ge,
+    Le,
+};
+
 int launch_unary_kernel(
     uint32_t device_index,
     const uint64_t* input,
@@ -302,6 +365,88 @@ int launch_unary_kernel(
     }
 
     cudaFree(device_input);
+    cudaFree(device_out);
+    return fail(status, -5);
+}
+
+int launch_compare_kernel(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len,
+    CompareOp op) {
+    if (lhs == nullptr || rhs == nullptr || out == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_lhs = nullptr;
+    uint64_t* device_rhs = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_lhs, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_rhs, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_lhs);
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_lhs);
+        cudaFree(device_rhs);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_lhs, lhs, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(device_rhs, rhs, bytes, cudaMemcpyHostToDevice);
+    }
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        switch (op) {
+            case CompareOp::Eq:
+                field_eq_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_lhs, device_rhs, device_out, len);
+                break;
+            case CompareOp::Gt:
+                field_gt_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_lhs, device_rhs, device_out, len);
+                break;
+            case CompareOp::Lt:
+                field_lt_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_lhs, device_rhs, device_out, len);
+                break;
+            case CompareOp::Ge:
+                field_ge_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_lhs, device_rhs, device_out, len);
+                break;
+            case CompareOp::Le:
+                field_le_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+                    device_lhs, device_rhs, device_out, len);
+                break;
+        }
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_lhs);
+    cudaFree(device_rhs);
     cudaFree(device_out);
     return fail(status, -5);
 }
@@ -603,6 +748,51 @@ extern "C" int tensor_vm_cuda_field_mul(
     cudaFree(device_rhs);
     cudaFree(device_out);
     return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_field_eq(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_compare_kernel(device_index, lhs, rhs, out, len, CompareOp::Eq);
+}
+
+extern "C" int tensor_vm_cuda_field_gt(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_compare_kernel(device_index, lhs, rhs, out, len, CompareOp::Gt);
+}
+
+extern "C" int tensor_vm_cuda_field_lt(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_compare_kernel(device_index, lhs, rhs, out, len, CompareOp::Lt);
+}
+
+extern "C" int tensor_vm_cuda_field_ge(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_compare_kernel(device_index, lhs, rhs, out, len, CompareOp::Ge);
+}
+
+extern "C" int tensor_vm_cuda_field_le(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_compare_kernel(device_index, lhs, rhs, out, len, CompareOp::Le);
 }
 
 extern "C" int tensor_vm_cuda_field_relu(
