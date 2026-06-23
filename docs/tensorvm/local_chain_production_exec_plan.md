@@ -121,6 +121,7 @@ Validation evidence (June 23, 2026):
 - `cargo test -p tensor_vm --test tvmd_runtime` passed: 46 passed, 0 failed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `34ce0da` (`Add runtime bootstrap peer policy`).
 
 ### Iteration 209: Profile-Scoped Local Runtime Knobs
 
