@@ -37,6 +37,27 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     assert!(full_spec_report.run_evidence.public_criterion_met);
     assert!(full_spec_report.independently_checkable);
     assert!(full_spec_report.full_spec_evidence_met);
+
+    let mut reused_artifact_uri = full_spec_bundle;
+    let block_artifact_uri = reused_artifact_uri.supporting_artifacts[0]
+        .artifact_uri
+        .clone();
+    reused_artifact_uri.supporting_artifacts[1].artifact_uri = block_artifact_uri;
+    let finality_artifact = &mut reused_artifact_uri.supporting_artifacts[1];
+    finality_artifact.artifact_signature = sign_public_evidence_artifact(
+        &reused_artifact_uri.publication.manifest_signer,
+        &reused_artifact_uri.publication.bundle_id,
+        finality_artifact.kind,
+        &finality_artifact.artifact_uri,
+        &finality_artifact.record_root,
+        finality_artifact.record_count,
+    );
+    let reused_artifact_report =
+        reused_artifact_uri.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(reused_artifact_report.run_evidence.public_criterion_met);
+    assert!(!reused_artifact_report.has_public_supporting_record_artifacts);
+    assert!(!reused_artifact_report.independently_checkable);
+    assert!(!reused_artifact_report.full_spec_evidence_met);
 }
 
 #[test]

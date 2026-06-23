@@ -29,7 +29,7 @@ A complete evidence bundle must include:
 
 - a public `https://`, `ipfs://`, or `ar://` location for the evidence manifest
 - one manifest signature record for the current manifest format
-- signed independent auditor or verifier records observed at or after the signed run end
+- signed independent auditor records observed at or after the signed run end
 - signed wall-clock run window covering the full 7-day run
 - signed miner and validator heartbeat history for the full run
 - independent operator identity or attestation records
@@ -44,7 +44,8 @@ A complete evidence bundle must include:
 - signed validator VRF lifecycle records proving checked validator rewards reached reveal-complete
   lifecycle state before claimability
 - exactly one signed external artifact locator for the raw supporting records behind each
-  block/finality/libp2p/randomness/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary root
+  block/finality/libp2p/randomness/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary root,
+  with distinct artifact URIs across those record kinds
 - proof that production libp2p was used for peer discovery, gossip, and request/response propagation,
   with one signed observation record per counted public miner or validator operator
 - external HTTPS URLs, health paths, reachability records, content paths, and signed content-root
@@ -84,7 +85,7 @@ auditor ID, and observation time, plus a signed run-window record over the manif
 end time, and observed block count. It verifies signed supporting-record roots for block history, finality
 history, production libp2p observations, data-availability measurements, invalid-work rejections, reward
 settlements, deployed detection measurements, and validator VRF lifecycle records. It also requires signed external artifact locators for the raw supporting records behind
-each summary root, and it derives `external_operator_evidence` from signed operator identity attestation
+each summary root with distinct artifact URIs across those record kinds, and it derives `external_operator_evidence` from signed operator identity attestation
 records that match the signed node-heartbeat records. The operator identity attestation count must exactly
 match the repeated `operator=...` line count and the valid signed records; missing, invalid, duplicate, or
 extra operator records do not count. These local checks are still only evidence-format validation until an
@@ -115,8 +116,8 @@ record fields are allowed only for `auditor`, `record_artifact`, `operator`, `ne
 `block_history_record`, `finality_history_record`, `randomness_beacon_record`, `data_availability_measurement`, `invalid_work_rejection`,
 `reward_settlement`, `detection_measurement`, `validator_vrf_lifecycle`, `node`, `service`, and `service_content`. The comma-separated values inside those
 repeated public-evidence records must also be exact, nonempty, and free of leading or trailing whitespace. For `record_artifact`, the full
-independently checkable gate requires exactly one valid line for each required supporting-record kind and
-rejects extra artifact locators. The manifest signature covers the bundle ID, public URI, manifest
+independently checkable gate requires exactly one valid line for each required supporting-record kind,
+distinct artifact URIs across those required kinds, and rejects extra artifact locators. The manifest signature covers the bundle ID, public URI, manifest
 signature count, and independent auditor count. The current manifest format carries exactly one
 `manifest_signature` field, so `manifest_signature_count` must be `1`; claimed extra manifest signatures
 cannot count until multiple signature records are modeled.
@@ -525,9 +526,10 @@ Supported record kinds are `block-history`, `finality-history`, `network-runtime
 checks.
 The `evidence record artifact` command emits a signed `record_artifact=...` manifest line that binds an external
 raw-record artifact URI to the same record kind, root, and count. The full independently checkable gate
-requires one valid artifact locator for every required supporting-record summary root and exactly nine
-supporting artifact locators total: block history, finality history, network runtime, randomness beacon,
-data availability, invalid work, reward settlement, detection measurement, and validator VRF lifecycle.
+requires one valid artifact locator for every required supporting-record summary root, distinct artifact
+URIs across those required record kinds, and exactly nine supporting artifact locators total: block history,
+finality history, network runtime, randomness beacon, data availability, invalid work, reward settlement,
+detection measurement, and validator VRF lifecycle.
 The `evidence record summary-roots` and `evidence record artifact-roots` variants derive a deterministic aggregate
 root and record count from unique provided supporting-record roots before signing the summary fields or
 artifact locator; duplicate roots are rejected so a summary count cannot be padded by repeating the same raw

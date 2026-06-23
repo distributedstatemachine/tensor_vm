@@ -391,6 +391,7 @@ impl PublicTestnetEvidenceBundle {
         ];
         let has_public_supporting_record_artifacts = self.supporting_artifacts.len()
             == required_supporting_artifacts.len()
+            && self.has_distinct_public_supporting_artifact_uris()
             && required_supporting_artifacts
                 .iter()
                 .all(|(kind, record_root, record_count)| {
@@ -449,6 +450,13 @@ impl PublicTestnetEvidenceBundle {
             independently_checkable,
             full_spec_evidence_met,
         }
+    }
+
+    fn has_distinct_public_supporting_artifact_uris(&self) -> bool {
+        let mut artifact_uris = BTreeSet::new();
+        self.supporting_artifacts
+            .iter()
+            .all(|artifact| artifact_uris.insert(artifact.artifact_uri.as_str()))
     }
 
     fn has_exact_public_supporting_record_artifact(

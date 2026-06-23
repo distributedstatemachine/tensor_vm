@@ -317,7 +317,8 @@ new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` a
   runtime use with signed per-operator network-observation records exactly matching counted public
   operators and aggregating to the signed network-runtime root,
   an exact one-signature manifest publication count for the current manifest format, exactly one signed
-  external artifact locator for each required raw supporting-record kind, one-to-one live operator/address
+  external artifact locator for each required raw supporting-record kind with distinct artifact URIs,
+  one-to-one live operator/address
   matching for counted public participants with criteria-aware quota selection, disjoint
   miner/validator operator IDs and node addresses, auditor IDs distinct from the manifest signer with
   auditor observations at or after the signed run end and valid signed

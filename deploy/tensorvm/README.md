@@ -44,9 +44,9 @@ can be generated directly from captured `tvmd node serve` logs with
 `evidence network from-service-log`, but the supplied listen multiaddr still has to be public. They
 can be aggregated from the saved raw-record file with `evidence record summary-file` and
 `evidence record artifact-file`. Each signed block, finality, libp2p, randomness-beacon,
-data-availability, invalid-work, and reward summary root also needs a signed external artifact locator for
-the raw records behind that root; publish exactly one artifact locator for each of those seven supporting
-record kinds.
+data-availability, invalid-work, reward, detection-measurement, and validator-VRF-lifecycle summary root
+also needs a signed external artifact locator for the raw records behind that root; publish exactly one
+artifact locator for each of those nine supporting record kinds, with distinct artifact URIs.
 For block, finality, randomness-beacon, data-availability, invalid-work, and reward evidence, the saved raw-record file can
 contain exact `block_history_record=...`, `finality_history_record=...`,
 `randomness_beacon_record=...`, `data_availability_measurement=...`, `invalid_work_rejection=...`, and `reward_settlement=...` lines; the

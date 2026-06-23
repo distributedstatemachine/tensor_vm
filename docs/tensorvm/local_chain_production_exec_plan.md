@@ -5,12 +5,12 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 206 pushed: Reward-Finality Formal Status Alignment.
+- Active feature: Iteration 207 in progress: Public Supporting Artifact URI Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
-  deployed public-service gate so signed service-health and service-content URLs must be distinct across
-  RPC, explorer, faucet, and telemetry service kinds before `public_evidence_full_spec=true` can pass.
+  independently checkable supporting-artifact gate so signed raw-record artifact URIs must be distinct
+  across required public record kinds before `public_evidence_full_spec=true` can pass.
   Iteration 198 tightened the VRF-lifecycle gate so raw lifecycle records must cover distinct checked receipt
   roots rather than padding the count with multiple records for the same receipt. Iteration 199 applies the
   same checked-receipt coverage rule to raw public data-availability measurement records. Iteration 200
@@ -44,6 +44,64 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 207: Public Supporting Artifact URI Diversity Gate
+
+Feature capability: require independently checkable public evidence bundles to use distinct signed
+supporting raw-record artifact URIs across every required public record kind.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require signed external raw
+supporting-record artifact locators behind summary roots. Those locators should prove separate
+kind-specific raw artifacts, not one reused URI attached to multiple signed kind/root/count tuples.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns independently checkable supporting-artifact
+admission.
+
+Adapter callers: `tvmd public evidence validate`, manifest parsing, deployment docs, and public evidence
+templates consume the bundle report.
+
+Old shortcut being removed: a bundle could reuse the same external artifact URI across multiple public
+record kinds while presenting valid per-kind signatures, roots, and counts, so the supporting-artifact gate
+proved signed metadata but not distinct raw artifact locators.
+
+Regression test that proves the shortcut is gone: mutate a complete bundle so the finality-history
+supporting artifact reuses the block-history artifact URI, re-sign that artifact for its own kind/root/count,
+and assert supporting artifacts, independent checkability, and full-spec evidence fail.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: signed `record_artifact=...` manifest records.
+
+Finality source: unchanged; signed block/finality records remain separate evidence gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence
+validation.
+
+Parallel subagents to run: none. The file set is small and edits would collide.
+
+Tests/checkers/docs updated: public evidence bundle regression, deployment-doc assertions, public evidence
+docs/status/audit wording, and stale verifier-wording cleanup so docs do not imply a nonexistent
+service-content verifier.
+
+Narrow validation passed: focused public evidence bundle publication/artifact test, focused public
+deployment-doc test, and stale-wording `rg` checks for reused-artifact, seven-supporting-record, and
+nonexistent verifier phrasing.
+
+Broad validation passed: Gate 0 was first (`cargo test -p tensor_vm local_testnet --release`),
+`cargo test -p tensor_vm --lib` with 559 passing tests, clippy with warnings denied,
+`cargo fmt --all -- --check`, and `git diff --check`.
+
+Expected observable evidence: otherwise complete signed public evidence cannot satisfy independently
+checkable or full-spec gates when two required raw supporting-record kinds reuse the same artifact URI.
+
+Out of scope: requiring canonical hosted paths or fetching artifact content.
+
+Split trigger: split if URI diversity requires active artifact download or content hashing rather than
+validating signed locator metadata.
 
 ### Iteration 206: Reward-Finality Formal Status Alignment
 
@@ -975,6 +1033,22 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 
 ## Validation Evidence
 
+- Current Iteration 207 Gate 0 release local-testnet validation passed first on June 23, 2026:
+  `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
+  `local_testnet_service_gateway_does_not_produce_local_blocks` passing.
+- Current Iteration 207 focused validation passed on June 23, 2026:
+  focused public evidence bundle publication/artifact test covering the reused supporting-artifact URI
+  regression.
+- Current Iteration 207 deployment-doc validation passed on June 23, 2026:
+  `cargo test -p tensor_vm public_deployment --lib` with three deployment-doc tests passing.
+- Current Iteration 207 stale wording validation passed on June 23, 2026:
+  `rg` found no stale seven-supporting-record, reused-artifact, auditor/verifier, or service-content
+  verifier wording in the checked docs/testnet paths.
+- Current Iteration 207 broad validation passed on June 23, 2026:
+  `cargo test -p tensor_vm --lib` with 559 passing tests.
+- Current Iteration 207 lint and hygiene validation passed on June 23, 2026:
+  `cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
+  `git diff --check`.
 - Current Iteration 203 focused validation passed on June 23, 2026:
   `cargo fmt --all && cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`.
 - Current Iteration 203 hygiene validation passed on June 23, 2026:

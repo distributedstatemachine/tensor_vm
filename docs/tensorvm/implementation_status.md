@@ -454,7 +454,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   validator VRF lifecycle records whose aggregate roots must match their signed summaries before
   full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
-  each required supporting-record kind, well-formed whitespace-free
+  each required supporting-record kind and distinct artifact URIs across those kinds, well-formed whitespace-free
   `ipfs://`/`ar://` content identifiers with traversal/query/fragment path rejection, HTTPS evidence URI
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
