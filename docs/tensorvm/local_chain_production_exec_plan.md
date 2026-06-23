@@ -133,6 +133,8 @@ Validation evidence:
   -D warnings` and `git diff --check` passed on June 23, 2026.
 - Verification boundary: no standalone TensorVM verifier binary is claimed; evidence uses the existing
   runtime, chain, conformance, and `verify` test modules.
+- Commit/push: feature commit `6e5f129` (`Add CUDA field broadcast graph support`) pushed to `origin/main`
+  on June 23, 2026.
 
 ### Iteration 236: CUDA Field Sum Graph Kernel/Conformance
 
