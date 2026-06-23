@@ -319,10 +319,30 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("squeezed", vec![4])],
             },
+            tensor_vm::OpNode {
+                id: 25,
+                op: "slice".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 24, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    (
+                        "dim".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(0)),
+                    ),
+                    (
+                        "start".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                    ),
+                    (
+                        "end".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(3)),
+                    ),
+                ]),
+                out: vec![tensor_vm::TensorSpec::field("sliced", vec![2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "squeezed".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 24, idx: 0 },
+            name: "sliced".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 25, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

@@ -394,6 +394,35 @@ __global__ void field_broadcast_kernel(
     out[output_index] = input[input_flat] % kModulus;
 }
 
+__global__ void field_slice_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t out_len,
+    const uint64_t* input_shape,
+    const uint64_t* output_shape,
+    uint64_t rank,
+    uint64_t dim,
+    uint64_t start) {
+    uint64_t output_index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (output_index >= out_len) {
+        return;
+    }
+
+    uint64_t remainder = output_index;
+    uint64_t input_flat = 0;
+    uint64_t input_stride = 1;
+    for (uint64_t axis_from_end = 0; axis_from_end < rank; ++axis_from_end) {
+        uint64_t axis = rank - 1 - axis_from_end;
+        uint64_t output_dim = output_shape[axis];
+        uint64_t coord = output_dim == 0 ? 0 : remainder % output_dim;
+        remainder = output_dim == 0 ? 0 : remainder / output_dim;
+        uint64_t input_coord = axis == dim ? coord + start : coord;
+        input_flat += input_coord * input_stride;
+        input_stride *= input_shape[axis];
+    }
+    out[output_index] = input[input_flat] % kModulus;
+}
+
 __global__ void field_transpose_kernel(
     const uint64_t* input,
     uint64_t* out,
@@ -813,6 +842,96 @@ extern "C" int tensor_vm_cuda_field_matmul(
     cudaFree(device_rhs);
     cudaFree(device_out);
 
+    return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_field_slice(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t input_len,
+    uint64_t out_len,
+    const uint64_t* input_shape,
+    const uint64_t* output_shape,
+    uint64_t rank,
+    uint64_t dim,
+    uint64_t start) {
+    if (input == nullptr || out == nullptr || input_shape == nullptr || output_shape == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (dim >= rank) {
+        return -2;
+    }
+    if (out_len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    uint64_t* device_input_shape = nullptr;
+    uint64_t* device_output_shape = nullptr;
+    size_t input_bytes = static_cast<size_t>(input_len * sizeof(uint64_t));
+    size_t out_bytes = static_cast<size_t>(out_len * sizeof(uint64_t));
+    size_t shape_bytes = static_cast<size_t>(rank * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, input_bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, out_bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+    status = cudaMalloc(&device_input_shape, shape_bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        cudaFree(device_out);
+        return -3;
+    }
+    status = cudaMalloc(&device_output_shape, shape_bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        cudaFree(device_out);
+        cudaFree(device_input_shape);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, input_bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(device_input_shape, input_shape, shape_bytes, cudaMemcpyHostToDevice);
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(device_output_shape, output_shape, shape_bytes, cudaMemcpyHostToDevice);
+    }
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(out_len);
+        field_slice_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_input,
+            device_out,
+            out_len,
+            device_input_shape,
+            device_output_shape,
+            rank,
+            dim,
+            start);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, out_bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
+    cudaFree(device_input_shape);
+    cudaFree(device_output_shape);
     return fail(status, -5);
 }
 

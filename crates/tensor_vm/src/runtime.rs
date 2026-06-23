@@ -485,6 +485,18 @@ fn execute_cuda_graph_op(
             )?;
             cuda::field_unsqueeze(device_index, tensor, dim)?
         }
+        "slice" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir slice requires explicit dim"),
+            )?;
+            let start = optional_graph_usize_kwarg(kwargs, "start")?
+                .ok_or(TvmError::InvalidReceipt("tensor ir slice requires start"))?;
+            let end = optional_graph_usize_kwarg(kwargs, "end")?
+                .ok_or(TvmError::InvalidReceipt("tensor ir slice requires end"))?;
+            cuda::field_slice(device_index, tensor, dim, start, end)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -712,6 +724,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "reshape",
             "squeeze",
             "unsqueeze",
+            "slice",
             "broadcast",
             "eq",
             "gt",
@@ -1034,10 +1047,21 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
                 out: vec![TensorSpec::field("squeezed", vec![4])],
             },
+            OpNode {
+                id: 25,
+                op: "slice".to_owned(),
+                args: vec![IrRef::Op { id: 24, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0))),
+                    ("start".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                    ("end".to_owned(), IrValue::Literal(IrLiteral::Uint(3))),
+                ]),
+                out: vec![TensorSpec::field("sliced", vec![2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "squeezed".to_owned(),
-            value: IrRef::Op { id: 24, idx: 0 },
+            name: "sliced".to_owned(),
+            value: IrRef::Op { id: 25, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1161,6 +1185,18 @@ mod cuda {
             input: *const u64,
             out: *mut u64,
             len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_slice(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            input_len: u64,
+            out_len: u64,
+            input_shape: *const u64,
+            output_shape: *const u64,
+            rank: u64,
+            dim: u64,
+            start: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_neg(
             device_index: u32,
@@ -1469,6 +1505,46 @@ mod cuda {
         }
         shape.insert(dim, 1);
         field_reshape(device_index, input, &shape)
+    }
+
+    pub fn field_slice(
+        device_index: u32,
+        input: &Tensor,
+        dim: usize,
+        start: usize,
+        end: usize,
+    ) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        if dim >= input.shape().len() || start > end || end > input.shape()[dim] || start == end {
+            return Err(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"));
+        }
+        let mut shape = input.shape().to_vec();
+        shape[dim] = end - start;
+        let out_len = checked_shape_product(&shape)?;
+        let input_shape = shape_as_u64(input.shape())?;
+        let output_shape = shape_as_u64(&shape)?;
+        let mut out = vec![0; out_len];
+        let code = unsafe {
+            tensor_vm_cuda_field_slice(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                out_len as u64,
+                input_shape.as_ptr(),
+                output_shape.as_ptr(),
+                input_shape.len() as u64,
+                dim as u64,
+                start as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(shape, input.dtype(), out)
     }
 
     pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -2003,10 +2079,11 @@ mod tests {
             "reshape",
             "squeeze",
             "unsqueeze",
+            "slice",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "slice"] {
+        for op in ["einsum", "quantize_int8_per_channel", "tril"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -2078,37 +2155,27 @@ mod tests {
         }
         let graph = TensorGraph {
             ir_version: 1,
-            inputs: vec![TensorSpec::field("x", vec![4])],
+            inputs: vec![TensorSpec::field("x", vec![2, 2])],
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "slice".to_owned(),
+                op: "tril".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
-                kwargs: BTreeMap::from([
-                    (
-                        "dim".to_owned(),
-                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
-                    ),
-                    (
-                        "start".to_owned(),
-                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(1)),
-                    ),
-                    (
-                        "end".to_owned(),
-                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(3)),
-                    ),
-                ]),
-                out: vec![TensorSpec::field("sliced", vec![2])],
+                kwargs: BTreeMap::from([(
+                    "diagonal".to_owned(),
+                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Int(0)),
+                )]),
+                out: vec![TensorSpec::field("lower", vec![2, 2])],
             }],
             outputs: vec![GraphOutput {
-                name: "sliced".to_owned(),
+                name: "lower".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
         let graph_id = graph.validate_for_consensus().unwrap();
-        let input = Tensor::from_vec(vec![4], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let input = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
         let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
         let job = GraphJob::new(
             0,
@@ -2293,6 +2360,19 @@ mod tests {
         assert!(matches!(
             cuda::field_unsqueeze(0, &lhs, 3),
             Err(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"))
+        ));
+
+        let sliced_cols = cuda::field_slice(0, &lhs, 1, 1, 3).unwrap();
+        let expected_sliced_cols =
+            Tensor::from_vec(vec![2, 2], lhs.dtype(), vec![0, 5, MODULUS - 3, 9]).unwrap();
+        assert_eq!(sliced_cols, expected_sliced_cols);
+        let sliced_rows = cuda::field_slice(0, &lhs, 0, 0, 1).unwrap();
+        let expected_sliced_rows =
+            Tensor::from_vec(vec![1, 3], lhs.dtype(), lhs.as_slice()[0..3].to_vec()).unwrap();
+        assert_eq!(sliced_rows, expected_sliced_rows);
+        assert!(matches!(
+            cuda::field_slice(0, &lhs, 1, 2, 2),
+            Err(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"))
         ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();
