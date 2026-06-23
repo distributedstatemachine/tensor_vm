@@ -109,6 +109,7 @@ fn public_deployment_runbook_records_required_evidence_flow() {
             "production_libp2p_runtime=true",
             "public_service_content_planned=true",
             "public_services_planned=true",
+            "surface with distinct health URLs and distinct content URLs; missing, duplicate, reused-URL, or extra",
         ],
         "runbook preflight gate",
     );
@@ -196,8 +197,8 @@ fn public_deployment_readme_records_scaffold_boundary_and_operator_flow() {
     assert_trimmed_lines(
         readme,
         &[
-            "hostname to the local service. Public evidence still has to include signed service-health records for each",
-            "external URL, signed service-content records for the deployed content paths using the same HTTPS authority",
+            "hostname to the local service. Public preflight and public evidence still have to use distinct",
+            "service-health URLs and distinct service-content URLs for RPC, explorer, faucet, and telemetry, signed",
             "one signed `network_runtime_observation=...` record per counted public operator proving libp2p discovery,",
             "can be aggregated from the saved raw-record file with `evidence record summary-file` and",
             "`evidence record artifact-file`. Each signed block, finality, libp2p, randomness-beacon,",

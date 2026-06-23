@@ -44,6 +44,26 @@ fn public_testnet_preflight_manifest_reports_launch_readiness() {
     assert!(!duplicate_service_endpoint_report.deployment_plan_ready);
     assert!(!duplicate_service_endpoint_report.can_start_public_run);
 
+    let reused_rpc_service_urls = manifest
+        .replace(
+            "https://explorer.tensorvm.net/health,/health",
+            "https://rpc.tensorvm.net/health,/health",
+        )
+        .replace(
+            "https://explorer.tensorvm.net/explorer,/explorer",
+            "https://rpc.tensorvm.net/explorer,/explorer",
+        );
+    let reused_rpc_service_url_report =
+        parse_public_testnet_preflight_manifest(&reused_rpc_service_urls)
+            .unwrap()
+            .evaluate(ChainParams::default().block_time_seconds);
+    assert!(reused_rpc_service_url_report.has_rpc_service_plan);
+    assert!(reused_rpc_service_url_report.has_explorer_service_plan);
+    assert!(reused_rpc_service_url_report.has_public_service_content_plan);
+    assert!(!reused_rpc_service_url_report.has_public_service_plan);
+    assert!(!reused_rpc_service_url_report.deployment_plan_ready);
+    assert!(!reused_rpc_service_url_report.can_start_public_run);
+
     let duplicate_rpc_service_plan = format!(
         "{manifest}service=rpc,{},https://rpc-backup.tensorvm.net/health,/health,https://rpc-backup.tensorvm.net/chain/head,/chain/head,true,true\n",
         manifest_hash(b"test", b"rpc-backup-service")

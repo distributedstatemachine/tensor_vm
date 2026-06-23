@@ -490,9 +490,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `libp2p_ready_node_count` that matches the planned miner plus validator count and can be derived from
   process-level `tvmd node check` checks that load the initialized node store, load the durable peer
   book, start the real rust-libp2p control plane, report `libp2p_ready=true`, and exit, plus distinct
-  endpoint IDs for exactly one ready RPC, explorer, faucet, and telemetry service plan on the planned
-  public content paths used by post-run evidence, with missing, duplicate, or extra preflight service plans
-  rejected by the public service plan gate
+  endpoint IDs, health URLs, and content URLs for exactly one ready RPC, explorer, faucet, and telemetry
+  service plan on the planned public content paths used by post-run evidence, with missing, duplicate,
+  reused-URL, or extra preflight service plans rejected by the public service plan gate
 - `tvmd` binary tests for the documented spec-path pending manifest commands, proving
   `tvmd public preflight docs/tensorvm/public-testnet.preflight` reads the checked
   manifest and reports `public_testnet_preflight_ready=false`, while

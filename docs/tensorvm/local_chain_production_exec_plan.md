@@ -5,10 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 207 pushed: Public Supporting Artifact URI Diversity Gate.
+- Active feature: Iteration 208 in progress: Public Preflight Service URL Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
-  `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
+  `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
   independently checkable supporting-artifact gate so signed raw-record artifact URIs must be distinct
   across required public record kinds before `public_evidence_full_spec=true` can pass.
   Iteration 198 tightened the VRF-lifecycle gate so raw lifecycle records must cover distinct checked receipt
@@ -20,7 +20,9 @@ archive commit anchors only.
   Iteration 203 requires raw public randomness-beacon records to cover distinct observed blocks and beacon
   rounds exactly. Iteration 204 requires counted public network-runtime observations to use distinct peer
   IDs and public listen multiaddrs. Iteration 205 requires deployed public service evidence to use
-  distinct signed service-health and service-content URLs across service kinds.
+  distinct signed service-health and service-content URLs across service kinds. Iteration 208 extends the
+  same URL-diversity rule to pre-run public service launch plans so reused service URLs cannot pass
+  public preflight.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -44,6 +46,63 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 208: Public Preflight Service URL Diversity Gate
+
+Feature capability: require public-testnet launch preflight plans to use distinct public service health
+URLs and distinct public service content URLs across RPC, explorer, faucet, and telemetry service kinds.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_preflight.md` require exactly one ready
+public service plan per surface before a public run starts. Launch readiness should reject a plan that
+points multiple service kinds at the same externally signed URL and only differs by endpoint ID.
+
+Canonical owner: `PublicTestnetPreflightPlan::evaluate` owns public launch-plan readiness.
+
+Adapter callers: `tvmd public preflight`, checked preflight manifests, deployment docs, and operator
+runbooks consume the preflight report.
+
+Old shortcut being removed: a preflight manifest could reuse one public service health or content URL
+across multiple public service kinds while still reporting distinct endpoint IDs and per-kind ready
+records.
+
+Regression test that proves the shortcut is gone: mutate a complete preflight manifest so explorer reuses
+the RPC health/content URLs, then assert the individual ready records are not enough to satisfy the public
+service plan or launch readiness.
+
+Behavior with local synthetic block production disabled: unchanged; this is a pre-run deployment evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; public service launch planning does not mutate
+role behavior.
+
+Structured evidence source: repeated preflight `service=...` manifest records.
+
+Finality source: unchanged; preflight does not prove a run or finality.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; only manifest readiness validation changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Tests/checkers/docs updated: preflight manifest regression, public preflight docs, deployment
+README/runbook/status wording, deployment-doc assertions, and this exec plan.
+
+Narrow validation passed: focused public preflight manifest test and
+`cargo test -p tensor_vm public_deployment --lib`.
+
+Broad validation passed: Gate 0 was first (`cargo test -p tensor_vm local_testnet --release`),
+`cargo test -p tensor_vm --lib` with 559 passing tests, clippy with warnings denied,
+`cargo fmt --all -- --check`, and `git diff --check`.
+
+Expected observable evidence: otherwise launch-ready public preflight manifests report
+`public_services_planned=false`, `deployment_plan_ready=false`, and `public_testnet_preflight_ready=false`
+when any required service kind reuses another kind's health or content URL.
+
+Out of scope: proving live deployed service reachability, changing nginx/systemd topology, or fetching
+service content.
+
+Split trigger: split if enforcing URL diversity requires active network probes instead of manifest-level
+URL validation.
 
 ### Iteration 207: Public Supporting Artifact URI Diversity Gate
 
@@ -1037,6 +1096,18 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 
 ## Validation Evidence
 
+- Current Iteration 208 Gate 0 release local-testnet validation passed first on June 23, 2026:
+  `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
+  `local_testnet_service_gateway_does_not_produce_local_blocks` passing.
+- Current Iteration 208 focused validation passed on June 23, 2026:
+  focused public preflight manifest test covering the reused preflight service-URL regression.
+- Current Iteration 208 deployment-doc validation passed on June 23, 2026:
+  `cargo test -p tensor_vm public_deployment --lib` with three deployment-doc tests passing.
+- Current Iteration 208 broad validation passed on June 23, 2026:
+  `cargo test -p tensor_vm --lib` with 559 passing tests.
+- Current Iteration 208 lint and hygiene validation passed on June 23, 2026:
+  `cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
+  `git diff --check`.
 - Current Iteration 207 Gate 0 release local-testnet validation passed first on June 23, 2026:
   `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
   `local_testnet_service_gateway_does_not_produce_local_blocks` passing.

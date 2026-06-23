@@ -35,9 +35,10 @@ GET /telemetry/dashboard
 ```
 
 The nginx template publishes separate external HTTPS hostnames for the four surfaces and routes each
-hostname to the local service. Public evidence still has to include signed service-health records for each
-external URL, signed service-content records for the deployed content paths using the same HTTPS authority
-as each corresponding health URL, exact health/content paths without query strings or fragments, and
+hostname to the local service. Public preflight and public evidence still have to use distinct
+service-health URLs and distinct service-content URLs for RPC, explorer, faucet, and telemetry, signed
+service-content records for the deployed content paths using the same HTTPS authority as each
+corresponding health URL, exact health/content paths without query strings or fragments, and
 one signed `network_runtime_observation=...` record per counted public operator proving libp2p discovery,
 gossip, request/response, and configured DoS controls during the external run. Those observation roots
 can be generated directly from captured `tvmd node serve` logs with

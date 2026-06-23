@@ -2100,8 +2100,9 @@ intended per-node preflight source for `libp2p_ready_node_count`.
 Each repeated preflight `service=...` plan must contain exactly eight comma-separated, nonempty,
 untrimmed values; leading or trailing whitespace in any service value is a manifest parse error.
 Public preflight deployment readiness requires exactly one ready `service=...` plan for each RPC, explorer,
-faucet, and telemetry surface. Missing, duplicate, or extra service plans do not satisfy the public service
-plan gate.
+faucet, and telemetry surface, with distinct endpoint IDs, distinct health URLs, and distinct content URLs
+across those service kinds. Missing, duplicate, reused-URL, or extra service plans do not satisfy the
+public service plan gate.
 The external operator flow, daily evidence collection, post-run validation, and publication steps are
 recorded in `deploy/tensorvm/RUNBOOK.md`.
 

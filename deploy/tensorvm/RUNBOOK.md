@@ -29,7 +29,8 @@ Before advertising a public run:
 - Keep every `service=...` preflight line exact: eight comma-separated, nonempty values with no leading or
   trailing whitespace in any service value.
 - Publish exactly one ready `service=...` preflight line for each RPC, explorer, faucet, and telemetry
-  surface; missing, duplicate, or extra service plans fail the public service plan gate.
+  surface with distinct health URLs and distinct content URLs; missing, duplicate, reused-URL, or extra
+  service plans fail the public service plan gate.
 - Start services through `systemd/tensorvm.service` or an equivalent unit that invokes
   `tvmd node serve` with `--p2p-listen` and the seeded peer book.
 - Configure the reverse proxy from `nginx/tensorvm.conf` or an equivalent TLS proxy.

@@ -71,7 +71,8 @@ impl PublicTestnetPreflightPlan {
             && has_telemetry_service_plan
             && has_public_service_content_plan
             && self.has_exact_ready_service_plans()
-            && self.has_distinct_ready_service_endpoint_ids();
+            && self.has_distinct_ready_service_endpoint_ids()
+            && self.has_distinct_ready_service_urls();
         let local_shape_ready = has_required_miners
             && has_required_validators
             && has_positive_stakes
@@ -130,6 +131,26 @@ impl PublicTestnetPreflightPlan {
                 return false;
             };
             if !endpoint_ids.insert(service.endpoint_id) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn has_distinct_ready_service_urls(&self) -> bool {
+        let mut health_urls = BTreeSet::new();
+        let mut content_urls = BTreeSet::new();
+        for kind in public_service_kinds() {
+            let Some(service) = self
+                .services
+                .iter()
+                .find(|service| service.kind == kind && service.is_ready_for_public_run())
+            else {
+                return false;
+            };
+            if !health_urls.insert(service.public_url.as_str())
+                || !content_urls.insert(service.content_url.as_str())
+            {
                 return false;
             }
         }

@@ -19,7 +19,7 @@ The local preflight report checks:
 - production libp2p runtime plan with one libp2p-ready node per planned miner and validator, plus
   discovery, gossip, request/response, and DoS controls
 - exactly one public HTTPS RPC, explorer, faucet, and telemetry service plan
-- distinct service endpoint identifiers, health paths, content paths, auth, and rate limiting
+- distinct service endpoint identifiers, health URLs, content URLs, auth, and rate limiting
 
 Public HTTPS service hosts must be externally reachable names or addresses with well-formed authorities,
 and each service's health and content URLs must use the same HTTPS authority. The local checker rejects
@@ -27,9 +27,10 @@ userinfo, whitespace, invalid DNS host labels, single-label DNS hosts, invalid p
 IPv6 authorities, localhost, `.local`, `.localhost`, `.test`, `.example`, `.invalid`, RFC example
 domains, loopback, unspecified, private, and link-local IP addresses, including bracketed IPv6 loopback
 literals. Direct IP literals from documentation, shared-address, benchmarking, multicast, or reserved
-ranges are also rejected. RPC, explorer, faucet, and telemetry plans must use distinct endpoint IDs, and
-launch readiness requires exactly one ready service plan for each of those four surfaces; missing,
-duplicate, or extra service plans do not satisfy launch readiness.
+ranges are also rejected. RPC, explorer, faucet, and telemetry plans must use distinct endpoint IDs,
+distinct health URLs, and distinct content URLs; launch readiness requires exactly one ready service plan
+for each of those four surfaces. Missing, duplicate, reused-URL, or extra service plans do not satisfy
+launch readiness.
 
 ## Manifest Format
 
@@ -80,9 +81,9 @@ The content URL path must match the required public surface for that service exa
 non-root path without a query string or fragment:
 `/chain/head`, `/explorer`, `/faucet/page`, or `/telemetry/dashboard`. The content URL authority must
 match the health URL authority so a preflight manifest cannot combine health checks from one deployed
-service with content evidence from another host. Endpoint IDs must be distinct across the RPC, explorer,
-faucet, and telemetry service plans, and extra duplicate service plans are rejected by the public service
-plan gate.
+service with content evidence from another host. Endpoint IDs, health URLs, and content URLs must be
+distinct across the RPC, explorer, faucet, and telemetry service plans, and extra duplicate service plans
+are rejected by the public service plan gate.
 
 The CLI reads a manifest file and reports launch readiness:
 
