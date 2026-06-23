@@ -469,6 +469,22 @@ fn execute_cuda_graph_op(
             let shape = graph_shape_kwarg(kwargs, "shape")?;
             cuda::field_reshape(device_index, tensor, &shape)?
         }
+        "squeeze" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir squeeze requires explicit dim"),
+            )?;
+            cuda::field_squeeze(device_index, tensor, dim)?
+        }
+        "unsqueeze" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir unsqueeze requires explicit dim"),
+            )?;
+            cuda::field_unsqueeze(device_index, tensor, dim)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -694,6 +710,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "sum",
             "mean",
             "reshape",
+            "squeeze",
+            "unsqueeze",
             "broadcast",
             "eq",
             "gt",
@@ -1002,10 +1020,24 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 )]),
                 out: vec![TensorSpec::field("reshaped", vec![4])],
             },
+            OpNode {
+                id: 23,
+                op: "unsqueeze".to_owned(),
+                args: vec![IrRef::Op { id: 22, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
+                out: vec![TensorSpec::field("unsqueezed", vec![1, 4])],
+            },
+            OpNode {
+                id: 24,
+                op: "squeeze".to_owned(),
+                args: vec![IrRef::Op { id: 23, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
+                out: vec![TensorSpec::field("squeezed", vec![4])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "reshaped".to_owned(),
-            value: IrRef::Op { id: 22, idx: 0 },
+            name: "squeezed".to_owned(),
+            value: IrRef::Op { id: 24, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1419,6 +1451,24 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(shape.to_vec(), input.dtype(), out)
+    }
+
+    pub fn field_squeeze(device_index: u32, input: &Tensor, dim: usize) -> Result<Tensor> {
+        let mut shape = input.shape().to_vec();
+        if dim >= shape.len() || shape[dim] != 1 || shape.len() == 1 {
+            return Err(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"));
+        }
+        shape.remove(dim);
+        field_reshape(device_index, input, &shape)
+    }
+
+    pub fn field_unsqueeze(device_index: u32, input: &Tensor, dim: usize) -> Result<Tensor> {
+        let mut shape = input.shape().to_vec();
+        if dim > shape.len() {
+            return Err(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"));
+        }
+        shape.insert(dim, 1);
+        field_reshape(device_index, input, &shape)
     }
 
     pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -1951,10 +2001,12 @@ mod tests {
             "mse_loss",
             "mean",
             "reshape",
+            "squeeze",
+            "unsqueeze",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "squeeze"] {
+        for op in ["einsum", "quantize_int8_per_channel", "slice"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -2026,27 +2078,37 @@ mod tests {
         }
         let graph = TensorGraph {
             ir_version: 1,
-            inputs: vec![TensorSpec::field("x", vec![1, 4])],
+            inputs: vec![TensorSpec::field("x", vec![4])],
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "squeeze".to_owned(),
+                op: "slice".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
-                kwargs: BTreeMap::from([(
-                    "dim".to_owned(),
-                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
-                )]),
-                out: vec![TensorSpec::field("squeezed", vec![4])],
+                kwargs: BTreeMap::from([
+                    (
+                        "dim".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
+                    ),
+                    (
+                        "start".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(1)),
+                    ),
+                    (
+                        "end".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(3)),
+                    ),
+                ]),
+                out: vec![TensorSpec::field("sliced", vec![2])],
             }],
             outputs: vec![GraphOutput {
-                name: "squeezed".to_owned(),
+                name: "sliced".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
         let graph_id = graph.validate_for_consensus().unwrap();
-        let input = Tensor::from_vec(vec![1, 4], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let input = Tensor::from_vec(vec![4], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
         let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
         let job = GraphJob::new(
             0,
@@ -2214,6 +2276,23 @@ mod tests {
             Err(TvmError::InvalidReceipt(
                 "tensor ir reshape element mismatch"
             ))
+        ));
+        let squeezed_input = Tensor::from_vec(vec![1, 3], lhs.dtype(), vec![5, 6, 7]).unwrap();
+        let squeezed = cuda::field_squeeze(0, &squeezed_input, 0).unwrap();
+        let expected_squeezed = Tensor::from_vec(vec![3], lhs.dtype(), vec![5, 6, 7]).unwrap();
+        assert_eq!(squeezed, expected_squeezed);
+        assert!(matches!(
+            cuda::field_squeeze(0, &lhs, 0),
+            Err(TvmError::InvalidReceipt("tensor ir squeeze dim mismatch"))
+        ));
+
+        let unsqueezed = cuda::field_unsqueeze(0, &lhs, 1).unwrap();
+        let expected_unsqueezed =
+            Tensor::from_vec(vec![2, 1, 3], lhs.dtype(), lhs.as_slice().to_vec()).unwrap();
+        assert_eq!(unsqueezed, expected_unsqueezed);
+        assert!(matches!(
+            cuda::field_unsqueeze(0, &lhs, 3),
+            Err(TvmError::InvalidReceipt("tensor ir unsqueeze dim mismatch"))
         ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();

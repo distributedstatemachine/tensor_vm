@@ -299,10 +299,30 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("reshaped", vec![4])],
             },
+            tensor_vm::OpNode {
+                id: 23,
+                op: "unsqueeze".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 22, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("unsqueezed", vec![1, 4])],
+            },
+            tensor_vm::OpNode {
+                id: 24,
+                op: "squeeze".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 23, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("squeezed", vec![4])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "reshaped".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 22, idx: 0 },
+            name: "squeezed".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 24, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([
