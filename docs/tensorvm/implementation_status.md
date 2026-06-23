@@ -574,7 +574,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   counts and lowercase mechanism IDs, exact-line hashing, and
   whitespace-padded or empty-field rejection; network-runtime file
   derivation rejects malformed peer IDs, non-public multiaddrs, zero counters, and mismatched observation
-  roots or signatures before aggregation; a process-level `tvmd` integration test now assembles a short
+  roots or signatures before aggregation; `tvmd node export-public-evidence --kind randomness-beacon`
+  and `--kind validator-vrf-lifecycle` now export those two randomness record files from chain-accepted
+  node-store state for the same file-derived commands; a process-level `tvmd` integration test now assembles a short
   external-addressed evidence manifest entirely from the signed generator subcommands, validates it from
   disk, and proves it is independently checkable without allowing the default full-spec flag to pass
 - Local CPU Docker Compose deployment bundle under `deploy/tensorvm/local-cpu/`, with a CPU-only

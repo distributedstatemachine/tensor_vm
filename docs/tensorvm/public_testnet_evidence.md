@@ -568,6 +568,11 @@ reward-settlement, detection-measurement, and validator-VRF-lifecycle records mu
 indexes inside the signed run window. Saved raw artifacts can therefore produce matching
 summary roots and artifact locators without hand-copying individual `record_root=<hex>` values.
 Whitespace-padded record lines and empty fields are rejected.
+For deployed node stores, `tvmd node export-public-evidence --kind randomness-beacon --data-dir <path>`
+exports accepted external beacon records as typed raw randomness lines, and
+`tvmd node export-public-evidence --kind validator-vrf-lifecycle --data-dir <path>` exports
+chain-accepted validator VRF reveal state as committed/revealed lifecycle lines. Redirect those outputs to
+record files and feed them to the existing `summary-file` and `artifact-file` commands.
 
 The output is a line-oriented evidence report. Signed raw randomness and validator-VRF lifecycle records
 are reported separately from chain-accepted deployed evidence: `public_randomness_beacon_records=true` and

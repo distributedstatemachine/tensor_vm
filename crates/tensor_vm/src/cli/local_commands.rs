@@ -1,6 +1,8 @@
+pub(crate) use super::local_node_commands::NodePublicEvidenceExportKind;
 #[cfg(test)]
 pub(crate) use super::local_node_commands::{
-    BootstrapPeerArgs, NodeBlockArgs, NodeCheckArgs, NodePeerAddArgs, NodeServeArgs,
+    BootstrapPeerArgs, NodeBlockArgs, NodeCheckArgs, NodePeerAddArgs, NodePublicEvidenceExportArgs,
+    NodeServeArgs,
 };
 pub(crate) use super::local_node_commands::{NodeCommand, NodePeerCommand};
 #[cfg(test)]

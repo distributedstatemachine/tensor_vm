@@ -3,9 +3,9 @@ use super::evidence_fields::{public_evidence_record_kind_tag, public_service_kin
 use super::local_commands::{
     BootstrapPeerArgs, DataDirArgs, IdentitySeedArgs, LocalCpuVerifyArgs, LocalnetCommand,
     MinerCheckArgs, MinerCommand, MinerRunArgs, NodeBlockArgs, NodeCheckArgs, NodeCommand,
-    NodePeerAddArgs, NodePeerCommand, NodeRuntimeArgs, NodeServeArgs, P2pListenArgs,
-    ProposerCommand, RoleNodeArgs, RoleRuntimeArgs, RoleWalletArgs, StakeArgs, ValidatorCheckArgs,
-    ValidatorCommand, ValidatorRunArgs,
+    NodePeerAddArgs, NodePeerCommand, NodePublicEvidenceExportArgs, NodePublicEvidenceExportKind,
+    NodeRuntimeArgs, NodeServeArgs, P2pListenArgs, ProposerCommand, RoleNodeArgs, RoleRuntimeArgs,
+    RoleWalletArgs, StakeArgs, ValidatorCheckArgs, ValidatorCommand, ValidatorRunArgs,
 };
 use super::network_evidence::{
     NetworkObservationEvidenceLine, network_observation_evidence_line_from_service_log,

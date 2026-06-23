@@ -2276,6 +2276,14 @@ tvmd public evidence record summary-file \
   --bundle-id <bundle-id-hex> \
   --manifest-signer <manifest-signer-address-hex> \
   --record-file artifacts/network-runtime.records
+
+tvmd node export-public-evidence \
+  --kind randomness-beacon \
+  --data-dir /var/lib/tensorvm > artifacts/randomness-beacon.records
+
+tvmd node export-public-evidence \
+  --kind validator-vrf-lifecycle \
+  --data-dir /var/lib/tensorvm > artifacts/validator-vrf-lifecycle.records
 ```
 
 The `publication`, `auditor-record`, `run-window`, `node-heartbeat`, and `operator-attestation` commands
@@ -2424,6 +2432,11 @@ subject roots must be nonzero. Raw data-availability, invalid-work, reward-settl
 detection-measurement, and validator-VRF-lifecycle records must also use `observed_block` values inside
 the signed run window (`observed_block < observed_blocks`); re-signed records outside that window cannot
 satisfy full-spec public evidence.
+The `tvmd node export-public-evidence` command is a read-only node-store exporter for the two randomness
+supporting-record files: `randomness-beacon` emits accepted `randomness_beacon_record=...` lines from
+chain-accepted external beacon records, and `validator-vrf-lifecycle` emits committed/revealed
+`validator_vrf_lifecycle=...` lines from chain-accepted validator VRF reveal records whose receipts have
+randomness anchors. Those exported files feed the same `summary-file` and `artifact-file` commands.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
 Raw block-history and finality-history records must cover the exact signed observed block range
@@ -2991,12 +3004,20 @@ The MVP succeeds if:
 10. Honest miners produce identical output roots.
 11. Validators spend materially less compute than full recomputation.
 12. Tensor data availability exceeds 95% during active windows and required retention windows.
-13. The network runs for 7 consecutive days with independent nodes.
+13. (ROADMAP, not v0) The network runs for 7 consecutive days with independent external operators. Per `goal.md` Scope Decisions (2026-06-23) this is a production-launch milestone, not a v0 completion gate; v0 substitutes local CPU Gate 0 + real CUDA evidence on the local A100×8 box + live drand-bound randomness.
 14. Zero-receipt epochs have a tested stake-weighted PoW-skip fallback path.
 15. Reward concentration, validator disagreement, and data withholding are reported.
 ```
 
-Full-spec completion additionally requires deployment evidence, not only a local deterministic reference
+> Scope note (owner override, 2026-06-23, see `goal.md` "v0 Scope Decisions"): the deployment-evidence and
+> "do not count the full spec as complete" blocks below define the **roadmap production-launch** bar, not
+> the v0 MVP done bar. v0 done = local CPU Gate 0 + real CUDA evidence on the local A100×8 box + live
+> drand-bound randomness (verified drand round → chain-epoch binding + validator commit→reveal). The
+> 7-day external public run, independent external operators, and deployed public HTTPS services are carried
+> as roadmap and are NOT v0 blockers. Real CUDA/C++ kernel evidence is in v0 scope and provable locally.
+> drand satisfies the §10 randomness source for v0; a bespoke per-validator VRF construction is roadmap.
+
+Full-spec completion (roadmap production launch) additionally requires deployment evidence, not only a local deterministic reference
 implementation:
 
 ```text

@@ -1,5 +1,5 @@
 use super::local_runtime_args::{DataDirArgs, IdentitySeedArgs, NodeRuntimeArgs, P2pListenArgs};
-use clap::{Args, Subcommand};
+use clap::{Args, Subcommand, ValueEnum};
 use libp2p::{Multiaddr, PeerId};
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -18,6 +18,8 @@ pub(crate) enum NodeCommand {
     Status(DataDirArgs),
     #[command(about = "Show one persisted block from the node store.")]
     Block(NodeBlockArgs),
+    #[command(about = "Export public raw evidence records from chain-accepted node state.")]
+    ExportPublicEvidence(NodePublicEvidenceExportArgs),
 }
 
 #[derive(Clone, Debug, Eq, PartialEq, Subcommand)]
@@ -77,4 +79,24 @@ pub(crate) struct NodeBlockArgs {
         help = "Block height to load from the node store."
     )]
     pub(crate) height: u64,
+}
+
+#[derive(Clone, Debug, Eq, PartialEq, Args)]
+pub(crate) struct NodePublicEvidenceExportArgs {
+    #[command(flatten)]
+    pub(crate) data_dir: DataDirArgs,
+    #[arg(
+        long,
+        value_enum,
+        value_name = "KIND",
+        help = "Public evidence record kind to export from chain-accepted node state."
+    )]
+    pub(crate) kind: NodePublicEvidenceExportKind,
+}
+
+#[derive(Clone, Copy, Debug, Eq, PartialEq, ValueEnum)]
+#[value(rename_all = "kebab-case")]
+pub(crate) enum NodePublicEvidenceExportKind {
+    RandomnessBeacon,
+    ValidatorVrfLifecycle,
 }

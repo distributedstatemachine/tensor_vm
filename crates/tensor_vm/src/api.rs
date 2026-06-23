@@ -215,6 +215,7 @@ pub const SERVICE_CLI_COMMANDS: &[&str] = &[
     "tvmd node peer add --peer-id <peer-id> --address <libp2p-multiaddr> [--data-dir <path>]",
     "tvmd node check [--p2p-listen <libp2p-multiaddr>] [--data-dir <path>]",
     "tvmd node serve --auth-token <token> [--listen <addr>] [--p2p-listen <libp2p-multiaddr>] [--data-dir <path>] [--max-requests <n>]",
+    "tvmd node export-public-evidence --kind <randomness-beacon|validator-vrf-lifecycle> [--data-dir <path>]",
 ];
 
 pub const PUBLIC_EVIDENCE_CLI_COMMANDS: &[&str] = &[
@@ -325,6 +326,7 @@ mod tests {
                 "tvmd node peer add --peer-id <peer-id> --address <libp2p-multiaddr> [--data-dir <path>]",
                 "tvmd node check [--p2p-listen <libp2p-multiaddr>] [--data-dir <path>]",
                 "tvmd node serve --auth-token <token> [--listen <addr>] [--p2p-listen <libp2p-multiaddr>] [--data-dir <path>] [--max-requests <n>]",
+                "tvmd node export-public-evidence --kind <randomness-beacon|validator-vrf-lifecycle> [--data-dir <path>]",
             ]
         );
         assert_eq!(

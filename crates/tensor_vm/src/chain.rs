@@ -49,8 +49,9 @@ pub(crate) use state::{ChainParts, ChainStateParts};
 pub use validation::{
     ASSIGNMENT_SEED_DOMAIN, RANDOMNESS_BEACON_SOURCE, RANDOMNESS_DRAND_ROUND_MAPPING,
     RANDOMNESS_VRF_CONSTRUCTION, VALIDATION_SEED_COMMITMENT_DOMAIN, VALIDATION_SEED_REVEAL_DOMAIN,
-    validator_vrf_ed25519_public_key_from_secret, verified_chained_drand_beacon_record,
-    verified_chained_drand_source_id, verified_drand_beacon_record, verified_drand_source_id,
+    validator_vrf_ed25519_public_key_from_secret, validator_vrf_reveal_record_with_secret,
+    verified_chained_drand_beacon_record, verified_chained_drand_source_id,
+    verified_drand_beacon_record, verified_drand_source_id,
 };
 
 impl Chain {

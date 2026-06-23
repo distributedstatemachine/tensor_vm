@@ -8,6 +8,7 @@ mod miner_role;
 mod network;
 mod operator_checks;
 mod operator_validation;
+mod public_evidence_export;
 mod randomness_beacon;
 mod role_services;
 mod runtime_config;
@@ -48,6 +49,10 @@ pub use network::{
     publish_runtime_trace_bisection_referee, publish_validator_block_proposal,
     submit_runtime_trace_bisection_expectation, submit_runtime_trace_bisection_open,
     submit_runtime_trace_bisection_referee,
+};
+pub use public_evidence_export::{
+    PublicEvidenceExportKind, export_public_evidence_records,
+    export_public_evidence_records_from_chain,
 };
 pub use randomness_beacon::{
     DrandBeaconClient, RandomnessBeaconMode, RandomnessBeaconRuntimeConfig,

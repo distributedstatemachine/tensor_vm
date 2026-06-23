@@ -40,8 +40,8 @@ mod value_types;
 pub use commands::TvmdCli;
 pub(crate) use commands::TvmdCommand;
 pub(crate) use local_commands::{
-    LocalnetCommand, MinerCommand, NodeCommand, NodePeerCommand, ProposerCommand, RoleRuntimeArgs,
-    ValidatorCommand,
+    LocalnetCommand, MinerCommand, NodeCommand, NodePeerCommand, NodePublicEvidenceExportKind,
+    ProposerCommand, RoleRuntimeArgs, ValidatorCommand,
 };
 pub(crate) use public_evidence_commands::{EvidenceCommand, PublicCommand};
 pub(crate) use public_evidence_execution::execute_public_evidence_command;

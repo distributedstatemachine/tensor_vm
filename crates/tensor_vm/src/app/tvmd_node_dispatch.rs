@@ -1,4 +1,5 @@
-use crate::cli::{LocalnetCommand, NodeCommand, NodePeerCommand};
+use crate::app::PublicEvidenceExportKind;
+use crate::cli::{LocalnetCommand, NodeCommand, NodePeerCommand, NodePublicEvidenceExportKind};
 use crate::types::Hash;
 use libp2p::{Multiaddr, PeerId};
 use std::net::SocketAddr;
@@ -7,8 +8,9 @@ use std::path::Path;
 use super::operator_validation::{validate_data_dir, validate_service_runtime};
 use super::tvmd_path::path_arg;
 use super::{
-    add_service_peer, check_service_readiness, init_service_store, seed_local_testnet,
-    serve_service, service_block_status, service_status, verify_local_cpu_store,
+    add_service_peer, check_service_readiness, export_public_evidence_records, init_service_store,
+    seed_local_testnet, serve_service, service_block_status, service_status,
+    verify_local_cpu_store,
 };
 
 pub(super) fn execute_node_command(command: &NodeCommand) -> std::result::Result<String, String> {
@@ -38,6 +40,9 @@ pub(super) fn execute_node_command(command: &NodeCommand) -> std::result::Result
         }
         NodeCommand::Status(args) => execute_node_status(&args.data_dir),
         NodeCommand::Block(args) => execute_node_block(&args.data_dir.data_dir, args.height),
+        NodeCommand::ExportPublicEvidence(args) => {
+            execute_node_export_public_evidence(&args.data_dir.data_dir, args.kind)
+        }
     }
 }
 
@@ -104,6 +109,22 @@ fn execute_node_status(data_dir: &Path) -> std::result::Result<String, String> {
 fn execute_node_block(data_dir: &Path, height: u64) -> std::result::Result<String, String> {
     let data_dir = validated_data_dir(data_dir)?;
     service_block_status(&data_dir, height)
+}
+
+fn execute_node_export_public_evidence(
+    data_dir: &Path,
+    kind: NodePublicEvidenceExportKind,
+) -> std::result::Result<String, String> {
+    let data_dir = validated_data_dir(data_dir)?;
+    let kind = match kind {
+        NodePublicEvidenceExportKind::RandomnessBeacon => {
+            PublicEvidenceExportKind::RandomnessBeacon
+        }
+        NodePublicEvidenceExportKind::ValidatorVrfLifecycle => {
+            PublicEvidenceExportKind::ValidatorVrfLifecycle
+        }
+    };
+    export_public_evidence_records(&data_dir, kind).map_err(|error| error.to_string())
 }
 
 pub(super) fn execute_localnet_command(

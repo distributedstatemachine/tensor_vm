@@ -3,7 +3,7 @@ use super::parser_support::{
 };
 use super::{
     BootstrapPeerArgs, NodeBlockArgs, NodeCheckArgs, NodeCommand, NodePeerAddArgs, NodePeerCommand,
-    TvmdCommand, parse_test_cli,
+    NodePublicEvidenceExportArgs, NodePublicEvidenceExportKind, TvmdCommand, parse_test_cli,
 };
 use libp2p::PeerId;
 
@@ -141,6 +141,40 @@ fn parses_documented_node_commands() {
             data_dir: data_dir_args("/var/lib/tensorvm"),
             height: 3,
         }))
+    );
+    assert_eq!(
+        parse_test_cli(&[
+            "node",
+            "export-public-evidence",
+            "--data-dir",
+            "/var/lib/tensorvm",
+            "--kind",
+            "randomness-beacon"
+        ])
+        .unwrap(),
+        TvmdCommand::Node(NodeCommand::ExportPublicEvidence(
+            NodePublicEvidenceExportArgs {
+                data_dir: data_dir_args("/var/lib/tensorvm"),
+                kind: NodePublicEvidenceExportKind::RandomnessBeacon,
+            }
+        ))
+    );
+    assert_eq!(
+        parse_test_cli(&[
+            "node",
+            "export-public-evidence",
+            "--data-dir",
+            "/var/lib/tensorvm",
+            "--kind",
+            "validator-vrf-lifecycle"
+        ])
+        .unwrap(),
+        TvmdCommand::Node(NodeCommand::ExportPublicEvidence(
+            NodePublicEvidenceExportArgs {
+                data_dir: data_dir_args("/var/lib/tensorvm"),
+                kind: NodePublicEvidenceExportKind::ValidatorVrfLifecycle,
+            }
+        ))
     );
 }
 
