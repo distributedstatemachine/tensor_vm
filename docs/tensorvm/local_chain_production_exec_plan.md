@@ -129,6 +129,8 @@ warnings denied, rustfmt check, diff check, and tarpaulin/report update if cover
 
 Validation evidence:
 
+- Implementation commit: `702c1cf` (`Gate full-spec evidence on chain-accepted randomness`) on
+  `main`, targeted for `origin/main`.
 - Gate 0 first executable passed: `cargo test -p tensor_vm local_testnet --release`.
 - Focused public-evidence regressions passed:
   `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`,
