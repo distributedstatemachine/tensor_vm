@@ -1,7 +1,7 @@
 use super::{
     BlockAdmission, Chain, ChainCommand, ChainEngine, ChainEvent, ChainParams, ChainState,
     PendingCreditReward, PendingReceiptReward, ReceiptRewardKind, ReceiptState, TensorBlock,
-    accounts, challenges, receipts, settlement,
+    accounts, challenges, receipts, settlement, validation,
 };
 use crate::challenge::ChallengeOutcome;
 use crate::error::{Result, TvmError};
@@ -736,10 +736,28 @@ fn validator_receipt_reward_has_vrf_reveal(
     state: &ChainState,
     reward: &PendingReceiptReward,
 ) -> bool {
-    reward.kind != ReceiptRewardKind::Validator
-        || state.validator_vrf_reveals.values().any(|reveal| {
-            reveal.receipt_id == reward.receipt_id && reveal.validator == reward.beneficiary
-        })
+    if reward.kind != ReceiptRewardKind::Validator {
+        return true;
+    }
+    let registered_key = state
+        .validators
+        .get(&reward.beneficiary)
+        .and_then(|validator| validator.vrf_public_key);
+    state.validator_vrf_reveals.values().any(|reveal| {
+        if reveal.receipt_id != reward.receipt_id || reveal.validator != reward.beneficiary {
+            return false;
+        }
+        match registered_key {
+            Some(public_key) => {
+                reveal.vrf_public_key == public_key
+                    && reveal.vrf_proof.len() == validation::VALIDATOR_VRF_ED25519_PROOF_BYTES
+            }
+            None => {
+                reveal.vrf_public_key == validation::VALIDATOR_VRF_LEGACY_PUBLIC_KEY
+                    && reveal.vrf_proof.is_empty()
+            }
+        }
+    })
 }
 
 fn unresolved_validator_audit_blocks_reward_release(

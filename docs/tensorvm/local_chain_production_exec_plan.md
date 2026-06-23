@@ -5,9 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 216 implemented and validation recorded: Compact Full-Spec Evidence Fixtures
-  For Coverage Runs.
-- Current status: public evidence remains deployment-gated; Iteration 216 keeps the full-spec public
+- Active feature: Iteration 217 implemented and validated locally: Keyed VRF Reveals Gate Validator Reward
+  Release.
+- Current status: public evidence remains deployment-gated; Iteration 217 tightens validator reward
+  release so a validator with a registered VRF key cannot release a pending receipt reward using an earlier
+  legacy unkeyed reveal. Iteration 216 keeps the full-spec public
   evidence criteria intact while reducing the raw record cardinality of test-only full-spec fixtures so
   coverage instrumentation can complete. Iteration 215 ties raw validator-VRF lifecycle
   records to the same checked available receipt roots proven by raw data-availability records. Iteration
@@ -62,6 +64,80 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 217: Keyed VRF Reveals Gate Validator Reward Release
+
+Feature capability: require validator receipt reward release to honor the validator's current registered
+VRF key, so keyed validators must provide matching keyed reveal evidence before their delayed validator
+reward can become spendable.
+
+Readiness requirements covered: §10 commit→reveal randomness binding and §12 delayed reward release must
+use chain-owned keyed reveal evidence instead of accepting an older local fallback reveal as a release
+workaround.
+
+Canonical owner: `chain::commands` owns pending reward release, while `chain::validation` owns reveal
+admission.
+
+Adapter callers: `ChainCommand::ClaimReward`, automatic matured receipt reward sweeps, runtime validator
+role reward release, status/explorer pending reward evidence.
+
+Old shortcut being removed: once a legacy unkeyed reveal existed for a receipt/validator pair, the reward
+release gate accepted it even if that validator later registered a production VRF public key.
+
+Regression test that proves the shortcut is gone: a validator reward with an earlier legacy reveal remains
+pending after key registration until a keyed Ed25519 reveal matching the registered key is submitted.
+
+Behavior with local synthetic block production disabled: unchanged; reward release remains chain-owned and
+driven by `ClaimReward`/sweep commands.
+
+Behavior for producer and non-producer roles: unchanged; all roles observe the same pending reward ledger.
+
+Structured evidence source: `validator_vrf_reveals`, `validators[*].vrf_public_key`, and pending receipt
+reward maturity state.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only source inspection was parallelized; code/docs edits
+are single-writer.
+
+Tests/checkers/docs to add or update: focused reward/VRF regression, coverage/status notes if needed, and
+this exec plan.
+
+Narrow validation commands: focused reward release regression plus existing keyed validator VRF reveal
+test.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, and diff check.
+
+Expected observable evidence: registered-key validators cannot claim delayed validator receipt rewards
+from legacy fallback reveal records.
+
+Out of scope: removing the local fallback helper entirely, changing p2p reveal payload encoding, or
+generating real deployed public VRF lifecycle artifacts.
+
+Split trigger: split if release gating requires profile-specific chain params or storage migrations.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused regression passed: `cargo test -p tensor_vm
+  registered_validator_vrf_key_requires_keyed_reveal_for_reward_release --lib`.
+- Focused VRF/reward checks passed: `cargo test -p tensor_vm
+  keyed_validator_vrf_reveal_requires_production_proof --lib`, `cargo test -p tensor_vm
+  validator_receipt_reward_waits_for_vrf_reveal_after_maturity --lib`, and `cargo test -p tensor_vm
+  service_status_exports_randomness_binding_evidence --lib`.
+- Broad lib validation passed: `cargo test -p tensor_vm --lib` reported 567 passed, 0 failed.
+- Hygiene passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy -p tensor_vm
+  --all-targets -- -D warnings`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+  target/tarpaulin` produced 85.02% workspace line coverage, 23593/27749 lines covered.
+- Implementation commit: pending.
 
 ### Iteration 216: Compact Full-Spec Evidence Fixtures For Coverage Runs
 

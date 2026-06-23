@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 216 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 217 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -9,17 +9,22 @@ cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpauli
 Result:
 
 ```text
-581 tests passed under instrumentation:
+582 tests passed under instrumentation:
 - 14 experiments library tests
-- 566 tensor_vm library tests
+- 567 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-85.00% workspace line coverage
-23562/27721 workspace lines covered
+85.02% workspace line coverage
+23593/27749 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 217 coverage-changing work tightened validator reward release for registered-key validators. A
+legacy unkeyed reveal recorded before key registration no longer makes a validator receipt reward
+spendable; key registration re-holds any already-claimable matching validator reward until a keyed
+Ed25519 reveal matching the registered key is submitted.
 
 Iteration 216 compacted full-spec public evidence bundle fixtures for coverage runs. Full-spec tests still
 evaluate default `PublicTestnetCriteria` and require full-spec evidence, but they use a test-only block

@@ -290,9 +290,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   network-originated beacon payloads idempotently through the same chain command, derive and register
   wallet-backed validator reveal public keys before receipt work, submit chain-verified validator VRF reveal
   records before validator receipt rewards can become spendable, require keyed validators to prove reveal
-  bytes against their registered Ed25519 public key, relay/retry bounded reveal payloads through the same
-  p2p/node ingest path, and the local checker gates the external-beacon record, validator-reveal record,
-  validator reveal key lifecycle, network-applied beacon/reveal, and current-block-hash-ban evidence.
+  bytes against their registered Ed25519 public key, re-hold any already-claimable validator receipt reward
+  that only had legacy reveal evidence when a key is registered, relay/retry bounded reveal payloads through
+  the same p2p/node ingest path, and the local checker gates the external-beacon record, validator-reveal
+  record, validator reveal key lifecycle, network-applied beacon/reveal, and current-block-hash-ban
+  evidence.
   Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain open.
 - Model-state transition sequencing and conflicting-root settlement delay for training steps
 - Txpool with reference transaction payload parsing, receipt deduplication, and multi-validator attestation flow

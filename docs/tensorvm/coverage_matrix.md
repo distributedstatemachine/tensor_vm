@@ -308,6 +308,9 @@ reward views expose awaiting-inclusion receipt rewards explicitly, with no synth
 height workaround. `chain::tests::commands::chain_engine_applies_profile_neutral_commands` now also proves
 new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` and
 `awaiting_inclusion=true` for newly pending miner and validator receipt rewards.
+`chain::tests::registered_validator_vrf_key_requires_keyed_reveal_for_reward_release` now proves a
+registered-key validator reward that only has an earlier legacy reveal is re-held and remains unclaimable
+until a keyed Ed25519 reveal matching the registered validator key is submitted.
 
 - Optional native CUDA kernel support exists behind `--features cuda-kernels` and covers field matmul plus
   linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs locally.
