@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 213 in progress: Index-Consistency Ops Rejected at Program Registration.
+- Active feature: Iteration 213 complete and pushed: Index-Consistency Ops Rejected at Program Registration.
 - Current status: index-consistency Tensor IR ops are registry vocabulary only; this iteration adds
   chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
   program bodies until their index-consistency proofs exist. Reward-delay work is implemented locally for
@@ -123,6 +123,8 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `a12d4d9` (`Reject index-consistency graphs at registration`).
+- Validation metadata commit: `079b679` (`Record index registration validation`).
+- Pushed to `main`: `33be5c3..079b679`.
 
 ### Iteration 212: Block-Check Challenges Block Late Proposer Reward Materialization
 
