@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 208 pushed: Public Preflight Service URL Diversity Gate.
+- Active feature: Iteration 209 validation passed: Profile-Scoped Local Runtime Knobs.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
@@ -22,7 +22,9 @@ archive commit anchors only.
   IDs and public listen multiaddrs. Iteration 205 requires deployed public service evidence to use
   distinct signed service-health and service-content URLs across service kinds. Iteration 208 extends the
   same URL-diversity rule to pre-run public service launch plans so reused service URLs cannot pass
-  public preflight.
+  public preflight. Iteration 209 scopes local CPU runtime production knobs to the local CPU profile so
+  public/mainnet profiles cannot inherit local synthetic producer/proposer behavior from a shared
+  environment.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -34,7 +36,7 @@ archive commit anchors only.
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
 | Gate 0 local CPU testnet | Passing | Current iteration release gate `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
-| Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, Gate 0 | Preserve one transition engine while adding runtime features |
+| Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, runtime profile env-scope tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
 | Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection messages, drand, and validator reveals | Extend only through shared codecs/events |
@@ -46,6 +48,76 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 209: Profile-Scoped Local Runtime Knobs
+
+Feature capability: keep `TENSORVM_LOCAL_CPU_*` runtime producer/proposer knobs scoped to the local CPU
+profile so public-testnet and mainnet node configs cannot inherit local-only synthetic job production,
+local validator block proposal, block interval, proposer delay, or local proposer cooldown behavior from a
+shared operator environment.
+
+Readiness requirements covered: shared profiles must drive runtime policy, and public service exposure
+policy must be wired through runtime adapters rather than existing only as profile metadata.
+
+Canonical owner: `NodeConfig` owns profile/role production policy; `runtime_node_config` owns environment
+adapter mapping into node config.
+
+Adapter callers: `tvmd node serve`, `tvmd miner run`, `tvmd validator run`, and `tvmd proposer run`.
+
+Old shortcut being removed: local CPU environment knobs were applied while building every runtime profile,
+letting public/mainnet node configs report or run local-only production modes when an operator reused a
+local testnet environment.
+
+Regression test that proves the shortcut is gone: build runtime node configs with
+`TENSORVM_CHAIN_PROFILE=public_testnet` plus all local CPU producer/proposer knobs set, then assert the
+resulting config has no local interval, synthetic producer, local block proposer, proposer delay, or local
+cooldown; also assert `local_cpu` still honors the same knobs.
+
+Behavior with local synthetic block production disabled: public/mainnet profiles remain disabled even if
+local env flags are present; local CPU behavior is unchanged.
+
+Behavior for producer and non-producer roles: only local CPU validators can enable the local proposer and
+synthetic producer paths; non-validator roles remain non-producers.
+
+Structured evidence source: `NodeConfig` accessors and runtime status snapshots derived from those
+accessors.
+
+Finality source: unchanged; this iteration only scopes local runtime policy.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this is runtime config/profile policy.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Tests/checkers/docs to add or update: profile policy tests, runtime environment adapter tests, readiness
+wording, and this exec plan.
+
+Narrow validation commands: focused profile/runtime-config tests.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, and diff check.
+
+Expected observable evidence: public/mainnet runtime configs ignore local CPU environment production knobs,
+while local CPU validators still honor them.
+
+Out of scope: public endpoint reachability, nginx/systemd topology, external deployment evidence, or CUDA
+runtime evidence.
+
+Split trigger: split if enforcing profile scope requires changing consensus block production or p2p
+ingestion instead of config/accessor policy.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused profile policy passed:
+  `cargo test -p tensor_vm profile::tests::node_config_drives_local_runtime_policy_without_changing_chain_base --lib`.
+- Focused runtime adapter policy passed:
+  `cargo test -p tensor_vm app::runtime_config::tests:: --lib`.
+- `cargo test -p tensor_vm --lib` passed: 561 passed, 0 failed.
+- `cargo test -p tensor_vm --test tvmd_runtime` passed: 46 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 208: Public Preflight Service URL Diversity Gate
 

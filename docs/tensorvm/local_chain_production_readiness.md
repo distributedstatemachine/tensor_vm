@@ -834,8 +834,10 @@ deterministic matmul/LinearTrainingStep source, while public testnet and mainnet
 synthetic production. The long-running node runtime now reads `TENSORVM_CHAIN_PROFILE`, reports the active
 profile in serve/status surfaces, and gates synthetic production through `NodeConfig` role policy, block
 interval, local-producer settings, network listen/auth/identity/max-request settings, and storage path.
-Bootstrap peer loading still comes from the persisted peer book; profile-specific public exposure policy
-still needs to be wired through runtime adapters rather than documented profile fields only.
+`runtime_node_config` now scopes `TENSORVM_LOCAL_CPU_*` production knobs to the local CPU profile, and
+`NodeConfig` rejects local synthetic/block-proposer capability for public-testnet and mainnet profiles even
+if a shared operator environment still exports local-only flags. Bootstrap peer loading still comes from
+the persisted peer book.
 
 ### Phase 6: Restart And Recovery
 

@@ -245,14 +245,18 @@ impl NodeConfig {
     }
 
     pub fn synthetic_block_interval(&self) -> Option<Duration> {
-        self.profile
-            .synthetic_jobs_enabled()
-            .then_some(self.block_interval)
+        self.local_runtime_enabled()
+            .then(|| {
+                self.profile
+                    .synthetic_jobs_enabled()
+                    .then_some(self.block_interval)
+                    .flatten()
+            })
             .flatten()
     }
 
     pub fn can_produce_local_blocks(&self) -> bool {
-        matches!(self.role, NodeRole::Validator)
+        self.local_runtime_enabled() && matches!(self.role, NodeRole::Validator)
     }
 
     pub fn local_block_proposer(&self) -> bool {
@@ -267,6 +271,10 @@ impl NodeConfig {
         self.local_synthetic_job_producer
             && matches!(self.role, NodeRole::Validator)
             && self.synthetic_block_interval().is_some()
+    }
+
+    fn local_runtime_enabled(&self) -> bool {
+        matches!(self.profile.network, ChainNetwork::Local)
     }
 }
 
@@ -413,7 +421,8 @@ mod tests {
         assert!(!local_proposer.local_block_proposer());
         assert!(!local_proposer.local_synthetic_producer());
         assert_eq!(public_validator.synthetic_block_interval(), None);
-        assert!(public_validator.local_block_proposer());
+        assert!(!public_validator.can_produce_local_blocks());
+        assert!(!public_validator.local_block_proposer());
         assert!(!public_validator.local_synthetic_producer());
         assert!(ChainProfile::from_label("staging").is_none());
     }

@@ -1,7 +1,7 @@
 use std::time::Duration;
 
 use crate::{
-    Chain, ChainProfile, NetworkConfig, NodeConfig, NodeRole,
+    Chain, ChainNetwork, ChainProfile, NetworkConfig, NodeConfig, NodeRole,
     hash::hex,
     types::{Address, address},
 };
@@ -75,21 +75,24 @@ pub fn runtime_node_config(
     auth_token: &str,
     max_requests: usize,
 ) -> std::result::Result<NodeConfig, String> {
-    Ok(
-        NodeConfig::new(runtime_chain_profile()?, role.node_role(), data_dir)
-            .with_network(
-                NetworkConfig::new(listen, p2p_listen)
-                    .with_identity_seed(identity_seed)
-                    .with_auth_token(auth_token)
-                    .with_max_requests(max_requests),
-            )
+    let profile = runtime_chain_profile()?;
+    let local_runtime = matches!(profile.network, ChainNetwork::Local);
+    let mut config = NodeConfig::new(profile, role.node_role(), data_dir).with_network(
+        NetworkConfig::new(listen, p2p_listen)
+            .with_identity_seed(identity_seed)
+            .with_auth_token(auth_token)
+            .with_max_requests(max_requests),
+    );
+    if local_runtime {
+        config = config
             .with_block_interval(runtime_block_interval())
             .with_local_synthetic_job_producer(runtime_local_synthetic_job_producer())
             .with_local_validator_block_proposer(runtime_local_validator_block_proposer())
             .with_local_validator_block_proposer_delay_blocks(
                 runtime_local_validator_block_proposer_delay_blocks(),
-            ),
-    )
+            );
+    }
+    Ok(config)
 }
 
 #[derive(Debug)]
@@ -198,4 +201,127 @@ fn runtime_local_proposer_cooldown_blocks() -> u64 {
         .ok()
         .and_then(|value| value.parse::<u64>().ok())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use std::sync::{Mutex, MutexGuard};
+
+    static ENV_LOCK: Mutex<()> = Mutex::new(());
+
+    const RUNTIME_ENV: &[&str] = &[
+        "TENSORVM_CHAIN_PROFILE",
+        "TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS",
+        "TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER",
+        "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER",
+        "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
+        "TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS",
+    ];
+
+    struct RuntimeEnvGuard {
+        _lock: MutexGuard<'static, ()>,
+        saved: Vec<(&'static str, Option<String>)>,
+    }
+
+    impl RuntimeEnvGuard {
+        fn new() -> Self {
+            let lock = ENV_LOCK.lock().expect("runtime env test lock poisoned");
+            let saved = RUNTIME_ENV
+                .iter()
+                .map(|name| (*name, std::env::var(name).ok()))
+                .collect();
+            unsafe {
+                for name in RUNTIME_ENV {
+                    std::env::remove_var(name);
+                }
+            }
+            Self { _lock: lock, saved }
+        }
+    }
+
+    impl Drop for RuntimeEnvGuard {
+        fn drop(&mut self) {
+            unsafe {
+                for name in RUNTIME_ENV {
+                    std::env::remove_var(name);
+                }
+                for (name, value) in &self.saved {
+                    if let Some(value) = value {
+                        std::env::set_var(name, value);
+                    }
+                }
+            }
+        }
+    }
+
+    fn runtime_validator_config() -> NodeConfig {
+        runtime_node_config(
+            "runtime-profile-test",
+            RuntimeRole::Validator,
+            "127.0.0.1:0",
+            "/ip4/127.0.0.1/tcp/0",
+            None,
+            "token",
+            3,
+        )
+        .expect("runtime node config should build")
+    }
+
+    #[test]
+    fn public_runtime_profiles_ignore_local_cpu_production_env_knobs() {
+        let _env = RuntimeEnvGuard::new();
+        unsafe {
+            std::env::set_var("TENSORVM_CHAIN_PROFILE", "public_testnet");
+            std::env::set_var("TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS", "25");
+            std::env::set_var("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER", "true");
+            std::env::set_var("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER", "true");
+            std::env::set_var(
+                "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
+                "7",
+            );
+            std::env::set_var("TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS", "9");
+        }
+
+        let config = runtime_validator_config();
+
+        assert_eq!(config.profile.label(), "public_testnet");
+        assert!(config.profile.requires_public_services());
+        assert_eq!(config.profile.chain_params.proposer_cooldown_blocks, 0);
+        assert_eq!(config.block_interval, None);
+        assert!(!config.local_synthetic_job_producer);
+        assert!(!config.local_validator_block_proposer);
+        assert_eq!(config.local_validator_block_proposer_delay_blocks, 0);
+        assert!(!config.can_produce_local_blocks());
+        assert!(!config.local_synthetic_producer());
+        assert!(!config.local_block_proposer());
+    }
+
+    #[test]
+    fn local_runtime_profile_honors_local_cpu_production_env_knobs() {
+        let _env = RuntimeEnvGuard::new();
+        unsafe {
+            std::env::set_var("TENSORVM_CHAIN_PROFILE", "local_cpu");
+            std::env::set_var("TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS", "25");
+            std::env::set_var("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER", "true");
+            std::env::set_var("TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER", "true");
+            std::env::set_var(
+                "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
+                "7",
+            );
+            std::env::set_var("TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS", "9");
+        }
+
+        let config = runtime_validator_config();
+
+        assert_eq!(config.profile.label(), "local_cpu");
+        assert_eq!(config.profile.chain_params.proposer_cooldown_blocks, 9);
+        assert_eq!(config.block_interval, Some(Duration::from_millis(25)));
+        assert!(config.local_synthetic_job_producer);
+        assert!(config.local_validator_block_proposer);
+        assert_eq!(config.local_validator_block_proposer_delay_blocks, 7);
+        assert!(config.can_produce_local_blocks());
+        assert!(config.local_synthetic_producer());
+        assert!(config.local_block_proposer());
+    }
 }
