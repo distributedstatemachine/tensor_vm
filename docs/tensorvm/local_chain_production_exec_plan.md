@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 202 in progress: Public Chain History Consistency Gate.
+- Active feature: Iteration 202 pushed: Public Chain History Consistency Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -112,6 +112,8 @@ Validation evidence, June 23, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `78e4981` (`Validate public chain history records`).
+- Validation metadata commit: `aee3083` (`Record chain history validation`).
+- Push: `git push origin main` succeeded on June 23, 2026 (`49783e0..aee3083  main -> main`).
 
 ### Iteration 201: Public Detection Measurement Field Gate
 
