@@ -1574,6 +1574,32 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     assert!(report.has_validator_vrf_lifecycle_record_summary);
     assert!(!report.full_spec_evidence_met);
 
+    let mut mismatched_available_receipts = full_spec_bundle.clone();
+    mismatched_available_receipts.validator_vrf_lifecycle_raw_records[0].receipt_root =
+        hash_bytes(b"test", &[b"mismatched-available-vrf-lifecycle-receipt"]);
+    let mismatched_available_lifecycle_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        &mismatched_available_receipts
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("mismatched available receipt roots still aggregate");
+    let mismatched_available_record_count =
+        mismatched_available_receipts.validator_vrf_lifecycle_records;
+    resign_record_summary_and_artifact(
+        &mut mismatched_available_receipts,
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        mismatched_available_lifecycle_root,
+        mismatched_available_record_count,
+    );
+    let report = mismatched_available_receipts.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.run_evidence.public_criterion_met);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.full_spec_evidence_met);
+
     let mut duplicate_receipt_records = full_spec_bundle.clone();
     duplicate_receipt_records.validator_vrf_lifecycle_raw_records[1].receipt_root =
         duplicate_receipt_records.validator_vrf_lifecycle_raw_records[0].receipt_root;

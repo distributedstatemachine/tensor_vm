@@ -21,6 +21,15 @@ Result:
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
 
+Iteration 215 coverage-changing work tightened public validator VRF lifecycle evidence so raw revealed
+`validator_vrf_lifecycle=...` receipt roots must exactly match the raw data-availability measurement
+receipt-root set before full-spec evidence can pass. The new regression proves internally valid,
+re-signed lifecycle records over a different receipt set still leave `public_evidence_full_spec=false`.
+Fresh workspace Tarpaulin refresh was attempted twice on June 23, 2026 with the command above, but both
+attempts stalled in the instrumented `tensor_vm` public-evidence bundle tail for more than ten minutes and
+were interrupted with exit code 130 before a coverage summary was produced; the latest completed coverage
+summary remains the June 22, 2026 run above.
+
 Iteration 196 coverage-changing work added a public deployed detection-measurement evidence gate for
 full-spec evidence. The new regression proves otherwise complete public evidence cannot set
 `public_evidence_full_spec=true` unless it has positive signed deployed detection-measurement records and

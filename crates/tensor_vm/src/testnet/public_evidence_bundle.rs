@@ -5,11 +5,11 @@ use super::public_evidence_crypto::{
 };
 use super::public_operators::{MatchedPublicOperators, public_operator_attestation_key};
 use super::{
-    PublicEvidenceAuditorRecord, PublicEvidencePublication, PublicEvidenceRecordKind,
-    PublicEvidenceRecordSummaries, PublicEvidenceSupportingArtifact, PublicNodeRole,
-    PublicOperatorIdentityAttestation, PublicTestnetCriteria, PublicTestnetEvidenceBundle,
-    PublicTestnetEvidenceBundleReport, PublicTestnetRunEvidence, PublicValidatorVrfLifecyclePhase,
-    public_testnet_criteria_are_full_spec,
+    PublicDataAvailabilityStatus, PublicEvidenceAuditorRecord, PublicEvidencePublication,
+    PublicEvidenceRecordKind, PublicEvidenceRecordSummaries, PublicEvidenceSupportingArtifact,
+    PublicNodeRole, PublicOperatorIdentityAttestation, PublicTestnetCriteria,
+    PublicTestnetEvidenceBundle, PublicTestnetEvidenceBundleReport, PublicTestnetRunEvidence,
+    PublicValidatorVrfLifecyclePhase, public_testnet_criteria_are_full_spec,
 };
 use crate::hash::hex;
 use crate::types::{Hash, Signature, address, verify_signature};
@@ -658,6 +658,9 @@ impl PublicTestnetEvidenceBundle {
         {
             return false;
         }
+        if receipt_roots != self.available_receipt_roots() {
+            return false;
+        }
         self.raw_operational_records_match(
             PublicEvidenceRecordKind::ValidatorVrfLifecycle,
             self.validator_vrf_lifecycle_records,
@@ -666,6 +669,14 @@ impl PublicTestnetEvidenceBundle {
                 .iter()
                 .map(|record| record.record_root()),
         )
+    }
+
+    fn available_receipt_roots(&self) -> BTreeSet<Hash> {
+        self.data_availability_raw_records
+            .iter()
+            .filter(|record| record.status == PublicDataAvailabilityStatus::Available)
+            .map(|record| record.receipt_root)
+            .collect()
     }
 
     fn has_public_chain_history_records(&self) -> bool {

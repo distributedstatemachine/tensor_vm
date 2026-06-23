@@ -2440,7 +2440,8 @@ raw detection-measurement records to use valid mechanism labels, nonzero subject
 and detected counts not exceeding samples,
 signed validator VRF lifecycle
 records to equal the checked receipt count only when every checked receipt is available, use distinct
-receipt roots, and aggregate to the signed lifecycle root,
+receipt roots that exactly match the raw data-availability measurement receipt-root set, and aggregate to
+the signed lifecycle root,
 and positive signed deployed detection-measurement records with raw
 records that aggregate to the signed detection summary; a public run with otherwise valid services,
 operators, network observations, and raw supporting records but missing, undercounted, or overcounted

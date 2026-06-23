@@ -476,10 +476,7 @@ pub(super) fn full_spec_data_availability_records(
 ) -> Vec<PublicDataAvailabilityMeasurementRecord> {
     (0..checked_receipts)
         .map(|index| PublicDataAvailabilityMeasurementRecord {
-            receipt_root: hash_bytes(
-                b"test",
-                &[format!("full-spec-data-available-receipt-{index}").as_bytes()],
-            ),
+            receipt_root: full_spec_checked_receipt_root(index),
             status: PublicDataAvailabilityStatus::Available,
             observed_block: index,
         })
@@ -517,16 +514,20 @@ pub(super) fn full_spec_validator_vrf_lifecycle_records(
 ) -> Vec<PublicValidatorVrfLifecycleRecord> {
     (0..checked_receipts)
         .map(|index| PublicValidatorVrfLifecycleRecord {
-            receipt_root: hash_bytes(
-                b"test",
-                &[format!("full-spec-vrf-lifecycle-receipt-{index}").as_bytes()],
-            ),
+            receipt_root: full_spec_checked_receipt_root(index),
             validator_id: address(format!("full-spec-vrf-lifecycle-validator-{index}").as_bytes()),
             beacon_round: index + 1,
             phase: PublicValidatorVrfLifecyclePhase::Revealed,
             observed_block: index,
         })
         .collect()
+}
+
+fn full_spec_checked_receipt_root(index: u64) -> Hash {
+    hash_bytes(
+        b"test",
+        &[format!("full-spec-checked-available-receipt-{index}").as_bytes()],
+    )
 }
 
 pub(super) fn network_runtime_root_for_run(run: &PublicTestnetRunEvidence) -> Hash {

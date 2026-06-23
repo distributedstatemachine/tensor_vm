@@ -5,8 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 214 complete and pushed: Validator VRF Lifecycle Requires Available Receipts.
-- Current status: public evidence remains deployment-gated; Iteration 214 tightens the scalar
+- Active feature: Iteration 215 implemented locally with tarpaulin refresh blocked: VRF Lifecycle Records
+  Must Match Available Receipt Roots.
+- Current status: public evidence remains deployment-gated; Iteration 215 ties raw validator-VRF lifecycle
+  records to the same checked available receipt roots proven by raw data-availability records. Iteration
+  214 tightens the scalar
   validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
   artifacts. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
   chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
@@ -57,6 +60,85 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 215: VRF Lifecycle Records Must Match Available Receipt Roots
+
+Feature capability: require full-spec raw validator VRF lifecycle evidence to cover the same checked
+available receipt roots as raw data-availability measurements.
+
+Readiness requirements covered: public full-spec evidence must prove deployed validator VRF lifecycle
+coverage for the checked receipts whose artifacts are actually available, rather than any unrelated set of
+distinct revealed receipt roots.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns cross-record public evidence consistency for
+full-spec bundle validation.
+
+Adapter callers: `tvmd public evidence validate`, manifest bundle validation, public evidence reports, and
+public evidence docs consume the bundle full-spec result.
+
+Old shortcut being removed: raw validator lifecycle records could satisfy full-spec evidence with
+distinct, revealed receipt roots that did not match the raw data-availability measurement receipt roots.
+
+Regression test that proves the shortcut is gone: an otherwise full-spec evidence bundle whose lifecycle
+records aggregate and reveal successfully but use a different receipt-root set than data-availability
+records keeps summary evidence true while clearing full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; role behavior is observed through public evidence.
+
+Structured evidence source: raw `data_availability_measurement=...` and `validator_vrf_lifecycle=...`
+records.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection was parallelized; code/docs edits are
+single-writer.
+
+Tests/checkers/docs to add or update: public bundle raw lifecycle regression, full-spec fixtures, public
+evidence docs, MVP wording, coverage/status/tarpaulin notes, and this exec plan.
+
+Narrow validation commands: focused raw validator VRF lifecycle bundle test and manifest parser/report
+tests.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, diff check, and tarpaulin/report update if feasible for coverage-changing tests.
+
+Expected observable evidence: `public_evidence_full_spec=true` requires revealed lifecycle records whose
+receipt-root set exactly equals the available checked receipt-root set.
+
+Out of scope: generating real deployed VRF records, changing manifest syntax, or adding a new raw record
+field.
+
+Split trigger: split if cross-record consistency requires manifest schema changes or deployed artifact
+format changes.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused raw lifecycle regression passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec --lib`.
+- Affected manifest/report regressions passed:
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib` and
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+- `cargo test -p tensor_vm --lib` passed: 566 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed after formatting.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` was attempted
+  twice. Both attempts rebuilt the workspace, passed the `experiments` and `tensor_vm_explorer`
+  instrumented tests, reached the `tensor_vm` public-evidence bundle tail, then made no progress for more
+  than ten minutes with the instrumented `tensor_vm` test binary still running. Both attempts were
+  interrupted with exit code 130, so no fresh coverage summary was produced. The latest completed
+  tarpaulin run remains the June 22, 2026 report in `docs/tensorvm/tarpaulin_report.md`.
+- Iteration status: implementation and non-coverage validation are complete locally; coverage refresh is
+  blocked by the reproducible tarpaulin instrumentation stall, so this iteration is not marked complete.
 
 ### Iteration 214: Validator VRF Lifecycle Requires Available Receipts
 

@@ -451,7 +451,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   block/finality/network-runtime/randomness-beacon/data-availability/invalid-work/reward-settlement/detection-measurement/validator-vrf-lifecycle summary roots, manifest-level raw accepted
   public `drand-v1` or `validator-vrf-v1` randomness records plus raw block-history, finality-history,
   data-availability, invalid-work, reward-settlement, deployed detection-measurement, and revealed
-  validator VRF lifecycle records whose aggregate roots must match their signed summaries before
+  validator VRF lifecycle records whose receipt roots must match the raw data-availability measurement
+  receipt-root set and whose aggregate roots must match their signed summaries before
   full-spec evidence can pass, signed
   external artifact locators for the raw records behind each summary root with exactly one locator for
   each required supporting-record kind and distinct artifact URIs across those kinds, well-formed whitespace-free
@@ -475,8 +476,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   with distinct nonzero receipt roots, raw invalid-work and reward-settlement records to use distinct
   nonzero receipt roots with nonzero settlement participant IDs, raw detection-measurement records to match
   manifest field semantics, and signed `validator_vrf_lifecycle_records` with raw revealed
-  lifecycle records to cover every checked receipt's deployed validator VRF commit-to-reveal reward-delay
-  lifecycle with distinct receipt roots and aggregate to the signed lifecycle root, plus positive signed deployed
+  lifecycle records to cover every checked available receipt's deployed validator VRF commit-to-reveal
+  reward-delay lifecycle with distinct receipt roots exactly matching the raw data-availability
+  measurement receipt-root set and aggregate to the signed lifecycle root, plus positive signed deployed
   detection-measurement records whose raw records aggregate to the signed summary, plus the default 7-day, 10-miner,
   5-validator public-testnet criteria or stricter criteria, so relaxed local harness criteria and otherwise
   complete CPU-only, non-graph, or VRF-lifecycle-free public bundles cannot mark an evidence bundle
