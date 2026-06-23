@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 203 in progress: Public Randomness Beacon Coverage Gate.
+- Active feature: Iteration 203 pushed: Public Randomness Beacon Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -758,9 +758,15 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
   `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
 - Current Iteration 203 feature commit `81e673c`
   (`Validate public randomness coverage`) prepared on June 23, 2026.
+- Current Iteration 203 validation metadata commit `f80c181`
+  (`Record public randomness validation`) pushed to `origin/main` on June 23, 2026.
+- Current Iteration 203 push result on June 23, 2026: `2a1559a..f80c181 main -> main`.
 
 ## Archive
 
+- Iteration 203: Public Randomness Beacon Coverage Gate. Full-spec raw randomness-beacon evidence now must
+  cover each observed block exactly once with distinct accepted public beacon rounds. Commit `81e673c`
+  (`Validate public randomness coverage`) pushed to `origin/main` on June 23, 2026.
 - Iteration 191: Public Evidence CUDA Miner Gate. Full-spec public evidence now requires
   `cuda_verified_miner_count` to cover counted public miners. Commit `322857a`
   (`Require CUDA miner evidence for full spec`) pushed to `origin/main` on June 22, 2026.
