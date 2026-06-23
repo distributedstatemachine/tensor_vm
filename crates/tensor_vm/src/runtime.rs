@@ -497,6 +497,18 @@ fn execute_cuda_graph_op(
                 .ok_or(TvmError::InvalidReceipt("tensor ir slice requires end"))?;
             cuda::field_slice(device_index, tensor, dim, start, end)?
         }
+        "tril" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let diagonal = graph_i64_kwarg(kwargs, "diagonal")?;
+            cuda::field_tril(device_index, tensor, diagonal)?
+        }
+        "triu" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let diagonal = graph_i64_kwarg(kwargs, "diagonal")?;
+            cuda::field_triu(device_index, tensor, diagonal)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -545,6 +557,16 @@ fn optional_graph_bool_kwarg(
         None => Ok(None),
         Some(IrValue::Literal(IrLiteral::Bool(value))) => Ok(Some(*value)),
         _ => Err(TvmError::InvalidReceipt("tensor ir expected bool kwarg")),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn graph_i64_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<i64> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::Int(value))) => Ok(*value),
+        Some(IrValue::Literal(IrLiteral::Uint(value))) => i64::try_from(*value)
+            .map_err(|_| TvmError::InvalidReceipt("tensor ir expected i64 kwarg")),
+        _ => Err(TvmError::InvalidReceipt("tensor ir expected i64 kwarg")),
     }
 }
 
@@ -725,6 +747,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "squeeze",
             "unsqueeze",
             "slice",
+            "tril",
+            "triu",
             "broadcast",
             "eq",
             "gt",
@@ -1058,10 +1082,37 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 ]),
                 out: vec![TensorSpec::field("sliced", vec![2])],
             },
+            OpNode {
+                id: 26,
+                op: "unsqueeze".to_owned(),
+                args: vec![IrRef::Op { id: 25, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
+                out: vec![TensorSpec::field("triangular_input", vec![1, 2])],
+            },
+            OpNode {
+                id: 27,
+                op: "triu".to_owned(),
+                args: vec![IrRef::Op { id: 26, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "diagonal".to_owned(),
+                    IrValue::Literal(IrLiteral::Int(0)),
+                )]),
+                out: vec![TensorSpec::field("upper", vec![1, 2])],
+            },
+            OpNode {
+                id: 28,
+                op: "tril".to_owned(),
+                args: vec![IrRef::Op { id: 27, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "diagonal".to_owned(),
+                    IrValue::Literal(IrLiteral::Int(0)),
+                )]),
+                out: vec![TensorSpec::field("triangular", vec![1, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "sliced".to_owned(),
-            value: IrRef::Op { id: 25, idx: 0 },
+            name: "triangular".to_owned(),
+            value: IrRef::Op { id: 28, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1260,6 +1311,15 @@ mod cuda {
             out: *mut u64,
             len: u64,
             scalar: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_triangular(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            rows: u64,
+            cols: u64,
+            diagonal: i64,
+            lower: u32,
         ) -> i32;
         fn tensor_vm_cuda_field_transpose(
             device_index: u32,
@@ -1733,6 +1793,14 @@ mod cuda {
         Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
     }
 
+    pub fn field_tril(device_index: u32, input: &Tensor, diagonal: i64) -> Result<Tensor> {
+        field_triangular(device_index, input, diagonal, true)
+    }
+
+    pub fn field_triu(device_index: u32, input: &Tensor, diagonal: i64) -> Result<Tensor> {
+        field_triangular(device_index, input, diagonal, false)
+    }
+
     pub fn field_transpose(device_index: u32, input: &Tensor) -> Result<Tensor> {
         let rows = input.rows()?;
         let cols = input.cols()?;
@@ -1768,6 +1836,41 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Ok(out)
+    }
+
+    fn field_triangular(
+        device_index: u32,
+        input: &Tensor,
+        diagonal: i64,
+        lower: bool,
+    ) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        if input.shape().len() != 2 {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir triangular rank mismatch",
+            ));
+        }
+        let rows = input.shape()[0];
+        let cols = input.shape()[1];
+        let mut out = vec![0; input.len()];
+        let code = unsafe {
+            tensor_vm_cuda_field_triangular(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                rows as u64,
+                cols as u64,
+                diagonal,
+                u32::from(lower),
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
     }
 
     fn field_unary(
@@ -2080,10 +2183,12 @@ mod tests {
             "squeeze",
             "unsqueeze",
             "slice",
+            "tril",
+            "triu",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "tril"] {
+        for op in ["einsum", "quantize_int8_per_channel", "concat"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -2159,18 +2264,23 @@ mod tests {
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "tril".to_owned(),
-                args: vec![IrRef::Input {
-                    name: "x".to_owned(),
-                }],
+                op: "concat".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "x".to_owned(),
+                    },
+                ],
                 kwargs: BTreeMap::from([(
-                    "diagonal".to_owned(),
-                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Int(0)),
+                    "dim".to_owned(),
+                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
                 )]),
-                out: vec![TensorSpec::field("lower", vec![2, 2])],
+                out: vec![TensorSpec::field("concatenated", vec![4, 2])],
             }],
             outputs: vec![GraphOutput {
-                name: "lower".to_owned(),
+                name: "concatenated".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
@@ -2373,6 +2483,32 @@ mod tests {
         assert!(matches!(
             cuda::field_slice(0, &lhs, 1, 2, 2),
             Err(TvmError::InvalidReceipt("tensor ir slice bounds mismatch"))
+        ));
+
+        let triangular_input = Tensor::from_vec(
+            vec![3, 3],
+            lhs.dtype(),
+            vec![1, 2, 3, 4, 5, 6, MODULUS - 3, 8, 9],
+        )
+        .unwrap();
+        let lower = cuda::field_tril(0, &triangular_input, 0).unwrap();
+        let expected_lower = Tensor::from_vec(
+            vec![3, 3],
+            lhs.dtype(),
+            vec![1, 0, 0, 4, 5, 0, MODULUS - 3, 8, 9],
+        )
+        .unwrap();
+        assert_eq!(lower, expected_lower);
+        let upper = cuda::field_triu(0, &triangular_input, 1).unwrap();
+        let expected_upper =
+            Tensor::from_vec(vec![3, 3], lhs.dtype(), vec![0, 2, 3, 0, 0, 6, 0, 0, 0]).unwrap();
+        assert_eq!(upper, expected_upper);
+        let rank_three = Tensor::from_vec(vec![1, 1, 2], lhs.dtype(), vec![1, 2]).unwrap();
+        assert!(matches!(
+            cuda::field_tril(0, &rank_three, -1),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir triangular rank mismatch"
+            ))
         ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();

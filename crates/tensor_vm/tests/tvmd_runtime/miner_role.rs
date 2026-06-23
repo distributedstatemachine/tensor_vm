@@ -339,10 +339,40 @@ fn supported_cuda_graph_execution_case() -> (
                 ]),
                 out: vec![tensor_vm::TensorSpec::field("sliced", vec![2])],
             },
+            tensor_vm::OpNode {
+                id: 26,
+                op: "unsqueeze".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 25, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("triangular_input", vec![1, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 27,
+                op: "triu".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 26, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "diagonal".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Int(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("upper", vec![1, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 28,
+                op: "tril".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 27, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "diagonal".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Int(0)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("triangular", vec![1, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "sliced".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 25, idx: 0 },
+            name: "triangular".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 28, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

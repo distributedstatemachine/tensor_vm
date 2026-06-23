@@ -423,6 +423,27 @@ __global__ void field_slice_kernel(
     out[output_index] = input[input_flat] % kModulus;
 }
 
+__global__ void field_triangular_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t rows,
+    uint64_t cols,
+    int64_t diagonal,
+    uint32_t lower) {
+    uint64_t cell = blockIdx.x * blockDim.x + threadIdx.x;
+    uint64_t total = rows * cols;
+    if (cell >= total) {
+        return;
+    }
+    uint64_t row = cell / cols;
+    uint64_t col = cell % cols;
+    int64_t boundary = static_cast<int64_t>(row) + diagonal;
+    bool keep = lower != 0
+        ? static_cast<int64_t>(col) <= boundary
+        : static_cast<int64_t>(col) >= boundary;
+    out[cell] = keep ? input[cell] % kModulus : 0;
+}
+
 __global__ void field_transpose_kernel(
     const uint64_t* input,
     uint64_t* out,
@@ -1688,6 +1709,67 @@ extern "C" int tensor_vm_cuda_field_scalar_mul(
             device_out,
             len,
             scalar);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
+    return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_field_triangular(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t rows,
+    uint64_t cols,
+    int64_t diagonal,
+    uint32_t lower) {
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (rows != 0 && cols > UINT64_MAX / rows) {
+        return -2;
+    }
+    uint64_t len = rows * cols;
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        field_triangular_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_input,
+            device_out,
+            rows,
+            cols,
+            diagonal,
+            lower);
         status = cudaGetLastError();
     }
     if (status == cudaSuccess) {

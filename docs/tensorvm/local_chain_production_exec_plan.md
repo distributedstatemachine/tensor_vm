@@ -5,19 +5,17 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 241 complete and pushed: CUDA Field Slice Graph Kernel/Conformance.
+- Active feature: Iteration 242 in progress: CUDA Field Triangular Graph Kernel/Conformance.
 - Current status: v0 work follows the 2026-06-23 owner scope decision: live verified drand consensus
   randomness and local A100 CUDA evidence are in v0 scope; 7-day external public-run evidence is a
   production-launch roadmap milestone. The latest CUDA graph subset now covers scale-0 field
   `matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/
-  `broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/
+  `tril`/`triu`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/
   `le`/`where` without claiming fixed-point CUDA graph ops, remaining structural ops, quantization, or
   full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: continue broadening CUDA kernels/conformance with another narrow, fully validated slice
-  for remaining admitted exact ops without CPU fallback or overclaiming unsupported frozen-registry
-  coverage.
+- Next action: finish Iteration 242 implementation, validation, commit, push, and metadata evidence.
 
 ## Readiness Matrix
 
@@ -33,38 +31,38 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/squeeze/unsqueeze/slice/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `crates/tensor_vm/kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/squeeze/unsqueeze/slice/tril/triu/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `crates/tensor_vm/kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
 
-### Iteration 241: CUDA Field Slice Graph Kernel/Conformance
+### Iteration 242: CUDA Field Triangular Graph Kernel/Conformance
 
-Feature capability: add CUDA field `slice(dim,start,end)` graph execution for scale-0 field tensors using
-a device-side row-major slice-copy kernel, route graph `slice` through `GpuMinerBackend`, and expand
-supported CUDA graph/conformance/miner-role fixtures so another exact structural op is exercised on the
-local A100 path without CPU fallback.
+Feature capability: add CUDA field `tril(diagonal)` and `triu(diagonal)` graph execution for scale-0
+rank-2 field tensors using a device-side triangular-mask copy kernel, route both ops through
+`GpuMinerBackend`, and expand supported CUDA graph/conformance/miner-role fixtures so the exact
+single-output triangular structural ops are exercised on the local A100 path without CPU fallback.
 
 Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` sections 3.1-3.3, 4.7,
-4.8, 7, and 16 require bit-exact CUDA evidence for admitted exact ops. `slice` is a Tier-B structural op
-with deterministic row-major coordinate semantics; this iteration covers only scale-0 field tensors in
-the CUDA graph subset.
+4.8, 7, and 16 require bit-exact CUDA evidence for admitted exact ops. `tril`/`triu` are Tier-B
+structural ops with deterministic rank-2 row/column mask semantics; this iteration covers only scale-0
+field tensors in the CUDA graph subset.
 
 Ownership boundary:
 
-- Canonical owner: CUDA runtime owns accelerated scale-0 field `slice` for canonical row-major structural
-  semantics.
+- Canonical owner: CUDA runtime owns accelerated scale-0 rank-2 field `tril`/`triu` for canonical
+  triangular structural semantics.
 - Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
   focused runtime/miner-role tests.
-- Old shortcut removed: exact graph `slice` stopped at the CUDA graph boundary.
-- Regression proof: CUDA-feature runtime tests assert direct CUDA field `slice` parity and bounds
-  rejection; supported CUDA graph parity includes kwargs-backed `slice`; miner-role CUDA graph receipt
-  tests submit the expanded graph through `BackendKind::GpuMiner`; unsupported CUDA-op coverage moved to
-  still-unsupported `tril`.
+- Old shortcut removed: exact graph `tril`/`triu` stopped at the CUDA graph boundary.
+- Regression proof: CUDA-feature runtime tests assert direct CUDA field `tril`/`triu` parity and rank
+  rejection; supported CUDA graph parity includes kwargs-backed triangular ops; miner-role CUDA graph
+  receipt tests submit the expanded graph through `BackendKind::GpuMiner`; unsupported CUDA-op coverage
+  moved to still-unsupported `concat`.
 - Behavior with local synthetic block production disabled: unchanged.
 - Behavior for producer and non-producer roles: unchanged.
 - Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
-  miner-role `backend_kind`, direct CUDA structural parity assertions, and explicit unsupported-op errors.
+  miner-role `backend_kind`, direct CUDA triangular parity assertions, and explicit unsupported-op errors.
 - Finality source: unchanged; no block admission, settlement, voting, rewards, reward maturity, delayed
   claims, TensorWork activation, or finality changes.
 - Wire-size and codec boundary: no wire or codec changes; the CUDA C ABI grows only behind
@@ -74,39 +72,48 @@ Parallel subagents: none. Available subagent tooling currently says not to spawn
 explicitly asks for delegation, so the parent remains the single writer.
 
 Out of scope: reward workarounds, immediate reward release, fixed-point structural CUDA ops,
-split/concat/stack/tril/triu, CUDA quantization, consensus changes, and public deployment evidence.
+split/concat/stack, CUDA quantization, consensus changes, and public deployment evidence.
 
 Validation evidence:
 
 - Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
   June 23, 2026 before other acceptance commands in this resumed iteration.
-- `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed on June 23, 2026 with 10
-  CUDA-feature runtime tests, including direct field `slice` parity, supported CUDA graph parity, and
-  unsupported `tril` rejection.
+- `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed on June 23, 2026 with
+  10 CUDA-feature runtime tests, including direct field `tril`/`triu` parity, supported CUDA graph parity,
+  and unsupported `concat` rejection.
 - `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
   miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed on
-  June 23, 2026 with the supported miner-role CUDA graph fixture extended through `reshape` ->
-  `unsqueeze` -> `squeeze` -> `slice`.
+  June 23, 2026 with the supported miner-role CUDA graph fixture extended through `slice` ->
+  `unsqueeze` -> `triu` -> `tril`.
 - `cargo fmt --check` passed on June 23, 2026.
 - `cargo test -p tensor_vm --lib` passed on June 23, 2026 with 573 tests.
 - Post-change Gate 0 `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 with 5
   release local_testnet library tests and 1 service-gateway CLI test.
-- `cargo clippy --workspace --all-targets -- -D warnings` passed on June 23, 2026.
 - `cargo test --workspace --release` passed on June 23, 2026 with 14 experiments tests, 573 tensor_vm
   library tests, 9 tvmd CLI tests, 50 tvmd runtime tests, 1 local CPU compose test, 1 explorer library
   test, and 2 explorer CLI tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed on June 23, 2026.
 - `cargo test -p tensor_vm --features cuda-kernels --release` passed on June 23, 2026 with 580
   CUDA-feature tensor_vm library tests, 9 tvmd CLI tests, 54 tvmd runtime tests, and doc-tests.
-- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
-  June 23, 2026 with 588 instrumented tests and 84.97% workspace line coverage
-  (23831/28048 lines).
 - `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings` passed on
   June 23, 2026.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
+  June 23, 2026 with 588 instrumented tests and 84.96% workspace line coverage
+  (23831/28050 lines).
 - `git diff --check` passed on June 23, 2026.
-- Commit: `99cfe2b` (`Add CUDA field slice graph support`).
-- Push: `99cfe2b` pushed to `origin/main` on June 23, 2026.
+- Commit: pending.
+- Push: pending.
 
 ## Recent Iterations
+
+### Iteration 241: CUDA Field Slice Graph Kernel/Conformance
+
+Added CUDA field `slice(dim,start,end)` graph execution for scale-0 field tensors using a device-side
+row-major slice-copy kernel, routed graph `slice` through `GpuMinerBackend`, and expanded supported CUDA
+graph/conformance/miner-role fixtures. Validation included Gate 0, focused CUDA runtime and miner-role
+tests, default/CUDA test suites, workspace release/clippy, Tarpaulin, CUDA clippy, and `git diff --check`.
+Commit `99cfe2b` (`Add CUDA field slice graph support`) and metadata commit `da06019` pushed to
+`origin/main` on June 23, 2026.
 
 ### Iteration 240: CUDA Field Squeeze/Unsqueeze Graph Kernel/Conformance
 
