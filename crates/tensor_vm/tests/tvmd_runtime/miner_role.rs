@@ -254,10 +254,20 @@ fn supported_cuda_graph_execution_case() -> (
                 ]),
                 out: vec![tensor_vm::TensorSpec::field("clamped", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 19,
+                op: "sum".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 18, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("summed", vec![2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "clamped".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 18, idx: 0 },
+            name: "summed".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 19, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

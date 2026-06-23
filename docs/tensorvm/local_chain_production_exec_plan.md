@@ -5,22 +5,22 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 235 complete: CUDA Field Clamp Graph Kernel/Conformance.
+- Active feature: Iteration 236 complete: CUDA Field Sum Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
-  consensus randomness and local A100 CUDA evidence. Iteration 235 added CUDA graph kwargs dispatch for
-  scalar field bounds plus same-shape CUDA field `clamp`, extending the supported CUDA graph/conformance
-  subset without claiming broadcasting, vector bounds, fixed-point clamp, reductions, quantization,
+  consensus randomness and local A100 CUDA evidence. Iteration 236 added deterministic CUDA field `sum`
+  graph execution with fixed ascending reduction order, extending the supported CUDA graph/conformance
+  subset without claiming CUDA mean, fixed-point reductions, broadcast reductions, quantization,
   structural ops, or full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: continue broadening CUDA kernels for remaining admitted exact ops without CPU fallback or
-  overclaiming unsupported frozen-registry coverage.
+- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
+  fallback or overclaiming unsupported frozen-registry coverage.
 
 ## Readiness Matrix
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 233 first and post-change `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 236 first and post-change `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, runtime profile env-scope tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -30,10 +30,110 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 236: CUDA Field Sum Graph Kernel/Conformance
+
+Feature capability: add deterministic CUDA field `sum` graph execution for scale-0 field tensors using
+fixed ascending reduction order, route graph `sum(dim,keepdim)`/global `sum` through `GpuMinerBackend` for
+the supported CUDA subset, and expand the supported CUDA graph conformance/miner-role fixture so reduction
+coverage is exercised on the local A100 path.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.2/§3.3, §4.7, §4.8,
+and §16 require bit-exact CUDA evidence for admitted exact ops, while §3.2 explicitly bans
+nondeterministic CUDA reductions.
+
+Canonical owner: CUDA runtime owns accelerated deterministic field sum for the constrained subset;
+`TensorGraph` continues to own canonical reduction shape inference, dtype/scale validation, `mean`, and
+broader fixed-point/broadcast behavior outside the CUDA subset.
+
+Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+focused runtime/miner-role tests.
+
+Old shortcut removed: exact reduction graph ops currently stop at the CUDA graph boundary, so CUDA
+conformance cannot include admitted field `sum` even though the CPU canonical interpreter supports it.
+
+Regression test that proves the shortcut is gone: CUDA-feature runtime tests assert direct CUDA field
+`sum` parity against CPU exact graph output for explicit dimensions and global reduction, supported CUDA
+graph parity includes a kwargs-backed `sum` op, and miner-role CUDA graph receipt tests submit the expanded
+graph through `BackendKind::GpuMiner`.
+
+Behavior with local synthetic block production disabled: unchanged; graph execution uses existing chain
+jobs and backend-selected receipt execution.
+
+Behavior for producer and non-producer roles: unchanged; validators/proposers consume the same graph
+receipts and finality logic, and miners do not produce blocks.
+
+Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+miner-role `backend_kind`, direct CUDA `sum` kernel parity assertions, and explicit unsupported-op CUDA
+graph errors for still-unsupported ops.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, voting, rewards,
+reward maturity, delayed claims, TensorWork activation, or finality.
+
+Wire-size and codec boundary: no wire or codec changes; existing graph/job/receipt payload codecs remain
+unchanged.
+
+Parallel subagents: none. The decision log says not to spawn subagents unless the user explicitly asks for
+delegation; parent will do single-writer implementation and direct code review.
+
+Tests/checkers/docs to add or update: CUDA runtime direct kernel parity, CUDA graph conformance profile,
+miner-role supported CUDA graph fixture, unsupported CUDA-op boundary, `upow.md`, coverage matrix,
+implementation status, tarpaulin report, and this execution plan.
+
+Narrow validation commands: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib`;
+`cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend`; default unsupported
+CUDA-feature boundary test.
+
+Broad validation commands before commit: `cargo fmt --check`; `cargo test -p tensor_vm --lib`;
+`cargo test --workspace --release`; `cargo clippy --workspace --all-targets -- -D warnings`;
+post-change Gate 0; `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`;
+full CUDA release and CUDA-feature clippy.
+
+Expected observable evidence: CUDA `sum` output matches CPU canonical field sum for the supported
+deterministic subset, CUDA graph CPU/GPU receipt roots match with sum included, and GPU conformance only
+reports `sum` after the parity case passes.
+
+Out of scope: reward workarounds, immediate reward release, CUDA `mean`, fixed-point reductions,
+broadcasting, nondeterministic parallel reduction trees, quantization, structural ops, consensus changes,
+and public deployment evidence.
+
+Split trigger: split smaller if deterministic reduction shape support collides with canonical IR shape
+inference, if direct kernel parity fails on A100, or if expanding the miner-role fixture requires unrelated
+graph receipt changes.
+
+Validation evidence:
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- CUDA runtime module: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed, 10
+  tests, covering direct deterministic field `sum` parity for dim/global reductions, kwargs-backed
+  supported graph parity, unsupported `mean` graph rejection, and GPU conformance reporting.
+- CUDA miner-role multi-op graph: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed.
+- Focused unsupported CUDA boundary: `cargo test -p tensor_vm --features cuda-kernels
+  cuda_graph_backend_rejects_unsupported_consensus_ops_explicitly --lib` passed.
+- Formatting and default CPU proof: `cargo fmt --check` passed; `cargo test -p tensor_vm --lib` passed
+  with 573 TensorVM library tests.
+- Workspace release proof: `cargo test --workspace --release` passed with 14 `experiments` library tests,
+  573 `tensor_vm` library tests, 1 `local_cpu_compose` test, 9 `tvmd_cli` tests, 50 `tvmd_runtime`
+  tests, 1 `tensor_vm_explorer` library test, 2 explorer CLI tests, and doc tests.
+- Workspace lint: `cargo clippy --workspace --all-targets -- -D warnings` passed.
+- Gate 0 post-change: `cargo test -p tensor_vm local_testnet --release` passed with 5 TensorVM
+  `local_testnet` library tests and 1 `tvmd_cli::local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed
+  with 588 instrumented tests and 85.03% workspace line coverage, 23831/28028 lines covered. CUDA-feature
+  paths remain covered by the separate native CUDA test suite because Tarpaulin runs the portable default
+  feature set.
+- Full CUDA-feature release sweep: `cargo test -p tensor_vm --features cuda-kernels --release` passed
+  with 580 TensorVM library tests and 54 `tvmd_runtime` tests, including CUDA miner-role TensorOp,
+  LinearTrainingStep, local synthetic GraphExecution, and supported multi-op GraphExecution receipt paths.
+- CUDA-feature lint: `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings`
+  passed.
+- Whitespace audit: `git diff --check` passed.
 
 ### Iteration 235: CUDA Field Clamp Graph Kernel/Conformance
 

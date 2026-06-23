@@ -449,6 +449,13 @@ fn execute_cuda_graph_op(
             }
             cuda::field_clamp(device_index, tensor, min, max)?
         }
+        "sum" | "reduce_sum" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?;
+            let keepdim = optional_graph_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
+            cuda::field_sum(device_index, tensor, dim, keepdim)?
+        }
         "scalar_mul" => {
             let (tensor, scalar) = graph_tensor_and_scalar_values(args)?;
             require_graph_field_tensor(tensor)?;
@@ -466,6 +473,31 @@ fn graph_field_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<El
         Some(IrValue::Literal(IrLiteral::Int(value))) if *value >= 0 => Ok(*value as Elem),
         Some(IrValue::Literal(IrLiteral::Uint(value))) => Ok(*value as Elem),
         _ => Err(TvmError::InvalidReceipt("tensor ir expected field kwarg")),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn optional_graph_usize_kwarg(
+    kwargs: &BTreeMap<String, IrValue>,
+    key: &str,
+) -> Result<Option<usize>> {
+    match kwargs.get(key) {
+        None => Ok(None),
+        Some(IrValue::Literal(IrLiteral::Int(value))) if *value >= 0 => Ok(Some(*value as usize)),
+        Some(IrValue::Literal(IrLiteral::Uint(value))) => Ok(Some(*value as usize)),
+        _ => Err(TvmError::InvalidReceipt("tensor ir expected usize kwarg")),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn optional_graph_bool_kwarg(
+    kwargs: &BTreeMap<String, IrValue>,
+    key: &str,
+) -> Result<Option<bool>> {
+    match kwargs.get(key) {
+        None => Ok(None),
+        Some(IrValue::Literal(IrLiteral::Bool(value))) => Ok(Some(*value)),
+        _ => Err(TvmError::InvalidReceipt("tensor ir expected bool kwarg")),
     }
 }
 
@@ -619,8 +651,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
         passed_ops.extend([
-            "add", "mul", "div", "clamp", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg",
-            "abs", "sign", "relu",
+            "add", "mul", "div", "clamp", "sum", "eq", "gt", "lt", "ge", "le", "where", "identity",
+            "neg", "abs", "sign", "relu",
         ]);
 
         Ok(ConformanceProfile {
@@ -880,10 +912,17 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 ]),
                 out: vec![TensorSpec::field("clamped", vec![2, 2])],
             },
+            OpNode {
+                id: 19,
+                op: "sum".to_owned(),
+                args: vec![IrRef::Op { id: 18, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
+                out: vec![TensorSpec::field("summed", vec![2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "clamped".to_owned(),
-            value: IrRef::Op { id: 18, idx: 0 },
+            name: "summed".to_owned(),
+            value: IrRef::Op { id: 19, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1027,6 +1066,15 @@ mod cuda {
             len: u64,
             min: u64,
             max: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_sum(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+            rows: u64,
+            cols: u64,
+            mode: u32,
         ) -> i32;
         fn tensor_vm_cuda_field_scalar_mul(
             device_index: u32,
@@ -1269,6 +1317,57 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
+    }
+
+    pub fn field_sum(
+        device_index: u32,
+        input: &Tensor,
+        dim: Option<usize>,
+        keepdim: bool,
+    ) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        let (mode, rows, cols, output_shape) = match dim {
+            Some(0) => {
+                let rows = input.rows()?;
+                let cols = input.cols()?;
+                let shape = if keepdim { vec![1, cols] } else { vec![cols] };
+                (0, rows, cols, shape)
+            }
+            Some(1) => {
+                let rows = input.rows()?;
+                let cols = input.cols()?;
+                let shape = if keepdim { vec![rows, 1] } else { vec![rows] };
+                (1, rows, cols, shape)
+            }
+            Some(_) => return Err(TvmError::InvalidReceipt("cuda graph op not supported")),
+            None => {
+                let shape = if keepdim {
+                    vec![1; input.shape().len()]
+                } else {
+                    vec![1]
+                };
+                (2, 0, 0, shape)
+            }
+        };
+        let mut out = vec![0; output_shape.iter().product()];
+        let code = unsafe {
+            tensor_vm_cuda_field_sum(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                rows as u64,
+                cols as u64,
+                mode,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(output_shape, input.dtype(), out)
     }
 
     pub fn field_scalar_mul(device_index: u32, input: &Tensor, scalar: Elem) -> Result<Tensor> {
@@ -1597,13 +1696,7 @@ mod tests {
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in [
-            "sum",
-            "mean",
-            "einsum",
-            "quantize_int8_per_channel",
-            "reshape",
-        ] {
+        for op in ["mean", "einsum", "quantize_int8_per_channel", "reshape"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -1679,7 +1772,7 @@ mod tests {
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "sum".to_owned(),
+                op: "mean".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
@@ -1915,6 +2008,46 @@ mod tests {
         )
         .unwrap();
         assert_eq!(clamped, expected_clamp);
+
+        let sum_dim0 = cuda::field_sum(0, &lhs, Some(0), false).unwrap();
+        let expected_sum_dim0 = Tensor::from_vec(
+            vec![3],
+            lhs.dtype(),
+            vec![
+                crate::field::add(lhs.as_slice()[0], lhs.as_slice()[3]),
+                crate::field::add(lhs.as_slice()[1], lhs.as_slice()[4]),
+                crate::field::add(lhs.as_slice()[2], lhs.as_slice()[5]),
+            ],
+        )
+        .unwrap();
+        assert_eq!(sum_dim0, expected_sum_dim0);
+
+        let sum_dim1_keepdim = cuda::field_sum(0, &lhs, Some(1), true).unwrap();
+        let expected_sum_dim1_keepdim = Tensor::from_vec(
+            vec![2, 1],
+            lhs.dtype(),
+            vec![
+                lhs.as_slice()[0..3]
+                    .iter()
+                    .copied()
+                    .fold(0, crate::field::add),
+                lhs.as_slice()[3..6]
+                    .iter()
+                    .copied()
+                    .fold(0, crate::field::add),
+            ],
+        )
+        .unwrap();
+        assert_eq!(sum_dim1_keepdim, expected_sum_dim1_keepdim);
+
+        let sum_global = cuda::field_sum(0, &lhs, None, false).unwrap();
+        let expected_sum_global = Tensor::from_vec(
+            vec![1],
+            lhs.dtype(),
+            vec![lhs.as_slice().iter().copied().fold(0, crate::field::add)],
+        )
+        .unwrap();
+        assert_eq!(sum_global, expected_sum_global);
 
         let scaled = cuda::field_scalar_mul(0, &lhs, MODULUS + 2).unwrap();
         assert_eq!(scaled, lhs.scalar_mul(MODULUS + 2).unwrap());
