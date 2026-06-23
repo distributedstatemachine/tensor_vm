@@ -5,10 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 212 in progress: Block-Check Challenges Block Late Proposer Reward Materialization.
-- Current status: reward-delay work is implemented locally for receipt, proposer, and challenge rewards; this
-  iteration closes the pre-finality block-check edge so a successful canonical block-check challenge prevents
-  later proposer reward materialization after finality instead of relying on adapter-side or timing
+- Active feature: Iteration 212 complete and pushed: Block-Check Challenges Block Late Proposer Reward Materialization.
+- Current status: reward-delay work is implemented locally for receipt, proposer, and challenge rewards;
+  Iteration 212 closes the pre-finality block-check edge so a successful canonical block-check challenge
+  prevents later proposer reward materialization after finality instead of relying on adapter-side or timing
   workarounds. Post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
@@ -124,6 +124,8 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `c4ec55a` (`Delay pre-finality block-check rewards`).
+- Validation metadata commit: `bbfabac` (`Record block-check reward validation`).
+- Pushed to `main`: `635e97f..bbfabac`.
 
 ### Iteration 211: CUDA Graph Evidence Requires CUDA Miner Coverage
 
