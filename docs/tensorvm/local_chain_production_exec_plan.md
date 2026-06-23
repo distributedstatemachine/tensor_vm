@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 242 in progress: CUDA Field Triangular Graph Kernel/Conformance.
+- Active feature: Iteration 242 complete and pushed: CUDA Field Triangular Graph Kernel/Conformance.
 - Current status: v0 work follows the 2026-06-23 owner scope decision: live verified drand consensus
   randomness and local A100 CUDA evidence are in v0 scope; 7-day external public-run evidence is a
   production-launch roadmap milestone. The latest CUDA graph subset now covers scale-0 field
@@ -15,7 +15,8 @@ archive commit anchors only.
   full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: finish Iteration 242 implementation, validation, commit, push, and metadata evidence.
+- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
+  fallback or overclaiming unsupported frozen-registry coverage.
 
 ## Readiness Matrix
 
@@ -101,8 +102,8 @@ Validation evidence:
   June 23, 2026 with 588 instrumented tests and 84.96% workspace line coverage
   (23831/28050 lines).
 - `git diff --check` passed on June 23, 2026.
-- Commit: pending.
-- Push: pending.
+- Commit: `85cb8c3` (`Add CUDA field triangular graph support`).
+- Push: `85cb8c3` pushed to `origin/main` on June 23, 2026.
 
 ## Recent Iterations
 
