@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 201 in progress: Public Detection Measurement Field Gate.
+- Active feature: Iteration 201 pushed: Public Detection Measurement Field Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -113,6 +113,8 @@ Validation evidence, June 23, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `134b0bb` (`Validate public detection measurement records`).
+- Validation metadata commit: `03e2f70` (`Record detection measurement validation`).
+- Push: `git push origin main` succeeded on June 23, 2026 (`33297c0..03e2f70  main -> main`).
 
 ### Iteration 200: Unique Public Settlement Receipt Coverage Gate
 
