@@ -119,6 +119,9 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `b56a674` (`Scope local runtime knobs to local profile`).
+- Validation metadata commit: `5a14dd9` (`Record profile runtime knob validation`).
+- Push result: `git push origin main` succeeded on June 23, 2026, updating `main` from `bc4bd0d` to
+  `5a14dd9`.
 
 ### Iteration 208: Public Preflight Service URL Diversity Gate
 
