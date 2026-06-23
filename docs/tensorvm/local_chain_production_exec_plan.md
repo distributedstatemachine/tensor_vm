@@ -104,6 +104,8 @@ service content.
 Split trigger: split if enforcing URL diversity requires active network probes instead of manifest-level
 URL validation.
 
+Commit `3d4789f` (`Validate public preflight service URLs`) prepared on June 23, 2026.
+
 ### Iteration 207: Public Supporting Artifact URI Diversity Gate
 
 Feature capability: require independently checkable public evidence bundles to use distinct signed
@@ -1108,6 +1110,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 - Current Iteration 208 lint and hygiene validation passed on June 23, 2026:
   `cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --all -- --check`, and
   `git diff --check`.
+- Current Iteration 208 feature commit `3d4789f`
+  (`Validate public preflight service URLs`) prepared on June 23, 2026.
 - Current Iteration 207 Gate 0 release local-testnet validation passed first on June 23, 2026:
   `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
   `local_testnet_service_gateway_does_not_produce_local_blocks` passing.
