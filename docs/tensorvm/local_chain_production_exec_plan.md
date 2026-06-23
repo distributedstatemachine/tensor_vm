@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 232 complete pending commit/push: CUDA Field Comparison Graph Kernels/Conformance.
+- Active feature: Iteration 232 complete: CUDA Field Comparison Graph Kernels/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 232 targets same-shape CUDA field
   comparison graph kernels for `eq`, `gt`, `lt`, `ge`, and `le`, extending the supported
@@ -13,7 +13,8 @@ archive commit anchors only.
   quantization, structural ops, or full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: implement, validate, commit, and push Iteration 232.
+- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
+  fallback or overclaiming unsupported frozen-registry coverage.
 
 ## Readiness Matrix
 
@@ -125,7 +126,7 @@ Validation evidence:
   with 588 instrumented tests and 85.03% workspace line coverage, 23831/28027 lines covered. CUDA-feature
   native paths are validated by the focused and release `--features cuda-kernels` commands above, not by
   the portable default tarpaulin run.
-- Commit/push: pending.
+- Commit `a1b4ef3` (`Add CUDA field comparison graph support`) pushed to `origin/main` on June 23, 2026.
 
 ### Iteration 231: CUDA Field Unary Graph Kernels/Conformance
 
@@ -265,8 +266,8 @@ Commit `eb6ac34` (`Tighten CUDA graph conformance boundary`) and metadata commit
 - Latest coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
   passed on June 23, 2026 with 588 instrumented tests and 85.03% line coverage, 23831/28027 lines
   covered.
-- Latest commit/push: pending Iteration 232; previous pushed implementation commit is `0e759f4`
-  (`Add CUDA field unary graph support`) on `origin/main`.
+- Latest commit/push: `a1b4ef3` (`Add CUDA field comparison graph support`) pushed to `origin/main` on
+  June 23, 2026.
 
 ## Archive
 
