@@ -100,7 +100,8 @@ detection-measurement record count must be positive for full-spec evidence, vali
 record count must match checked receipts, reward-settlement raw records must use distinct nonzero receipt
 roots and nonzero miner/validator IDs, and the
 production-libp2p network-runtime observation count must match the counted independent miner and validator
-operator total exactly.
+operator total exactly. Raw randomness-beacon records must be accepted public `drand-v1` or
+`validator-vrf-v1` records covering each observed block exactly once with distinct source/round pairs.
 
 ## Manifest Format
 
@@ -562,7 +563,8 @@ checked receipt's deployed commit-to-reveal lifecycle, using distinct nonzero re
 aggregating to the signed lifecycle root,
 positive signed deployed `detection_measurement_records`,
 the signed randomness-beacon summary count to equal `observed_blocks`,
-manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
+manifest-level raw accepted public `randomness_beacon_record=...` lines for every observed block with
+distinct source/round pairs, and
 manifest-level raw `block_history_record=...` and `finality_history_record=...` lines with distinct
 nonzero block roots, matching block numbers/roots, and finalized status counts matching `finalized_blocks`,
 `data_availability_measurement=...` lines with distinct nonzero receipt roots,

@@ -468,7 +468,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   independently checkable; the `public_evidence_full_spec`
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
-  checked or available receipt counts, raw block/finality history to cover distinct nonzero block roots
+  checked or available receipt counts, raw public randomness records to cover each observed block exactly
+  once with distinct source/round pairs, raw block/finality history to cover distinct nonzero block roots
   with matching block roots and finalized status counts, raw data-availability measurement records to cover checked receipts
   with distinct nonzero receipt roots, raw invalid-work and reward-settlement records to use distinct
   nonzero receipt roots with nonzero settlement participant IDs, raw detection-measurement records to match

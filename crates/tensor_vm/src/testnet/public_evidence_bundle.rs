@@ -508,6 +508,18 @@ impl PublicTestnetEvidenceBundle {
         {
             return false;
         }
+        let mut observed_blocks = BTreeSet::new();
+        let mut beacon_rounds = BTreeSet::new();
+        if self.randomness_beacon_raw_records.iter().any(|record| {
+            record.observed_block >= self.run.observed_blocks
+                || !observed_blocks.insert(record.observed_block)
+                || !beacon_rounds.insert((record.source_id, record.beacon_round))
+        }) {
+            return false;
+        }
+        if observed_blocks.len() as u64 != self.run.observed_blocks {
+            return false;
+        }
         let record_roots = self
             .randomness_beacon_raw_records
             .iter()

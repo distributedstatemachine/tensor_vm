@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 202 pushed: Public Chain History Consistency Gate.
+- Active feature: Iteration 203 in progress: Public Randomness Beacon Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -17,6 +17,8 @@ archive commit anchors only.
   extends semantic receipt coverage checks to invalid-work and reward-settlement raw records. Iteration 201
   aligns direct bundle validation for raw deployed detection measurements with the manifest parser's field
   checks. Iteration 202 adds semantic consistency checks for raw public block/finality history records.
+  Iteration 203 requires raw public randomness-beacon records to cover distinct observed blocks and beacon
+  rounds exactly.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -27,7 +29,7 @@ archive commit anchors only.
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Current iteration first command `cargo test -p tensor_vm local_testnet --release` passed on June 22, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Current iteration release gate `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -40,6 +42,67 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 203: Public Randomness Beacon Coverage Gate
+
+Feature capability: require full-spec raw randomness-beacon evidence to cover each observed block exactly
+once with distinct accepted public beacon rounds.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require the signed
+randomness-beacon summary count to equal `observed_blocks`; raw records should prove per-block public
+randomness coverage, not only a matching aggregate root.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns full-spec public evidence admission and raw
+randomness record checks.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: signed randomness summaries could aggregate records that repeated an
+`observed_block` or beacon round while omitting another observed block, as long as the raw record count/root
+matched.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_raw_randomness_records` will include recomputed signed summaries
+for duplicate observed blocks, skipped observed block coverage, and duplicate beacon rounds that still fail
+full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: typed raw
+`randomness_beacon_record=<source-id>,<round>,<randomness-root>,<proof-root>,drand-v1|validator-vrf-v1,<observed-block>,accepted`
+records.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain separate
+gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence bundle
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle raw randomness regressions and public evidence
+docs/status wording.
+
+Narrow validation commands: focused public evidence raw randomness test and public evidence manifest
+round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise complete full-spec public evidence remains non-full-spec when raw
+randomness records repeat observed blocks or beacon rounds instead of covering the observed run.
+
+Out of scope: proving live drand/VRF network availability, changing chain randomness, or generating public
+run artifacts.
+
+Split trigger: split if randomness validation requires deployed proof cryptography beyond the existing
+proof-kind/root evidence.
 
 ### Iteration 202: Public Chain History Consistency Gate
 
@@ -671,8 +734,8 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 
 ## Decision Log
 
-- `tensorvm-verifier` is not a repository binary. Validation uses tests, clippy, tarpaulin, and manual
-  verifier-style review only.
+- `tensorvm-verifier` is not a repository binary. Validation uses the `tvmd` CLI surfaces
+  (`public evidence validate`, `localnet verify`), tests, clippy, and tarpaulin.
 - Do not spawn subagents unless the user explicitly asks for delegation.
 - Public/CUDA/deployed evidence remains blocked until real external infrastructure and CUDA kernels exist.
 - Reward claims remain delayed and chain-owned; valid matured claims become spendable only through
@@ -680,24 +743,19 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 
 ## Validation Evidence
 
-- Current Iteration 196 first executable Gate 0 was run first on June 22, 2026 and initially exposed the
-  in-progress compile gap for the new public record kind; after the CLI enum wiring, the release local
-  testnet gate passed:
-  `cargo test -p tensor_vm local_testnet --release`.
-- Current Iteration 196 focused validation passed on June 22, 2026:
-  `public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`,
-  `public_testnet_evidence_manifest_parses_into_bundle`,
-  `validate_public_evidence_manifest_reports_default_criteria_status`,
-  `execute_public_evidence_record_reports_outputs`, and `deployment_docs`.
-- Current Iteration 196 broad validation passed on June 22, 2026:
-  `cargo fmt --all -- --check`, `git diff --check`, `cargo test -p tensor_vm --lib`,
-  `cargo test -p tensor_vm local_testnet --release`, `cargo test --workspace --release`, and
-  `cargo clippy --workspace --all-targets -- -D warnings`.
-- Current Iteration 196 tarpaulin passed on June 22, 2026:
-  `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` with
-  573 instrumented tests and 84.81% line coverage, 23261/27428 lines covered.
-- Current Iteration 196 feature commit `a65f247`
-  (`Require deployed detection evidence for full spec`) prepared on June 22, 2026.
+- Current Iteration 203 focused validation passed on June 23, 2026:
+  `cargo fmt --all && cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`.
+- Current Iteration 203 hygiene validation passed on June 23, 2026:
+  `cargo fmt --all -- --check` and `git diff --check`.
+- Current Iteration 203 broad validation passed on June 23, 2026:
+  `cargo test -p tensor_vm --lib` with 559 passing tests.
+- Current Iteration 203 release local-testnet validation passed on June 23, 2026:
+  `cargo test -p tensor_vm local_testnet --release` with the five release lib `local_testnet` tests and
+  `local_testnet_service_gateway_does_not_produce_local_blocks` passing.
+- Current Iteration 203 targeted release CLI validation passed on June 23, 2026:
+  `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release`.
+- Current Iteration 203 lint validation passed on June 23, 2026:
+  `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
 
 ## Archive
 

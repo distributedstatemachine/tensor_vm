@@ -116,6 +116,50 @@ fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
     assert!(missing_raw_randomness_report.independently_checkable);
     assert!(!missing_raw_randomness_report.full_spec_evidence_met);
 
+    let resign_randomness_records = |bundle: &mut PublicTestnetEvidenceBundle| {
+        let randomness_roots = bundle
+            .randomness_beacon_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>();
+        let randomness_root = aggregate_public_evidence_record_roots(
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            &randomness_roots,
+        )
+        .unwrap();
+        let record_count = bundle.randomness_beacon_records;
+        resign_record_summary_and_artifact(
+            bundle,
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            randomness_root,
+            record_count,
+        );
+    };
+
+    let mut duplicate_observed_block = full_spec_bundle.clone();
+    duplicate_observed_block.randomness_beacon_raw_records[1].observed_block =
+        duplicate_observed_block.randomness_beacon_raw_records[0].observed_block;
+    resign_randomness_records(&mut duplicate_observed_block);
+    let report = duplicate_observed_block.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut out_of_range_observed_block = full_spec_bundle.clone();
+    out_of_range_observed_block.randomness_beacon_raw_records[1].observed_block =
+        out_of_range_observed_block.run.observed_blocks;
+    resign_randomness_records(&mut out_of_range_observed_block);
+    let report = out_of_range_observed_block.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut duplicate_beacon_round = full_spec_bundle.clone();
+    duplicate_beacon_round.randomness_beacon_raw_records[1].beacon_round =
+        duplicate_beacon_round.randomness_beacon_raw_records[0].beacon_round;
+    resign_randomness_records(&mut duplicate_beacon_round);
+    let report = duplicate_beacon_round.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut local_fixture_randomness = full_spec_bundle;
     local_fixture_randomness.randomness_beacon_raw_records = (0..local_fixture_randomness
         .randomness_beacon_records)
