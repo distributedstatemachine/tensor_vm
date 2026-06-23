@@ -266,7 +266,9 @@ proves that otherwise complete full-spec public evidence remains non-full-spec u
 `cuda_graph_execution_receipts` is positive and does not exceed checked or available receipt counts. The
 `testnet::tests::public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec` now proves
 that otherwise complete full-spec public evidence remains non-full-spec unless signed
-`validator_vrf_lifecycle_records` exactly cover checked receipts, and
+`validator_vrf_lifecycle_records` exactly cover checked receipts,
+`testnet::tests::public_testnet_evidence_bundle_requires_raw_operational_records` now proves raw
+data-availability measurement records cannot repeat receipt roots to pad checked-receipt coverage, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`
 proves the full-spec gate also requires raw revealed lifecycle records that aggregate to the signed
 lifecycle summary root and cannot repeat receipt roots to pad checked-receipt coverage.

@@ -198,6 +198,30 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let mut duplicate_data_receipt = full_spec_bundle.clone();
+    duplicate_data_receipt.data_availability_raw_records[1].receipt_root =
+        duplicate_data_receipt.data_availability_raw_records[0].receipt_root;
+    let duplicate_data_roots = duplicate_data_receipt
+        .data_availability_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let duplicate_data_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        &duplicate_data_roots,
+    )
+    .unwrap();
+    let duplicate_data_count = duplicate_data_receipt.data_availability_measurement_records;
+    resign_record_summary_and_artifact(
+        &mut duplicate_data_receipt,
+        PublicEvidenceRecordKind::DataAvailabilityMeasurements,
+        duplicate_data_root,
+        duplicate_data_count,
+    );
+    let report = duplicate_data_receipt.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_data_root = full_spec_bundle;
     let record_count = mismatched_data_root.data_availability_measurement_records;
     resign_record_summary_and_artifact(

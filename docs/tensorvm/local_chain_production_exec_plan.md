@@ -5,14 +5,15 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 198 pushed: Unique VRF Lifecycle Receipt Coverage Gate.
+- Active feature: Iteration 199 in progress: Unique Data Availability Receipt Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
   validator-VRF-lifecycle summary roots and matching raw lifecycle records so the scalar count must be
   derived from independently checkable deployed commit-reveal records before `public_evidence_full_spec=true`
-  can pass. Iteration 198 tightens that gate so raw lifecycle records must cover distinct checked receipt
-  roots rather than padding the count with multiple records for the same receipt.
+  can pass. Iteration 198 tightened that gate so raw lifecycle records must cover distinct checked receipt
+  roots rather than padding the count with multiple records for the same receipt. Iteration 199 applies the
+  same checked-receipt coverage rule to raw public data-availability measurement records.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -36,6 +37,77 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 199: Unique Data Availability Receipt Coverage Gate
+
+Feature capability: require full-spec public data-availability measurement evidence to cover distinct
+nonzero receipt roots so checked-receipt coverage cannot be padded by multiple raw records for the same
+receipt.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require public
+data-availability measurement counts to match checked receipts. Coverage is per checked receipt, not only
+per unique raw record hash.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns full-spec public evidence admission and raw
+operational record checks.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: a signed data-availability summary could aggregate distinct raw record roots
+that repeated the same receipt root with different observed blocks, satisfying count/root checks without
+proving checked-receipt coverage.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_raw_operational_records` will include a duplicate-receipt-root
+data-availability case whose recomputed signed summary still fails full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: typed raw
+`data_availability_measurement=<receipt-root>,available|unavailable,<block>` records with distinct nonzero
+`receipt-root` values.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence bundle
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle raw data-availability regression and public
+evidence docs/status wording.
+
+Narrow validation commands: focused public evidence raw operational test and public evidence manifest
+round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise complete full-spec public evidence remains non-full-spec when
+signed raw data-availability records repeat the same receipt root.
+
+Out of scope: proving the real deployed receipt set, generating external artifacts, or changing chain
+reward-delay mechanics.
+
+Split trigger: split if the check requires introducing a deployed receipt identity registry rather than
+validating distinct raw data-availability receipt roots.
+
+Validation evidence, June 22, 2026:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused regression: `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib` passed.
+- Formatting and diff hygiene: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Full library validation: `cargo test -p tensor_vm --lib` passed, 559 tests.
+- Release local-testnet validation: `cargo test -p tensor_vm local_testnet --release` passed after the patch.
+- Release CLI evidence validation:
+  `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
+- Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 
 ### Iteration 198: Unique VRF Lifecycle Receipt Coverage Gate
 
