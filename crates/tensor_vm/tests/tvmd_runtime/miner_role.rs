@@ -7,6 +7,125 @@ use tensor_vm::app::{
     tick_miner_role_work_once,
 };
 
+fn supported_cuda_graph_execution_case() -> (
+    tensor_vm::TensorGraph,
+    BTreeMap<String, Tensor>,
+    BTreeMap<String, tensor_vm::field::Elem>,
+) {
+    let graph = tensor_vm::TensorGraph {
+        ir_version: 1,
+        inputs: vec![
+            tensor_vm::TensorSpec::field("a", vec![2, 3]),
+            tensor_vm::TensorSpec::field("b", vec![3, 2]),
+            tensor_vm::TensorSpec::field("bias", vec![2, 2]),
+        ],
+        params: vec![tensor_vm::ParamSpec {
+            name: "scale".to_owned(),
+            type_name: "field_scalar".to_owned(),
+        }],
+        ops: vec![
+            tensor_vm::OpNode {
+                id: 0,
+                op: "matmul".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Input {
+                        name: "a".to_owned(),
+                    },
+                    tensor_vm::IrRef::Input {
+                        name: "b".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("product", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 1,
+                op: "add".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 0, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("biased", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 2,
+                op: "sub".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 1, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("centered", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 3,
+                op: "transpose".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 2, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("transposed", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 4,
+                op: "scalar_mul".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 3, idx: 0 },
+                    tensor_vm::IrRef::Param {
+                        name: "scale".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("scaled", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 5,
+                op: "relu".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 4, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("activated", vec![2, 2])],
+            },
+        ],
+        outputs: vec![tensor_vm::GraphOutput {
+            name: "activated".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 5, idx: 0 },
+        }],
+    };
+    let inputs = BTreeMap::from([
+        (
+            "a".to_owned(),
+            Tensor::from_vec(
+                vec![2, 3],
+                tensor_vm::DType::FieldElement,
+                vec![1, 2, 3, 4, 5, 6],
+            )
+            .unwrap(),
+        ),
+        (
+            "b".to_owned(),
+            Tensor::from_vec(
+                vec![3, 2],
+                tensor_vm::DType::FieldElement,
+                vec![7, 8, 9, 10, 11, 12],
+            )
+            .unwrap(),
+        ),
+        (
+            "bias".to_owned(),
+            Tensor::from_vec(
+                vec![2, 2],
+                tensor_vm::DType::FieldElement,
+                vec![3, 5, 7, 11],
+            )
+            .unwrap(),
+        ),
+    ]);
+    (graph, inputs, BTreeMap::from([("scale".to_owned(), 3)]))
+}
+
 #[test]
 fn miner_role_work_observation_tracks_assigned_unreceipted_jobs() {
     let mut chain = Chain::new(hash_bytes(b"test", &[b"miner-work-observation"]));
@@ -189,6 +308,56 @@ fn miner_role_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_featu
     }
 }
 
+#[test]
+fn miner_role_supported_multi_op_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_feature()
+ {
+    #[cfg(not(feature = "cuda-kernels"))]
+    {
+        let params = ChainParams {
+            replication_factor: 1,
+            agreement_quorum: 1,
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(
+            params,
+            hash_bytes(b"test", &[b"miner-cuda-supported-graph-selection"]),
+        );
+        let miner = address(b"miner-cuda-supported-graph-selection-miner");
+        register_miner(&mut chain, miner);
+        let (graph, inputs, field_params) = supported_cuda_graph_execution_case();
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = tensor_vm::jobs::GraphJob::new(0, graph_id, input_roots, field_params, 10, 1, 1);
+        let job_id = job.job_id;
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: job.graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(
+                tensor_vm::JobState::GraphExecution(job),
+            ))
+            .unwrap();
+        let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+        for tensor in inputs.into_values() {
+            node.insert_tensor(tensor);
+        }
+
+        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
+            .expect_err(
+                "default build must route supported cuda graph selection to backend failure",
+            );
+
+        assert!(error.contains("cuda kernels not compiled"));
+        assert!(node.chain.state().receipts().is_empty());
+    }
+}
+
 #[cfg(feature = "cuda-kernels")]
 #[test]
 fn miner_role_submits_tensor_op_with_configured_cuda_backend() {
@@ -305,6 +474,96 @@ fn miner_role_submits_graph_execution_with_configured_cuda_backend() {
     );
     assert_eq!(cuda_submission.receipts_submitted, 1);
     assert_eq!(cuda_submission.tensors_inserted, 3);
+    let cpu_receipt = cpu_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cpu graph receipt should be stored");
+    let cuda_receipt = cuda_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cuda graph receipt should be stored");
+    assert_eq!(cuda_receipt.job_id(), job_id);
+    assert_eq!(cuda_receipt.miner(), miner);
+    assert_eq!(cuda_receipt.receipt_id(), cpu_receipt.receipt_id());
+    let ReceiptState::GraphExecution(cpu_graph_receipt) = cpu_receipt else {
+        panic!("cpu receipt must be graph execution");
+    };
+    let ReceiptState::GraphExecution(cuda_graph_receipt) = cuda_receipt else {
+        panic!("cuda receipt must be graph execution");
+    };
+    assert_eq!(
+        cuda_graph_receipt.output_roots,
+        cpu_graph_receipt.output_roots
+    );
+    assert_eq!(cuda_graph_receipt.trace_root, cpu_graph_receipt.trace_root);
+}
+
+#[cfg(feature = "cuda-kernels")]
+#[test]
+fn miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend() {
+    if tensor_vm::cuda_device_count().unwrap_or(0) == 0 {
+        return;
+    }
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(
+        params,
+        hash_bytes(b"test", &[b"miner-cuda-supported-graph"]),
+    );
+    let miner = address(b"miner-cuda-supported-graph-miner");
+    register_miner(&mut chain, miner);
+    let (graph, inputs, field_params) = supported_cuda_graph_execution_case();
+    let graph_id = graph.validate_for_consensus().unwrap();
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = tensor_vm::jobs::GraphJob::new(0, graph_id, input_roots, field_params, 10, 1, 1);
+    let job_id = job.job_id;
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: job.graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::GraphExecution(job),
+        ))
+        .unwrap();
+    let mut cpu_node = RpcNode::with_faucet(chain.clone(), Faucet::new(1_000_000, 100));
+    let mut cuda_node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    for tensor in inputs.values() {
+        cpu_node.insert_tensor(tensor.clone());
+        cuda_node.insert_tensor(tensor.clone());
+    }
+
+    let cpu_submission = submit_miner_role_receipt(&mut cpu_node, miner, job_id)
+        .unwrap()
+        .expect("cpu role should submit supported graph receipt");
+    let cuda_submission =
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+            .unwrap()
+            .expect("cuda role should submit supported graph receipt");
+
+    assert_eq!(cpu_submission.backend_kind, BackendKind::CpuReference);
+    assert_eq!(
+        cuda_submission.backend_kind,
+        BackendKind::GpuMiner {
+            device: "cuda:0".to_owned()
+        }
+    );
+    assert_eq!(cuda_submission.receipts_submitted, 1);
+    assert_eq!(cuda_submission.tensors_inserted, 4);
     let cpu_receipt = cpu_node
         .chain
         .state()

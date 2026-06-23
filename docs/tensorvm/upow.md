@@ -101,9 +101,12 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > cases, exact linear tensor ops, canonical matmul backend parity, linear-step backend parity, and live
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
 > config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
-> synthetic GraphExecution shape (`add` -> `relu`) through the CUDA miner backend with bit-exact CPU/GPU
-> receipt roots. The full frozen-registry CUDA vector suite and Tier-C/transcendental vector references
-> remain TODO before claiming complete §3.3 coverage for every runtime.
+> synthetic GraphExecution shape (`add` -> `relu`) plus a focused supported-op CUDA graph
+> (`matmul`/`add`/`sub`/`transpose`/`scalar_mul`/`relu`) through the CUDA miner backend with bit-exact
+> CPU/GPU receipt roots. CUDA conformance reporting is limited to the exercised CUDA subset instead of
+> over-claiming the full CPU reference profile. The full frozen-registry CUDA vector suite and
+> Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage for every
+> runtime.
 
 ---
 

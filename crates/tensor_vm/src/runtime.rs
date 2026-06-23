@@ -1,12 +1,16 @@
 use std::collections::BTreeMap;
+#[cfg(feature = "cuda-kernels")]
+use std::collections::BTreeSet;
 
+#[cfg(feature = "cuda-kernels")]
+use crate::conformance::conformance_suite_hash;
 use crate::conformance::{ConformanceProfile, cpu_reference_conformance_profile};
 use crate::error::{Result, TvmError};
 #[cfg(feature = "cuda-kernels")]
 use crate::field::Elem;
-use crate::ir::{IrExecution, TensorGraph};
 #[cfg(feature = "cuda-kernels")]
-use crate::ir::{IrOpTrace, IrRef};
+use crate::ir::{GraphOutput, IrOpTrace, IrRef, OpNode, ParamSpec, TensorSpec};
+use crate::ir::{IrExecution, TensorGraph};
 use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepOutput, MatmulJob};
 #[cfg(feature = "cuda-kernels")]
 use crate::merkle::merkle_root;
@@ -447,6 +451,7 @@ pub fn backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
 fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<ConformanceProfile> {
     #[cfg(feature = "cuda-kernels")]
     {
+        let mut passed_ops = BTreeSet::new();
         let beacon = hash_bytes(b"tensor-vm-conformance-runtime-v1", &[b"matmul"]);
         let matmul = MatmulJob::synthetic(0, 0, 2, 3, 2, &beacon, 10);
         let cpu = CpuReferenceBackend;
@@ -457,6 +462,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
                 "gpu matmul conformance failed",
             ));
         }
+        passed_ops.insert("matmul");
 
         let weights = Tensor::from_vec(
             vec![3, 2],
@@ -481,13 +487,140 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
                 "gpu linear-step conformance failed",
             ));
         }
-        cpu_reference_conformance_profile()
+        passed_ops.extend(["sub", "scalar_mul", "transpose", "mse_loss"]);
+
+        let (graph, inputs, field_params) = supported_cuda_graph_conformance_case()?;
+        let graph_id = graph.validate_for_consensus()?;
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let graph_job = GraphJob::new(0, graph_id, input_roots, field_params.clone(), 10, 1, 1);
+        let expected_graph =
+            cpu.execute_graph_exact(&graph_job, &graph, &inputs, &BTreeMap::new())?;
+        let actual_graph =
+            backend.execute_graph_exact(&graph_job, &graph, &inputs, &BTreeMap::new())?;
+        if expected_graph != actual_graph {
+            return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
+        }
+        passed_ops.extend(["add", "relu"]);
+
+        Ok(ConformanceProfile {
+            suite_hash: conformance_suite_hash(),
+            passed_ops,
+        })
     }
     #[cfg(not(feature = "cuda-kernels"))]
     {
         let _ = backend;
         Err(TvmError::InvalidReceipt("cuda kernels not compiled"))
     }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn supported_cuda_graph_conformance_case() -> Result<(
+    TensorGraph,
+    BTreeMap<String, Tensor>,
+    BTreeMap<String, Elem>,
+)> {
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![
+            TensorSpec::field("a", vec![2, 3]),
+            TensorSpec::field("b", vec![3, 2]),
+            TensorSpec::field("bias", vec![2, 2]),
+        ],
+        params: vec![ParamSpec {
+            name: "scale".to_owned(),
+            type_name: "field_scalar".to_owned(),
+        }],
+        ops: vec![
+            OpNode {
+                id: 0,
+                op: "matmul".to_owned(),
+                args: vec![
+                    IrRef::Input {
+                        name: "a".to_owned(),
+                    },
+                    IrRef::Input {
+                        name: "b".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("product", vec![2, 2])],
+            },
+            OpNode {
+                id: 1,
+                op: "add".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 0, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("biased", vec![2, 2])],
+            },
+            OpNode {
+                id: 2,
+                op: "sub".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 1, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("centered", vec![2, 2])],
+            },
+            OpNode {
+                id: 3,
+                op: "transpose".to_owned(),
+                args: vec![IrRef::Op { id: 2, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("transposed", vec![2, 2])],
+            },
+            OpNode {
+                id: 4,
+                op: "scalar_mul".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 3, idx: 0 },
+                    IrRef::Param {
+                        name: "scale".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("scaled", vec![2, 2])],
+            },
+            OpNode {
+                id: 5,
+                op: "relu".to_owned(),
+                args: vec![IrRef::Op { id: 4, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("activated", vec![2, 2])],
+            },
+        ],
+        outputs: vec![GraphOutput {
+            name: "activated".to_owned(),
+            value: IrRef::Op { id: 5, idx: 0 },
+        }],
+    };
+    graph.validate_for_consensus()?;
+    let inputs = BTreeMap::from([
+        (
+            "a".to_owned(),
+            Tensor::from_vec(vec![2, 3], DType::FieldElement, vec![1, 2, 3, 4, 5, 6])?,
+        ),
+        (
+            "b".to_owned(),
+            Tensor::from_vec(vec![3, 2], DType::FieldElement, vec![7, 8, 9, 10, 11, 12])?,
+        ),
+        (
+            "bias".to_owned(),
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![3, 5, 7, 11])?,
+        ),
+    ]);
+    Ok((graph, inputs, BTreeMap::from([("scale".to_owned(), 3)])))
 }
 
 #[cfg(feature = "cuda-kernels")]
@@ -886,10 +1019,37 @@ mod tests {
             gpu_out.weight_after.commitment_root()
         );
         assert_eq!(cpu_out.loss_commitment, gpu_out.loss_commitment);
+        let gpu_profile = backend_conformance_profile(&gpu).unwrap();
         assert_eq!(
-            backend_conformance_profile(&gpu).unwrap().suite_hash,
+            gpu_profile.suite_hash,
             crate::conformance::conformance_suite_hash()
         );
+        for op in [
+            "add",
+            "sub",
+            "matmul",
+            "transpose",
+            "relu",
+            "scalar_mul",
+            "mse_loss",
+        ] {
+            assert!(gpu_profile.passes(op), "gpu profile missing {op}");
+        }
+        for op in [
+            "mul",
+            "div",
+            "sum",
+            "mean",
+            "einsum",
+            "quantize_int8_per_channel",
+            "gt",
+            "reshape",
+        ] {
+            assert!(
+                !gpu_profile.passes(op),
+                "gpu profile must not overclaim {op}"
+            );
+        }
     }
 
     #[cfg(feature = "cuda-kernels")]
@@ -917,6 +1077,86 @@ mod tests {
         assert_eq!(gpu_execution.trace_root, cpu_execution.trace_root);
         assert_eq!(gpu_execution.op_traces, cpu_execution.op_traces);
         assert_eq!(gpu_execution.outputs, cpu_execution.outputs);
+    }
+
+    #[cfg(feature = "cuda-kernels")]
+    #[test]
+    fn cpu_and_gpu_backends_match_supported_cuda_graph_ops() {
+        if cuda_device_count().unwrap_or(0) == 0 {
+            return;
+        }
+        let (graph, inputs, field_params) = supported_cuda_graph_conformance_case().unwrap();
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(0, graph_id, input_roots, field_params, 10, 1, 1);
+        let cpu = CpuReferenceBackend;
+        let gpu = GpuMinerBackend::new("cuda:0");
+
+        let cpu_execution = cpu
+            .execute_graph_exact(&job, &graph, &inputs, &BTreeMap::new())
+            .unwrap();
+        let gpu_execution = gpu
+            .execute_graph_exact(&job, &graph, &inputs, &BTreeMap::new())
+            .unwrap();
+
+        assert_eq!(gpu_execution.graph_id, cpu_execution.graph_id);
+        assert_eq!(gpu_execution.trace_root, cpu_execution.trace_root);
+        assert_eq!(gpu_execution.op_traces, cpu_execution.op_traces);
+        assert_eq!(gpu_execution.outputs, cpu_execution.outputs);
+    }
+
+    #[cfg(feature = "cuda-kernels")]
+    #[test]
+    fn cuda_graph_backend_rejects_unsupported_consensus_ops_explicitly() {
+        if cuda_device_count().unwrap_or(0) == 0 {
+            return;
+        }
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec::field("x", vec![2, 2])],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "sum".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
+                )]),
+                out: vec![TensorSpec::field("summed", vec![2])],
+            }],
+            outputs: vec![GraphOutput {
+                name: "summed".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_consensus().unwrap();
+        let input = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let job = GraphJob::new(
+            0,
+            graph_id,
+            BTreeMap::from([("x".to_owned(), input.commitment_root())]),
+            BTreeMap::new(),
+            10,
+            1,
+            1,
+        );
+
+        assert!(matches!(
+            GpuMinerBackend::new("cuda:0").execute_graph_exact(
+                &job,
+                &graph,
+                &inputs,
+                &BTreeMap::new()
+            ),
+            Err(TvmError::InvalidReceipt("cuda graph op not supported"))
+        ));
     }
 
     #[cfg(feature = "cuda-kernels")]
