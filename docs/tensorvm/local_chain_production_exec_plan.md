@@ -192,6 +192,7 @@ Validation evidence:
 - Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
 - Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
   `cargo fmt --check`, and `git diff --check` passed.
+- Commit `0ae811c` (`Run miner role receipts on CUDA backend`) pushed to `origin/main`.
 
 ### Iteration 226: CUDA A100 Build and Conformance Evidence
 
