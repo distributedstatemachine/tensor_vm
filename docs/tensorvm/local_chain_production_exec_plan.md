@@ -118,6 +118,9 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `511f6d6` (`Require CUDA miner coverage for graph evidence`).
+- Validation metadata commit: `b8f3906` (`Record CUDA graph evidence validation`).
+- Push result: `git push origin main` succeeded on June 23, 2026, updating `main` from `f215cdb` to
+  `b8f3906`.
 
 ### Iteration 210: Runtime Bootstrap Peer Policy
 
