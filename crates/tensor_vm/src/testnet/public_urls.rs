@@ -92,6 +92,17 @@ pub(super) fn public_https_authorities_match(left: &str, right: &str) -> bool {
         && left_port.unwrap_or(443) == right_port.unwrap_or(443)
 }
 
+pub(super) fn public_https_url_key(url: &str) -> Option<String> {
+    let (host, port) = public_https_authority(url)?;
+    let path = public_https_path(url)?;
+    Some(format!(
+        "{}:{}{}",
+        public_authority_host_key(host),
+        port.unwrap_or(443),
+        path
+    ))
+}
+
 fn public_authority_host_key(host: &str) -> String {
     match host.parse::<IpAddr>() {
         Ok(ip) => ip.to_string(),

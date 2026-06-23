@@ -381,6 +381,9 @@ new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` a
 - `testnet::tests::public_testnet_evidence_bundle_requires_raw_operational_records` also proves counted
   public operators cannot satisfy the network-runtime evidence gate by reusing the same public listen
   multiaddr or peer ID behind otherwise signed per-operator observation records.
+- `testnet::tests::public_testnet_run_evidence_requires_production_runtime_and_reachable_services` now
+  proves deployed public services cannot satisfy the public service gate by reusing the same signed public
+  service-health URL across service kinds.
 - Public production libp2p run evidence, HTTP deployment, full durable database, and deployed browser web
   services remain outside the local reference crate. The crate has mandatory rust-libp2p runtime wiring with
   TCP/TLS/Yamux swarm construction, Gossipsub subscriptions, Identify, Kademlia discovery/address

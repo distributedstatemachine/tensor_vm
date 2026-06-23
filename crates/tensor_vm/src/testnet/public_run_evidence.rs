@@ -1,4 +1,4 @@
-use super::public_urls::public_https_authorities_match;
+use super::public_urls::{public_https_authorities_match, public_https_url_key};
 use super::{
     Hash, PublicServiceKind, PublicTestnetCriteria, PublicTestnetEvidence,
     PublicTestnetRunEvidence, public_service_kinds, ratio_parts_to_bps, required_blocks_for_days,
@@ -78,6 +78,7 @@ impl PublicTestnetRunEvidence {
             self.has_distinct_deployed_service_endpoint_ids();
         let has_distinct_deployed_service_content_roots =
             self.has_distinct_deployed_service_content_roots();
+        let has_distinct_deployed_service_urls = self.has_distinct_deployed_service_urls();
         let has_deployed_public_service_content = has_rpc_content
             && has_explorer_content
             && has_faucet_content
@@ -92,7 +93,8 @@ impl PublicTestnetRunEvidence {
             && has_deployed_faucet_service
             && has_deployed_telemetry_service
             && has_deployed_public_service_content
-            && has_distinct_deployed_service_endpoint_ids;
+            && has_distinct_deployed_service_endpoint_ids
+            && has_distinct_deployed_service_urls;
         let public_criterion_met = has_required_miners
             && has_required_validators
             && has_required_run_duration
@@ -210,6 +212,30 @@ impl PublicTestnetRunEvidence {
             })
     }
 
+    fn deployed_service_urls(&self, kind: PublicServiceKind) -> Option<(String, String)> {
+        self.services
+            .iter()
+            .filter(|service| {
+                service.kind == kind && service.is_reachable_for_run(self.observed_blocks)
+            })
+            .find_map(|service| {
+                self.service_content.iter().find_map(|content| {
+                    let matches_content = content.kind == kind
+                        && content.endpoint_id == service.endpoint_id
+                        && content.has_external_content_proof()
+                        && public_https_authorities_match(&service.public_url, &content.public_url)
+                        && self.observation_is_within_run(content.observed_at_unix_seconds);
+                    if !matches_content {
+                        return None;
+                    }
+                    Some((
+                        public_https_url_key(&service.public_url)?,
+                        public_https_url_key(&content.public_url)?,
+                    ))
+                })
+            })
+    }
+
     fn has_distinct_deployed_service_endpoint_ids(&self) -> bool {
         let mut endpoint_ids = BTreeSet::new();
         for kind in public_service_kinds() {
@@ -217,6 +243,20 @@ impl PublicTestnetRunEvidence {
                 return false;
             };
             if !endpoint_ids.insert(endpoint_id) {
+                return false;
+            }
+        }
+        true
+    }
+
+    fn has_distinct_deployed_service_urls(&self) -> bool {
+        let mut service_urls = BTreeSet::new();
+        let mut content_urls = BTreeSet::new();
+        for kind in public_service_kinds() {
+            let Some((service_url, content_url)) = self.deployed_service_urls(kind) else {
+                return false;
+            };
+            if !service_urls.insert(service_url) || !content_urls.insert(content_url) {
                 return false;
             }
         }

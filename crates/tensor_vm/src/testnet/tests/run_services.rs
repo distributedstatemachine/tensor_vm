@@ -117,6 +117,35 @@ fn public_testnet_run_evidence_requires_production_runtime_and_reachable_service
     run.services = deployed_public_services(9);
     run.service_content = deployed_public_service_content();
 
+    run.services[1] = PublicServiceEvidence::new(
+        PublicServiceKind::Explorer,
+        PublicServiceEndpoint::new(
+            hash_bytes(b"test", &[b"explorer-service"]),
+            public_service_url(PublicServiceKind::Rpc),
+            "/health",
+        ),
+        0,
+        9,
+        10,
+        10,
+    );
+    run.service_content[1] = PublicServiceContentEvidence::new(
+        PublicServiceKind::Explorer,
+        hash_bytes(b"test", &[b"explorer-service"]),
+        "https://rpc.tensorvm.net/explorer",
+        public_service_content_path(PublicServiceKind::Explorer),
+        hash_bytes(b"test", &[b"explorer-service", b"content-root"]),
+        1_700_000_000,
+        64,
+    );
+    let duplicate_service_url = run.evaluate(&criteria, 6, true);
+    assert!(duplicate_service_url.has_deployed_explorer_service);
+    assert!(duplicate_service_url.has_deployed_public_service_content);
+    assert!(!duplicate_service_url.has_deployed_public_services);
+    assert!(!duplicate_service_url.public_criterion_met);
+    run.services = deployed_public_services(9);
+    run.service_content = deployed_public_service_content();
+
     run.service_content[1] = PublicServiceContentEvidence::new(
         PublicServiceKind::Explorer,
         hash_bytes(b"test", &[b"explorer-service"]),

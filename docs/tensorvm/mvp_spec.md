@@ -2348,8 +2348,9 @@ captured files as raw supporting artifacts.
 Deployed public service evidence must include exactly one signed health record and exactly one signed
 content record for each RPC, explorer, faucet, and telemetry service surface, with matching endpoint IDs
 and matching HTTPS authorities for `/chain/head`, `/explorer`, `/faucet/page`, and
-`/telemetry/dashboard`. Extra service-health or service-content records, reused endpoint IDs, or reused
-service-content roots do not satisfy the public service gate.
+`/telemetry/dashboard`. Extra service-health or service-content records, reused endpoint IDs, reused
+service-health URLs, reused service-content URLs, or reused service-content roots do not satisfy the public
+service gate.
 Public service health and content URLs must use concrete non-root paths that exactly match the signed path,
 with no query string or fragment.
 External public URLs must use well-formed HTTPS authorities and must not use userinfo, whitespace, invalid

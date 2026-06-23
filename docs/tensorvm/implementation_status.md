@@ -459,6 +459,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   concrete-path enforcement with root-only/query/fragment rejection, exact untrimmed URI/path manifest-field
   validation, duplicate scalar manifest-field rejection, whitespace-padded field-key and scalar-value rejection,
   whitespace-padded repeated-record value rejection, and
+  deployed public-service rejection for reused service-health or service-content URLs,
   exact run-derived block/finality/network-runtime/data-availability/invalid-work/detection-measurement/validator-vrf-lifecycle summary counts,
   randomness-beacon summary counts that match the observed run block count, raw chain-history and operational-record
   parser coverage for malformed block/finality/DA/invalid-work/reward statuses and field counts, distinct node-address

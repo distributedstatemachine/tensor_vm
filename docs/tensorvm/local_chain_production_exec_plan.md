@@ -5,13 +5,13 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 204 pushed: Public Network Runtime Endpoint Diversity Gate.
+- Active feature: Iteration 205 in progress: Public Service URL Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
-  `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
-  validator-VRF-lifecycle summary roots and matching raw lifecycle records so the scalar count must be
-  derived from independently checkable deployed commit-reveal records before `public_evidence_full_spec=true`
-  can pass. Iteration 198 tightened that gate so raw lifecycle records must cover distinct checked receipt
+  `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
+  deployed public-service gate so signed service-health and service-content URLs must be distinct across
+  RPC, explorer, faucet, and telemetry service kinds before `public_evidence_full_spec=true` can pass.
+  Iteration 198 tightened the VRF-lifecycle gate so raw lifecycle records must cover distinct checked receipt
   roots rather than padding the count with multiple records for the same receipt. Iteration 199 applies the
   same checked-receipt coverage rule to raw public data-availability measurement records. Iteration 200
   extends semantic receipt coverage checks to invalid-work and reward-settlement raw records. Iteration 201
@@ -19,7 +19,8 @@ archive commit anchors only.
   checks. Iteration 202 adds semantic consistency checks for raw public block/finality history records.
   Iteration 203 requires raw public randomness-beacon records to cover distinct observed blocks and beacon
   rounds exactly. Iteration 204 requires counted public network-runtime observations to use distinct peer
-  IDs and public listen multiaddrs.
+  IDs and public listen multiaddrs. Iteration 205 requires deployed public service evidence to use
+  distinct signed service-health and service-content URLs across service kinds.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -43,6 +44,77 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 205: Public Service URL Diversity Gate
+
+Feature capability: require deployed RPC, explorer, faucet, and telemetry service evidence to use distinct
+signed public service-health URLs and service-content URLs before the public service gate can pass.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require deployed public
+service evidence for the four public surfaces. The raw records should prove distinct public service
+surfaces, not only distinct endpoint IDs and content roots attached to reused URLs.
+
+Canonical owner: `PublicTestnetRunEvidence::evaluate` owns deployed public service admission for run
+evidence.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the run/bundle report.
+
+Old shortcut being removed: deployed service records could reuse the same public service-health URL across
+multiple service kinds while retaining distinct endpoint IDs, content roots, signatures, and matching
+content authorities.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_run_evidence_requires_production_runtime_and_reachable_services` includes a recomputed
+Explorer service/content pair that reuses the RPC public health URL and matching authority; individual
+Explorer service evidence still passes, but deployed public services and public criteria fail.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: signed `service=...` and `service_content=...` manifest records.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public run evidence
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public run service regression and public evidence docs/status
+wording.
+
+Narrow validation commands: focused public run deployed-service test and public evidence manifest
+round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise signed public evidence cannot satisfy deployed public services
+when service kinds reuse the same public health/content URL.
+
+Out of scope: proving real deployed service reachability or generating public run artifacts.
+
+Split trigger: split if service URL diversity requires active HTTP probing rather than validating signed
+records.
+
+Validation evidence (June 23, 2026):
+
+- `cargo fmt --all && cargo test -p tensor_vm public_testnet_run_evidence_requires_production_runtime_and_reachable_services --lib`
+  passed; the focused regression covers reused public service URLs while individual Explorer evidence still
+  validates.
+- `cargo test -p tensor_vm --lib` passed: 559 passed, 0 failed.
+- `cargo test -p tensor_vm local_testnet --release` passed: five release lib local-testnet tests and
+  `local_testnet_service_gateway_does_not_produce_local_blocks` passed.
+- `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release`
+  passed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 204: Public Network Runtime Endpoint Diversity Gate
 
