@@ -299,6 +299,7 @@ impl PublicTestnetEvidenceBundle {
                 &self.randomness_beacon_signature,
             );
         let has_public_randomness_beacon_records = self.has_public_randomness_beacon_records();
+        let has_verified_public_randomness_beacon_records = false;
         let has_public_chain_history_records = self.has_public_chain_history_records();
         let has_public_operational_records = self.has_public_operational_records();
         let has_data_availability_measurements = self.run.checked_receipts > 0
@@ -342,6 +343,9 @@ impl PublicTestnetEvidenceBundle {
                 self.validator_vrf_lifecycle_records,
                 &self.validator_vrf_lifecycle_signature,
             );
+        let has_public_validator_vrf_lifecycle_records =
+            self.has_public_validator_vrf_lifecycle_records();
+        let has_verified_public_validator_vrf_lifecycle_records = false;
         let has_deployed_public_service_evidence = run_evidence.has_deployed_public_services;
         let required_supporting_artifacts = [
             (
@@ -426,9 +430,11 @@ impl PublicTestnetEvidenceBundle {
             && run_evidence.has_deployed_detection_measurements
             && independently_checkable
             && has_public_randomness_beacon_records
+            && has_verified_public_randomness_beacon_records
             && has_public_chain_history_records
             && has_public_operational_records
-            && self.has_public_validator_vrf_lifecycle_records();
+            && has_public_validator_vrf_lifecycle_records
+            && has_verified_public_validator_vrf_lifecycle_records;
         let has_cuda_verified_miners = run_evidence.has_cuda_verified_miners;
         let has_cuda_graph_execution_evidence = run_evidence.has_cuda_graph_execution_evidence;
         PublicTestnetEvidenceBundleReport {
@@ -447,6 +453,10 @@ impl PublicTestnetEvidenceBundle {
             has_deployed_public_service_evidence,
             has_deployed_detection_measurement_records,
             has_validator_vrf_lifecycle_record_summary,
+            has_public_randomness_beacon_records,
+            has_verified_public_randomness_beacon_records,
+            has_public_validator_vrf_lifecycle_records,
+            has_verified_public_validator_vrf_lifecycle_records,
             has_public_supporting_record_artifacts,
             has_cuda_verified_miners,
             has_cuda_graph_execution_evidence,
@@ -661,6 +671,7 @@ impl PublicTestnetEvidenceBundle {
             if !self.observed_block_in_run(record.observed_block)
                 || record.receipt_root == [0; 32]
                 || record.validator_id == [0; 32]
+                || record.beacon_round == 0
             {
                 return false;
             }

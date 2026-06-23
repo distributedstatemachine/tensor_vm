@@ -5,9 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 221 implemented and validated locally: Public Service Evidence Required For
-  Independent Bundles.
-- Current status: public evidence remains deployment-gated; Iteration 221 requires deployed public service
+- Active feature: Iteration 222 in progress: Verified Public Randomness Gates Full Spec.
+- Current status: public evidence remains deployment-gated; Iteration 222 separates signed raw
+  randomness/validator-VRF lifecycle record shape from chain-accepted drand/validator-VRF evidence so shaped
+  placeholder records cannot set `public_evidence_full_spec=true`. Iteration 221 requires deployed public service
   health/content evidence before a public evidence bundle can report `independently_checkable=true`.
   Iteration 220 tightens public full-spec raw
   block/finality history so signed records must cover the exact observed block range rather than a shifted
@@ -68,11 +69,91 @@ archive commit anchors only.
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof and deployed dispute evidence |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
-| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates, and public full-spec evidence now requires committed/revealed VRF lifecycle pairs for checked available receipts | Add real deployed full VRF construction artifacts and public lifecycle records |
+| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates, and public evidence now distinguishes signed raw record shape from chain-accepted drand/validator-VRF evidence | Add real deployed full VRF construction artifacts and public lifecycle records |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 222: Verified Public Randomness Gates Full Spec
+
+Feature capability: prevent shaped public randomness-beacon and validator-VRF lifecycle records from
+setting `public_evidence_full_spec=true` until the public evidence schema is tied to chain-accepted
+drand records or chain-accepted validator VRF reveal records from the deployed run.
+
+Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` §31.4/§35 require unbiasable deployed
+randomness and deployed commit-to-reveal lifecycle evidence, not only signed hashes with public-looking
+proof-kind labels.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns public full-spec evidence admission.
+
+Adapter callers: manifest validation, `tvmd public evidence validate`, supporting-record summary/artifact
+generation, public evidence docs/tests, and implementation status reports.
+
+Old shortcut being removed: placeholder `drand-v1`/`validator-vrf-v1` raw records whose proof material was
+only a nonzero hash could satisfy the full-spec public evidence gate.
+
+Regression test that proves the shortcut is gone: otherwise complete public evidence with shaped raw
+randomness and lifecycle records reports those raw records present but keeps chain-accepted evidence flags
+false and `public_evidence_full_spec=false`; zero beacon rounds are rejected by manifest parsing,
+supporting-record line validation, and direct bundle evaluation.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run public evidence
+validation.
+
+Behavior for producer and non-producer roles: unchanged; role behavior is observed through generated public
+evidence records.
+
+Structured evidence source: signed `randomness_beacon_record=...` and
+`validator_vrf_lifecycle=...` records, plus future chain-accepted drand/validator-VRF evidence exported
+from the deployed run.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: readiness mapper, codebase explorer, and test-coverage explorer.
+
+Parallelizable implementation workstreams: read-only mapping/test discovery ran in parallel; code/docs
+edits remain single-writer.
+
+Tests/checkers/docs to add or update: public evidence bundle regressions, manifest malformed-input
+regression, CLI raw-record line rejection, manifest report fields, public evidence/status/coverage/tarpaulin
+notes, and this exec plan.
+
+Narrow validation commands: focused public randomness/lifecycle bundle tests, manifest malformed-input
+test, raw-record line rejection test, and manifest report test.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, diff check, and tarpaulin/report update if coverage changes.
+
+Validation evidence:
+
+- Gate 0 first executable passed: `cargo test -p tensor_vm local_testnet --release`.
+- Focused public-evidence regressions passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_rejects_malformed_input --lib`,
+  `cargo test -p tensor_vm direct_public_record_line_rejections_report_invalid_receipts --lib`,
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle --lib`, and
+  `cargo test -p tensor_vm public_testnet_evidence_manifest --lib`.
+- Reward-delay audit passed: `cargo test -p tensor_vm reward --lib` ran 42 focused reward tests and
+  confirmed live matured rewards stay pending until beneficiary `ClaimReward`.
+- Broad validation passed: `cargo test -p tensor_vm --lib`, `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  `cargo fmt --all -- --check`, and `git diff --check`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
+  reported 582 instrumented tests passing and 85.08% workspace coverage, 23,675/27,826 lines.
+
+Expected observable evidence: `public_evidence_full_spec=true` is impossible without chain-accepted
+public randomness and validator-VRF lifecycle evidence exported from the deployed run; signed raw record
+shape remains separately reported.
+
+Out of scope: adding a new drand proof schema, changing p2p randomness payload codecs, generating real
+public deployment records, or deploying public infrastructure.
+
+Split trigger: split if chain-accepted deployed randomness/VRF evidence requires changing public manifest
+schema or runtime drand/VRF payload formats.
 
 ### Iteration 221: Public Service Evidence Required For Independent Bundles
 

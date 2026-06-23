@@ -69,7 +69,9 @@ pub(super) fn validate_supporting_record_payload(
         PublicEvidenceRecordKind::RandomnessBeaconEvidence => {
             let fields = exact_comma_fields(payload, 7, INVALID_SUPPORTING_RECORD)?;
             parse_hash_field(fields[0])?;
-            parse_u64_field(fields[1])?;
+            if parse_u64_field(fields[1])? == 0 {
+                return Err(TvmError::InvalidReceipt(INVALID_SUPPORTING_RECORD));
+            }
             parse_hash_field(fields[2])?;
             parse_hash_field(fields[3])?;
             require_supporting_record_status(
@@ -117,7 +119,9 @@ pub(super) fn validate_supporting_record_payload(
             let fields = exact_comma_fields(payload, 5, INVALID_SUPPORTING_RECORD)?;
             parse_hash_field(fields[0])?;
             parse_hash_field(fields[1])?;
-            parse_u64_field(fields[2])?;
+            if parse_u64_field(fields[2])? == 0 {
+                return Err(TvmError::InvalidReceipt(INVALID_SUPPORTING_RECORD));
+            }
             require_supporting_record_status(fields[3], &["committed", "revealed"])?;
             parse_u64_field(fields[4])?;
         }

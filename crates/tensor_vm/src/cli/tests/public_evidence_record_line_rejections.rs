@@ -47,6 +47,16 @@ fn direct_public_record_line_rejections_report_invalid_receipts() {
             PublicEvidenceRecordKind::RandomnessBeaconEvidence,
             concat!(
                 "randomness_beacon_record=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,0,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
+                "drand-v1,9,accepted"
+            ),
+        ),
+        (
+            PublicEvidenceRecordKind::RandomnessBeaconEvidence,
+            concat!(
+                "randomness_beacon_record=",
                 "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,7,",
                 "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
                 "cccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccccc,",
@@ -96,6 +106,15 @@ fn direct_public_record_line_rejections_report_invalid_receipts() {
         (
             PublicEvidenceRecordKind::DetectionMeasurements,
             "detection_measurement=full-freivalds,aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,1,2,0",
+        ),
+        (
+            PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+            concat!(
+                "validator_vrf_lifecycle=",
+                "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa,",
+                "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb,",
+                "0,committed,1"
+            ),
         ),
     ];
     for (kind, raw_line) in malformed_supporting_record_cases {

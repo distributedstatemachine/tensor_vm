@@ -473,15 +473,14 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
   checked or available receipt counts, raw public randomness records to cover each observed block exactly
-  once with distinct source/round pairs, raw block/finality history to cover the exact signed observed
+  once with distinct nonzero source/round pairs, chain-accepted deployed public randomness evidence, raw block/finality history to cover the exact signed observed
   block range with distinct nonzero block roots, matching block roots, and finalized status counts, raw data-availability measurement records to cover checked receipts
   with distinct nonzero receipt roots and in-window observed blocks, raw invalid-work and reward-settlement records to use distinct
   nonzero receipt roots with nonzero settlement participant IDs and in-window observed blocks, raw detection-measurement records to match
   manifest field semantics with in-window observed blocks, and signed `validator_vrf_lifecycle_records` with raw committed and revealed
-  lifecycle records to cover every checked available receipt's deployed validator VRF commit-to-reveal
-  reward-delay lifecycle with one matching validator/beacon pair per receipt, receipt roots exactly
-  matching the raw data-availability measurement receipt-root set, and aggregate to the signed lifecycle
-  root, plus positive signed deployed
+  lifecycle records to cover every checked available receipt with one nonzero matching validator/beacon pair
+  per receipt, receipt roots exactly matching the raw data-availability measurement receipt-root set, and
+  aggregate to the signed lifecycle root, plus chain-accepted deployed validator VRF reveal evidence and positive signed deployed
   detection-measurement records whose raw records aggregate to the signed summary, plus the default 7-day, 10-miner,
   5-validator public-testnet criteria or stricter criteria, so relaxed local harness criteria and otherwise
   complete CPU-only, non-graph, or VRF-lifecycle-free public bundles cannot mark an evidence bundle

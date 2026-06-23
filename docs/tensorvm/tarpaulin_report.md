@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 221 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 222 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -14,12 +14,18 @@ Result:
 - 567 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-85.04% workspace line coverage
-23641/27800 workspace lines covered
+85.08% workspace line coverage
+23675/27826 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 222 coverage-changing work split public randomness/validator-VRF raw record shape from
+chain-accepted deployed evidence for full-spec admission. The new regressions prove otherwise complete
+full-spec-shaped bundles keep `public_evidence_full_spec=false` until the deployed evidence path is tied
+to chain-accepted drand and validator-VRF reveal records, and zero beacon rounds are rejected by manifest,
+record-line, and direct bundle validation.
 
 Iteration 219 coverage-changing work tightened full-spec public raw-record evidence so otherwise signed
 data-availability, invalid-work, reward-settlement, detection-measurement, and validator-VRF-lifecycle
@@ -40,11 +46,12 @@ legacy unkeyed reveal recorded before key registration no longer makes a validat
 spendable; key registration re-holds any already-claimable matching validator reward until a keyed
 Ed25519 reveal matching the registered key is submitted.
 
-Iteration 216 compacted full-spec public evidence bundle fixtures for coverage runs. Full-spec tests still
-evaluate default `PublicTestnetCriteria` and require full-spec evidence, but they use a test-only block
-time that keeps the seven-day signed run window while reducing generated raw record count from 100,800 to
-20 per full-spec bundle. This cleared the Iteration 215 instrumentation stall and refreshed workspace
-coverage with the command above.
+Iteration 216 compacted full-spec public evidence bundle fixtures for coverage runs. Those fixtures still
+evaluate default `PublicTestnetCriteria` and exercise the full raw-record shape, but later evidence
+hardening keeps `public_evidence_full_spec=false` until chain-accepted deployed public randomness and
+validator-VRF evidence exists. The fixture uses a test-only block time that keeps the seven-day signed run window while
+reducing generated raw record count from 100,800 to 20 per full-spec-shaped bundle. This cleared the
+Iteration 215 instrumentation stall and refreshed workspace coverage with the command above.
 
 Iteration 215 coverage-changing work tightened public validator VRF lifecycle evidence so raw revealed
 `validator_vrf_lifecycle=...` receipt roots must exactly match the raw data-availability measurement

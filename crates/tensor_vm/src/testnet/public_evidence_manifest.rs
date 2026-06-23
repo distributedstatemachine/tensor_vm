@@ -463,9 +463,15 @@ fn parse_manifest_randomness_beacon_record(value: &str) -> Result<PublicRandomne
         "rejected" => PublicRandomnessBeaconRecordStatus::Rejected,
         _ => return Err(TvmError::InvalidReceipt("unknown randomness beacon status")),
     };
+    let beacon_round = parse_manifest_u64(fields[1])?;
+    if beacon_round == 0 {
+        return Err(TvmError::InvalidReceipt(
+            "malformed randomness beacon record",
+        ));
+    }
     Ok(PublicRandomnessBeaconRecord {
         source_id: parse_hash_hex(fields[0])?,
-        beacon_round: parse_manifest_u64(fields[1])?,
+        beacon_round,
         randomness_root: parse_hash_hex(fields[2])?,
         proof_root: parse_hash_hex(fields[3])?,
         proof_kind,
@@ -555,10 +561,16 @@ fn parse_manifest_validator_vrf_lifecycle(
             ));
         }
     };
+    let beacon_round = parse_manifest_u64(fields[2])?;
+    if beacon_round == 0 {
+        return Err(TvmError::InvalidReceipt(
+            "malformed validator vrf lifecycle",
+        ));
+    }
     Ok(PublicValidatorVrfLifecycleRecord {
         receipt_root: parse_hash_hex(fields[0])?,
         validator_id: parse_hash_hex(fields[1])?,
-        beacon_round: parse_manifest_u64(fields[2])?,
+        beacon_round,
         phase,
         observed_block: parse_manifest_u64(fields[4])?,
     })

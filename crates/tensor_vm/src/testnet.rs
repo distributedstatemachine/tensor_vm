@@ -332,6 +332,10 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_deployed_public_service_evidence: bool,
     pub has_deployed_detection_measurement_records: bool,
     pub has_validator_vrf_lifecycle_record_summary: bool,
+    pub has_public_randomness_beacon_records: bool,
+    pub has_verified_public_randomness_beacon_records: bool,
+    pub has_public_validator_vrf_lifecycle_records: bool,
+    pub has_verified_public_validator_vrf_lifecycle_records: bool,
     pub has_public_supporting_record_artifacts: bool,
     pub has_cuda_verified_miners: bool,
     pub has_cuda_graph_execution_evidence: bool,
@@ -683,6 +687,7 @@ impl PublicRandomnessBeaconRecord {
         self.status == PublicRandomnessBeaconRecordStatus::Accepted
             && self.proof_kind.is_public_unbiasable()
             && self.source_id != [0; 32]
+            && self.beacon_round > 0
             && self.randomness_root != [0; 32]
             && self.proof_root != [0; 32]
     }

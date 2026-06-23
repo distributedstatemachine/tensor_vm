@@ -1,5 +1,15 @@
 use super::*;
 
+fn assert_full_spec_deployment_randomness_is_still_gated(
+    report: &PublicTestnetEvidenceBundleReport,
+) {
+    assert!(report.has_public_randomness_beacon_records);
+    assert!(!report.has_verified_public_randomness_beacon_records);
+    assert!(report.has_public_validator_vrf_lifecycle_records);
+    assert!(!report.has_verified_public_validator_vrf_lifecycle_records);
+    assert!(!report.full_spec_evidence_met);
+}
+
 #[test]
 fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     let criteria = PublicTestnetCriteria {
@@ -36,7 +46,7 @@ fn public_testnet_evidence_bundle_requires_publication_and_audit_records() {
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.run_evidence.public_criterion_met);
     assert!(full_spec_report.independently_checkable);
-    assert!(full_spec_report.full_spec_evidence_met);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut reused_artifact_uri = full_spec_bundle;
     let block_artifact_uri = reused_artifact_uri.supporting_artifacts[0]
@@ -119,11 +129,8 @@ fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
-    assert!(
-        full_spec_bundle
-            .evaluate(&full_spec_criteria, full_spec_block_time)
-            .full_spec_evidence_met
-    );
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_raw_randomness = full_spec_bundle.clone();
     missing_raw_randomness.randomness_beacon_raw_records.clear();
@@ -181,6 +188,14 @@ fn public_testnet_evidence_bundle_requires_raw_randomness_records() {
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let mut zero_beacon_round = full_spec_bundle.clone();
+    zero_beacon_round.randomness_beacon_raw_records[0].beacon_round = 0;
+    resign_randomness_records(&mut zero_beacon_round);
+    let report = zero_beacon_round.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.has_public_randomness_beacon_records);
+    assert!(!report.full_spec_evidence_met);
+
     let mut local_fixture_randomness = full_spec_bundle;
     local_fixture_randomness.randomness_beacon_raw_records = (0..local_fixture_randomness
         .randomness_beacon_records)
@@ -232,11 +247,8 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
-    assert!(
-        full_spec_bundle
-            .evaluate(&full_spec_criteria, full_spec_block_time)
-            .full_spec_evidence_met
-    );
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_data_availability = full_spec_bundle.clone();
     missing_data_availability
@@ -1349,7 +1361,7 @@ fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_f
     let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(full_spec_report.has_deployed_detection_measurement_records);
     assert!(full_spec_report.independently_checkable);
-    assert!(full_spec_report.full_spec_evidence_met);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut no_run_measurements = full_spec_bundle.clone();
     no_run_measurements.run.detection_measurement_records = 0;
@@ -1472,7 +1484,7 @@ fn public_testnet_evidence_bundle_requires_cuda_verified_miners_for_full_spec() 
     assert!(full_spec_report.run_evidence.public_criterion_met);
     assert!(full_spec_report.independently_checkable);
     assert!(full_spec_report.has_cuda_verified_miners);
-    assert!(full_spec_report.full_spec_evidence_met);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_cuda = full_spec_bundle.clone();
     missing_cuda.run.cuda_verified_miner_count = 0;
@@ -1509,7 +1521,7 @@ fn public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec() 
     assert!(full_spec_report.run_evidence.public_criterion_met);
     assert!(full_spec_report.independently_checkable);
     assert!(full_spec_report.has_cuda_graph_execution_evidence);
-    assert!(full_spec_report.full_spec_evidence_met);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_graph_execution = full_spec_bundle.clone();
     missing_graph_execution.run.cuda_graph_execution_receipts = 0;
@@ -1557,7 +1569,7 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
             .run_evidence
             .has_validator_vrf_lifecycle_evidence
     );
-    assert!(full_spec_report.full_spec_evidence_met);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut unavailable_lifecycle = full_spec_bundle.clone();
     unavailable_lifecycle.run.available_receipts =
@@ -1641,11 +1653,8 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
-    assert!(
-        full_spec_bundle
-            .evaluate(&full_spec_criteria, full_spec_block_time)
-            .full_spec_evidence_met
-    );
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_raw_records = full_spec_bundle.clone();
     missing_raw_records
@@ -1774,6 +1783,31 @@ fn public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_f
     assert!(report.has_validator_vrf_lifecycle_record_summary);
     assert!(!report.full_spec_evidence_met);
 
+    let mut zero_lifecycle_beacon_round = full_spec_bundle.clone();
+    zero_lifecycle_beacon_round.validator_vrf_lifecycle_raw_records[0].beacon_round = 0;
+    zero_lifecycle_beacon_round.validator_vrf_lifecycle_raw_records[1].beacon_round = 0;
+    let zero_lifecycle_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        &zero_lifecycle_beacon_round
+            .validator_vrf_lifecycle_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>(),
+    )
+    .expect("zero lifecycle beacon round records still aggregate");
+    let zero_lifecycle_record_count = zero_lifecycle_beacon_round.validator_vrf_lifecycle_records;
+    resign_record_summary_and_artifact(
+        &mut zero_lifecycle_beacon_round,
+        PublicEvidenceRecordKind::ValidatorVrfLifecycle,
+        zero_lifecycle_root,
+        zero_lifecycle_record_count,
+    );
+    let report = zero_lifecycle_beacon_round.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!report.has_public_validator_vrf_lifecycle_records);
+    assert!(!report.full_spec_evidence_met);
+
     let mut incomplete_lifecycle_records = full_spec_bundle;
     incomplete_lifecycle_records.validator_vrf_lifecycle_raw_records[1].phase =
         PublicValidatorVrfLifecyclePhase::Committed;
@@ -1789,11 +1823,8 @@ fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
     let full_spec_criteria = PublicTestnetCriteria::default();
     let full_spec_block_time = compact_full_spec_block_time_seconds();
     let full_spec_bundle = full_spec_public_evidence_bundle(full_spec_block_time);
-    assert!(
-        full_spec_bundle
-            .evaluate(&full_spec_criteria, full_spec_block_time)
-            .full_spec_evidence_met
-    );
+    let full_spec_report = full_spec_bundle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert_full_spec_deployment_randomness_is_still_gated(&full_spec_report);
 
     let mut missing_block_history = full_spec_bundle.clone();
     missing_block_history.block_history_raw_records.clear();

@@ -45,6 +45,14 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
         report.has_randomness_beacon_evidence,
     );
     output.field(
+        "public_randomness_beacon_records",
+        report.has_public_randomness_beacon_records,
+    );
+    output.field(
+        "verified_public_randomness_beacon_records",
+        report.has_verified_public_randomness_beacon_records,
+    );
+    output.field(
         "data_availability_measurements",
         report.has_data_availability_measurements,
     );
@@ -76,6 +84,14 @@ pub fn validate_public_evidence_manifest(input: &str) -> Result<String> {
     output.field(
         "validator_vrf_lifecycle_evidence",
         run.has_validator_vrf_lifecycle_evidence,
+    );
+    output.field(
+        "public_validator_vrf_lifecycle_records",
+        report.has_public_validator_vrf_lifecycle_records,
+    );
+    output.field(
+        "verified_public_validator_vrf_lifecycle_records",
+        report.has_verified_public_validator_vrf_lifecycle_records,
     );
     output.field("miners", run.miner_count);
     output.field("validators", run.validator_count);

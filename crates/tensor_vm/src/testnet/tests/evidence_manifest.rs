@@ -403,11 +403,24 @@ fn public_testnet_evidence_manifest_rejects_malformed_input() {
             manifest_hash(b"test", b"randomness-proof")
         ),
         format!(
+            "{}randomness_beacon_record={},0,{},{},drand-v1,1,accepted\n",
+            manifest,
+            manifest_hash(b"test", b"randomness-source"),
+            manifest_hash(b"test", b"randomness-root"),
+            manifest_hash(b"test", b"randomness-proof")
+        ),
+        format!(
             "{}randomness_beacon_record={},1,{},{},drand-v1,1,pending\n",
             manifest,
             manifest_hash(b"test", b"randomness-source"),
             manifest_hash(b"test", b"randomness-root"),
             manifest_hash(b"test", b"randomness-proof")
+        ),
+        format!(
+            "{}validator_vrf_lifecycle={},{},0,committed,1\n",
+            manifest,
+            manifest_hash(b"test", b"validator-vrf-receipt"),
+            manifest_address(b"validator-vrf-validator")
         ),
         format!(
             "{}data_availability_measurement={},pending,1\n",

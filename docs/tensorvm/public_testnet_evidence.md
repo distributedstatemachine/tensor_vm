@@ -560,7 +560,8 @@ with the record kind and exact line bytes only after the file parser validates t
 `reward_settlement=<receipt-root-hex>,<miner-id-hex>,<validator-id-hex>,<block>`,
 `detection_measurement=<mechanism>,<subject-root-hex>,<sample-count>,<detected-count>,<block>`, and
 `validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,committed|revealed,<block>`.
-Reward-settlement participant IDs must be valid 64-character hex IDs, detection mechanisms must be
+Reward-settlement participant IDs must be valid 64-character hex IDs, randomness and validator-VRF
+lifecycle beacon rounds must be nonzero, detection mechanisms must be
 lowercase ASCII letters, digits, or `-`, sample count must be nonzero, and detected count cannot exceed
 sample count. Detection measurement subject roots must be nonzero. Raw data-availability, invalid-work,
 reward-settlement, detection-measurement, and validator-VRF-lifecycle records must also use observed block
@@ -568,7 +569,15 @@ indexes inside the signed run window. Saved raw artifacts can therefore produce 
 summary roots and artifact locators without hand-copying individual `record_root=<hex>` values.
 Whitespace-padded record lines and empty fields are rejected.
 
-The output is a line-oriented evidence report. `public_evidence_full_spec=true` requires the default
+The output is a line-oriented evidence report. Signed raw randomness and validator-VRF lifecycle records
+are reported separately from chain-accepted deployed evidence: `public_randomness_beacon_records=true` and
+`public_validator_vrf_lifecycle_records=true` only prove record shape, aggregate roots, and run coverage.
+`verified_public_randomness_beacon_records=true` and
+`verified_public_validator_vrf_lifecycle_records=true` are required for full-spec evidence and remain false
+until the manifest schema carries chain-accepted deployed drand records or chain-accepted validator VRF
+reveal records that the evidence validator can bind to the deployed run.
+
+`public_evidence_full_spec=true` requires the default
 public-testnet criteria or stricter criteria, `public_criterion=true`, `independently_checkable=true`,
 `cuda_verified_miner_count` covering the counted public miners, positive `cuda_graph_execution_receipts`
 that do not exceed checked or available receipt counts and are backed by that CUDA miner coverage,
@@ -592,9 +601,9 @@ status counts matching `finalized_blocks`,
 detected counts not exceeding samples, and in-window observed blocks across those operational and
 detection records, plus raw `validator_vrf_lifecycle=...` lines with distinct
 receipt roots exactly matching the raw data-availability measurement receipt-root set and whose aggregate
-roots match the signed lifecycle summary. Full-spec randomness
+roots match the signed lifecycle summary. Public randomness
 records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
-`local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public randomness
+`local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy public raw randomness
 evidence.
 Relaxed local harness criteria can exercise the validator but cannot set the full-spec flag. The
 `external_operator_evidence` field is true only when enough signed node evidence and matching signed
@@ -612,13 +621,21 @@ block_history=true
 finality_history=true
 operator_identity_attestations=true
 network_runtime_observations=true
+deployed_public_service_evidence=true
+randomness_beacon_evidence=true
+public_randomness_beacon_records=false
+verified_public_randomness_beacon_records=false
 data_availability_measurements=true
 signed_invalid_work_rejection_records=true
 signed_reward_settlement_records=true
+signed_detection_measurement_records=true
 signed_validator_vrf_lifecycle_records=true
 supporting_record_artifacts=true
 cuda_verified_miners=true
 cuda_graph_execution_evidence=true
+validator_vrf_lifecycle_evidence=true
+public_validator_vrf_lifecycle_records=false
+verified_public_validator_vrf_lifecycle_records=false
 miners=2
 validators=1
 run_started_at_unix_seconds=1700000000
@@ -636,6 +653,7 @@ reward_settlement_records=1
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
 validator_vrf_lifecycle_records=40
+detection_measurement_records=1
 external_operator_evidence=true
 required_miners=false
 required_validators=false
@@ -648,6 +666,7 @@ reward_settlement_evidence=true
 cuda_miner_evidence=true
 cuda_graph_execution_receipt_evidence=true
 validator_vrf_lifecycle_record_evidence=true
+deployed_detection_measurement_evidence=true
 production_libp2p_runtime=true
 deployed_rpc_service=true
 deployed_explorer_service=true
