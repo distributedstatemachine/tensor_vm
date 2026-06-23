@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 200 in progress: Unique Public Settlement Receipt Coverage Gate.
+- Active feature: Iteration 200 pushed: Unique Public Settlement Receipt Coverage Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -111,6 +111,8 @@ Validation evidence, June 23, 2026:
   `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
 - Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - Commit: `c655f62` (`Require unique public settlement receipts`).
+- Validation metadata commit: `95d60da` (`Record public settlement receipt validation`).
+- Push: `git push origin main` succeeded on June 23, 2026 (`91cb5e1..95d60da  main -> main`).
 
 ### Iteration 199: Unique Data Availability Receipt Coverage Gate
 
