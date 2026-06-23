@@ -1,7 +1,7 @@
 use crate::chain::{Chain, JobState, ReceiptState};
 use crate::error::{Result, TvmError};
 use crate::ir::TensorGraph;
-use crate::jobs::{GraphJob, LinearTrainingStepOutput, PrimitiveType};
+use crate::jobs::{GraphJob, GraphReceipt, LinearTrainingStepOutput, PrimitiveType};
 use crate::miner::MinerNode;
 use crate::runtime::{CpuReferenceBackend, ExecutionBackend};
 use crate::scheduler::SyntheticLocalJobSource;
@@ -33,6 +33,16 @@ pub enum RoleReceiptArtifacts {
 pub struct RoleReceiptBundle {
     pub receipt: ReceiptState,
     pub artifacts: RoleReceiptArtifacts,
+}
+
+#[derive(Clone, Copy)]
+pub struct GraphJobExecution<'a> {
+    pub job: &'a GraphJob,
+    pub graph: &'a TensorGraph,
+    pub inputs: &'a std::collections::BTreeMap<String, Tensor>,
+    pub const_blobs: &'a std::collections::BTreeMap<String, Tensor>,
+    pub submitted_at_block: u64,
+    pub execution_time_ms: u64,
 }
 
 impl RoleReceiptBundle {
@@ -100,24 +110,18 @@ impl CpuReferenceMinerRole {
         submitted_at_block: u64,
         execution_time_ms: u64,
     ) -> Result<RoleReceiptBundle> {
-        let (receipt, outputs) = crate::jobs::GraphReceipt::from_execution_with_const_blobs(
-            job,
-            graph,
+        execute_graph_job_with_backend(
             self.address,
-            inputs,
-            const_blobs,
-            submitted_at_block,
-            execution_time_ms,
-        )?;
-        Ok(RoleReceiptBundle {
-            receipt: ReceiptState::GraphExecution(receipt),
-            artifacts: RoleReceiptArtifacts::GraphExecution {
-                graph: graph.clone(),
-                inputs: inputs.clone(),
-                const_blobs: const_blobs.clone(),
-                outputs,
+            CpuReferenceBackend,
+            GraphJobExecution {
+                job,
+                graph,
+                inputs,
+                const_blobs,
+                submitted_at_block,
+                execution_time_ms,
             },
-        })
+        )
     }
 }
 
@@ -158,6 +162,35 @@ pub fn execute_job_with_backend<B: ExecutionBackend>(
             "graph execution requires explicit graph inputs",
         )),
     }
+}
+
+pub fn execute_graph_job_with_backend<B: ExecutionBackend>(
+    address: Address,
+    backend: B,
+    execution: GraphJobExecution<'_>,
+) -> Result<RoleReceiptBundle> {
+    let ir_execution = backend.execute_graph_exact(
+        execution.job,
+        execution.graph,
+        execution.inputs,
+        execution.const_blobs,
+    )?;
+    let (receipt, outputs) = GraphReceipt::from_ir_execution(
+        execution.job,
+        address,
+        ir_execution,
+        execution.submitted_at_block,
+        execution.execution_time_ms,
+    )?;
+    Ok(RoleReceiptBundle {
+        receipt: ReceiptState::GraphExecution(receipt),
+        artifacts: RoleReceiptArtifacts::GraphExecution {
+            graph: execution.graph.clone(),
+            inputs: execution.inputs.clone(),
+            const_blobs: execution.const_blobs.clone(),
+            outputs,
+        },
+    })
 }
 
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]

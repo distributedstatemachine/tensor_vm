@@ -5,10 +5,13 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 227 complete: CUDA Miner Role Execution.
+- Active feature: Iteration 228 complete: CUDA GraphExecution Miner Receipts.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
   CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
+  Iteration 228 routes miner-role GraphExecution jobs for the current local synthetic graph shape through
+  `GpuMinerBackend` when `tvmd miner run --device cuda:N` is selected, using CUDA `add`/`relu` kernels and
+  preserving bit-exact CPU/GPU receipt ids, output roots, and trace roots.
   Iteration 226 installs the local CUDA toolkit path into executable evidence by replacing the broken
   default `-arch native` CUDA build with A100-compatible architecture detection/fallback, and focused
   CUDA-feature tests now pass on the local A100 host. Iteration 227 wires `tvmd miner run --device
@@ -75,8 +78,9 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: extend CUDA coverage to graph receipts and broader frozen-registry CUDA vector coverage.
-  Stop the public-evidence-validator tightening loop;
+- Next action: broaden frozen-registry CUDA vector coverage beyond the current local synthetic
+  GraphExecution shape. Stop the
+  public-evidence-validator tightening loop;
   redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
@@ -93,10 +97,112 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the LIVE consensus randomness source (not a fixture). Bespoke per-validator VRF is roadmap, not v0 |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp and LinearTrainingStep CUDA paths; Iteration 227 proves live `miner run --device cuda:N` receipt execution reaches `GpuMinerBackend` for those paths | Land CUDA graph receipts bit-exact with CPU reference and broaden per-op CUDA vector coverage |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/relu kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp, LinearTrainingStep, and local synthetic GraphExecution CUDA paths; Iteration 227 proves live `miner run --device cuda:N` receipt execution reaches `GpuMinerBackend` for TensorOp/LinearTrainingStep; Iteration 228 proves the same for current GraphExecution (`add` -> `relu`) with bit-exact CPU/GPU roots | Broaden per-op CUDA vector coverage beyond the current synthetic graph shape |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 228: CUDA GraphExecution Miner Receipts
+
+Feature capability: execute live miner-role `GraphExecution` jobs on `tvmd miner run --device cuda:N` for
+the current local synthetic graph shape (`add` -> `relu`) using CUDA kernels, producing bit-exact graph
+receipt output roots and trace roots without falling back to CPU.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.2/§3.3 and §4.5 require
+CUDA graph receipt evidence to move beyond primitive TensorOp/LinearTrainingStep paths while preserving
+canonical `F_p` semantics.
+
+Files/modules likely touched: `kernels/cuda/field_matmul.cu`, `runtime.rs`, `roles.rs`,
+`app/miner_role.rs`, miner-role/runtime CUDA tests, `upow.md`, and this exec plan.
+
+Canonical owner: `TensorGraph` still owns graph structure and canonical trace semantics; CUDA runtime owns
+accelerated supported op kernels; miner role selects the requested execution device and submits receipts
+through `ChainCommand::SubmitReceipt`.
+
+Adapter callers: `tvmd miner run --device cuda:N`, role service runtime loop, local Compose miner services,
+and focused Rust tests.
+
+Old shortcut being removed: CUDA miner role selection now covers TensorOp and LinearTrainingStep receipts,
+but GraphExecution jobs still use `CpuReferenceMinerRole::execute_graph_job` even when the runtime device is
+`cuda:N`.
+
+Regression test that proves the shortcut is gone: a CUDA-configured miner-role GraphExecution submission
+for the current synthetic graph must report `BackendKind::GpuMiner { device: "cuda:0" }`, submit one graph
+receipt, and produce the same receipt id/output/trace roots as the CPU graph path. A default build must
+route `cuda:0` graph selection to the CUDA backend boundary and fail with `cuda kernels not compiled`.
+
+Behavior with local synthetic block production disabled: unchanged for inbound sync; miner role execution
+uses assigned GraphExecution jobs already present in chain state and submits receipts through the same
+chain command.
+
+Behavior for producer and non-producer roles: miners never produce blocks; validators/proposers consume the
+same graph receipts and finality logic as before.
+
+Structured evidence source: miner role `backend_kind`, GraphExecution receipt id/output roots/trace root,
+CUDA graph op tests, and `cuda_graph_execution_receipts` status/evidence counters where applicable.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, or voting.
+
+Wire-size and codec boundary: no wire or codec changes; graph receipt payloads keep the existing codec.
+
+Parallel subagents to run: read-only codebase explorer for GraphExecution/CUDA ownership and read-only test
+coverage explorer for graph/CUDA/miner-role tests.
+
+Parallelizable implementation workstreams: parent-only code edits because CUDA runtime, role execution, and
+miner role tests share files.
+
+Tests/checkers/docs to add or update: CUDA kernel tests for `field_add`/`field_relu`, graph executor tests,
+miner-role CUDA GraphExecution tests, `upow.md` CUDA status, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm --test tvmd_runtime <focused miner graph tests>`,
+focused `--features cuda-kernels` CUDA graph/miner-role tests, and CUDA runtime graph op parity tests.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, `cargo clippy -p
+tensor_vm --all-targets -- -D warnings`, `cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: a CUDA-configured miner role submits a canonical GraphExecution receipt
+through the GPU backend for the current local graph, while unsupported CUDA graph ops fail explicitly
+rather than silently using CPU.
+
+Out of scope: full frozen-registry CUDA graph coverage, CUDA support for every exact Tier-B op, CUDA graph
+verification in public deployment, or changes to graph consensus validation.
+
+Split trigger: split if generic graph acceleration requires broad public IR runtime refactoring; keep this
+iteration to the current local synthetic graph op set plus explicit unsupported-op errors.
+
+Implementation summary: CUDA now exposes field `add` and signed-field `relu` kernels and Rust bindings
+alongside the existing matmul/sub/scalar/transpose/loss kernels. `ExecutionBackend` now has an
+`execute_graph_exact` boundary; `GpuMinerBackend` implements it for CUDA builds by executing the current
+supported graph op set (`add`, `sub`, `matmul`, `transpose`, `relu`, `scalar_mul`) on field-element tensors
+and returning explicit unsupported-op/dtype errors instead of falling back to CPU. `GraphReceipt` can now
+be constructed from a precomputed `IrExecution`, and `roles::execute_graph_job_with_backend` shares graph
+receipt construction across CPU and CUDA backends. `app/miner_role.rs` now routes GraphExecution jobs to
+`CpuReferenceBackend` for `cpu` and `GpuMinerBackend` for `cuda:N`.
+
+Validation evidence:
+- `cargo-tarpaulin` is installed in this environment at `/home/ubuntu/.cargo/bin/cargo-tarpaulin`,
+  version `0.35.5`.
+- Verifier audit note: there is no `tensorvm-verifier` binary in this repository; validation uses the
+  documented manual verifier-style review plus real CLI/test/clippy/tarpaulin surfaces.
+- Gate 0 first executable command: `cargo test -p tensor_vm local_testnet --release` passed on June 23,
+  2026.
+- Default CUDA graph backend boundary: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_feature` passed, proving
+  `cuda:0` GraphExecution selection reaches the CUDA backend boundary and fails with
+  `cuda kernels not compiled` in default builds instead of silently using CPU.
+- CUDA runtime graph parity: `cargo test -p tensor_vm --features cuda-kernels
+  runtime::tests::cpu_and_gpu_backends_match_synthetic_graph_execution --lib` passed on the local A100
+  host, proving CPU/GPU graph ids, op traces, trace roots, and outputs match for the current synthetic
+  graph.
+- CUDA runtime op parity: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed,
+  including field `add`/`relu` CUDA kernel coverage.
+- CUDA miner-role GraphExecution: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_graph_execution_with_configured_cuda_backend` passed on the local A100 host, proving
+  `BackendKind::GpuMiner { device: "cuda:0" }`, one submitted GraphExecution receipt, three inserted
+  served tensors, and CPU/GPU receipt id/output-root/trace-root equality.
+- Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --check`,
+  and `git diff --check` passed.
 
 ### Iteration 227: CUDA Miner Role Execution
 

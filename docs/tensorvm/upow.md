@@ -100,9 +100,10 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > covers the current executable CUDA TensorOp/LinearTrainingStep runtime paths: CUDA field matmul edge
 > cases, exact linear tensor ops, canonical matmul backend parity, linear-step backend parity, and live
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
-> config pass under `--features cuda-kernels`. CUDA graph receipts, the full frozen-registry CUDA vector
-> suite, and Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage
-> for every runtime.
+> config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
+> synthetic GraphExecution shape (`add` -> `relu`) through the CUDA miner backend with bit-exact CPU/GPU
+> receipt roots. The full frozen-registry CUDA vector suite and Tier-C/transcendental vector references
+> remain TODO before claiming complete §3.3 coverage for every runtime.
 
 ---
 
@@ -173,8 +174,9 @@ Graph {
 > their canonical TensorGraph op traces. Generic `GraphExecution` jobs and receipts can reference
 > registered canonical graph bodies, execute locally through miner role loops, attest through validator
 > role loops, cross the shared p2p/node payload path, settle through delayed receipt rewards, and surface
-> through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution and public deployed
-> graph evidence remain TODO.
+> through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution now covers the current
+> local synthetic GraphExecution shape through miner-role `cuda:N` backend selection; broader CUDA graph
+> op coverage and public deployed graph evidence remain TODO.
 
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):

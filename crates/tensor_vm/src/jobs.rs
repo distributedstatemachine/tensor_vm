@@ -167,6 +167,19 @@ impl GraphReceipt {
         execution_time_ms: u64,
     ) -> Result<(Self, BTreeMap<String, Tensor>)> {
         let execution = job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?;
+        Self::from_ir_execution(job, miner, execution, submitted_at_block, execution_time_ms)
+    }
+
+    pub fn from_ir_execution(
+        job: &GraphJob,
+        miner: Address,
+        execution: IrExecution,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Result<(Self, BTreeMap<String, Tensor>)> {
+        if execution.graph_id != job.graph_id {
+            return Err(TvmError::InvalidReceipt("graph execution id mismatch"));
+        }
         let output_roots = execution
             .outputs
             .iter()

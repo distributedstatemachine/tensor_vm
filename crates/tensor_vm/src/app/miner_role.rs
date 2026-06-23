@@ -5,7 +5,7 @@ use crate::{
     RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
     error::TvmError,
     hash::hex,
-    roles::{CpuReferenceMinerRole, execute_job_with_backend},
+    roles::{GraphJobExecution, execute_graph_job_with_backend, execute_job_with_backend},
     runtime::{BackendKind, CpuReferenceBackend, GpuMinerBackend},
     types::{Address, Hash, parse_hash_hex},
 };
@@ -124,10 +124,9 @@ fn execute_miner_role_job_with_device(
     job_id: Hash,
     device: &str,
 ) -> std::result::Result<(crate::RoleReceiptBundle, BackendKind), String> {
-    let role = CpuReferenceMinerRole::new(miner);
     let device = device.trim();
     let result = match job {
-        JobState::GraphExecution(graph_job) => {
+        JobState::GraphExecution(graph_job) if device == "cpu" || device.starts_with("cuda:") => {
             let graph = graph_from_program_body(node, &graph_job.graph_id)?;
             let mut inputs = std::collections::BTreeMap::new();
             for (name, root) in &graph_job.input_roots {
@@ -141,16 +140,44 @@ fn execute_miner_role_job_with_device(
                 inputs.insert(name.clone(), tensor);
             }
             let const_blobs = graph_const_blobs_from_node(node, &graph)?;
-            role.execute_graph_job(
-                graph_job,
-                &graph,
-                &inputs,
-                &const_blobs,
-                node.chain.state().height(),
-                1,
-            )
-            .map(|bundle| (bundle, BackendKind::CpuReference))
+            if device == "cpu" {
+                execute_graph_job_with_backend(
+                    miner,
+                    CpuReferenceBackend,
+                    GraphJobExecution {
+                        job: graph_job,
+                        graph: &graph,
+                        inputs: &inputs,
+                        const_blobs: &const_blobs,
+                        submitted_at_block: node.chain.state().height(),
+                        execution_time_ms: 1,
+                    },
+                )
+                .map(|bundle| (bundle, BackendKind::CpuReference))
+            } else {
+                execute_graph_job_with_backend(
+                    miner,
+                    GpuMinerBackend::new(device),
+                    GraphJobExecution {
+                        job: graph_job,
+                        graph: &graph,
+                        inputs: &inputs,
+                        const_blobs: &const_blobs,
+                        submitted_at_block: node.chain.state().height(),
+                        execution_time_ms: 1,
+                    },
+                )
+                .map(|bundle| {
+                    (
+                        bundle,
+                        BackendKind::GpuMiner {
+                            device: device.to_owned(),
+                        },
+                    )
+                })
+            }
         }
+        JobState::GraphExecution(_) => Err(TvmError::InvalidReceipt("unsupported miner device")),
         JobState::TensorOp(_) | JobState::LinearTrainingStep(_) if device == "cpu" => {
             execute_job_with_backend(
                 miner,

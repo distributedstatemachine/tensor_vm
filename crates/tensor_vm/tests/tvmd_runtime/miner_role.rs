@@ -145,6 +145,50 @@ fn miner_role_cuda_device_selection_reaches_gpu_backend_without_cuda_feature() {
     }
 }
 
+#[test]
+fn miner_role_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_feature() {
+    #[cfg(not(feature = "cuda-kernels"))]
+    {
+        let params = ChainParams {
+            replication_factor: 1,
+            agreement_quorum: 1,
+            ..ChainParams::default()
+        };
+        let mut chain = Chain::with_params(
+            params,
+            hash_bytes(b"test", &[b"miner-cuda-graph-selection"]),
+        );
+        let miner = address(b"miner-cuda-graph-selection-miner");
+        register_miner(&mut chain, miner);
+        let graph = tensor_vm::SyntheticLocalJobSource::graph_execution_graph();
+        let inputs = tensor_vm::SyntheticLocalJobSource::graph_execution_inputs();
+        let mut source = tensor_vm::SyntheticLocalJobSource::default();
+        let job = source.next_graph_job(&chain);
+        let job_id = job.job_id;
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id: job.graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(
+                tensor_vm::JobState::GraphExecution(job),
+            ))
+            .unwrap();
+        let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+        for tensor in inputs.into_values() {
+            node.insert_tensor(tensor);
+        }
+
+        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
+            .expect_err("default build must route cuda graph selection to backend failure");
+
+        assert!(error.contains("cuda kernels not compiled"));
+        assert!(node.chain.state().receipts().is_empty());
+    }
+}
+
 #[cfg(feature = "cuda-kernels")]
 #[test]
 fn miner_role_submits_tensor_op_with_configured_cuda_backend() {
@@ -205,6 +249,90 @@ fn miner_role_submits_tensor_op_with_configured_cuda_backend() {
     assert_eq!(cuda_receipt.job_id(), job_id);
     assert_eq!(cuda_receipt.miner(), miner);
     assert_eq!(cuda_receipt.receipt_id(), cpu_receipt.receipt_id());
+}
+
+#[cfg(feature = "cuda-kernels")]
+#[test]
+fn miner_role_submits_graph_execution_with_configured_cuda_backend() {
+    if tensor_vm::cuda_device_count().unwrap_or(0) == 0 {
+        return;
+    }
+    let params = ChainParams {
+        replication_factor: 1,
+        agreement_quorum: 1,
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"miner-cuda-graph"]));
+    let miner = address(b"miner-cuda-graph-miner");
+    register_miner(&mut chain, miner);
+    let graph = tensor_vm::SyntheticLocalJobSource::graph_execution_graph();
+    let inputs = tensor_vm::SyntheticLocalJobSource::graph_execution_inputs();
+    let mut source = tensor_vm::SyntheticLocalJobSource::default();
+    let job = source.next_graph_job(&chain);
+    let job_id = job.job_id;
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id: job.graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::GraphExecution(job),
+        ))
+        .unwrap();
+    let mut cpu_node = RpcNode::with_faucet(chain.clone(), Faucet::new(1_000_000, 100));
+    let mut cuda_node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+    for tensor in inputs.values() {
+        cpu_node.insert_tensor(tensor.clone());
+        cuda_node.insert_tensor(tensor.clone());
+    }
+
+    let cpu_submission = submit_miner_role_receipt(&mut cpu_node, miner, job_id)
+        .unwrap()
+        .expect("cpu role should submit graph receipt");
+    let cuda_submission =
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+            .unwrap()
+            .expect("cuda role should submit graph receipt");
+
+    assert_eq!(cpu_submission.backend_kind, BackendKind::CpuReference);
+    assert_eq!(
+        cuda_submission.backend_kind,
+        BackendKind::GpuMiner {
+            device: "cuda:0".to_owned()
+        }
+    );
+    assert_eq!(cuda_submission.receipts_submitted, 1);
+    assert_eq!(cuda_submission.tensors_inserted, 3);
+    let cpu_receipt = cpu_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cpu graph receipt should be stored");
+    let cuda_receipt = cuda_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cuda graph receipt should be stored");
+    assert_eq!(cuda_receipt.job_id(), job_id);
+    assert_eq!(cuda_receipt.miner(), miner);
+    assert_eq!(cuda_receipt.receipt_id(), cpu_receipt.receipt_id());
+    let ReceiptState::GraphExecution(cpu_graph_receipt) = cpu_receipt else {
+        panic!("cpu receipt must be graph execution");
+    };
+    let ReceiptState::GraphExecution(cuda_graph_receipt) = cuda_receipt else {
+        panic!("cuda receipt must be graph execution");
+    };
+    assert_eq!(
+        cuda_graph_receipt.output_roots,
+        cpu_graph_receipt.output_roots
+    );
+    assert_eq!(cuda_graph_receipt.trace_root, cpu_graph_receipt.trace_root);
 }
 
 #[cfg(feature = "cuda-kernels")]
