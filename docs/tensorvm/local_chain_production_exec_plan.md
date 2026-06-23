@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 205 pushed: Public Service URL Diversity Gate.
+- Active feature: Iteration 206 in progress: Reward-Finality Formal Status Alignment.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
@@ -44,6 +44,78 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 206: Reward-Finality Formal Status Alignment
+
+Feature capability: align formal proof-status documents with the current local reward-finality runtime:
+pending receipt, proposer, challenge, audit-related, and credit reward ledgers exist locally with maturity,
+voiding, and prune/nonpayment paths for implemented disputes, while the complete theorem remains blocked
+on full verifier-transcript challenges, DA-through-window evidence, public deployed dispute propagation,
+and formal proof discharge.
+
+Readiness requirements covered: `upow.md` §12 and `mvp_spec.md` reward-finality wording require delayed
+verifier-dependent settlement instead of immediate spendable rewards. Formal docs must not say that reward
+state is "not started" when current code has pending reward ledgers, but they also must not over-claim the
+full v0 theorem.
+
+Canonical owner: formal proof-status docs under `docs/formal/` describe theorem readiness; chain reward
+state remains owned by `crates/tensor_vm/src/chain/state.rs` and maturity release by
+`crates/tensor_vm/src/chain/commands.rs`.
+
+Adapter callers: reviewers, readiness docs, and future proof work consume these formal status docs.
+
+Old shortcut being removed: stale formal wording described delayed reward finality as paper-only or
+unimplemented, encouraging workaround thinking instead of acknowledging the existing pending-claim
+runtime boundary.
+
+Regression test that proves the shortcut is gone: documentation search rejects stale reward-finality
+"not implemented"/"paper-only" status phrases for the current local reward state while preserving blocked
+theorem wording.
+
+Behavior with local synthetic block production disabled: unchanged; documentation-only iteration.
+
+Behavior for producer and non-producer roles: unchanged; documentation-only iteration.
+
+Structured evidence source: `PendingProposerReward`, `PendingReceiptReward`, `PendingChallengeReward`,
+`PendingCreditReward`, reward release functions, and existing reward tests.
+
+Finality source: unchanged; this iteration only distinguishes block ordering finality from reward
+maturity/finality in proof docs.
+
+Wire-size and codec boundary: no wire or codec changes.
+
+Parallel subagents to run: none. This is a docs/status alignment slice with a small file set.
+
+Tests/checkers/docs to add or update: formal proof obligations, adversary model, theorem dependency graph,
+assumption discharge plan, and this exec plan.
+
+Narrow validation commands: stale-phrase `rg` checks and `git diff --check`.
+
+Broad validation commands before commit: Gate 0 was first; docs-only slice uses targeted doc hygiene unless
+code changes appear.
+
+Expected observable evidence: formal docs state the existing local pending-claim implementation accurately
+and keep the full reward-finality theorem blocked until transcript/DA/public proof obligations are met.
+
+Out of scope: adding new reward-state code, new verifier services, or proving full reward-finality theorem
+completion.
+
+Split trigger: split if inspection finds a real immediate-credit runtime path for verifier-dependent
+rewards that requires code changes rather than documentation correction.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- `cargo test -p tensor_vm formal_status_docs_record_local_fallback_and_delayed_reward_evidence --lib`
+  passed after extending the formal-status doc regression to cover the touched proof-status files and stale
+  reward-finality phrases.
+- Stale-phrase search passed:
+  `rg -n "reward finality is paper-specified only|reward-finality state and challenge resolution are not implemented|RewardFinalityState.*Paper-specified.*implementation not started|miner/validator reward finality.*remain incomplete|Block proposer reward finality is partially discharged locally" docs/formal docs/tensorvm -g '*.md'`
+  returned no matches.
+- `cargo test -p tensor_vm --lib` passed: 559 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 205: Public Service URL Diversity Gate
 

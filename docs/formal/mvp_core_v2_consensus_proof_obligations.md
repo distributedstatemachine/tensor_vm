@@ -97,7 +97,7 @@ This theorem must not be stated over the current v1 block type.
 | `PowHeader` | parent hash, selected receipt root, checks root, beacon, proposer | Needed to bind nonce search to useful verification. | Missing. |
 | `DifficultyState` | target, retarget window, hardest/easiest bounds, hash-to-target version, work-floor params | Needed to prove target validity and liveness bounds. | Paper-specified in `mvp_core_difficulty_retarget_model.md`; implementation not started. |
 | `BlockVoteV2` or validation rule | vote over valid v2 block hash after block validation | Needed to prove finality counts valid blocks only. | Missing. |
-| `RewardFinalityState` | pending claims, challenge windows, challenge resolutions, settled claims, clawbacks | Needed to prove `reward_root` and delayed verifier-dependent settlement. | Paper-specified in `mvp_core_reward_finality_challenge_model.md`; implementation not started. |
+| `RewardFinalityState` | pending claims, challenge windows, challenge resolutions, settled claims, clawbacks | Needed to prove `reward_root` and delayed verifier-dependent settlement. | Local pending receipt, proposer, challenge, audit-related, and credit reward ledgers exist with maturity, voiding, and nonpayment/prune paths for implemented disputes. Full proof remains blocked on verifier-transcript challenges, DA-through-window evidence, public dispute propagation, and theorem discharge. |
 | `FallbackBlock` rule | timeout, stake rotation, reduced reward, no miner TWU rewards for empty blockspace | Needed for zero-receipt/no-PoW liveness theorem. | Paper-specified in `mvp_core_fallback_liveness_model.md`; implementation not started. |
 
 ## Theorem Spine

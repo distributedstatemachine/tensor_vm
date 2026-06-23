@@ -368,6 +368,22 @@ fn formal_status_docs_record_local_fallback_and_delayed_reward_evidence() {
             include_str!("../../../../../docs/formal/mvp_core_proof_completion_audit.md"),
         ),
         (
+            "v2 proof obligations",
+            include_str!("../../../../../docs/formal/mvp_core_v2_consensus_proof_obligations.md"),
+        ),
+        (
+            "adversary model",
+            include_str!("../../../../../docs/formal/mvp_core_adversary_model.md"),
+        ),
+        (
+            "theorem dependency graph",
+            include_str!("../../../../../docs/formal/mvp_core_theorem_dependency_graph.md"),
+        ),
+        (
+            "assumption discharge plan",
+            include_str!("../../../../../docs/formal/mvp_core_assumption_discharge_plan.md"),
+        ),
+        (
             "bad assumptions ledger",
             include_str!("../../../../../docs/formal/bad_assumptions_ledger.md"),
         ),
@@ -383,6 +399,9 @@ fn formal_status_docs_record_local_fallback_and_delayed_reward_evidence() {
                 "Current selector still uses settled TensorWork",
                 "reward state, challenge openings, clawback, and settlement tests are missing",
                 "no pending/challenged/invalidated/settled reward state or challenge resolution",
+                "reward finality is paper-specified only",
+                "reward-finality state and challenge resolution are not implemented",
+                "RewardFinalityState` | pending claims, challenge windows, challenge resolutions, settled claims, clawbacks | Needed to prove `reward_root` and delayed verifier-dependent settlement. | Paper-specified",
             ],
             label,
         );
