@@ -64,16 +64,28 @@ fn supported_cuda_graph_execution_case() -> (
             },
             tensor_vm::OpNode {
                 id: 3,
+                op: "mul".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 2, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("mixed", vec![2, 2])],
+            },
+            tensor_vm::OpNode {
+                id: 4,
                 op: "transpose".to_owned(),
-                args: vec![tensor_vm::IrRef::Op { id: 2, idx: 0 }],
+                args: vec![tensor_vm::IrRef::Op { id: 3, idx: 0 }],
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("transposed", vec![2, 2])],
             },
             tensor_vm::OpNode {
-                id: 4,
+                id: 5,
                 op: "scalar_mul".to_owned(),
                 args: vec![
-                    tensor_vm::IrRef::Op { id: 3, idx: 0 },
+                    tensor_vm::IrRef::Op { id: 4, idx: 0 },
                     tensor_vm::IrRef::Param {
                         name: "scale".to_owned(),
                     },
@@ -82,16 +94,16 @@ fn supported_cuda_graph_execution_case() -> (
                 out: vec![tensor_vm::TensorSpec::field("scaled", vec![2, 2])],
             },
             tensor_vm::OpNode {
-                id: 5,
+                id: 6,
                 op: "relu".to_owned(),
-                args: vec![tensor_vm::IrRef::Op { id: 4, idx: 0 }],
+                args: vec![tensor_vm::IrRef::Op { id: 5, idx: 0 }],
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("activated", vec![2, 2])],
             },
         ],
         outputs: vec![tensor_vm::GraphOutput {
             name: "activated".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 5, idx: 0 },
+            value: tensor_vm::IrRef::Op { id: 6, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

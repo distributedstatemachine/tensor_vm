@@ -137,12 +137,9 @@ fn generated_public_evidence_manifest_round_trips_through_tvmd_validator() {
     for (kind, root, count) in [
         ("block-history", "44".repeat(32), "10"),
         ("finality-history", "55".repeat(32), "10"),
-        ("randomness-beacon", "a0".repeat(32), "10"),
-        ("data-availability", "77".repeat(32), "20"),
         ("invalid-work", "88".repeat(32), "1"),
         ("reward-settlement", "99".repeat(32), "1"),
         ("detection-measurement", "cc".repeat(32), "1"),
-        ("validator-vrf-lifecycle", "dd".repeat(32), "20"),
     ] {
         summary_lines.push(trimmed_tvmd(&[
             "public",
@@ -179,6 +176,172 @@ fn generated_public_evidence_manifest_round_trips_through_tvmd_validator() {
             count,
         ]));
     }
+
+    let randomness_lines = (0..10)
+        .map(|block| {
+            format!(
+                "randomness_beacon_record={},{},{},{},drand-v1,{block},accepted",
+                "a0".repeat(32),
+                block + 1,
+                hex(&test_hash(
+                    b"test",
+                    &[b"generated-randomness".as_ref(), &[block as u8]]
+                )),
+                hex(&test_hash(
+                    b"test",
+                    &[b"generated-randomness-proof".as_ref(), &[block as u8]]
+                ))
+            )
+        })
+        .collect::<Vec<_>>();
+    let randomness_record_file = data_dir.join("randomness-beacon.records");
+    std::fs::write(&randomness_record_file, randomness_lines.join("\n"))
+        .expect("randomness record file must be written");
+    let randomness_record_file_text = randomness_record_file.to_string_lossy().into_owned();
+    summary_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "summary-file",
+        "--kind",
+        "randomness-beacon",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--record-file",
+        &randomness_record_file_text,
+    ]));
+    artifact_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "artifact-file",
+        "--kind",
+        "randomness-beacon",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--artifact-uri",
+        "https://evidence.tensorvm.net/tensorvm/randomness-beacon.json",
+        "--record-file",
+        &randomness_record_file_text,
+    ]));
+
+    let receipt_roots = (0..20)
+        .map(|index| test_hash(b"test", &[b"generated-receipt-root".as_ref(), &[index]]))
+        .collect::<Vec<_>>();
+    let data_availability_lines = receipt_roots
+        .iter()
+        .enumerate()
+        .map(|(index, root)| {
+            format!(
+                "data_availability_measurement={},available,{index}",
+                hex(root)
+            )
+        })
+        .collect::<Vec<_>>();
+    let data_availability_record_file = data_dir.join("data-availability.records");
+    std::fs::write(
+        &data_availability_record_file,
+        data_availability_lines.join("\n"),
+    )
+    .expect("data availability record file must be written");
+    let data_availability_record_file_text =
+        data_availability_record_file.to_string_lossy().into_owned();
+    summary_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "summary-file",
+        "--kind",
+        "data-availability",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--record-file",
+        &data_availability_record_file_text,
+    ]));
+    artifact_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "artifact-file",
+        "--kind",
+        "data-availability",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--artifact-uri",
+        "https://evidence.tensorvm.net/tensorvm/data-availability.json",
+        "--record-file",
+        &data_availability_record_file_text,
+    ]));
+
+    let validator_id = "cc".repeat(32);
+    let validator_vrf_lifecycle_lines = receipt_roots
+        .iter()
+        .enumerate()
+        .flat_map(|(index, root)| {
+            let observed = index as u64 % 10;
+            [
+                format!(
+                    "validator_vrf_lifecycle={},{},{},committed,{observed}",
+                    hex(root),
+                    validator_id,
+                    index + 1
+                ),
+                format!(
+                    "validator_vrf_lifecycle={},{},{},revealed,{observed}",
+                    hex(root),
+                    validator_id,
+                    index + 1
+                ),
+            ]
+        })
+        .collect::<Vec<_>>();
+    let validator_vrf_lifecycle_record_file = data_dir.join("validator-vrf-lifecycle.records");
+    std::fs::write(
+        &validator_vrf_lifecycle_record_file,
+        validator_vrf_lifecycle_lines.join("\n"),
+    )
+    .expect("validator vrf lifecycle record file must be written");
+    let validator_vrf_lifecycle_record_file_text = validator_vrf_lifecycle_record_file
+        .to_string_lossy()
+        .into_owned();
+    summary_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "summary-file",
+        "--kind",
+        "validator-vrf-lifecycle",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--record-file",
+        &validator_vrf_lifecycle_record_file_text,
+    ]));
+    artifact_lines.push(trimmed_tvmd(&[
+        "public",
+        "evidence",
+        "record",
+        "artifact-file",
+        "--kind",
+        "validator-vrf-lifecycle",
+        "--bundle-id",
+        &bundle_id,
+        "--manifest-signer",
+        &manifest_signer,
+        "--artifact-uri",
+        "https://evidence.tensorvm.net/tensorvm/validator-vrf-lifecycle.json",
+        "--record-file",
+        &validator_vrf_lifecycle_record_file_text,
+    ]));
 
     let miner_a = "aa".repeat(32);
     let miner_a_operator = "dd".repeat(32);
@@ -544,6 +707,12 @@ operator_identity_attestation_records=3
 {}
 {}
 {network_summary}
+{}
+{}
+{}
+{}
+{}
+{}
 libp2p_runtime_used=true
 peer_discovery_observed=true
 gossip_propagation_observed=true
@@ -552,19 +721,19 @@ dos_controls_enabled=true
 {run_window}
 finalized_blocks=10
 checked_receipts=20
-available_receipts=19
+available_receipts=20
 invalid_receipts_submitted=1
 invalid_receipts_rejected=1
 cuda_verified_miner_count=2
 cuda_graph_execution_receipts=1
-{}
-{}
-{}
 ",
         artifact_lines.join("\n"),
         summary_lines.join("\n"),
         operator_lines.join("\n"),
         network_lines.join("\n"),
+        randomness_lines.join("\n"),
+        data_availability_lines.join("\n"),
+        validator_vrf_lifecycle_lines.join("\n"),
         node_lines.join("\n"),
         service_lines.join("\n"),
         service_content_lines.join("\n"),
@@ -592,7 +761,7 @@ cuda_graph_execution_receipts=1
     assert_eq!(stdout_value(&report, "cuda_miner_evidence"), "true");
     assert_eq!(
         stdout_value(&report, "validator_vrf_lifecycle_records"),
-        "20"
+        "40"
     );
     assert_eq!(
         stdout_value(&report, "validator_vrf_lifecycle_record_evidence"),

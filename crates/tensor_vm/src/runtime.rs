@@ -353,6 +353,12 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(rhs)?;
             cuda::field_sub(device_index, lhs, rhs)?
         }
+        "mul" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_mul(device_index, lhs, rhs)?
+        }
         "matmul" => {
             let [lhs, rhs] = two_graph_tensor_values(args)?;
             require_graph_field_tensor(lhs)?;
@@ -503,7 +509,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
         if expected_graph != actual_graph {
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
-        passed_ops.extend(["add", "relu"]);
+        passed_ops.extend(["add", "mul", "relu"]);
 
         Ok(ConformanceProfile {
             suite_hash: conformance_suite_hash(),
@@ -575,16 +581,28 @@ fn supported_cuda_graph_conformance_case() -> Result<(
             },
             OpNode {
                 id: 3,
+                op: "mul".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 2, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("mixed", vec![2, 2])],
+            },
+            OpNode {
+                id: 4,
                 op: "transpose".to_owned(),
-                args: vec![IrRef::Op { id: 2, idx: 0 }],
+                args: vec![IrRef::Op { id: 3, idx: 0 }],
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("transposed", vec![2, 2])],
             },
             OpNode {
-                id: 4,
+                id: 5,
                 op: "scalar_mul".to_owned(),
                 args: vec![
-                    IrRef::Op { id: 3, idx: 0 },
+                    IrRef::Op { id: 4, idx: 0 },
                     IrRef::Param {
                         name: "scale".to_owned(),
                     },
@@ -593,16 +611,16 @@ fn supported_cuda_graph_conformance_case() -> Result<(
                 out: vec![TensorSpec::field("scaled", vec![2, 2])],
             },
             OpNode {
-                id: 5,
+                id: 6,
                 op: "relu".to_owned(),
-                args: vec![IrRef::Op { id: 4, idx: 0 }],
+                args: vec![IrRef::Op { id: 5, idx: 0 }],
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("activated", vec![2, 2])],
             },
         ],
         outputs: vec![GraphOutput {
             name: "activated".to_owned(),
-            value: IrRef::Op { id: 5, idx: 0 },
+            value: IrRef::Op { id: 6, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -646,6 +664,13 @@ mod cuda {
             len: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_add(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_mul(
             device_index: u32,
             lhs: *const u64,
             rhs: *const u64,
@@ -745,6 +770,26 @@ mod cuda {
         let mut out = vec![0; lhs.len()];
         let code = unsafe {
             tensor_vm_cuda_field_sub(
+                device_index,
+                lhs.as_slice().as_ptr(),
+                rhs.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                lhs.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(lhs.shape().to_vec(), lhs.dtype(), out)
+    }
+
+    pub fn field_mul(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        require_same_shape(lhs, rhs)?;
+        require_field_element_tensor(lhs)?;
+        require_field_element_tensor(rhs)?;
+        let mut out = vec![0; lhs.len()];
+        let code = unsafe {
+            tensor_vm_cuda_field_mul(
                 device_index,
                 lhs.as_slice().as_ptr(),
                 rhs.as_slice().as_ptr(),
@@ -1028,6 +1073,7 @@ mod tests {
             "add",
             "sub",
             "matmul",
+            "mul",
             "transpose",
             "relu",
             "scalar_mul",
@@ -1036,7 +1082,6 @@ mod tests {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
         for op in [
-            "mul",
             "div",
             "sum",
             "mean",
@@ -1203,6 +1248,9 @@ mod tests {
 
         let add = cuda::field_add(0, &lhs, &rhs).unwrap();
         assert_eq!(add, lhs.add(&rhs).unwrap());
+
+        let multiplied = cuda::field_mul(0, &lhs, &rhs).unwrap();
+        assert_eq!(multiplied, lhs.mul(&rhs).unwrap());
 
         let relu = cuda::field_relu(0, &lhs).unwrap();
         let expected_relu = Tensor::from_vec(

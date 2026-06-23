@@ -104,8 +104,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   bounded `TVQ8` byte layout length calculation, shared encode/decode validation for IR replay and
   conformance, and first-class `Uint8` tensor artifact construction/decode methods whose descriptors,
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
-  graph program, tensor artifacts, and trace-opening samples is implemented locally; the full interactive
-  dispute game and CUDA generic graph execution remain open.
+  graph program, tensor artifacts, and trace-opening samples is implemented locally. CUDA graph execution
+  locally covers the current synthetic graph shape and a same-shape field-op subset
+  (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`) through `GpuMinerBackend`; the full
+  interactive dispute game, fixed-point CUDA graph ops, and full frozen-registry CUDA graph execution
+  remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
@@ -418,8 +421,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `--features cuda-kernels` plus an available CUDA device before `--device cuda:N` can report GPU miner
   readiness
 - Optional `cuda-kernels` feature that builds `kernels/cuda/field_matmul.cu` with `nvcc`, routes the
-  `GpuMinerBackend` matmul path and LinearTrainingStep forward, backward, error, update, transpose, and
-  loss substeps through native CUDA kernels, and checks CUDA outputs against canonical CPU outputs
+  `GpuMinerBackend` matmul path, same-shape field graph `add`/`sub`/`mul`/`relu`/`scalar_mul`/`transpose`
+  ops, and LinearTrainingStep forward, backward, error, update, transpose, and loss substeps through
+  native CUDA kernels, and checks CUDA outputs against canonical CPU outputs
 - Restartable `NodeStore` data directory that persists chain snapshots, append-only block logs, and the
   durable peer book with fixed-format encoding, checksum validation, parent-link checks, append-only sync,
   full-chain state snapshots for restart, snapshot/block-log/state mismatch detection, and service-init

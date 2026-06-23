@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 229 complete: CUDA Supported Graph Op Conformance Boundary.
+- Active feature: Iteration 230 in progress: CUDA Field Mul Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
   CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
@@ -78,10 +78,9 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: broaden CUDA kernels/conformance beyond the currently exercised field-op subset toward
-  remaining admitted exact ops, without overclaiming full frozen-registry coverage. Stop the
-  public-evidence-validator tightening loop;
-  redirect iterations to drand-live + CUDA blocks.
+- Next action: implement and validate CUDA field `mul` graph execution/conformance as the next admitted
+  exact Tier-B op, without overclaiming fixed-point `mul` or unsupported frozen-registry coverage. Stop the
+  public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
 
@@ -97,10 +96,119 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the LIVE consensus randomness source (not a fixture). Bespoke per-validator VRF is roadmap, not v0 |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/relu kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and a supported multi-op field graph; Iteration 227 proves live `miner run --device cuda:N` receipt execution reaches `GpuMinerBackend` for TensorOp/LinearTrainingStep; Iteration 228 proves the same for current GraphExecution (`add` -> `relu`); Iteration 229 proves supported multi-op GraphExecution (`matmul`/`add`/`sub`/`transpose`/`scalar_mul`/`relu`) and tightens GPU conformance reporting to the exercised CUDA subset | Add kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/relu/scalar_mul/transpose kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and a supported multi-op field graph; Iteration 227 proves live `miner run --device cuda:N` receipt execution reaches `GpuMinerBackend` for TensorOp/LinearTrainingStep; Iteration 228 proves the same for current GraphExecution (`add` -> `relu`); Iteration 229 proves supported multi-op GraphExecution (`matmul`/`add`/`sub`/`transpose`/`scalar_mul`/`relu`) and tightens GPU conformance reporting to the exercised CUDA subset; Iteration 230 adds field `mul` to the CUDA graph/kernel/conformance subset | Add kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 230: CUDA Field Mul Graph Kernel/Conformance
+
+Feature capability: add an exported CUDA elementwise field `mul` kernel and route `GraphExecution` `mul`
+ops through `GpuMinerBackend` for field tensors, so CUDA graph conformance broadens to another admitted
+exact Tier-B op without falling back to CPU or claiming fixed-point/mixed-scale `mul`.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.2/§3.3, §4.7, and §16
+require local A100 CUDA evidence for admitted exact `F_p` ops while keeping unsupported CUDA coverage
+explicitly gated.
+
+Files/modules likely touched: `crates/tensor_vm/kernels/cuda/field_matmul.cu`,
+`crates/tensor_vm/src/runtime.rs`, `crates/tensor_vm/tests/tvmd_runtime/miner_role.rs`, `upow.md`, and
+this exec plan.
+
+Canonical owner: CUDA runtime owns accelerated field `mul` execution and conformance reporting; TensorGraph
+continues to own canonical graph semantics; miner role only selects the requested backend and submits the
+resulting canonical receipt.
+
+Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+focused runtime/miner-role tests.
+
+Old shortcut being removed: field `mul` is an admitted exact graph op but currently fails at the CUDA graph
+boundary, forcing CUDA conformance to omit it.
+
+Regression test that proves the shortcut is gone: CUDA-feature runtime tests must assert `cuda::field_mul`
+matches canonical tensor `mul`, the supported CUDA graph parity case includes `mul`, and the GPU profile
+passes `mul`; miner-role CUDA graph receipt tests must submit the same multi-op graph through
+`BackendKind::GpuMiner`.
+
+Behavior with local synthetic block production disabled: unchanged; graph execution uses existing chain
+jobs and backend-selected receipt execution.
+
+Behavior for producer and non-producer roles: unchanged; validators/proposers consume the same graph
+receipts and finality logic, and miners do not produce blocks.
+
+Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+miner-role `backend_kind`, direct CUDA kernel parity assertions, and explicit unsupported-op CUDA graph
+errors for still-unsupported ops.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, voting, rewards, or
+finality.
+
+Wire-size and codec boundary: no wire or codec changes; existing graph/job/receipt payload codecs remain
+unchanged.
+
+Parallel subagents to run: none in this tool session because the available subagent tool explicitly forbids
+spawning unless the user asks for delegation; parent will do single-writer implementation and manual
+verifier-style review.
+
+Parallelizable implementation workstreams: parent-only code edits because CUDA kernel bindings, runtime
+profile assertions, and miner-role graph tests share files.
+
+Tests/checkers/docs to add or update: CUDA runtime direct `field_mul` parity test, supported multi-op graph
+parity/profile tests, miner-role multi-op CUDA graph receipt test, `upow.md` CUDA status, and this exec
+plan.
+
+Narrow validation commands: focused `--features cuda-kernels` runtime graph/profile tests and focused
+miner-role multi-op CUDA GraphExecution tests.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, `cargo clippy -p
+tensor_vm --all-targets -- -D warnings`, `cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: a CUDA backend can execute a supported field graph containing `mul` with
+bit-exact CPU/GPU roots, `backend_conformance_profile(&GpuMinerBackend)` passes `mul`, and unsupported
+consensus ops such as `div`, `sum`, comparison, quantization, and structural ops remain unclaimed.
+
+Out of scope: fixed-point/mixed-scale CUDA `mul`, broadcasting CUDA `mul`, full frozen-registry CUDA
+conformance, public deployment evidence, reward mechanics, or changes to consensus/finality.
+
+Split trigger: split if elementwise `mul` requires broader tensor broadcasting semantics or fixed-point
+scale support; keep this iteration to same-shape field tensors if that occurs.
+
+Implementation summary: CUDA now exports a same-shape field `mul` kernel, Rust binding
+`cuda::field_mul`, and a `GraphExecution` `mul` branch in `GpuMinerBackend` for field tensors. The
+supported CUDA graph conformance case and miner-role supported graph fixture now include
+`matmul -> add -> sub -> mul -> transpose -> scalar_mul -> relu`. GPU conformance reporting now marks
+`mul` only after the CPU/GPU graph parity case passes, while fixed-point `mul`, broadcasting, `div`,
+reductions, comparisons, quantization, and structural ops remain unclaimed at the CUDA boundary. The broad
+workspace release gate also exposed a stale generated public-evidence CLI fixture; that fixture now builds
+raw randomness, data-availability, and validator-VRF lifecycle records through the existing CLI
+summary-file/artifact-file flow instead of hardcoded placeholder roots, with no production evidence
+validator change.
+
+Validation evidence:
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- CUDA runtime module: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed, 10
+  tests, covering direct field `mul` parity, supported multi-op graph parity with `mul`, unsupported-op
+  rejection, and GPU conformance subset assertions.
+- CUDA miner-role multi-op graph: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed.
+- Default unsupported-build boundary: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_supported_multi_op_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_feature`
+  passed.
+- Broad default library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints and hygiene: `cargo fmt --check`, `cargo clippy -p tensor_vm --all-targets -- -D warnings`, and
+  `git diff --check` passed.
+- Post-change Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026.
+- Coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed
+  with 588 instrumented tests and 85.03% workspace line coverage, 23831/28026 lines covered. CUDA-feature
+  native paths are validated by the focused `--features cuda-kernels` commands above, not by the portable
+  default tarpaulin run.
+- Focused stale-fixture release regression:
+  `cargo test -p tensor_vm --test tvmd_cli
+  generated_public_evidence_manifest_round_trips_through_tvmd_validator --release -- --nocapture`
+  passed after regenerating raw evidence records in the fixture.
+- Workspace broad gates: `cargo test --workspace --release` passed, and
+  `cargo clippy --workspace --all-targets -- -D warnings` passed.
 
 ### Iteration 229: CUDA Supported Graph Op Conformance Boundary
 

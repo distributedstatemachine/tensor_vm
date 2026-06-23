@@ -69,6 +69,17 @@ __global__ void field_add_kernel(
     }
 }
 
+__global__ void field_mul_kernel(
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        out[index] = field_mul(lhs[index], rhs[index]);
+    }
+}
+
 __global__ void field_relu_kernel(
     const uint64_t* input,
     uint64_t* out,
@@ -375,6 +386,70 @@ extern "C" int tensor_vm_cuda_field_add(
         constexpr uint64_t threads_per_block = 256;
         uint64_t blocks = block_count(len);
         field_add_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_lhs,
+            device_rhs,
+            device_out,
+            len);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_lhs);
+    cudaFree(device_rhs);
+    cudaFree(device_out);
+    return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_field_mul(
+    uint32_t device_index,
+    const uint64_t* lhs,
+    const uint64_t* rhs,
+    uint64_t* out,
+    uint64_t len) {
+    if (lhs == nullptr || rhs == nullptr || out == nullptr) {
+        return -1;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_lhs = nullptr;
+    uint64_t* device_rhs = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_lhs, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_rhs, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_lhs);
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_lhs);
+        cudaFree(device_rhs);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_lhs, lhs, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(device_rhs, rhs, bytes, cudaMemcpyHostToDevice);
+    }
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        field_mul_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
             device_lhs,
             device_rhs,
             device_out,

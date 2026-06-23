@@ -5,7 +5,7 @@ use std::process::{Command, Stdio};
 use std::time::{Duration, Instant};
 
 use libp2p::PeerId;
-use tensor_vm::hash::hex;
+use tensor_vm::hash::{Sha256, hex};
 use tensor_vm::types::address;
 
 #[path = "support/comma_records.rs"]
@@ -71,6 +71,15 @@ fn unique_test_dir(name: &str) -> std::path::PathBuf {
     ));
     std::fs::create_dir_all(&dir).expect("test dir must be created");
     dir
+}
+
+fn test_hash(domain: &[u8], parts: &[&[u8]]) -> [u8; 32] {
+    let mut hasher = Sha256::new();
+    hasher.update_len_prefixed(domain);
+    for part in parts {
+        hasher.update_len_prefixed(part);
+    }
+    hasher.finalize()
 }
 
 fn free_local_port() -> u16 {
