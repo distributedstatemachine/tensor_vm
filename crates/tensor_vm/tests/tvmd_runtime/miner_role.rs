@@ -3,7 +3,8 @@ use std::collections::BTreeMap;
 use tensor_vm::app::{
     MinerRoleWorkObservation, RuntimeRole, ServiceRuntimeConfig,
     fetch_miner_role_missing_graph_artifacts, miner_role_work_observation, runtime_node_config,
-    start_runtime_services, submit_miner_role_receipt, tick_miner_role_work_once,
+    start_runtime_services, submit_miner_role_receipt, submit_miner_role_receipt_with_device,
+    tick_miner_role_work_once,
 };
 
 #[test]
@@ -96,6 +97,7 @@ fn miner_role_submits_assigned_unreceipted_tensor_op_once() {
 
     assert_eq!(submission.receipts_submitted, 1);
     assert_eq!(submission.tensors_inserted, 3);
+    assert_eq!(submission.backend_kind, BackendKind::CpuReference);
     assert_eq!(node.chain.state().receipts().len(), 1);
     let receipt = node
         .chain
@@ -110,6 +112,155 @@ fn miner_role_submits_assigned_unreceipted_tensor_op_once() {
     let observation = miner_role_work_observation(&node.chain, miner);
     assert_eq!(observation.assigned_jobs, BTreeSet::from([job_id]));
     assert!(observation.unreceipted_jobs.is_empty());
+}
+
+#[test]
+fn miner_role_cuda_device_selection_reaches_gpu_backend_without_cuda_feature() {
+    #[cfg(not(feature = "cuda-kernels"))]
+    {
+        let mut chain = Chain::new(hash_bytes(b"test", &[b"miner-cuda-selection"]));
+        let miner = address(b"miner-cuda-selection-miner");
+        register_miner(&mut chain, miner);
+        let scheduler = JobScheduler::with_small_shape((2, 2, 2));
+        let job = scheduler.generate_small_matmul(
+            chain.state().epoch(),
+            chain.state().height(),
+            &chain.state().finalized_randomness(),
+            chain
+                .state()
+                .height()
+                .saturating_add(chain.params().receipt_submission_window),
+        );
+        let job_id = job.job_id;
+        chain
+            .apply_command(ChainCommand::SubmitJob(tensor_vm::JobState::TensorOp(job)))
+            .unwrap();
+        let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+
+        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
+            .expect_err("default build must route cuda selection to backend failure");
+
+        assert!(error.contains("cuda kernels not compiled"));
+        assert!(node.chain.state().receipts().is_empty());
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+#[test]
+fn miner_role_submits_tensor_op_with_configured_cuda_backend() {
+    if tensor_vm::cuda_device_count().unwrap_or(0) == 0 {
+        return;
+    }
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"miner-cuda-tensor-op"]));
+    let miner = address(b"miner-cuda-tensor-op-miner");
+    register_miner(&mut chain, miner);
+    let scheduler = JobScheduler::with_small_shape((2, 2, 2));
+    let job = scheduler.generate_small_matmul(
+        chain.state().epoch(),
+        chain.state().height(),
+        &chain.state().finalized_randomness(),
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().receipt_submission_window),
+    );
+    let job_id = job.job_id;
+    chain
+        .apply_command(ChainCommand::SubmitJob(tensor_vm::JobState::TensorOp(job)))
+        .unwrap();
+    let mut cpu_node = RpcNode::with_faucet(chain.clone(), Faucet::new(1_000_000, 100));
+    let mut cuda_node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+
+    let cpu_submission = submit_miner_role_receipt(&mut cpu_node, miner, job_id)
+        .unwrap()
+        .expect("cpu role should submit receipt");
+    let cuda_submission =
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+            .unwrap()
+            .expect("cuda role should submit receipt");
+
+    assert_eq!(cpu_submission.backend_kind, BackendKind::CpuReference);
+    assert_eq!(
+        cuda_submission.backend_kind,
+        BackendKind::GpuMiner {
+            device: "cuda:0".to_owned()
+        }
+    );
+    assert_eq!(cuda_submission.receipts_submitted, 1);
+    assert_eq!(cuda_submission.tensors_inserted, 3);
+    let cpu_receipt = cpu_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cpu receipt should be stored");
+    let cuda_receipt = cuda_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cuda receipt should be stored");
+    assert_eq!(cuda_receipt.job_id(), job_id);
+    assert_eq!(cuda_receipt.miner(), miner);
+    assert_eq!(cuda_receipt.receipt_id(), cpu_receipt.receipt_id());
+}
+
+#[cfg(feature = "cuda-kernels")]
+#[test]
+fn miner_role_submits_linear_step_with_configured_cuda_backend() {
+    if tensor_vm::cuda_device_count().unwrap_or(0) == 0 {
+        return;
+    }
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"miner-cuda-linear"]));
+    let miner = address(b"miner-cuda-linear-miner");
+    register_miner(&mut chain, miner);
+    let mut source = tensor_vm::SyntheticLocalJobSource::default();
+    let job = source.next_linear_training_job(&chain);
+    let job_id = job.job_id;
+    chain
+        .apply_command(ChainCommand::SubmitJob(
+            tensor_vm::JobState::LinearTrainingStep(job),
+        ))
+        .unwrap();
+    let mut cpu_node = RpcNode::with_faucet(chain.clone(), Faucet::new(1_000_000, 100));
+    let mut cuda_node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
+
+    let cpu_submission = submit_miner_role_receipt(&mut cpu_node, miner, job_id)
+        .unwrap()
+        .expect("cpu role should submit receipt");
+    let cuda_submission =
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+            .unwrap()
+            .expect("cuda role should submit receipt");
+
+    assert_eq!(cpu_submission.backend_kind, BackendKind::CpuReference);
+    assert_eq!(
+        cuda_submission.backend_kind,
+        BackendKind::GpuMiner {
+            device: "cuda:0".to_owned()
+        }
+    );
+    assert_eq!(cuda_submission.receipts_submitted, 1);
+    assert_eq!(cuda_submission.tensors_inserted, 6);
+    let cpu_receipt = cpu_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cpu receipt should be stored");
+    let cuda_receipt = cuda_node
+        .chain
+        .state()
+        .receipts()
+        .values()
+        .next()
+        .expect("cuda receipt should be stored");
+    assert_eq!(cuda_receipt.job_id(), job_id);
+    assert_eq!(cuda_receipt.miner(), miner);
+    assert_eq!(cuda_receipt.receipt_id(), cpu_receipt.receipt_id());
 }
 
 #[test]
@@ -312,6 +463,7 @@ fn miner_role_tick_keeps_missing_graph_artifacts_pending_without_exiting() {
         role: RuntimeRole::Miner,
         role_wallet_address: Some(miner),
         role_wallet_secret: Some("miner-missing-graph".to_owned()),
+        miner_device: Some("cpu".to_owned()),
         node: runtime_node_config(
             &data_dir_text,
             RuntimeRole::Miner,

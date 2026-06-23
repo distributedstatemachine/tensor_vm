@@ -98,10 +98,11 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > `quantize_pack_int8`/`unpack_dequantize_int8` use a byte-exact flat `uint8` payload vector. Fixed-scale
 > comparison masks and int8 selection are also conformance covered. Local A100 CUDA pass evidence now
 > covers the current executable CUDA TensorOp/LinearTrainingStep runtime paths: CUDA field matmul edge
-> cases, exact linear tensor ops, canonical matmul backend parity, and linear-step backend parity pass
-> under `--features cuda-kernels`. Live CUDA miner-role receipt production, CUDA graph receipts, the full
-> frozen-registry CUDA vector suite, and Tier-C/transcendental vector references remain TODO before
-> claiming complete §3.3 coverage for every runtime.
+> cases, exact linear tensor ops, canonical matmul backend parity, linear-step backend parity, and live
+> miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
+> config pass under `--features cuda-kernels`. CUDA graph receipts, the full frozen-registry CUDA vector
+> suite, and Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage
+> for every runtime.
 
 ---
 

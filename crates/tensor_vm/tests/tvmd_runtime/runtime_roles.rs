@@ -96,7 +96,48 @@ fn role_loop_configs_bind_expected_runtime_roles_and_wallets() {
             service_config.role_wallet_address,
             Some(address(wallet.as_bytes()))
         );
+        assert_eq!(
+            service_config.miner_device.as_deref(),
+            matches!(role, RuntimeRole::Miner).then_some("cpu")
+        );
     }
+}
+
+#[test]
+fn role_loop_configs_preserve_miner_device_for_execution() {
+    let miner_config = RoleServiceRunner::miner()
+        .service_runtime_config(RoleServiceConfig {
+            wallet: "miner-cuda",
+            device: Some("cuda:0"),
+            node: "/ip4/127.0.0.1/tcp/4001",
+            listen: "127.0.0.1:0",
+            p2p_listen: "/ip4/127.0.0.1/tcp/0",
+            data_dir: "role-loop-cuda-config-test",
+            identity_seed: None,
+            auth_token: "token",
+            max_requests: 1,
+        })
+        .unwrap();
+    assert_eq!(miner_config.runtime_command, "miner_run");
+    assert_eq!(miner_config.role, RuntimeRole::Miner);
+    assert_eq!(miner_config.miner_device.as_deref(), Some("cuda:0"));
+
+    let validator_config = RoleServiceRunner::validator()
+        .service_runtime_config(RoleServiceConfig {
+            wallet: "validator-no-miner-device",
+            device: Some("cuda:0"),
+            node: "/ip4/127.0.0.1/tcp/4001",
+            listen: "127.0.0.1:0",
+            p2p_listen: "/ip4/127.0.0.1/tcp/0",
+            data_dir: "role-loop-validator-config-test",
+            identity_seed: None,
+            auth_token: "token",
+            max_requests: 1,
+        })
+        .unwrap();
+    assert_eq!(validator_config.runtime_command, "validator_run");
+    assert_eq!(validator_config.role, RuntimeRole::Validator);
+    assert_eq!(validator_config.miner_device, None);
 }
 
 #[test]
@@ -339,6 +380,7 @@ fn selected_validator_proposer_emits_idle_fallback_block() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some(wallet_secret.to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -459,6 +501,7 @@ fn nonselected_validator_proposer_observes_settled_work_without_racing_useful_bl
         role: RuntimeRole::Validator,
         role_wallet_address: Some(nonselected),
         role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -600,6 +643,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -667,6 +711,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         .expect("useful role proposal should delay proposer reward");
     assert_eq!(pending_proposer_reward.proposer, validator);
     assert_eq!(pending_proposer_reward.amount, 500);
+    let expected_proposer_reward = pending_proposer_reward.amount;
     let claimable_at_height = pending_proposer_reward.claimable_at_height;
     assert_eq!(
         server
@@ -734,7 +779,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
         .unwrap();
     assert!(claim_events.contains(&ChainEvent::RewardClaimed {
         address: validator,
-        amount: 1_000,
+        amount: expected_proposer_reward,
     }));
     assert!(
         server
@@ -756,7 +801,7 @@ fn producer_job_is_receipted_attested_and_proposed_by_role_owned_ticks() {
             .get(&validator)
             .unwrap()
             .balance,
-        1_000
+        expected_proposer_reward
     );
 
     drop(p2p_service);
@@ -835,6 +880,7 @@ fn validator_proposer_tick_runs_without_synthetic_producer_gate() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -996,6 +1042,7 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),
@@ -1031,6 +1078,7 @@ fn validator_proposer_delays_reward_without_waiting_for_validation_backlog() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some("test-validator-vrf".to_owned()),
+        miner_device: None,
         node: NodeConfig::new(
             ChainProfile::local_cpu(),
             RuntimeRole::Validator.node_role(),

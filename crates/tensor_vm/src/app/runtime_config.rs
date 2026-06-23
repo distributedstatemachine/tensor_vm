@@ -103,6 +103,7 @@ pub struct ServiceRuntimeConfig {
     pub role: RuntimeRole,
     pub role_wallet_address: Option<Address>,
     pub role_wallet_secret: Option<String>,
+    pub miner_device: Option<String>,
     pub node: NodeConfig,
     pub randomness_beacon: RandomnessBeaconRuntimeConfig,
 }

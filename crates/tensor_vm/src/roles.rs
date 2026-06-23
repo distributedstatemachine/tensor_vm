@@ -3,7 +3,7 @@ use crate::error::{Result, TvmError};
 use crate::ir::TensorGraph;
 use crate::jobs::{GraphJob, LinearTrainingStepOutput, PrimitiveType};
 use crate::miner::MinerNode;
-use crate::runtime::CpuReferenceBackend;
+use crate::runtime::{CpuReferenceBackend, ExecutionBackend};
 use crate::scheduler::SyntheticLocalJobSource;
 use crate::tensor::Tensor;
 use crate::types::{Address, Hash};
@@ -82,36 +82,13 @@ impl CpuReferenceMinerRole {
         submitted_at_block: u64,
         execution_time_ms: u64,
     ) -> Result<RoleReceiptBundle> {
-        let mut miner = MinerNode::new(self.address, CpuReferenceBackend);
-        match job {
-            JobState::TensorOp(job) => {
-                let (receipt, a, b, c) =
-                    miner.solve_matmul_job(job, submitted_at_block, execution_time_ms)?;
-                Ok(RoleReceiptBundle {
-                    receipt: ReceiptState::TensorOp(receipt),
-                    artifacts: RoleReceiptArtifacts::TensorOp { a, b, c },
-                })
-            }
-            JobState::LinearTrainingStep(job) => {
-                let weights_before = SyntheticLocalJobSource::linear_training_weights();
-                let (receipt, output) = miner.solve_linear_training_step(
-                    job,
-                    &weights_before,
-                    submitted_at_block,
-                    execution_time_ms,
-                )?;
-                Ok(RoleReceiptBundle {
-                    receipt: ReceiptState::LinearTrainingStep(receipt),
-                    artifacts: RoleReceiptArtifacts::LinearTrainingStep {
-                        weights_before,
-                        output: Box::new(output),
-                    },
-                })
-            }
-            JobState::GraphExecution(_) => Err(TvmError::InvalidReceipt(
-                "graph execution requires explicit graph inputs",
-            )),
-        }
+        execute_job_with_backend(
+            self.address,
+            CpuReferenceBackend,
+            job,
+            submitted_at_block,
+            execution_time_ms,
+        )
     }
 
     pub fn execute_graph_job(
@@ -141,6 +118,45 @@ impl CpuReferenceMinerRole {
                 outputs,
             },
         })
+    }
+}
+
+pub fn execute_job_with_backend<B: ExecutionBackend>(
+    address: Address,
+    backend: B,
+    job: &JobState,
+    submitted_at_block: u64,
+    execution_time_ms: u64,
+) -> Result<RoleReceiptBundle> {
+    let mut miner = MinerNode::new(address, backend);
+    match job {
+        JobState::TensorOp(job) => {
+            let (receipt, a, b, c) =
+                miner.solve_matmul_job(job, submitted_at_block, execution_time_ms)?;
+            Ok(RoleReceiptBundle {
+                receipt: ReceiptState::TensorOp(receipt),
+                artifacts: RoleReceiptArtifacts::TensorOp { a, b, c },
+            })
+        }
+        JobState::LinearTrainingStep(job) => {
+            let weights_before = SyntheticLocalJobSource::linear_training_weights();
+            let (receipt, output) = miner.solve_linear_training_step(
+                job,
+                &weights_before,
+                submitted_at_block,
+                execution_time_ms,
+            )?;
+            Ok(RoleReceiptBundle {
+                receipt: ReceiptState::LinearTrainingStep(receipt),
+                artifacts: RoleReceiptArtifacts::LinearTrainingStep {
+                    weights_before,
+                    output: Box::new(output),
+                },
+            })
+        }
+        JobState::GraphExecution(_) => Err(TvmError::InvalidReceipt(
+            "graph execution requires explicit graph inputs",
+        )),
     }
 }
 

@@ -5,7 +5,8 @@ use crate::{
     RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
     error::TvmError,
     hash::hex,
-    roles::CpuReferenceMinerRole,
+    roles::{CpuReferenceMinerRole, execute_job_with_backend},
+    runtime::{BackendKind, CpuReferenceBackend, GpuMinerBackend},
     types::{Address, Hash, parse_hash_hex},
 };
 
@@ -47,17 +48,27 @@ fn miner_has_receipt_for_job(chain: &Chain, miner: Address, job_id: Hash) -> boo
         .any(|receipt| receipt.job_id() == job_id && receipt.miner() == miner)
 }
 
-#[derive(Clone, Debug, Default, Eq, PartialEq)]
+#[derive(Clone, Debug, Eq, PartialEq)]
 pub struct MinerRoleReceiptSubmission {
     pub receipts_submitted: usize,
     pub tensors_inserted: usize,
     pub served_tensors: Vec<Tensor>,
+    pub backend_kind: BackendKind,
 }
 
 pub fn submit_miner_role_receipt(
     node: &mut RpcNode,
     miner: Address,
     job_id: Hash,
+) -> std::result::Result<Option<MinerRoleReceiptSubmission>, String> {
+    submit_miner_role_receipt_with_device(node, miner, job_id, "cpu")
+}
+
+pub fn submit_miner_role_receipt_with_device(
+    node: &mut RpcNode,
+    miner: Address,
+    job_id: Hash,
+    device: &str,
 ) -> std::result::Result<Option<MinerRoleReceiptSubmission>, String> {
     if !node.chain.state().miners().contains_key(&miner) {
         return Ok(None);
@@ -72,7 +83,8 @@ pub fn submit_miner_role_receipt(
     let Some(job) = node.chain.state().jobs().get(&job_id).cloned() else {
         return Ok(None);
     };
-    let bundle = execute_miner_role_job(node, miner, &job, job_id)?;
+    let (bundle, backend_kind) =
+        execute_miner_role_job_with_device(node, miner, &job, job_id, device)?;
     if bundle.receipt.job_id() != job_id || bundle.receipt.miner() != miner {
         return Err("miner role produced receipt for the wrong job or miner".to_owned());
     }
@@ -101,17 +113,20 @@ pub fn submit_miner_role_receipt(
         receipts_submitted: 1,
         tensors_inserted,
         served_tensors,
+        backend_kind,
     }))
 }
 
-fn execute_miner_role_job(
+fn execute_miner_role_job_with_device(
     node: &RpcNode,
     miner: Address,
     job: &JobState,
     job_id: Hash,
-) -> std::result::Result<crate::RoleReceiptBundle, String> {
+    device: &str,
+) -> std::result::Result<(crate::RoleReceiptBundle, BackendKind), String> {
     let role = CpuReferenceMinerRole::new(miner);
-    match job {
+    let device = device.trim();
+    let result = match job {
         JobState::GraphExecution(graph_job) => {
             let graph = graph_from_program_body(node, &graph_job.graph_id)?;
             let mut inputs = std::collections::BTreeMap::new();
@@ -134,12 +149,40 @@ fn execute_miner_role_job(
                 node.chain.state().height(),
                 1,
             )
+            .map(|bundle| (bundle, BackendKind::CpuReference))
+        }
+        JobState::TensorOp(_) | JobState::LinearTrainingStep(_) if device == "cpu" => {
+            execute_job_with_backend(
+                miner,
+                CpuReferenceBackend,
+                job,
+                node.chain.state().height(),
+                1,
+            )
+            .map(|bundle| (bundle, BackendKind::CpuReference))
+        }
+        JobState::TensorOp(_) | JobState::LinearTrainingStep(_) if device.starts_with("cuda:") => {
+            execute_job_with_backend(
+                miner,
+                GpuMinerBackend::new(device),
+                job,
+                node.chain.state().height(),
+                1,
+            )
+            .map(|bundle| {
+                (
+                    bundle,
+                    BackendKind::GpuMiner {
+                        device: device.to_owned(),
+                    },
+                )
+            })
         }
         JobState::TensorOp(_) | JobState::LinearTrainingStep(_) => {
-            role.execute_job(job, node.chain.state().height(), 1)
+            Err(TvmError::InvalidReceipt("unsupported miner device"))
         }
-    }
-    .map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))
+    };
+    result.map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))
 }
 
 fn graph_const_blobs_from_node(
@@ -252,9 +295,12 @@ pub fn tick_miner_role_work_once(
             return Ok(status_changed);
         }
         let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
-        if let Some(submission) =
-            submit_miner_role_receipt(&mut server.gateway_mut().node, miner, job_id)?
-        {
+        if let Some(submission) = submit_miner_role_receipt_with_device(
+            &mut server.gateway_mut().node,
+            miner,
+            job_id,
+            config.miner_device.as_deref().unwrap_or("cpu"),
+        )? {
             publish_new_chain_announcements(
                 p2p_service,
                 &announcement_checkpoint,

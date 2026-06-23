@@ -23,6 +23,7 @@ use tensor_vm::{
         apply_network_receipt_payload, attestation_announcement_hash,
     },
     roles::{CpuReferenceMinerRole, RoleReceiptBundle},
+    runtime::BackendKind,
     spawn_libp2p_service,
     testnet::{LocalTestnet, TestnetConfig},
     types::hash_bytes,

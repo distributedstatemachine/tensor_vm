@@ -119,6 +119,7 @@ pub(super) fn test_service_runtime_config(
         role: RuntimeRole::Service,
         role_wallet_address: None,
         role_wallet_secret: None,
+        miner_device: None,
         node: runtime_node_config(
             &data_dir_text,
             RuntimeRole::Service,

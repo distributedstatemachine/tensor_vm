@@ -5,14 +5,15 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 226 complete: CUDA A100 Build and Conformance Evidence.
+- Active feature: Iteration 227 complete: CUDA Miner Role Execution.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
   CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
   Iteration 226 installs the local CUDA toolkit path into executable evidence by replacing the broken
   default `-arch native` CUDA build with A100-compatible architecture detection/fallback, and focused
-  CUDA-feature tests now pass on the local A100 host. Live `miner run` still uses the CPU role backend,
-  so full live CUDA receipt production remains the next CUDA implementation gap. Iteration 224 defaults runtime randomness to public
+  CUDA-feature tests now pass on the local A100 host. Iteration 227 wires `tvmd miner run --device
+  cuda:N` through the role runtime config into miner receipt execution for current TensorOp and
+  LinearTrainingStep jobs instead of using the CPU backend after readiness succeeds. Iteration 224 defaults runtime randomness to public
   drand and keeps accepted verified drand as the finalized consensus beacon across block application
   instead of synthesizing a post-block fixture beacon. Public evidence remains deployment-gated;
   Iteration 223 exports chain-accepted drand
@@ -74,9 +75,9 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: wire live miner-role execution to the CUDA backend after device readiness succeeds, then
-  land real CUDA matmul/graph receipts that are bit-exact with the CPU reference. Stop the
-  public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
+- Next action: extend CUDA coverage to graph receipts and broader frozen-registry CUDA vector coverage.
+  Stop the public-evidence-validator tightening loop;
+  redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
 
@@ -92,10 +93,105 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the LIVE consensus randomness source (not a fixture). Bespoke per-validator VRF is roadmap, not v0 |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp and LinearTrainingStep CUDA paths | Wire live miner-role execution to CUDA and land real CUDA matmul/graph receipts bit-exact with CPU reference |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp and LinearTrainingStep CUDA paths; Iteration 227 proves live `miner run --device cuda:N` receipt execution reaches `GpuMinerBackend` for those paths | Land CUDA graph receipts bit-exact with CPU reference and broaden per-op CUDA vector coverage |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 227: CUDA Miner Role Execution
+
+Feature capability: carry the selected `tvmd miner run --device cuda:N` value from CLI/runtime config into
+role-owned miner receipt execution so live miner role loops can produce TensorOp and LinearTrainingStep
+receipts through `GpuMinerBackend` after CUDA readiness/conformance succeeds.
+
+Readiness requirements covered: `goal.md` v0 Scope Decisions and `upow.md` §3.2/§3.3 require real CUDA
+miner/runtime execution on the local A100×8 box, not only CUDA preflight readiness.
+
+Files/modules likely touched: `app/runtime_config.rs`, `app/role_services.rs`, `app/miner_role.rs`,
+`roles.rs`, role/runtime tests, CUDA role tests, and this exec plan.
+
+Canonical owner: `roles`/`miner` own job execution through an `ExecutionBackend`; `app/miner_role.rs`
+selects the backend from runtime config and submits receipts through `ChainCommand::SubmitReceipt`.
+
+Adapter callers: `tvmd miner run`, role service runtime loop, local Compose miner services, and focused
+role tests.
+
+Old shortcut being removed: `tvmd miner run --device cuda:N` validated CUDA readiness and reported the
+device, but `execute_miner_role_job` still always constructed `CpuReferenceMinerRole`.
+
+Regression test that proves the shortcut is gone: with `cuda-kernels` enabled and a visible device, a
+miner-role receipt submission using `cuda:0` must produce the same canonical TensorOp and
+LinearTrainingStep receipt outputs as CPU while proving execution went through `GpuMinerBackend`; default
+CPU role tests must still pass.
+
+Behavior with local synthetic block production disabled: unchanged for inbound sync; miner role execution
+uses assigned jobs already present in chain state and submits receipts through the same chain command.
+
+Behavior for producer and non-producer roles: miners never produce blocks; validator/proposer behavior is
+unchanged. Producer-capable validators continue to consume receipts submitted by miners.
+
+Structured evidence source: role runtime config `miner_device`, miner role backend selection tests,
+submitted receipt roots, `cuda_conformance_passed`, and CUDA backend parity tests.
+
+Finality source: unchanged; this iteration does not alter finality or block voting.
+
+Wire-size and codec boundary: no wire or codec changes.
+
+Parallel subagents to run: read-only codebase explorer for the `--device` flow and read-only test coverage
+explorer for miner-role/runtime tests.
+
+Parallelizable implementation workstreams: parent-only code edits because runtime config, role services,
+and miner role execution share the same files.
+
+Tests/checkers/docs to add or update: role backend selection tests, CUDA-feature miner-role submission
+tests, default CPU role tests, and this exec plan.
+
+Narrow validation commands: `cargo test -p tensor_vm <focused role/runtime tests> --lib`, plus focused
+`--features cuda-kernels` CUDA miner-role tests on the local A100 host.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, `cargo clippy -p
+tensor_vm --all-targets -- -D warnings`, `cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: a CUDA-configured miner role submits canonical receipts through the GPU
+backend instead of using the CPU role backend, while CPU and graph role paths retain their current behavior.
+
+Out of scope: CUDA graph execution receipts, full frozen-registry CUDA conformance, public 7-day deployment
+evidence, or changing consensus validation rules.
+
+Split trigger: split if graph jobs require a separate GPU exact-IR executor; keep this iteration to current
+CUDA TensorOp/LinearTrainingStep runtime paths.
+
+Implementation summary: `ServiceRuntimeConfig` now carries `miner_device` only for miner roles, preserving
+the `tvmd miner run --device` value from role service construction into the runtime loop. Miner role
+receipt submission keeps the existing CPU wrapper but adds device-aware submission for TensorOp and
+LinearTrainingStep jobs, selecting `CpuReferenceBackend` for `cpu` and `GpuMinerBackend` for `cuda:N`
+while leaving `GraphExecution` on the existing CPU exact-IR path. `roles::execute_job_with_backend`
+centralizes TensorOp/LinearTrainingStep receipt construction across CPU and CUDA backends.
+
+Validation evidence:
+- `cargo-tarpaulin` is installed in this environment as `cargo-tarpaulin 0.35.5`.
+- Verifier audit note: there is no `tensorvm-verifier` binary in this repository; validation uses the
+  documented manual verifier-style review plus real CLI/test/clippy/tarpaulin surfaces.
+- Reward-delay audit: `cargo test -p tensor_vm reward --lib` passed, 42 tests, confirming delayed pending
+  proposer, receipt, challenge, and credit rewards remain non-spendable until beneficiary `ClaimReward`
+  and that voided/prunable claims are swept without credit.
+- Gate 0: `cargo test -p tensor_vm local_testnet --release` passed.
+- Default miner-role device selection: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_cuda_device_selection_reaches_gpu_backend_without_cuda_feature` passed, proving `cuda:0`
+  selection reaches the GPU backend boundary even in a non-CUDA build and fails with the expected
+  `cuda kernels not compiled` backend error instead of silently using CPU.
+- Runtime config coverage: `cargo test -p tensor_vm --test tvmd_runtime runtime_roles` passed, including
+  preservation of miner-only `miner_device` and delayed proposer reward claim assertions.
+- Default miner-role coverage: `cargo test -p tensor_vm --test tvmd_runtime miner_role` passed.
+- CUDA TensorOp live role coverage: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_submits_tensor_op_with_configured_cuda_backend --features cuda-kernels` passed on the local
+  A100 host.
+- CUDA LinearTrainingStep live role coverage: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_submits_linear_step_with_configured_cuda_backend --features cuda-kernels` passed on the local
+  A100 host.
+- Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  `cargo fmt --check`, and `git diff --check` passed.
 
 ### Iteration 226: CUDA A100 Build and Conformance Evidence
 

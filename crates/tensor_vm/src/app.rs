@@ -36,7 +36,7 @@ pub use local_cpu_verify::verify_local_cpu_store;
 pub use local_testnet_seed::seed_local_testnet;
 pub use miner_role::{
     MinerRoleReceiptSubmission, MinerRoleWorkObservation, miner_role_work_observation,
-    submit_miner_role_receipt, tick_miner_role_work_once,
+    submit_miner_role_receipt, submit_miner_role_receipt_with_device, tick_miner_role_work_once,
 };
 pub use network::{
     ChainAnnouncementCheckpoint, chain_announcement_checkpoint, ingest_network_events,

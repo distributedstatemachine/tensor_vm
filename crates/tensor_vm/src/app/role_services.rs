@@ -60,6 +60,8 @@ impl RoleServiceRunner {
             role,
             role_wallet_address: Some(role_wallet_address(config.wallet)?),
             role_wallet_secret: Some(config.wallet.to_owned()),
+            miner_device: matches!(role, RuntimeRole::Miner)
+                .then(|| config.device.unwrap_or("cpu").to_owned()),
             node: runtime_node_config(
                 config.data_dir,
                 role,

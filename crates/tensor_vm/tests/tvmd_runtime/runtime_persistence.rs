@@ -670,6 +670,7 @@ fn validator_remote_tensor_fetch_status_does_not_persist_chain() {
         role: RuntimeRole::Validator,
         role_wallet_address: Some(validator),
         role_wallet_secret: Some("runtime-persistence-validator".to_owned()),
+        miner_device: None,
         node: runtime_node_config(
             &data_dir_text,
             RuntimeRole::Validator,
