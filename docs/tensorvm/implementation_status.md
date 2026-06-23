@@ -106,9 +106,9 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
   graph program, tensor artifacts, and trace-opening samples is implemented locally. CUDA graph execution
   locally covers the current synthetic graph shape and a same-shape field-op subset
-  (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`)
+  (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
   through `GpuMinerBackend`; the full interactive dispute game, CUDA broadcasting, fixed-point CUDA graph
-  ops, and full frozen-registry CUDA graph execution remain open.
+  ops, bool-mask selection, and full frozen-registry CUDA graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
@@ -422,7 +422,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   readiness
 - Optional `cuda-kernels` feature that builds `kernels/cuda/field_matmul.cu` with `nvcc`, routes the
   `GpuMinerBackend` matmul path, same-shape field graph
-  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`scalar_mul`/`transpose`
+  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`
   ops, and LinearTrainingStep forward, backward, error, update, transpose, and loss substeps through
   native CUDA kernels, and checks CUDA outputs against canonical CPU outputs
 - Restartable `NodeStore` data directory that persists chain snapshots, append-only block logs, and the
@@ -789,8 +789,8 @@ These spec items require real deployment or non-reference infrastructure and are
 
 - production GPU-miner packaging and a broader optimized CUDA/C++ kernel suite; the current native kernel
   coverage includes CUDA field matmul, same-shape field graph
-  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`scalar_mul`/`transpose`, plus linear-step
-  sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs
+  `add`/`sub`/`mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`,
+  plus linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs
 - long-running public 7-day testnet with independent external operators; current implementation exposes
   typed `PublicTestnetRunEvidence`/`PublicTestnetEvidence` so this criterion can be measured without
   treating a local test harness as public proof, and now requires a signed wall-clock run window,

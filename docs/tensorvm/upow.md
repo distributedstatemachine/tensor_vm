@@ -102,10 +102,10 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
 > config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
 > synthetic GraphExecution shape (`add` -> `relu`) plus a focused supported-op CUDA graph
-> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`)
+> (`matmul`/`add`/`sub`/`mul`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
 > through the CUDA miner backend with bit-exact CPU/GPU receipt roots. CUDA conformance reporting is
 > limited to the exercised same-shape field subset instead of over-claiming broadcasting, fixed-point
-> comparisons, or the full CPU reference profile. The full frozen-registry CUDA vector suite and
+> comparisons/selection, bool masks, or the full CPU reference profile. The full frozen-registry CUDA vector suite and
 > Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage for every
 > runtime.
 
@@ -180,8 +180,9 @@ Graph {
 > role loops, cross the shared p2p/node payload path, settle through delayed receipt rewards, and surface
 > through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution now covers the current
 > local synthetic GraphExecution shape and a supported same-shape field-op graph including elementwise
-> `mul`, exact field `identity`/`neg`/`abs`/`sign`, and field comparison masks
-> `eq`/`gt`/`lt`/`ge`/`le` through miner-role `cuda:N` backend selection; broader CUDA graph op coverage
+> `mul`, exact field `identity`/`neg`/`abs`/`sign`, field comparison masks
+> `eq`/`gt`/`lt`/`ge`/`le`, and mask-fed field `where` through miner-role `cuda:N` backend selection;
+> broader CUDA graph op coverage
 > and public deployed graph evidence remain TODO.
 
 ### 4.6 Structural validity rules
@@ -713,7 +714,8 @@ This section is non-normative guidance on how the spec components partition into
   comparison, generator, reduction, fixed-point `cast`/`round`, mixed-scale `add`/`sub`, mixed-scale
   `mul`, and `Fixed32` `matmul` rescale surface with conformance gating where the vector schema fits,
   plus exact per-channel and byte-packed int8 quantization, fixed-scale comparison masks, and int8
-  selection. CUDA/public deployment evidence remains TODO (§7).
+  selection. CUDA evidence now covers same-shape field mask selection only; broader CUDA/public deployment
+  evidence remains TODO (§7).
 - [~] Fraud-proof game: signed trace-bisection session and round state now provide a deterministic
   message/hash boundary over verified `IrTraceOpening`s, with response deadlines and challenger/responder
   bond envelope fields. Bounded p2p round payloads now reuse the trace-opening codec, verify responder

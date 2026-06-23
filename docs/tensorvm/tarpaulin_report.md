@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 232 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 233 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -15,11 +15,18 @@ Result:
 - 1 tensor_vm_explorer library test
 
 85.03% workspace line coverage
-23831/28027 workspace lines covered
+23831/28028 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 233 coverage-changing work added CUDA-feature-only same-shape field `where` graph execution
+support and conformance coverage for `Int32` masks selecting between field tensors. The default
+Tarpaulin run passed under the portable feature set and does not instrument the native CUDA path, so the
+new CUDA `where` evidence is recorded through separate `--features cuda-kernels` runtime and miner-role
+tests in the execution plan. The extra CUDA-gated Rust glue increased the portable denominator by one
+line while remaining intentionally uncovered by the default-feature Tarpaulin run.
 
 Iteration 232 coverage-changing work added CUDA-feature-only same-shape field comparison `eq`, `gt`, `lt`,
 `ge`, and `le` graph execution support and conformance coverage. The default Tarpaulin run passed under

@@ -5,11 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 232 complete: CUDA Field Comparison Graph Kernels/Conformance.
+- Active feature: Iteration 233 complete: CUDA Field Where Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
-  consensus randomness and local A100 CUDA evidence. Iteration 232 targets same-shape CUDA field
-  comparison graph kernels for `eq`, `gt`, `lt`, `ge`, and `le`, extending the supported
-  CUDA graph/conformance subset without claiming broadcasting, fixed-point comparisons, reductions,
+  consensus randomness and local A100 CUDA evidence. Iteration 233 added same-shape CUDA field `where`
+  graph selection using an `Int32` mask plus field true/false tensors, extending the supported
+  CUDA graph/conformance subset without claiming broadcasting, fixed-point where, bool masks, reductions,
   quantization, structural ops, or full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
@@ -20,7 +20,7 @@ archive commit anchors only.
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 231 first and post-change `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 233 first and post-change `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, runtime profile env-scope tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -30,10 +30,102 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Add kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Add kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 233: CUDA Field Where Graph Kernel/Conformance
+
+Feature capability: add an exported CUDA same-shape field `where` kernel, route exact graph `where`
+through `GpuMinerBackend` when the mask is `Int32` scale 0 and both selected tensors are field tensors
+with identical shape, and expand the supported CUDA graph conformance/miner-role fixture so comparison
+masks can feed CUDA field selection.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.2/§3.3, §4.7, §4.8,
+and §16 require bit-exact CUDA evidence for admitted exact ops while keeping unsupported CUDA coverage
+explicitly gated.
+
+Canonical owner: CUDA runtime owns accelerated same-shape field selection; `TensorGraph` continues to own
+canonical `where` semantics including broadcasting and non-field dtypes outside the CUDA subset.
+
+Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+focused runtime/miner-role tests.
+
+Old shortcut removed: exact `where` graph ops currently stop at the CUDA graph boundary, so CUDA
+conformance cannot consume comparison masks even though the CPU canonical interpreter supports `where`.
+
+Regression test that proves the shortcut is gone: CUDA-feature runtime tests assert direct CUDA field
+`where` parity against canonical mask selection, supported CUDA graph parity includes a comparison-mask-fed
+`where`, and miner-role CUDA graph receipt tests submit the expanded graph through `BackendKind::GpuMiner`.
+
+Behavior with local synthetic block production disabled: unchanged; graph execution uses existing chain
+jobs and backend-selected receipt execution.
+
+Behavior for producer and non-producer roles: unchanged; validators/proposers consume the same graph
+receipts and finality logic, and miners do not produce blocks.
+
+Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+miner-role `backend_kind`, direct CUDA `where` kernel parity assertions, and explicit unsupported-op CUDA
+graph errors for still-unsupported ops.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, voting, rewards,
+reward maturity, delayed claims, or finality.
+
+Wire-size and codec boundary: no wire or codec changes; existing graph/job/receipt payload codecs remain
+unchanged.
+
+Parallel subagents: none. The decision log says not to spawn subagents unless the user explicitly asks for
+delegation; parent will do single-writer implementation and direct code review.
+
+Tests/checkers/docs to add or update: CUDA runtime direct kernel parity, CUDA graph conformance profile,
+miner-role supported CUDA graph fixture, `upow.md`, coverage matrix, implementation status, tarpaulin
+report, and this execution plan.
+
+Narrow validation commands: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib`;
+`cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend`; default unsupported
+CUDA-feature boundary test.
+
+Broad validation commands before commit: `cargo fmt --check`; `cargo test -p tensor_vm --lib`;
+`cargo test --workspace --release`; `cargo clippy --workspace --all-targets -- -D warnings`;
+post-change Gate 0; `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`;
+full CUDA release and CUDA-feature clippy.
+
+Expected observable evidence: CUDA `where` output matches CPU canonical field selection for same-shape
+`Int32` masks and field true/false tensors, CUDA graph CPU/GPU receipt roots match with the selection op
+included, and GPU conformance only reports `where` after the parity case passes.
+
+Out of scope: reward workarounds, immediate reward release, CUDA broadcasting, fixed-point/int8 `where`,
+bool masks, reductions, quantization, structural ops, consensus changes, and public deployment evidence.
+
+Split trigger: split smaller if CUDA `where` dtype handling collides with graph typing, if direct kernel
+parity fails on A100, or if expanding the miner-role fixture requires unrelated graph receipt changes.
+
+Validation evidence:
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- CUDA runtime module: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed, 10
+  tests, covering direct same-shape field `where` parity, supported multi-op graph parity with mask-fed
+  selection, unsupported-op rejection, and GPU conformance subset assertions.
+- CUDA miner-role multi-op graph: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed.
+- Default unsupported-build boundary: `cargo test -p tensor_vm --test tvmd_runtime
+  miner_role_supported_multi_op_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_feature`
+  passed.
+- Broad default library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Workspace release suite: `cargo test --workspace --release` passed.
+- Lints and hygiene: `cargo fmt --check`, `cargo clippy --workspace --all-targets -- -D warnings`,
+  `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings`, and
+  `git diff --check` passed.
+- Post-change Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026.
+- Coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed
+  with 588 instrumented tests and 85.03% workspace line coverage, 23831/28028 lines covered. CUDA-feature
+  native paths are validated by the focused and release `--features cuda-kernels` commands above, not by
+  the portable default tarpaulin run.
+- Full CUDA-feature release sweep: `cargo test -p tensor_vm --features cuda-kernels --release` passed with
+  580 TensorVM library tests and 54 `tvmd_runtime` tests, including CUDA miner-role TensorOp,
+  LinearTrainingStep, local graph, and supported multi-op graph execution through `GpuMinerBackend`.
 
 ### Iteration 232: CUDA Field Comparison Graph Kernels/Conformance
 

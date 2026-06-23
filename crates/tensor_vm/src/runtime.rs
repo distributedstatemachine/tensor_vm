@@ -389,6 +389,13 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(rhs)?;
             cuda::field_le(device_index, lhs, rhs)?
         }
+        "where" => {
+            let [cond, when_true, when_false] = three_graph_tensor_values(args)?;
+            require_graph_int32_tensor(cond)?;
+            require_graph_field_tensor(when_true)?;
+            require_graph_field_tensor(when_false)?;
+            cuda::field_where(device_index, cond, when_true, when_false)?
+        }
         "matmul" => {
             let [lhs, rhs] = two_graph_tensor_values(args)?;
             require_graph_field_tensor(lhs)?;
@@ -459,6 +466,20 @@ fn two_graph_tensor_values(values: &[GraphRuntimeValue]) -> Result<[&Tensor; 2]>
 }
 
 #[cfg(feature = "cuda-kernels")]
+fn three_graph_tensor_values(values: &[GraphRuntimeValue]) -> Result<[&Tensor; 3]> {
+    match values {
+        [
+            GraphRuntimeValue::Tensor(first),
+            GraphRuntimeValue::Tensor(second),
+            GraphRuntimeValue::Tensor(third),
+        ] => Ok([first, second, third]),
+        _ => Err(TvmError::InvalidReceipt(
+            "tensor ir expected tensor arguments",
+        )),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
 fn graph_tensor_and_scalar_values(values: &[GraphRuntimeValue]) -> Result<(&Tensor, Elem)> {
     match values {
         [
@@ -468,6 +489,17 @@ fn graph_tensor_and_scalar_values(values: &[GraphRuntimeValue]) -> Result<(&Tens
         _ => Err(TvmError::InvalidReceipt(
             "tensor ir expected tensor and scalar arguments",
         )),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn require_graph_int32_tensor(tensor: &Tensor) -> Result<()> {
+    if tensor.dtype() == DType::Int32 && tensor.scale() == 0 {
+        Ok(())
+    } else {
+        Err(TvmError::InvalidReceipt(
+            "cuda graph op only supports int32 mask tensors",
+        ))
     }
 }
 
@@ -560,7 +592,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
         passed_ops.extend([
-            "add", "mul", "eq", "gt", "lt", "ge", "le", "identity", "neg", "abs", "sign", "relu",
+            "add", "mul", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg", "abs", "sign",
+            "relu",
         ]);
 
         Ok(ConformanceProfile {
@@ -785,10 +818,23 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                     scale: 0,
                 }],
             },
+            OpNode {
+                id: 16,
+                op: "where".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 15, idx: 0 },
+                    IrRef::Op { id: 10, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("selected", vec![2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "less_equal_mask".to_owned(),
-            value: IrRef::Op { id: 15, idx: 0 },
+            name: "selected".to_owned(),
+            value: IrRef::Op { id: 16, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -877,6 +923,14 @@ mod cuda {
             device_index: u32,
             lhs: *const u64,
             rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_where(
+            device_index: u32,
+            cond: *const u64,
+            when_true: *const u64,
+            when_false: *const u64,
             out: *mut u64,
             len: u64,
         ) -> i32;
@@ -1050,6 +1104,34 @@ mod cuda {
         field_compare(device_index, lhs, rhs, tensor_vm_cuda_field_le)
     }
 
+    pub fn field_where(
+        device_index: u32,
+        cond: &Tensor,
+        when_true: &Tensor,
+        when_false: &Tensor,
+    ) -> Result<Tensor> {
+        require_same_shape(cond, when_true)?;
+        require_same_shape(when_true, when_false)?;
+        require_int32_tensor(cond)?;
+        require_field_element_tensor(when_true)?;
+        require_field_element_tensor(when_false)?;
+        let mut out = vec![0; when_true.len()];
+        let code = unsafe {
+            tensor_vm_cuda_field_where(
+                device_index,
+                cond.as_slice().as_ptr(),
+                when_true.as_slice().as_ptr(),
+                when_false.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                when_true.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(when_true.shape().to_vec(), when_true.dtype(), out)
+    }
+
     pub fn field_relu(device_index: u32, input: &Tensor) -> Result<Tensor> {
         require_field_element_tensor(input)?;
         let mut out = vec![0; input.len()];
@@ -1181,6 +1263,14 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(lhs.shape().to_vec(), DType::Int32, out)
+    }
+
+    fn require_int32_tensor(tensor: &Tensor) -> Result<()> {
+        if tensor.dtype() == DType::Int32 && tensor.scale() == 0 {
+            Ok(())
+        } else {
+            Err(TvmError::InvalidReceipt("cuda tensor must be int32"))
+        }
     }
 
     pub fn field_mse_loss(device_index: u32, y: &Tensor, target: &Tensor) -> Result<Hash> {
@@ -1606,6 +1696,30 @@ mod tests {
         assert_eq!(
             cuda::field_le(0, &lhs, &rhs).unwrap(),
             expected_compare(|left, right| left <= right)
+        );
+
+        let mask =
+            Tensor::from_vec(lhs.shape().to_vec(), DType::Int32, vec![1, 0, 2, 0, 1, 0]).unwrap();
+        let expected_where = Tensor::from_vec(
+            lhs.shape().to_vec(),
+            lhs.dtype(),
+            mask.as_slice()
+                .iter()
+                .zip(lhs.as_slice())
+                .zip(rhs.as_slice())
+                .map(|((cond, when_true), when_false)| {
+                    if *cond == 0 {
+                        *when_false % MODULUS
+                    } else {
+                        *when_true % MODULUS
+                    }
+                })
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(
+            cuda::field_where(0, &mask, &lhs, &rhs).unwrap(),
+            expected_where
         );
 
         let relu = cuda::field_relu(0, &lhs).unwrap();
