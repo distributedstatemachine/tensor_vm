@@ -5,8 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 211 in progress: CUDA Graph Evidence Requires CUDA Miner Coverage.
-- Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
+- Active feature: Iteration 212 in progress: Block-Check Challenges Block Late Proposer Reward Materialization.
+- Current status: reward-delay work is implemented locally for receipt, proposer, and challenge rewards; this
+  iteration closes the pre-finality block-check edge so a successful canonical block-check challenge prevents
+  later proposer reward materialization after finality instead of relying on adapter-side or timing
+  workarounds. Post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
   independently checkable supporting-artifact gate so signed raw-record artifact URIs must be distinct
@@ -49,6 +52,77 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 212: Block-Check Challenges Block Late Proposer Reward Materialization
+
+Feature capability: make canonical proposer reward materialization consult block-check challenge records so
+a challenged block cannot later create a non-voided pending proposer reward when finality arrives after the
+challenge.
+
+Readiness requirements covered: `upow.md` §12 and `mvp_spec.md` §20.7 require delayed reward finality and
+block-check clawback to be consensus-state behavior, not a runtime/admission workaround.
+
+Canonical owner: `crates/tensor_vm/src/chain/blocks.rs::materialize_finalized_proposer_rewards` owns
+creation of delayed proposer reward claims from finalized blocks.
+
+Adapter callers: block-vote finality, side-branch promotion, block production/admission helpers, and chain
+maintenance call the shared materialization path.
+
+Old shortcut being removed: if a canonical block-check challenge was accepted before the block's proposer
+reward was materialized, later finality/materialization could ignore the challenge record and create a fresh
+non-voided pending proposer reward for the challenged block.
+
+Regression test that proves the shortcut is gone: submit a canonical block-check challenge before finality,
+then finalize the block and assert proposer reward materialization remains absent/non-spendable while the
+challenge record remains the state-rooted evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a shared chain-state reward
+materialization rule.
+
+Behavior for producer and non-producer roles: unchanged; all roles that ingest votes or promoted blocks use
+the same chain materialization path.
+
+Structured evidence source: `block_check_challenges`, `pending_proposer_rewards`, `finalized_blocks`, and
+`released_proposer_reward_blocks` in `ChainState`.
+
+Finality source: existing block-vote finality and manual test finality state; reward finality remains
+separate from block finality.
+
+Wire-size and codec boundary: no p2p/consensus wire format changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only test/code inspection was parallelized; code edits are
+single-writer in chain state and tests.
+
+Tests/checkers/docs to add or update: chain block-check challenge regression and this exec plan.
+
+Narrow validation commands: focused challenge regression.
+
+Broad validation commands before commit: Gate 0 first, focused challenge tests, full tensor_vm lib tests,
+clippy with warnings denied, rustfmt check, and diff check.
+
+Expected observable evidence: a pre-finality successful block-check challenge prevents later pending
+proposer reward creation for the challenged block.
+
+Out of scope: changing verifier transcript schemas, public deployment evidence, p2p message formats, or
+hard stake slashing.
+
+Split trigger: split if delaying late proposer materialization requires changing finality vote admission,
+challenge IDs, or canonical block storage.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused pre-finality block-check reward regression passed:
+  `cargo test -p tensor_vm pre_finality_block_check_challenge_delays_and_voids_late_proposer_reward --lib`.
+- Adjacent finalized block-check reward regression passed:
+  `cargo test -p tensor_vm canonical_block_check_challenge_materializes_and_delays_reward_in_chain --lib`.
+- `cargo test -p tensor_vm --lib` passed: 565 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 211: CUDA Graph Evidence Requires CUDA Miner Coverage
 

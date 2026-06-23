@@ -1,6 +1,6 @@
 use super::state::{
-    BlockCheckChallengeRecord, ChainState, JobState, PendingChallengeReward, TensorBlock,
-    TraceBisectionRecord, TraceBisectionStatus,
+    BlockCheckChallengeRecord, ChainState, JobState, PendingChallengeReward, PendingProposerReward,
+    TensorBlock, TraceBisectionRecord, TraceBisectionStatus,
 };
 use super::{Chain, blocks, settlement};
 use crate::challenge::{
@@ -264,12 +264,17 @@ pub fn submit_block_check(
         );
     }
     let pending_amount = if canonical_block {
-        chain
+        let materialized_amount = chain
             .state
             .pending_proposer_rewards
             .get(&block.height)
             .filter(|reward| reward.proposer == block.proposer && !reward.voided_by_challenge)
-            .map_or(0, |reward| reward.amount)
+            .map_or(0, |reward| reward.amount);
+        if materialized_amount > 0 {
+            materialized_amount
+        } else {
+            block.proposer_reward
+        }
     } else {
         0
     };
@@ -736,24 +741,40 @@ fn apply_block_check_resolution(
         .iter()
         .any(|block| block.hash() == record.block_hash);
     if canonical_block {
-        if let Some(reward) = chain
-            .state
-            .pending_proposer_rewards
-            .get_mut(&record.block_height)
-            && reward.proposer == record.proposer
-        {
-            reward.voided_by_challenge = true;
-            let treasury_reward = record
-                .proposer_reward_clawback
-                .saturating_sub(record.challenger_reward);
-            if record.challenger_reward > 0 {
-                let claimable_at_height = record
-                    .challenged_at_height
-                    .saturating_add(chain.params.reward_maturity_delay_blocks());
-                enqueue_pending_challenge_reward(chain, challenge_id, &record, claimable_at_height);
-            }
-            if treasury_reward > 0 {
-                chain.state.rewards.credit_treasury(treasury_reward);
+        if record.proposer_reward_clawback > 0 {
+            let claimable_at_height = record
+                .block_height
+                .saturating_add(chain.params.proposer_reward_maturity_delay_blocks());
+            let reward = chain
+                .state
+                .pending_proposer_rewards
+                .entry(record.block_height)
+                .or_insert_with(|| PendingProposerReward {
+                    block_height: record.block_height,
+                    proposer: record.proposer,
+                    amount: record.proposer_reward_clawback,
+                    claimable_at_height,
+                    voided_by_challenge: false,
+                });
+            if reward.proposer == record.proposer {
+                reward.voided_by_challenge = true;
+                let treasury_reward = record
+                    .proposer_reward_clawback
+                    .saturating_sub(record.challenger_reward);
+                if record.challenger_reward > 0 {
+                    let claimable_at_height = record
+                        .challenged_at_height
+                        .saturating_add(chain.params.reward_maturity_delay_blocks());
+                    enqueue_pending_challenge_reward(
+                        chain,
+                        challenge_id,
+                        &record,
+                        claimable_at_height,
+                    );
+                }
+                if treasury_reward > 0 {
+                    chain.state.rewards.credit_treasury(treasury_reward);
+                }
             }
         }
         chain.state.challenged_receipts.insert(record.receipt_id);
