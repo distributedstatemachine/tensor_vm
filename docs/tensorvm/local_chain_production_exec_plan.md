@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 231 complete pending commit/push: CUDA Field Unary Graph Kernels/Conformance.
+- Active feature: Iteration 231 complete: CUDA Field Unary Graph Kernels/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 231 adds same-shape CUDA field
   `identity`, `neg`, `abs`, and `sign` graph kernels and routes those exact graph ops through
@@ -15,8 +15,8 @@ archive commit anchors only.
   CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: commit and push Iteration 231, then continue broadening CUDA kernels/conformance for
-  remaining admitted exact ops without CPU fallback or overclaiming unsupported frozen-registry coverage.
+- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
+  fallback or overclaiming unsupported frozen-registry coverage.
 
 ## Readiness Matrix
 
@@ -116,7 +116,7 @@ Validation evidence:
   with 588 instrumented tests and 85.03% workspace line coverage, 23831/28026 lines covered. CUDA-feature
   native paths are validated by the focused and release `--features cuda-kernels` commands above, not by
   the portable default tarpaulin run.
-- Commit/push: pending.
+- Commit `0e759f4` (`Add CUDA field unary graph support`) pushed to `origin/main` on June 23, 2026.
 
 ## Recent Iterations
 
@@ -175,7 +175,8 @@ Commit `eb6ac34` (`Tighten CUDA graph conformance boundary`) and metadata commit
 - Latest coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
   passed on June 23, 2026 with 588 instrumented tests and 85.03% line coverage, 23831/28026 lines
   covered.
-- Latest commit/push: pending Iteration 231.
+- Latest commit/push: `0e759f4` (`Add CUDA field unary graph support`) pushed to `origin/main` on
+  June 23, 2026.
 
 ## Archive
 
