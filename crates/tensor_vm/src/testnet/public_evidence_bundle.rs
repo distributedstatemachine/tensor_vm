@@ -704,7 +704,8 @@ impl PublicTestnetEvidenceBundle {
     fn has_public_chain_history_records(&self) -> bool {
         let mut block_roots_by_height = BTreeMap::new();
         if self.block_history_raw_records.iter().any(|record| {
-            record.block_root == [0; 32]
+            !self.observed_block_in_run(record.block)
+                || record.block_root == [0; 32]
                 || block_roots_by_height
                     .insert(record.block, record.block_root)
                     .is_some()
@@ -715,7 +716,10 @@ impl PublicTestnetEvidenceBundle {
         let mut finality_blocks = BTreeSet::new();
         let mut finalized_blocks = 0_u64;
         for record in &self.finality_history_raw_records {
-            if record.block_root == [0; 32] || !finality_blocks.insert(record.block) {
+            if !self.observed_block_in_run(record.block)
+                || record.block_root == [0; 32]
+                || !finality_blocks.insert(record.block)
+            {
                 return false;
             }
             if block_roots_by_height.get(&record.block) != Some(&record.block_root) {
@@ -727,6 +731,14 @@ impl PublicTestnetEvidenceBundle {
         }
         if finality_blocks.len() != block_roots_by_height.len()
             || finalized_blocks != self.run.finalized_blocks
+        {
+            return false;
+        }
+        if block_roots_by_height
+            .keys()
+            .copied()
+            .collect::<BTreeSet<_>>()
+            != self.observed_block_range()
         {
             return false;
         }
@@ -750,6 +762,10 @@ impl PublicTestnetEvidenceBundle {
 
     fn observed_block_in_run(&self, observed_block: u64) -> bool {
         observed_block < self.run.observed_blocks
+    }
+
+    fn observed_block_range(&self) -> BTreeSet<u64> {
+        (0..self.run.observed_blocks).collect()
     }
 
     fn raw_operational_records_match(

@@ -2426,8 +2426,9 @@ the signed run window (`observed_block < observed_blocks`); re-signed records ou
 satisfy full-spec public evidence.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
-Raw block-history and finality-history records must cover distinct nonzero block roots, agree on the block
-root for each block number, and expose a finalized status count equal to `finalized_blocks`.
+Raw block-history and finality-history records must cover the exact signed observed block range
+`0..observed_blocks`, use distinct nonzero block roots, agree on the block root for each block number, and
+expose a finalized status count equal to `finalized_blocks`.
 Raw randomness-beacon records must be accepted public `drand-v1` or `validator-vrf-v1` records covering
 each observed block exactly once with distinct source/round pairs.
 The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and

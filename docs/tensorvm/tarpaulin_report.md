@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 219 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 220 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -15,7 +15,7 @@ Result:
 - 1 tensor_vm_explorer library test
 
 85.04% workspace line coverage
-23627/27785 workspace lines covered
+23637/27796 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
@@ -25,6 +25,10 @@ Iteration 219 coverage-changing work tightened full-spec public raw-record evide
 data-availability, invalid-work, reward-settlement, detection-measurement, and validator-VRF-lifecycle
 records must use observed block indexes inside the signed run window before `public_evidence_full_spec=true`
 can pass.
+
+Iteration 220 coverage-changing work tightened full-spec public block/finality history evidence so signed
+raw chain-history records must cover the exact signed observed block range instead of any distinct shifted
+range with matching block roots and counts.
 
 Iteration 218 coverage-changing work tightened full-spec public validator VRF lifecycle evidence so signed
 and raw lifecycle records must include one `committed` and one `revealed` record with matching validator ID

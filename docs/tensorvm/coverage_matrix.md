@@ -278,8 +278,8 @@ zero participant IDs, and
 now proves raw detection-measurement records cannot bypass manifest field validation or out-of-run
 observed block rejection when directly bundled, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_chain_history_records` now proves raw
-block/finality history must use distinct nonzero block roots, matching block/finality roots, and finalized
-status counts matching the run evidence, and
+block/finality history must cover the exact signed observed block range, use distinct nonzero block roots,
+matching block/finality roots, and finalized status counts matching the run evidence, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_randomness_records` now proves raw public
 randomness records must cover each observed block exactly once with distinct source/round pairs, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`

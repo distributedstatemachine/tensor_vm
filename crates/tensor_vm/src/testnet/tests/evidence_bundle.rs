@@ -1848,6 +1848,28 @@ fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
         );
     };
 
+    let mut shifted_block_history = full_spec_bundle.clone();
+    for record in &mut shifted_block_history.block_history_raw_records {
+        record.block = record.block.saturating_add(1);
+    }
+    for record in &mut shifted_block_history.finality_history_raw_records {
+        record.block = record.block.saturating_add(1);
+    }
+    resign_block_history_records(&mut shifted_block_history);
+    resign_finality_history_records(&mut shifted_block_history);
+    let report = shifted_block_history.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut shifted_finality_history = full_spec_bundle.clone();
+    for record in &mut shifted_finality_history.finality_history_raw_records {
+        record.block = record.block.saturating_add(1);
+    }
+    resign_finality_history_records(&mut shifted_finality_history);
+    let report = shifted_finality_history.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut duplicate_block_number = full_spec_bundle.clone();
     duplicate_block_number.block_history_raw_records[1].block =
         duplicate_block_number.block_history_raw_records[0].block;

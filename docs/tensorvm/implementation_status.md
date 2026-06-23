@@ -473,8 +473,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
   checked or available receipt counts, raw public randomness records to cover each observed block exactly
-  once with distinct source/round pairs, raw block/finality history to cover distinct nonzero block roots
-  with matching block roots and finalized status counts, raw data-availability measurement records to cover checked receipts
+  once with distinct source/round pairs, raw block/finality history to cover the exact signed observed
+  block range with distinct nonzero block roots, matching block roots, and finalized status counts, raw data-availability measurement records to cover checked receipts
   with distinct nonzero receipt roots and in-window observed blocks, raw invalid-work and reward-settlement records to use distinct
   nonzero receipt roots with nonzero settlement participant IDs and in-window observed blocks, raw detection-measurement records to match
   manifest field semantics with in-window observed blocks, and signed `validator_vrf_lifecycle_records` with raw committed and revealed

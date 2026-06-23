@@ -5,9 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 219 implemented and validated locally: Public Raw Records Bound Observed
-  Blocks To Run Window.
-- Current status: public evidence remains deployment-gated; Iteration 219 tightens public full-spec raw
+- Active feature: Iteration 220 implemented and validated locally: Public Chain History Covers Observed
+  Block Range.
+- Current status: public evidence remains deployment-gated; Iteration 220 tightens public full-spec raw
+  block/finality history so signed records must cover the exact observed block range rather than a shifted
+  range with the same count. Iteration 219 tightens public full-spec raw
   operational, detection-measurement, and validator-VRF-lifecycle evidence so signed records cannot satisfy
   full-spec evidence with `observed_block` values outside the signed run's `observed_blocks` range.
   Iteration 218 tightens public full-spec
@@ -69,6 +71,72 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 220: Public Chain History Covers Observed Block Range
+
+Feature capability: require full-spec public raw block-history and finality-history evidence to cover the
+exact signed observed block range `0..observed_blocks`.
+
+Readiness requirements covered: public evidence integrity for `mvp_spec.md` post-run block/finality
+artifacts and `upow.md` §11 finality/history evidence.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns raw public full-spec evidence admission.
+
+Adapter callers: manifest validation, `tvmd public evidence validate`, public evidence docs/reports.
+
+Old shortcut being removed: signed block-history/finality-history summaries could use distinct matching
+block numbers shifted outside the signed observed range while keeping the expected record counts and roots.
+
+Regression test that proves the shortcut is gone: a complete bundle with re-signed shifted block and
+finality history records stays independently checkable but reports `public_evidence_full_spec=false`.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run public evidence
+validation.
+
+Behavior for producer and non-producer roles: unchanged; this consumes deployed evidence records only.
+
+Structured evidence source: raw `block_history_record=<block>,<block-root>` and
+`finality_history_record=<block>,<block-root>,finalized|unfinalized` records.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate deployed evidence artifacts.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection was parallelized; code/docs edits are
+single-writer.
+
+Tests/checkers/docs to add or update: public evidence bundle chain-history regressions, public
+evidence/MVP docs, coverage/status/tarpaulin notes, and this exec plan.
+
+Narrow validation commands: focused public raw chain-history bundle test.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, diff check, and tarpaulin/report update.
+
+Expected observable evidence: `public_evidence_full_spec=true` rejects otherwise signed block/finality
+history records unless their block numbers are exactly the signed observed run range.
+
+Out of scope: generating real deployed public records, changing live chain finality behavior, or changing
+p2p payload encoding.
+
+Split trigger: split if exact block-range validation requires a manifest schema change.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused public evidence check passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_chain_history_records --lib`.
+- Broad lib validation passed: `cargo test -p tensor_vm --lib` reported 567 passed, 0 failed.
+- Hygiene passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy -p tensor_vm
+  --all-targets -- -D warnings`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+  target/tarpaulin` produced 85.04% workspace line coverage, 23637/27796 lines covered.
+- Implementation commit: pending.
 
 ### Iteration 219: Public Raw Records Bound Observed Blocks To Run Window
 
