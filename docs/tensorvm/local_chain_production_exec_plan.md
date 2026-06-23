@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 241 complete, commit pending: CUDA Field Slice Graph Kernel/Conformance.
+- Active feature: Iteration 241 complete and pushed: CUDA Field Slice Graph Kernel/Conformance.
 - Current status: v0 work follows the 2026-06-23 owner scope decision: live verified drand consensus
   randomness and local A100 CUDA evidence are in v0 scope; 7-day external public-run evidence is a
   production-launch roadmap milestone. The latest CUDA graph subset now covers scale-0 field
@@ -15,7 +15,7 @@ archive commit anchors only.
   full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: finish Iteration 241 commit/push metadata, then continue broadening CUDA kernels/conformance
+- Next action: continue broadening CUDA kernels/conformance with another narrow, fully validated slice
   for remaining admitted exact ops without CPU fallback or overclaiming unsupported frozen-registry
   coverage.
 
@@ -103,8 +103,8 @@ Validation evidence:
 - `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings` passed on
   June 23, 2026.
 - `git diff --check` passed on June 23, 2026.
-- Commit: pending.
-- Push: pending.
+- Commit: `99cfe2b` (`Add CUDA field slice graph support`).
+- Push: `99cfe2b` pushed to `origin/main` on June 23, 2026.
 
 ## Recent Iterations
 
