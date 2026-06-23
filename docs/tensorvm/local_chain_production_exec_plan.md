@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 206 validated in commit `b7c2ee3`: Reward-Finality Formal Status Alignment.
+- Active feature: Iteration 206 pushed: Reward-Finality Formal Status Alignment.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
@@ -117,6 +117,9 @@ Validation evidence (June 23, 2026):
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `b7c2ee3` (`Align reward finality proof status`).
+- Validation metadata commit: `fda3a5a` (`Record reward finality status validation`).
+- Push result: `git push origin main` succeeded on June 23, 2026, updating `main` from `225c215` to
+  `fda3a5a`.
 
 ### Iteration 205: Public Service URL Diversity Gate
 
