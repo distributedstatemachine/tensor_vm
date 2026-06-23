@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 205 in progress: Public Service URL Diversity Gate.
+- Active feature: Iteration 205 validated in commit `acad8dc`: Public Service URL Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
@@ -115,6 +115,7 @@ Validation evidence (June 23, 2026):
   passed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `acad8dc` (`Validate public service URLs`).
 
 ### Iteration 204: Public Network Runtime Endpoint Diversity Gate
 
