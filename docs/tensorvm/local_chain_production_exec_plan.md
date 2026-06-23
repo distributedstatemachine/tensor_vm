@@ -5,13 +5,16 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 238 complete: CUDA Field Mean Graph Kernel/Conformance.
+- Active feature: Iteration 239 complete: CUDA Field Reshape Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 238 added device-side CUDA field
   `mean(dim,keepdim)` graph execution for the scale-0 field subset by reusing fixed-order field reduction
   plus canonical field inverse of the reduction count, extending CUDA graph/conformance evidence without
   claiming fixed-point mean, broadcast reductions, quantization, remaining structural ops, or full
-  frozen-registry CUDA coverage.
+  frozen-registry CUDA coverage. Iteration 239 added device-side CUDA field `reshape(shape=...)` graph
+  execution for the scale-0 field subset using canonical row-major shape-product validation, extending
+  CUDA graph/conformance evidence without claiming fixed-point reshape, squeeze/unsqueeze, other
+  structural ops, quantization, or full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
 - Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
@@ -21,7 +24,7 @@ archive commit anchors only.
 
 | Capability | Status | Evidence | Next action |
 | --- | --- | --- | --- |
-| Gate 0 local CPU testnet | Passing | Iteration 237 first and post-change `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
+| Gate 0 local CPU testnet | Passing | Iteration 239 first `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026 | Keep as first executable gate on every resume |
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, runtime profile env-scope tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
@@ -31,10 +34,105 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 239: CUDA Field Reshape Graph Kernel/Conformance
+
+Feature capability: add CUDA field `reshape(shape=...)` graph execution for scale-0 field tensors using a
+device-side row-major identity copy after canonical shape-product validation, route graph `reshape`
+through `GpuMinerBackend`, and expand the supported CUDA graph/conformance/miner-role fixture so an
+admitted exact structural op beyond broadcast is exercised on the local A100 path.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.1-§3.3, §4.7, §4.8,
+§7, and §16 require bit-exact CUDA evidence for admitted exact ops. `reshape` is a Tier-B structural op
+with deterministic layout semantics; this iteration covers only scale-0 field tensors in the CUDA graph
+subset.
+
+Canonical owner: CUDA runtime owns accelerated scale-0 field `reshape` for canonical row-major structural
+semantics; `TensorGraph` continues to own shape inference, dtype/scale validation, fixed-point reshape,
+zero-copy CPU metadata behavior, and broader structural behavior outside the CUDA subset.
+
+Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+focused runtime/miner-role tests.
+
+Old shortcut removed: exact graph `reshape` currently stops at the CUDA graph boundary, so CUDA
+conformance cannot include an admitted structural op that the CPU canonical interpreter supports.
+
+Regression test that proves the shortcut is gone: CUDA-feature runtime tests assert direct CUDA field
+`reshape` parity against CPU exact field tensors and shape-mismatch rejection; supported CUDA graph parity
+includes a kwargs-backed `reshape` op; and miner-role CUDA graph receipt tests submit the expanded graph
+through `BackendKind::GpuMiner`.
+
+Behavior with local synthetic block production disabled: unchanged; graph execution uses existing chain
+jobs and backend-selected receipt execution.
+
+Behavior for producer and non-producer roles: unchanged; validators/proposers consume the same graph
+receipts and finality logic, and miners do not produce blocks.
+
+Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+miner-role `backend_kind`, direct CUDA `reshape` kernel parity assertions, and explicit unsupported-op
+CUDA graph errors for still-unsupported ops.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, voting, rewards,
+reward maturity, delayed claims, TensorWork activation, or finality.
+
+Wire-size and codec boundary: no wire or codec changes; existing graph/job/receipt payload codecs remain
+unchanged.
+
+Parallel subagents: none. Available subagent tooling currently says not to spawn agents unless the user
+explicitly asks for delegation, so the parent remains the single writer.
+
+Tests/checkers/docs to add or update: CUDA runtime direct kernel parity, CUDA graph conformance profile,
+miner-role supported CUDA graph fixture, unsupported CUDA-op boundary, `upow.md`, coverage matrix,
+implementation status, tarpaulin report, and this execution plan.
+
+Narrow validation commands: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib`;
+`cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend`; default unsupported
+CUDA-feature boundary test.
+
+Broad validation commands before commit: `cargo fmt --check`; `cargo test -p tensor_vm --lib`;
+`cargo test --workspace --release`; `cargo clippy --workspace --all-targets -- -D warnings`;
+post-change Gate 0; `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`;
+full CUDA release and CUDA-feature clippy.
+
+Expected observable evidence: CUDA `reshape` output matches CPU canonical field reshape for the supported
+field subset, CUDA graph CPU/GPU receipt roots match with `reshape` included, and GPU conformance only
+reports `reshape` after the parity case passes.
+
+Out of scope: reward workarounds, immediate reward release, fixed-point `reshape`, squeeze/unsqueeze,
+slice/split/concat/stack, CUDA quantization, consensus changes, and public deployment evidence.
+
+Split trigger: split smaller if CUDA shape-product validation exposes broader Tensor IR shape-inference
+changes, if direct kernel parity fails on A100, or if expanding the miner-role fixture requires unrelated
+graph receipt changes.
+
+Validation evidence:
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- Focused CUDA runtime: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed on
+  June 23, 2026, including direct `field_reshape` parity and shape-mismatch rejection, supported
+  CPU/GPU graph parity with a kwargs-backed `reshape`, GPU conformance profile reporting for `reshape`,
+  and unsupported-op boundary coverage moved to still-unsupported `squeeze`.
+- Focused miner role: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed on June 23,
+  2026 with the supported CUDA graph fixture including `reshape`.
+- Formatting/default validation: `cargo fmt --check`; `cargo test -p tensor_vm --lib` (573 tests);
+  `cargo test --workspace --release`; and `cargo clippy --workspace --all-targets -- -D warnings` passed
+  on June 23, 2026.
+- Post-change Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026.
+- Coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
+  June 23, 2026 with 588 instrumented tests and 84.97% line coverage, 23831/28045 lines covered. The
+  portable run does not instrument native CUDA, so CUDA `reshape` evidence comes from the CUDA-feature
+  runtime and miner-role tests.
+- Full CUDA validation: `cargo test -p tensor_vm --features cuda-kernels --release` passed on June 23,
+  2026 with 580 TensorVM library tests, 1 local CPU compose test, 9 `tvmd_cli` tests, 54 `tvmd_runtime`
+  tests, and doc tests.
+- CUDA lint and diff hygiene: `cargo clippy -p tensor_vm --features cuda-kernels --all-targets --
+  -D warnings` and `git diff --check` passed on June 23, 2026.
 
 ### Iteration 238: CUDA Field Mean Graph Kernel/Conformance
 

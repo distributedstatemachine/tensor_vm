@@ -106,10 +106,11 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
   graph program, tensor artifacts, and trace-opening samples is implemented locally. CUDA graph execution
   locally covers the current synthetic graph shape and a same-shape field-op subset
-  (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
+  (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
   through `GpuMinerBackend`; the full interactive dispute game, binary-op CUDA broadcasting, fixed-point
-  CUDA graph ops, fixed-point `mean`, fixed-point or broadcast reductions, vector clamp bounds, bool-mask
-  selection, and full frozen-registry CUDA graph execution remain open.
+  CUDA graph ops, fixed-point `mean`/`reshape`, fixed-point or broadcast reductions,
+  squeeze/unsqueeze/slice/split/concat/stack, vector clamp bounds, bool-mask selection, and full
+  frozen-registry CUDA graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,
   `scalar_mul`, `identity`, `neg`, `abs`, `sign`, `round`, `relu`, `transpose`, `reshape`, `broadcast`,
@@ -768,8 +769,8 @@ loopback listen address instead of counting local service startup as public netw
 The current instrumented Tarpaulin line coverage is documented in
 [`tarpaulin_report.md`](tarpaulin_report.md):
 
-- 85.03% workspace line coverage
-- 23831/28028 workspace lines covered
+- 84.97% workspace line coverage
+- 23831/28045 workspace lines covered
 - 588 instrumented tests passed
 - `crates/tensor_vm/src/rpc/explorer.rs` coverage is 258/261 after adding WebSocket GraphExecution
   job/receipt evidence and later local evidence coverage
@@ -790,7 +791,7 @@ These spec items require real deployment or non-reference infrastructure and are
 
 - production GPU-miner packaging and a broader optimized CUDA/C++ kernel suite; the current native kernel
   coverage includes CUDA field matmul, same-shape field graph
-  `add`/`sub`/`mul`/`div`/`clamp`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`,
+  `add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`broadcast`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`/`scalar_mul`/`transpose`,
   plus linear-step sub/scalar/transpose/squared-error kernels checked against canonical CPU outputs
 - long-running public 7-day testnet with independent external operators; current implementation exposes
   typed `PublicTestnetRunEvidence`/`PublicTestnetEvidence` so this criterion can be measured without

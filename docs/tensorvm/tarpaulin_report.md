@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 238 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 239 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -14,12 +14,19 @@ Result:
 - 573 tensor_vm library tests
 - 1 tensor_vm_explorer library test
 
-84.98% workspace line coverage
-23831/28044 workspace lines covered
+84.97% workspace line coverage
+23831/28045 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 239 coverage-changing work added CUDA-feature-only scale-0 field `reshape` graph execution
+support and conformance coverage for the supported CUDA subset. The default Tarpaulin run passed under
+the portable feature set and does not instrument the native CUDA path, so the new CUDA `reshape`
+evidence is recorded through separate `--features cuda-kernels` runtime and miner-role tests in the
+execution plan. The portable coverage numbers are 84.97%, 23831/28045 lines, with 588 instrumented
+tests.
 
 Iteration 238 coverage-changing work added CUDA-feature-only scale-0 field `mean` graph execution support
 and conformance coverage for the supported CUDA subset. The default Tarpaulin run passed under the

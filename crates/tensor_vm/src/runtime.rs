@@ -463,6 +463,12 @@ fn execute_cuda_graph_op(
             let keepdim = optional_graph_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
             cuda::field_mean(device_index, tensor, dim, keepdim)?
         }
+        "reshape" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let shape = graph_shape_kwarg(kwargs, "shape")?;
+            cuda::field_reshape(device_index, tensor, &shape)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -687,6 +693,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "clamp",
             "sum",
             "mean",
+            "reshape",
             "broadcast",
             "eq",
             "gt",
@@ -985,10 +992,20 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 )]),
                 out: vec![TensorSpec::field("broadcasted", vec![2, 2])],
             },
+            OpNode {
+                id: 22,
+                op: "reshape".to_owned(),
+                args: vec![IrRef::Op { id: 21, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "shape".to_owned(),
+                    IrValue::Literal(IrLiteral::List(vec![IrLiteral::Uint(4)])),
+                )]),
+                out: vec![TensorSpec::field("reshaped", vec![4])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "broadcasted".to_owned(),
-            value: IrRef::Op { id: 21, idx: 0 },
+            name: "reshaped".to_owned(),
+            value: IrRef::Op { id: 22, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1102,6 +1119,12 @@ mod cuda {
             len: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_identity(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_reshape(
             device_index: u32,
             input: *const u64,
             out: *mut u64,
@@ -1370,6 +1393,32 @@ mod cuda {
 
     pub fn field_identity(device_index: u32, input: &Tensor) -> Result<Tensor> {
         field_unary(device_index, input, tensor_vm_cuda_field_identity)
+    }
+
+    pub fn field_reshape(device_index: u32, input: &Tensor, shape: &[usize]) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        let out_len = checked_shape_product(shape)?;
+        if out_len != input.len() {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir reshape element mismatch",
+            ));
+        }
+        let mut out = vec![0; out_len];
+        let code = unsafe {
+            tensor_vm_cuda_field_reshape(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(shape.to_vec(), input.dtype(), out)
     }
 
     pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -1901,10 +1950,11 @@ mod tests {
             "scalar_mul",
             "mse_loss",
             "mean",
+            "reshape",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "reshape"] {
+        for op in ["einsum", "quantize_int8_per_channel", "squeeze"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -1976,29 +2026,27 @@ mod tests {
         }
         let graph = TensorGraph {
             ir_version: 1,
-            inputs: vec![TensorSpec::field("x", vec![2, 2])],
+            inputs: vec![TensorSpec::field("x", vec![1, 4])],
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "reshape".to_owned(),
+                op: "squeeze".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
                 kwargs: BTreeMap::from([(
-                    "shape".to_owned(),
-                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::List(vec![
-                        crate::ir::IrLiteral::Uint(4),
-                    ])),
+                    "dim".to_owned(),
+                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
                 )]),
-                out: vec![TensorSpec::field("reshaped", vec![4])],
+                out: vec![TensorSpec::field("squeezed", vec![4])],
             }],
             outputs: vec![GraphOutput {
-                name: "reshaped".to_owned(),
+                name: "squeezed".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
         let graph_id = graph.validate_for_consensus().unwrap();
-        let input = Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
+        let input = Tensor::from_vec(vec![1, 4], DType::FieldElement, vec![1, 2, 3, 4]).unwrap();
         let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
         let job = GraphJob::new(
             0,
@@ -2156,6 +2204,17 @@ mod tests {
 
         let identity = cuda::field_identity(0, &lhs).unwrap();
         assert_eq!(identity, lhs);
+
+        let reshaped = cuda::field_reshape(0, &lhs, &[3, 2]).unwrap();
+        let expected_reshaped =
+            Tensor::from_vec(vec![3, 2], lhs.dtype(), lhs.as_slice().to_vec()).unwrap();
+        assert_eq!(reshaped, expected_reshaped);
+        assert!(matches!(
+            cuda::field_reshape(0, &lhs, &[5]),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir reshape element mismatch"
+            ))
+        ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();
         let expected_neg = Tensor::from_vec(

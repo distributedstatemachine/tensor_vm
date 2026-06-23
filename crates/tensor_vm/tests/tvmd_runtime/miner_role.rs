@@ -287,10 +287,22 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("broadcasted", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 22,
+                op: "reshape".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 21, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "shape".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::List(vec![
+                        tensor_vm::IrLiteral::Uint(4),
+                    ])),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("reshaped", vec![4])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "broadcasted".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 21, idx: 0 },
+            name: "reshaped".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 22, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

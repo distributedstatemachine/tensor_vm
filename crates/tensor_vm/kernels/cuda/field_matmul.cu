@@ -1175,6 +1175,14 @@ extern "C" int tensor_vm_cuda_field_identity(
     return launch_unary_kernel(device_index, input, out, len, UnaryOp::Identity);
 }
 
+extern "C" int tensor_vm_cuda_field_reshape(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len) {
+    return launch_unary_kernel(device_index, input, out, len, UnaryOp::Identity);
+}
+
 extern "C" int tensor_vm_cuda_field_neg(
     uint32_t device_index,
     const uint64_t* input,
