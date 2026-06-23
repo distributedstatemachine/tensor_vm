@@ -264,10 +264,23 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("summed", vec![2])],
             },
+            tensor_vm::OpNode {
+                id: 20,
+                op: "broadcast".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 19, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "shape".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::List(vec![
+                        tensor_vm::IrLiteral::Uint(2),
+                        tensor_vm::IrLiteral::Uint(2),
+                    ])),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("broadcasted", vec![2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "summed".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 19, idx: 0 },
+            name: "broadcasted".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 20, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

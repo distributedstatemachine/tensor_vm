@@ -456,6 +456,12 @@ fn execute_cuda_graph_op(
             let keepdim = optional_graph_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
             cuda::field_sum(device_index, tensor, dim, keepdim)?
         }
+        "broadcast" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let shape = graph_shape_kwarg(kwargs, "shape")?;
+            cuda::field_broadcast(device_index, tensor, &shape)?
+        }
         "scalar_mul" => {
             let (tensor, scalar) = graph_tensor_and_scalar_values(args)?;
             require_graph_field_tensor(tensor)?;
@@ -498,6 +504,23 @@ fn optional_graph_bool_kwarg(
         None => Ok(None),
         Some(IrValue::Literal(IrLiteral::Bool(value))) => Ok(Some(*value)),
         _ => Err(TvmError::InvalidReceipt("tensor ir expected bool kwarg")),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn graph_shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<usize>> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::List(values))) => values
+            .iter()
+            .map(|value| match value {
+                IrLiteral::Int(dim) if *dim >= 0 => usize::try_from(*dim)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir shape kwarg")),
+                IrLiteral::Uint(dim) => usize::try_from(*dim)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir shape kwarg")),
+                _ => Err(TvmError::InvalidReceipt("invalid tensor ir shape kwarg")),
+            })
+            .collect(),
+        _ => Err(TvmError::InvalidReceipt("missing tensor ir shape kwarg")),
     }
 }
 
@@ -651,8 +674,23 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
         passed_ops.extend([
-            "add", "mul", "div", "clamp", "sum", "eq", "gt", "lt", "ge", "le", "where", "identity",
-            "neg", "abs", "sign", "relu",
+            "add",
+            "mul",
+            "div",
+            "clamp",
+            "sum",
+            "broadcast",
+            "eq",
+            "gt",
+            "lt",
+            "ge",
+            "le",
+            "where",
+            "identity",
+            "neg",
+            "abs",
+            "sign",
+            "relu",
         ]);
 
         Ok(ConformanceProfile {
@@ -919,10 +957,23 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
                 out: vec![TensorSpec::field("summed", vec![2])],
             },
+            OpNode {
+                id: 20,
+                op: "broadcast".to_owned(),
+                args: vec![IrRef::Op { id: 19, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "shape".to_owned(),
+                    IrValue::Literal(IrLiteral::List(vec![
+                        IrLiteral::Uint(2),
+                        IrLiteral::Uint(2),
+                    ])),
+                )]),
+                out: vec![TensorSpec::field("broadcasted", vec![2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "summed".to_owned(),
-            value: IrRef::Op { id: 19, idx: 0 },
+            name: "broadcasted".to_owned(),
+            value: IrRef::Op { id: 20, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1075,6 +1126,17 @@ mod cuda {
             rows: u64,
             cols: u64,
             mode: u32,
+        ) -> i32;
+        fn tensor_vm_cuda_field_broadcast(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            input_len: u64,
+            out_len: u64,
+            input_shape: *const u64,
+            output_shape: *const u64,
+            input_rank: u64,
+            output_rank: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_scalar_mul(
             device_index: u32,
@@ -1370,6 +1432,35 @@ mod cuda {
         Tensor::from_vec(output_shape, input.dtype(), out)
     }
 
+    pub fn field_broadcast(device_index: u32, input: &Tensor, shape: &[usize]) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        validate_broadcast_shape(input.shape(), shape)?;
+        let out_len = checked_shape_product(shape)?;
+        let input_shape = shape_as_u64(input.shape())?;
+        let output_shape = shape_as_u64(shape)?;
+        let mut out = vec![0; out_len];
+        let code = unsafe {
+            tensor_vm_cuda_field_broadcast(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                out_len as u64,
+                input_shape.as_ptr(),
+                output_shape.as_ptr(),
+                input_shape.len() as u64,
+                output_shape.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(shape.to_vec(), input.dtype(), out)
+    }
+
     pub fn field_scalar_mul(device_index: u32, input: &Tensor, scalar: Elem) -> Result<Tensor> {
         let mut out = vec![0; input.len()];
         let code = unsafe {
@@ -1521,6 +1612,42 @@ mod cuda {
                 "cuda graph op only supports field tensors",
             ))
         }
+    }
+
+    fn validate_broadcast_shape(input_shape: &[usize], output_shape: &[usize]) -> Result<()> {
+        if input_shape.len() > output_shape.len() {
+            return Err(TvmError::InvalidReceipt(
+                "tensor ir broadcast rank mismatch",
+            ));
+        }
+        let rank_offset = output_shape.len() - input_shape.len();
+        for (axis, input_dim) in input_shape.iter().enumerate() {
+            let output_dim = output_shape[rank_offset + axis];
+            if *input_dim != 1 && *input_dim != output_dim {
+                return Err(TvmError::InvalidReceipt(
+                    "tensor ir broadcast shape mismatch",
+                ));
+            }
+        }
+        Ok(())
+    }
+
+    fn checked_shape_product(shape: &[usize]) -> Result<usize> {
+        shape.iter().try_fold(1usize, |product, dim| {
+            product
+                .checked_mul(*dim)
+                .ok_or(TvmError::InvalidReceipt("tensor ir shape overflow"))
+        })
+    }
+
+    fn shape_as_u64(shape: &[usize]) -> Result<Vec<u64>> {
+        shape
+            .iter()
+            .map(|dim| {
+                u64::try_from(*dim)
+                    .map_err(|_| TvmError::InvalidReceipt("tensor ir shape overflow"))
+            })
+            .collect()
     }
 
     fn cuda_error(code: i32) -> TvmError {
@@ -2048,6 +2175,33 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sum_global, expected_sum_global);
+
+        let column = Tensor::from_vec(vec![2, 1], lhs.dtype(), vec![7, MODULUS - 4]).unwrap();
+        let broadcast_columns = cuda::field_broadcast(0, &column, &[2, 3]).unwrap();
+        let expected_broadcast_columns = Tensor::from_vec(
+            vec![2, 3],
+            lhs.dtype(),
+            vec![7, 7, 7, MODULUS - 4, MODULUS - 4, MODULUS - 4],
+        )
+        .unwrap();
+        assert_eq!(broadcast_columns, expected_broadcast_columns);
+
+        let row = Tensor::from_vec(vec![3], lhs.dtype(), vec![1, 2, MODULUS - 1]).unwrap();
+        let broadcast_rank = cuda::field_broadcast(0, &row, &[2, 3]).unwrap();
+        let expected_broadcast_rank = Tensor::from_vec(
+            vec![2, 3],
+            lhs.dtype(),
+            vec![1, 2, MODULUS - 1, 1, 2, MODULUS - 1],
+        )
+        .unwrap();
+        assert_eq!(broadcast_rank, expected_broadcast_rank);
+
+        assert!(matches!(
+            cuda::field_broadcast(0, &row, &[2, 2]),
+            Err(TvmError::InvalidReceipt(
+                "tensor ir broadcast shape mismatch"
+            ))
+        ));
 
         let scaled = cuda::field_scalar_mul(0, &lhs, MODULUS + 2).unwrap();
         assert_eq!(scaled, lhs.scalar_mul(MODULUS + 2).unwrap());
