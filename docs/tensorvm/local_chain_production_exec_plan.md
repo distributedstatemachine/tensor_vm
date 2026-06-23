@@ -5,11 +5,14 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 224 in progress: Live Verified Drand Consensus Randomness.
+- Active feature: Iteration 226 in progress: CUDA A100 Build and Conformance Evidence.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
   consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
-  CUDA device can report ready only after the CUDA backend passes the canonical conformance profile; local
-  executable CUDA evidence is currently blocked by missing `nvcc` despite visible A100 GPUs. Iteration 224 defaults runtime randomness to public
+  CUDA device can report ready only after the CUDA backend passes the canonical conformance profile.
+  Iteration 226 installs the local CUDA toolkit path into executable evidence by replacing the broken
+  default `-arch native` CUDA build with A100-compatible architecture detection/fallback, and focused
+  CUDA-feature tests now pass on the local A100 host. Live `miner run` still uses the CPU role backend,
+  so full live CUDA receipt production remains the next CUDA implementation gap. Iteration 224 defaults runtime randomness to public
   drand and keeps accepted verified drand as the finalized consensus beacon across block application
   instead of synthesizing a post-block fixture beacon. Public evidence remains deployment-gated;
   Iteration 223 exports chain-accepted drand
@@ -71,9 +74,9 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: install/provide CUDA toolkit `nvcc` for the local A100×8 box, then run the `cuda-kernels`
-  feature tests and land real CUDA matmul/graph receipts that are bit-exact with the CPU reference.
-  Stop the public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
+- Next action: wire live miner-role execution to the CUDA backend after device readiness succeeds, then
+  land real CUDA matmul/graph receipts that are bit-exact with the CPU reference. Stop the
+  public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
 
@@ -89,10 +92,113 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the LIVE consensus randomness source (not a fixture). Bespoke per-validator VRF is roadmap, not v0 |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | In v0 scope, achievable locally | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); per-op CUDA conformance + bit-exact receipts pending on the local A100×8 box | Land real CUDA matmul/graph receipts bit-exact with CPU reference; gate receipt acceptance on CUDA conformance |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); CUDA 11.5/A100 build default is unblocked; focused `cuda-kernels` readiness/runtime parity tests pass for current TensorOp and LinearTrainingStep CUDA paths | Wire live miner-role execution to CUDA and land real CUDA matmul/graph receipts bit-exact with CPU reference |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 226: CUDA A100 Build and Conformance Evidence
+
+Feature capability: make the CUDA feature build runnable on the local A100×8 host without an
+operator-side architecture workaround, then record executable CUDA readiness/runtime parity evidence for
+the current CUDA TensorOp and LinearTrainingStep paths.
+
+Readiness requirements covered: `goal.md` v0 Scope Decisions and `upow.md` §3.2/§3.3 require real CUDA
+miner/runtime evidence on the local A100 host and bit-exact CPU/CUDA parity before CUDA can count for v0.
+
+Files/modules likely touched: `crates/tensor_vm/build.rs`, deployment README CUDA build notes, `upow.md`
+CUDA status, and this exec plan.
+
+Canonical owner: CUDA runtime conformance remains owned by `runtime::backend_conformance_profile`;
+`build.rs` owns compiling the local CUDA kernel archive.
+
+Adapter callers: `cargo build/test --features cuda-kernels`, `tvmd miner check --device cuda:N`, and
+deployment/operator build flows.
+
+Old shortcut being removed: operators previously had to supply an out-of-band `TVM_CUDA_ARCH=sm_80`
+override because the default `-arch native` failed on CUDA 11.5 before any conformance test could run.
+
+Regression test that proves the shortcut is gone: `cargo test -p tensor_vm
+miner_start_requires_real_cuda_readiness_for_cuda_devices --features cuda-kernels` passes on the local
+A100 host with no `TVM_CUDA_ARCH` set and reports CUDA conformance fields through the readiness path.
+
+Behavior with local synthetic block production disabled: unchanged; this iteration only affects CUDA
+kernel build/readiness/conformance evidence.
+
+Behavior for producer and non-producer roles: unchanged; live miner-role execution still uses the CPU
+role backend and remains the next CUDA implementation gap.
+
+Structured evidence source: `cuda_conformance_passed`, `cuda_conformance_suite_hash`, CUDA runtime parity
+tests, `nvidia-smi` compute capability output, and `nvcc --version`.
+
+Finality source: unchanged; this iteration does not alter block admission or finality.
+
+Wire-size and codec boundary: no wire or codec changes.
+
+Parallel subagents to run: reward-finality explorer to answer the user's delayed-reward concern, and CUDA
+readiness explorer to map build/test evidence and remaining CUDA gaps.
+
+Parallelizable implementation workstreams: read-only exploration only; parent owns the single-file build
+script edit and docs integration to avoid write conflicts.
+
+Tests/checkers/docs to add or update: CUDA build script default, deployment CUDA build notes, `upow.md`
+CUDA status wording, and this exec plan.
+
+Narrow validation commands: focused CUDA readiness and runtime parity tests under `--features
+cuda-kernels`.
+
+Broad validation commands before commit: `cargo test -p tensor_vm --lib`, `cargo clippy -p tensor_vm
+--all-targets -- -D warnings`, `cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: CUDA 11.5 no longer fails with `Value 'native' is not defined`; the local
+A100 host compiles kernels and passes current CUDA readiness/runtime parity tests without setting
+`TVM_CUDA_ARCH`.
+
+Out of scope: live CUDA `miner run` receipt production, CUDA graph receipt production, public 7-day
+deployment evidence, or claiming complete CUDA coverage for every frozen-registry op.
+
+Split trigger: split if CUDA linking/runtime fails after architecture detection; record exact linker or
+driver failure separately from build-script default selection.
+
+Implementation summary: `build.rs` now honors `TVM_CUDA_ARCH`, otherwise detects the first visible GPU
+compute capability with `nvidia-smi --query-gpu=compute_cap` and emits `sm_<major><minor>`, falling back
+to `sm_80` for the local A100 v0 validation target. Cargo also reruns the build script when `NVCC` or
+`TVM_CUDA_ARCH` changes.
+
+Validation evidence:
+- Host compiler: `nvcc --version` reports CUDA compilation tools 11.5.119.
+- Host GPUs: `nvidia-smi --query-gpu=index,name,compute_cap,driver_version --format=csv,noheader`
+  reports eight `NVIDIA A100-SXM4-80GB` devices, compute capability 8.0, driver 550.163.01.
+- Old failure reproduced before the fix:
+  `cargo test -p tensor_vm miner_start_requires_real_cuda_readiness_for_cuda_devices --features
+  cuda-kernels` failed in `build.rs` with `nvcc fatal : Value 'native' is not defined for option
+  'gpu-architecture'`.
+- CUDA readiness after the fix:
+  `cargo test -p tensor_vm miner_start_requires_real_cuda_readiness_for_cuda_devices --features
+  cuda-kernels` passed with no `TVM_CUDA_ARCH` override.
+- CUDA runtime parity after the fix:
+  `cargo test -p tensor_vm cuda_kernel_matches_canonical_field_matmul_edges --lib --features
+  cuda-kernels` passed.
+- CUDA runtime parity after the fix:
+  `cargo test -p tensor_vm cuda_kernels_match_canonical_linear_tensor_ops --lib --features
+  cuda-kernels` passed.
+- CUDA backend parity after the fix:
+  `cargo test -p tensor_vm cpu_and_gpu_backends_match_canonical_matmul --lib --features cuda-kernels`
+  passed.
+- CUDA backend parity after the fix:
+  `cargo test -p tensor_vm cpu_and_gpu_backends_match_linear_step --lib --features cuda-kernels`
+  passed.
+- Reward-delay audit result: delayed rewards are canonical chain state, not an adapter workaround:
+  `PendingProposerReward`, `PendingReceiptReward`, `PendingChallengeReward`, and `PendingCreditReward`
+  are rooted, persisted, and released only through beneficiary `ClaimReward` for live claims; a unified
+  reward-claim envelope remains a future formal-model improvement.
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Deployment README focused assertion:
+  `cargo test -p tensor_vm public_deployment_readme_records_scaffold_boundary_and_operator_flow --lib`
+  passed after preserving the exact expected public GPU-miner evidence line.
+- Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  `cargo fmt --check`, and `git diff --check` passed.
 
 ### Iteration 225: CUDA Readiness Requires Runtime Conformance
 

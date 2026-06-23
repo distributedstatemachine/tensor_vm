@@ -4,6 +4,8 @@ use std::process::Command;
 
 fn main() {
     println!("cargo:rerun-if-changed=kernels/cuda/field_matmul.cu");
+    println!("cargo:rerun-if-env-changed=NVCC");
+    println!("cargo:rerun-if-env-changed=TVM_CUDA_ARCH");
 
     if env::var_os("CARGO_FEATURE_CUDA_KERNELS").is_none() {
         return;
@@ -16,7 +18,7 @@ fn main() {
     let nvcc = env::var_os("NVCC")
         .map(PathBuf::from)
         .unwrap_or_else(|| PathBuf::from("nvcc"));
-    let cuda_arch = env::var("TVM_CUDA_ARCH").unwrap_or_else(|_| "native".to_owned());
+    let cuda_arch = cuda_arch();
 
     let status = Command::new(&nvcc)
         .arg("--lib")
@@ -49,6 +51,27 @@ fn main() {
 
     println!("cargo:rustc-link-lib=dylib=cudart");
     println!("cargo:rustc-link-lib=dylib=stdc++");
+}
+
+fn cuda_arch() -> String {
+    if let Ok(value) = env::var("TVM_CUDA_ARCH") {
+        return value;
+    }
+    detected_cuda_arch().unwrap_or_else(|| "sm_80".to_owned())
+}
+
+fn detected_cuda_arch() -> Option<String> {
+    let output = Command::new("nvidia-smi")
+        .args(["--query-gpu=compute_cap", "--format=csv,noheader"])
+        .output()
+        .ok()?;
+    if !output.status.success() {
+        return None;
+    }
+    let text = String::from_utf8(output.stdout).ok()?;
+    let capability = text.lines().map(str::trim).find(|line| !line.is_empty())?;
+    let (major, minor) = capability.split_once('.')?;
+    Some(format!("sm_{major}{minor}"))
 }
 
 fn cuda_home(nvcc: &Path) -> Option<PathBuf> {

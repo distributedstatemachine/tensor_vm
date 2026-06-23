@@ -86,7 +86,10 @@ sudo systemctl enable --now tensorvm.service
 ```
 
 The CUDA miner-start check must report `device_backend=cuda`, `gpu_backend_ready=true`, and
-`cuda_kernels_compiled=true` on GPU-miner hosts. Use `--device cpu` only for the portable reference path;
+`cuda_kernels_compiled=true` on GPU-miner hosts. CUDA builds honor `TVM_CUDA_ARCH` when set; otherwise
+the build detects the first visible GPU compute capability and falls back to `sm_80`, the local A100 v0
+validation target.
+Use `--device cpu` only for the portable reference path;
 it is not public GPU-miner evidence. Set `cuda_ready_miner_count` in the preflight manifest to the number
 of planned miner hosts that passed this CUDA readiness check; launch readiness requires it to match
 `miner_count`. Set `libp2p_ready_node_count` to the number of planned miner and validator nodes where
