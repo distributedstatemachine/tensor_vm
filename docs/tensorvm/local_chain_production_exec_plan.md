@@ -5,8 +5,8 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 216 implemented locally with validation complete: Compact Full-Spec Evidence
-  Fixtures For Coverage Runs.
+- Active feature: Iteration 216 implemented and validation recorded: Compact Full-Spec Evidence Fixtures
+  For Coverage Runs.
 - Current status: public evidence remains deployment-gated; Iteration 216 keeps the full-spec public
   evidence criteria intact while reducing the raw record cardinality of test-only full-spec fixtures so
   coverage instrumentation can complete. Iteration 215 ties raw validator-VRF lifecycle
@@ -131,7 +131,9 @@ Validation evidence (June 23, 2026):
 - `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` completed
   successfully after the fixture compaction: 581 instrumented tests passed, 85.00% workspace line
   coverage, 23,562/27,721 lines covered.
-- Implementation commit pending.
+- Implementation commit: `12dffe6` (`Compact full-spec evidence fixtures for coverage`).
+- Validation metadata recorded in the follow-up docs commit before push.
+- Push range from prior remote anchor: `026929c..HEAD`.
 
 ### Iteration 215: VRF Lifecycle Records Must Match Available Receipt Roots
 
