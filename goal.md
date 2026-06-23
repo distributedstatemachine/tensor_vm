@@ -32,7 +32,7 @@ v0 admits **only** ops and mechanisms whose canonical `F_p` semantics are fully 
 | §7 | Verification L2: sound random-linear checks for affine/elementwise Tier-B ops; enumerate which Tier-B ops are sound vs deferred | `gather`/`scatter`/`embedding` need index-consistency, not just linear checks |
 | §8.1 | Verification L3a: redundancy + honest-majority committee agreement for Tier-C receipts, with delayed settlement on disagreement | v0 baseline; weaker than L1/L2 by design |
 | §9 | Data availability for verification: miners serve tensor/trace chunks, validators do availability sampling, unserved chunks make a receipt non-finalizable and put bond at risk | Durable/erasure-coded DA is roadmap |
-| §10 | Unbiasable randomness: VRF/beacon-seeded challenge vectors and audit/committee selection, commit→reveal binding `r` to `(receipt_id, beacon_round)`, block-hash-derived randomness banned | Pin exact beacon construction as part of the feature |
+| §10 | Unbiasable randomness: beacon-seeded challenge vectors and audit/committee selection, commit→reveal binding `r` to `(receipt_id, beacon_round)`, block-hash-derived randomness banned | **drand is the canonical v0 beacon** (`upow.md` §10 admits "an external drand-style randomness beacon"). v0 = verified drand round + validator commit→reveal anchored to that round. A bespoke per-validator VRF construction is roadmap, not v0 |
 | §11 | Consensus: deterministic settled-receipt blockspace, UVPoW puzzle bound to a valid `checks_root`, difficulty retargeting, zero-receipt skip fallback, stake-weighted BFT finality separate from admission | Block proposal is validator-owned; TensorWork never selects proposers |
 | §11.4 | `TensorBlock` structure: height/prev/beacon, settled receipts, `checks_root`, PoW nonce/target, reward allocations, proposer sig, finality votes | Canonical names only |
 | §12 | Economics: miner/validator/challenger rewards, slashable miner bonds, lazy-validator mandatory-audit slashing, data-withholding timeout slashing, parameter table, the bond ≥ gain-from-fraud invariant | State and re-verify the economic invariant whenever a parameter changes |
@@ -46,7 +46,17 @@ Do not chase these as v0 work; do not let them block v0 completion. Keep the hoo
 - §8.3 / L4 ZK proofs of op/segment execution.
 - §9 durable erasure-coded DA and light-client guarantees.
 - §4.8 transcendental and order-dependent Tier-C op **consensus admission** (needs published canonical fixed-point references + verifiers + soundness bounds).
+- Bespoke per-validator VRF construction over finalized chain state (§10). v0 uses the verified drand beacon instead; the per-validator VRF is a post-v0 hardening of the randomness source, not a v0 gate.
+- 7-day external public-run evidence and full public deployment (independent external operators, deployed RPC/explorer/faucet/telemetry HTTPS services, signed wall-clock run window). This is a production-launch milestone, not a v0 completion gate. v0 correctness is proven by the local CPU Gate 0 plus real CUDA evidence on the local A100×8 box.
 - Externally-useful (non-synthetic) workloads and the §1.2 non-goals (arbitrary float consensus state, full Transformer training as one step, Turing-complete VM consensus, on-chain full tensors, ZKML for the whole workload, subjective usefulness scoring).
+
+### v0 Scope Decisions (owner override, 2026-06-23)
+
+These decisions are authoritative and override stale readiness/exec text. Record the rationale in the exec plan and update lower-precedence docs (`mvp_spec.md`, `local_chain_production_readiness.md`, `completion_audit.md`, `coverage_matrix.md`, `public_testnet_evidence.md`, `implementation_status.md`) when each area is next touched.
+
+- **Randomness source = drand.** The canonical v0 beacon is the public drand network (verified `pedersen-bls-chained` rounds). §10 is satisfied by a verified drand round bound into the chain epoch plus validator commit→reveal anchored to `(receipt_id, beacon_round)`. A bespoke per-validator VRF construction is **roadmap**, not a v0 blocker. Drive iterations to make drand the live consensus randomness source, not an optional fixture.
+- **CUDA is in-scope and locally provable.** Real CUDA miner/runtime execution and per-op `F_p` CUDA conformance are runnable on the local A100×8 box. CUDA evidence is a first-class v0 validation target, **not** "deployment-gated" or "outside the local proof." Drive iterations to land real CUDA matmul/graph receipts whose outputs are bit-exact with the CPU reference.
+- **7-day external public run is out of v0 scope.** It moves to the roadmap as a production-launch milestone. Do not treat the 7-day run, independent external operators, or deployed public HTTPS services as a v0 completion gate or active blocker. v0 done = local CPU Gate 0 green + real CUDA evidence + live drand-bound randomness, with all in-scope `upow.md` v0 capabilities implemented and tested.
 
 ### Known v0 gaps to drive iterations (current code → upow.md v0)
 
@@ -56,7 +66,7 @@ These are the concrete deltas between the implemented reference core and full `u
 - Per-op `F_p` conformance test-vector suite gating receipt acceptance (§3.3).
 - Difficulty retargeting and zero-receipt skip fallback for UVPoW block production (§11.2).
 - Exact parent-state snapshots, child-state apply semantics, selected-receipt lifecycle/opening metadata, and `checks_root` challenge openings (§11).
-- VRF/beacon randomness binding with commit→reveal ordering and an enforced ban on block-hash-derived consensus randomness (§10).
+- drand-bound randomness as the live consensus source: verified drand round → chain-epoch binding, commit→reveal ordering, and an enforced ban on block-hash-derived consensus randomness (§10). Bespoke per-validator VRF is roadmap.
 - L2 random-linear soundness coverage enumerated per Tier-B op, with index-consistency handling for `gather`/`scatter`/`embedding` (§7).
 - Slashable miner bonds, mandatory randomized validator audits with slashing, and data-withholding timeout slashing wired to the economic invariant (§12).
 - Network-visible validator proposer/block-assembly tick that replaces the remaining service-owned synthetic round helper (carryover from the local readiness plan, required by §2 and §11).
@@ -343,7 +353,7 @@ When compacting, preserve facts, commands, evidence, blockers, and commit hashes
 - Workloads are expressed as the content-addressed Tensor IR (§4): graphs are addressed by `graph_id`, structurally validated before execution, and built only from v0-admitted ops; Tier-C ops are carried in the registry but gated out of consensus.
 - The verification ladder is live for v0: full-output Freivalds for Tier-A block eligibility (§6), sound random-linear checks for the enumerated Tier-B ops (§7), and redundancy + committee agreement with delayed settlement for Tier-C (§8.1).
 - Records (`Job`/`Receipt`/`Attestation`/`TensorBlock`) use canonical bodies, `SHA256(canonical(body))` ids, asymmetric signatures only, and reserve `trace_root` so §8.2 fraud proofs remain a non-breaking addition (§5, §13).
-- Randomness for challenge vectors, audits, and committee selection is beacon/VRF-sourced with commit→reveal binding; block-hash-derived consensus randomness is banned and that ban is enforced, not just documented (§10).
+- Randomness for challenge vectors, audits, and committee selection is sourced from the verified drand beacon bound into the chain epoch, with validator commit→reveal binding to `(receipt_id, beacon_round)`; block-hash-derived consensus randomness is banned and that ban is enforced, not just documented (§10). Bespoke per-validator VRF is roadmap, not a v0 gate.
 - Consensus is deterministic settled-receipt blockspace + UVPoW bound to a valid `checks_root` with difficulty retargeting and zero-receipt fallback, admission separate from stake-weighted BFT finality (§11).
 - Economics are wired: rewards, slashable bonds, mandatory validator audits, and data-withholding timeout slashing satisfy the bond ≥ gain-from-fraud invariant, which is re-verified on every parameter change (§12).
 - Docs/status record the §14 honest soundness framing (Tier-A strong; Tier-C committee-trust until 3b) without over-claiming base-layer security.
@@ -359,3 +369,5 @@ When compacting, preserve facts, commands, evidence, blockers, and commit hashes
 - The local checker proves live post-startup receipt, attestation, reward, tensor fetch, telemetry, restart, and all-operator convergence evidence.
 - Unit/integration tests cover changed chain/runtime/storage/network behavior.
 - The full local acceptance gate from the readiness doc passes or any environmental blocker is documented with exact failing command/output.
+- Real CUDA evidence is produced on the local A100×8 box: per-op `F_p` CUDA conformance passes and CUDA miner/runtime receipts are bit-exact with the CPU reference. (CUDA is in v0 scope per the Scope Decisions above.)
+- The 7-day external public-run / full public-deployment evidence is **not** required for v0 done; it is a roadmap production-launch milestone (see Scope Decisions). Local CPU Gate 0 + real CUDA + live drand-bound randomness stand in for it at v0.

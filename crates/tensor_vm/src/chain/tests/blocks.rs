@@ -1,5 +1,12 @@
 use super::*;
 
+fn hex_bytes(input: &str) -> Vec<u8> {
+    (0..input.len())
+        .step_by(2)
+        .map(|index| u8::from_str_radix(&input[index..index + 2], 16).unwrap())
+        .collect()
+}
+
 fn resign_test_block(block: &mut TensorBlock) {
     let block_hash = block.hash();
     block.proposer_signature = sign(&block.proposer, &block_hash);
@@ -611,6 +618,49 @@ fn produced_blocks_use_parent_finalized_beacon_not_own_hash() {
     assert_ne!(block.beacon, block.pow_hash());
     assert_eq!(chain.state().finalized_beacon_round(), 1);
     assert_ne!(chain.state().finalized_randomness(), block.hash());
+}
+
+#[test]
+fn produced_blocks_preserve_accepted_verified_chained_drand_beacon() {
+    let mut chain = Chain::new(hash_bytes(b"test", &[b"drand-block-beacon"]));
+    let public_key = hex_bytes(
+        "868f005eb8e6e4ca0a47c8a77ceaa5309a47978a7c71bc5cce96366b5d7a569937c529eeda66c7293784a9402801af31",
+    );
+    let signature = hex_bytes(
+        "8d61d9100567de44682506aea1a7a6fa6e5491cd27a0a0ed349ef6910ac5ac20ff7bc3e09d7c046566c9f7f3c6f3b10104990e7cb424998203d8f7de586fb7fa5f60045417a432684f85093b06ca91c769f0e7ca19268375e659c2a2352b4655",
+    );
+    let previous_signature =
+        hex_bytes("176f93498eac9ca337150b46d21dd58673ea4e3581185f869672e59fa4cb390a");
+    let source_id = verified_chained_drand_source_id(&public_key);
+    let expected = verified_chained_drand_beacon_record(
+        source_id.clone(),
+        1,
+        &public_key,
+        &signature,
+        &previous_signature,
+        0,
+    )
+    .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitVerifiedChainedDrandBeacon {
+            source_id,
+            beacon_round: 1,
+            public_key,
+            signature,
+            previous_signature,
+        })
+        .unwrap();
+    let proposer = address(b"drand-block-proposer");
+    chain.register_validator(proposer, 10_000).unwrap();
+
+    let block = chain.produce_block(proposer, 1_000).unwrap();
+
+    assert_eq!(block.beacon_round, 1);
+    assert_eq!(block.beacon, expected.randomness);
+    assert_eq!(chain.state().finalized_beacon_round(), 1);
+    assert_eq!(chain.state().finalized_randomness(), expected.randomness);
+    assert_ne!(chain.state().finalized_randomness(), block.hash());
+    assert_ne!(chain.state().finalized_randomness(), block.pow_hash());
 }
 
 #[test]

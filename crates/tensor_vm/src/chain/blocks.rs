@@ -1321,8 +1321,13 @@ fn apply_block_to_parent_state(
     child_state.height = block_height.saturating_add(1);
     child_state.epoch = child_state.height / epoch_length.max(1);
     super::commands::release_all_matured_rewards(&mut child_state);
-    let (next_round, next_beacon) =
-        next_finalized_beacon(beacon_round, beacon, child_state.height, child_state.epoch);
+    let (next_round, next_beacon) = finalized_beacon_after_block(
+        parent_state,
+        beacon_round,
+        beacon,
+        child_state.height,
+        child_state.epoch,
+    );
     child_state.finalized_beacon_round = next_round;
     child_state.finalized_randomness = next_beacon;
     if reward_context.proposer != [0; 32] {
@@ -1722,6 +1727,12 @@ fn selected_receipt_openings(
 
 fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> (u64, Hash) {
     if block.height == 0 {
+        if chain.state.height == 0 {
+            return (
+                chain.state.finalized_beacon_round,
+                chain.state.finalized_randomness,
+            );
+        }
         return (
             chain.state.genesis_beacon_round,
             chain.state.genesis_randomness,
@@ -1735,17 +1746,48 @@ fn expected_parent_beacon(chain: &Chain, block: &TensorBlock) -> (u64, Hash) {
             candidate.height + 1 == block.height && candidate.hash() == block.parent_hash
         })
         .map(|parent| {
-            next_finalized_beacon(
-                parent.beacon_round,
-                &parent.beacon,
-                block.height,
-                block.epoch,
-            )
+            chain
+                .block_parent_states
+                .get(&parent.hash())
+                .map(|parent_parent_state| {
+                    finalized_beacon_after_block(
+                        parent_parent_state,
+                        parent.beacon_round,
+                        &parent.beacon,
+                        block.height,
+                        block.epoch,
+                    )
+                })
+                .unwrap_or_else(|| {
+                    next_finalized_beacon(
+                        parent.beacon_round,
+                        &parent.beacon,
+                        block.height,
+                        block.epoch,
+                    )
+                })
         })
         .unwrap_or((
             chain.state.finalized_beacon_round,
             chain.state.finalized_randomness,
         ))
+}
+
+fn finalized_beacon_after_block(
+    parent_state: &ChainState,
+    block_beacon_round: u64,
+    block_beacon: &Hash,
+    next_height: u64,
+    next_epoch: u64,
+) -> (u64, Hash) {
+    if parent_state
+        .external_randomness_beacons
+        .get(&block_beacon_round)
+        .is_some_and(|record| record.randomness == *block_beacon)
+    {
+        return (block_beacon_round, *block_beacon);
+    }
+    next_finalized_beacon(block_beacon_round, block_beacon, next_height, next_epoch)
 }
 
 fn parent_matches(chain: &Chain, block: &TensorBlock) -> bool {

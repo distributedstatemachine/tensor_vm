@@ -287,8 +287,8 @@ impl RandomnessBeaconRuntimeConfig {
     }
 
     pub fn from_env() -> std::result::Result<Self, String> {
-        let mode =
-            std::env::var("TENSORVM_RANDOMNESS_BEACON_MODE").unwrap_or_else(|_| "off".to_owned());
+        let mode = std::env::var("TENSORVM_RANDOMNESS_BEACON_MODE")
+            .unwrap_or_else(|_| "public_drand".to_owned());
         match mode.as_str() {
             "" | "off" | "OFF" | "disabled" | "DISABLED" => Ok(Self::off()),
             "local_deterministic" => {
@@ -1114,6 +1114,40 @@ mod tests {
         assert_eq!(drand_round_for_unix_time(100, 30, 130).unwrap(), 2);
         assert!(drand_round_for_unix_time(100, 0, 130).is_err());
         assert!(drand_round_for_unix_time(100, 30, 99).is_err());
+    }
+
+    #[test]
+    fn randomness_beacon_config_defaults_to_public_drand() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_randomness_beacon_env();
+
+        let config = RandomnessBeaconRuntimeConfig::from_env().unwrap();
+        assert_eq!(config.mode, RandomnessBeaconMode::PublicDrand);
+        assert_eq!(config.mode.label(), "public_drand");
+        assert_eq!(config.source_id, "public-drand:8990e7a9aaed2ffe");
+        assert_eq!(config.beacon_round, 0);
+        assert_eq!(
+            config.drand_http_base_url,
+            PUBLIC_DRAND_DEFAULT_HTTP_BASE_URL
+        );
+        assert_eq!(config.drand_chain_hash, PUBLIC_DRAND_DEFAULT_CHAIN_HASH);
+
+        clear_randomness_beacon_env();
+    }
+
+    #[test]
+    fn explicit_off_randomness_beacon_mode_disables_runtime_beacon() {
+        let _guard = ENV_LOCK.lock().unwrap();
+        clear_randomness_beacon_env();
+        unsafe {
+            std::env::set_var("TENSORVM_RANDOMNESS_BEACON_MODE", "off");
+        }
+
+        let config = RandomnessBeaconRuntimeConfig::from_env().unwrap();
+        assert_eq!(config.mode, RandomnessBeaconMode::Off);
+        assert!(!config.enabled());
+
+        clear_randomness_beacon_env();
     }
 
     #[test]

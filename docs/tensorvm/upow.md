@@ -478,8 +478,15 @@ Randomness is used for (a) Freivalds/random-linear challenge vectors `r`, (b) wh
 > poll/backoff/freshness counters. Accepted chained drand records now anchor the current chain epoch to
 > a public drand round, reject later chained records outside the deterministic chain-owned epoch window,
 > and expose the rooted/persisted anchor plus current window through status and explorer evidence.
-> Deployed full VRF construction and deployed commit-reveal lifecycle evidence remain TODO before claiming
-> the full §10 construction.
+> v0 randomness decision (owner override, 2026-06-23, see `goal.md` "v0 Scope Decisions"): drand is the
+> canonical v0 beacon. §10 is satisfied for v0 by the verified drand round bound into the chain epoch plus
+> validator commit→reveal anchored to `(receipt_id, beacon_round)`; this section already admits "an external
+> drand-style randomness beacon" as a valid source. A bespoke per-validator VRF construction is roadmap, not
+> a v0 gate. The local reference now defaults the runtime randomness-beacon config to public drand when no
+> override is supplied, and block application preserves an accepted verified drand beacon as the finalized
+> consensus randomness instead of replacing it with a synthetic post-block beacon. Deterministic fixture
+> beacons remain explicit local overrides; deployed public commit-reveal lifecycle evidence is part of the
+> roadmap public run.
 
 ---
 

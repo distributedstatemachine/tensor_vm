@@ -5,10 +5,16 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 222 in progress: Verified Public Randomness Gates Full Spec.
-- Current status: public evidence remains deployment-gated; Iteration 222 separates signed raw
-  randomness/validator-VRF lifecycle record shape from chain-accepted drand/validator-VRF evidence so shaped
-  placeholder records cannot set `public_evidence_full_spec=true`. Iteration 221 requires deployed public service
+- Active feature: Iteration 224 in progress: Live Verified Drand Consensus Randomness.
+- Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
+  consensus randomness and local A100 CUDA evidence. Iteration 224 defaults runtime randomness to public
+  drand and keeps accepted verified drand as the finalized consensus beacon across block application
+  instead of synthesizing a post-block fixture beacon. Public evidence remains deployment-gated;
+  Iteration 223 exports chain-accepted drand
+  beacon and validator-VRF reveal state into typed public raw-record files for the existing
+  summary-file/artifact-file flow. Iteration 222 separates signed raw randomness/validator-VRF lifecycle
+  record shape from chain-accepted drand/validator-VRF evidence so shaped placeholder records cannot set
+  `public_evidence_full_spec=true`. Iteration 221 requires deployed public service
   health/content evidence before a public evidence bundle can report `independently_checkable=true`.
   Iteration 220 tightens public full-spec raw
   block/finality history so signed records must cover the exact observed block range rather than a shifted
@@ -25,7 +31,9 @@ archive commit anchors only.
   records to the same checked available receipt roots proven by raw data-availability records. Iteration
   214 tightens the scalar
   validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
-  artifacts. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
+  artifacts. Reward soundness relies on the existing delayed-claim ledgers, not on an assumed verifier-proof
+  path: non-voided proposer, receipt, challenge, and credit rewards remain pending until beneficiary
+  `ClaimReward`, while maintenance sweeps only prune voided/prunable claims. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
   chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
   program bodies until their index-consistency proofs exist. Reward-delay work is implemented locally for
   receipt, proposer, and challenge rewards;
@@ -51,11 +59,19 @@ archive commit anchors only.
   public/mainnet profiles cannot inherit local synthetic producer/proposer behavior from a shared
   environment. Iteration 210 adds runtime-configured bootstrap peers so startup/readiness can merge
   `TENSORVM_BOOTSTRAP_PEERS` with durable peer-book records.
+- Scope decision (2026-06-23, owner override; see `goal.md` "v0 Scope Decisions"):
+  - drand is the canonical v0 randomness beacon. Bespoke per-validator VRF construction is roadmap, no
+    longer a v0 blocker. v0 §10 = verified drand round → chain-epoch binding + validator commit→reveal.
+  - Real CUDA miner/runtime + per-op CUDA conformance is in v0 scope and provable on the local A100×8 box;
+    it is no longer "deployment-gated / outside the local proof."
+  - 7-day external public-run + full public-deployment evidence is roadmap (production-launch milestone),
+    not a v0 completion gate or active blocker.
 - Current blockers:
-  - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
-    local CPU proof.
-  - Real deployed full VRF construction and public commit-reveal lifecycle artifacts remain open.
-- Next action: continue real public VRF/CUDA/deployed-run artifact work.
+  - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
+    reclassified to roadmap per the scope decision above.)
+- Next action: harden remaining live-drand edges, then land real CUDA matmul/graph receipts on the local
+  A100×8 box that are bit-exact with the CPU reference.
+  Stop the public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
 
@@ -69,11 +85,193 @@ archive commit anchors only.
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof and deployed dispute evidence |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
-| Randomness commit/reveal or VRF beacon | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates, and public evidence now distinguishes signed raw record shape from chain-accepted drand/validator-VRF evidence | Add real deployed full VRF construction artifacts and public lifecycle records |
+| Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the LIVE consensus randomness source (not a fixture). Bespoke per-validator VRF is roadmap, not v0 |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
+| CUDA miner/runtime + conformance | In v0 scope, achievable locally | CUDA matmul kernels exist (`kernels/cuda/field_matmul.cu`); per-op CUDA conformance + bit-exact receipts pending on the local A100×8 box | Land real CUDA matmul/graph receipts bit-exact with CPU reference; gate receipt acceptance on CUDA conformance |
+| Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 224: Live Verified Drand Consensus Randomness
+
+Feature capability: configure the live runtime path so consensus receipt anchors, validation seeds,
+validator commit/reveal records, and block beacon state are driven by verified public drand records by
+default, with deterministic fixture beacons available only as an explicit local test override.
+
+Readiness requirements covered: `goal.md` v0 Scope Decisions, `upow.md` §10, and `mvp_spec.md` §12.5/§19
+require validation randomness to be unpredictable after miner commitment, not derived from current block
+hashes, and bound to a finalized beacon round before validation reveals. This iteration targets the
+remaining v0 gap: verified drand round → chain-epoch binding as the live consensus randomness source.
+
+Files/modules likely touched: runtime randomness config and tick paths, local CPU profile defaults,
+service/runtime status evidence, role-runtime startup, focused randomness/role tests, and this exec plan.
+
+Canonical owner: `ChainState` and `ChainCommand::{SubmitVerifiedDrandBeacon, SubmitVerifiedChainedDrandBeacon}`
+own accepted randomness state; runtime randomness-beacon code owns fetching/verifying live drand payloads;
+role/service adapters only schedule and report the canonical command path.
+
+Adapter callers: `tvmd node serve`, `tvmd miner run`, `tvmd validator run`, local-testnet runtime config,
+service status/explorer evidence, and local checker/status tests.
+
+Old shortcut being removed: deterministic `SubmitExternalRandomnessBeacon` fixture records could be the
+normal live runtime beacon source for local consensus, making drand verification optional evidence instead
+of the default consensus randomness path.
+
+Regression test that proves the shortcut is gone: default live runtime config selects verified drand
+mode and submitted beacon records carry `DrandPedersenBlsChainedV1`/`DrandPedersenBlsUnchainedV1` proof
+metadata, while deterministic local fixture mode requires an explicit override and cannot be mistaken for
+the default live consensus path.
+
+Behavior with local synthetic block production disabled: unchanged for inbound sync; nodes still ingest
+verified drand records and use accepted chain randomness for receipt anchors even if they do not publish
+synthetic jobs or propose blocks.
+
+Behavior for producer and non-producer roles: producers may fetch and publish verified drand records;
+non-producers apply bounded verified drand payloads through the same node ingest and chain-command path.
+
+Structured evidence source: `ExternalRandomnessBeaconRecord.proof`, finalized beacon round/randomness,
+`ChainState::public_drand_epoch_round_window`, role/status randomness-beacon counters, and accepted
+receipt randomness anchors.
+
+Finality source: finalized chain state and chain-owned public drand epoch window; no block-hash-derived
+randomness is introduced.
+
+Wire-size and codec boundary: reuse existing bounded drand beacon payload and shared node ingest codecs;
+no new consensus record format unless explorer/status evidence needs a typed field.
+
+Parallel subagents to run: readiness mapper, codebase explorer, and test-coverage explorer. All are
+read-only and run before implementation.
+
+Parallelizable implementation workstreams: read-only mapping/test discovery can run in parallel; code edits
+remain single-writer because runtime config, status, and tests are coupled.
+
+Tests/checkers/docs to add or update: randomness runtime config tests, chain/p2p drand proof tests as
+needed, local-testnet/status tests proving fixture mode is explicit, readiness/status docs, and this exec
+plan.
+
+Narrow validation commands: Gate 0 first; focused randomness-beacon runtime tests; focused chain drand
+admission tests; focused local-testnet/status tests touched by the runtime default.
+
+Broad validation commands before commit: `cargo test -p tensor_vm --lib --release`,
+`cargo clippy -p tensor_vm --all-targets -- -D warnings`, `cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: the default local/runtime config reports public drand mode, accepted
+beacon records are chain-verified drand records, receipt anchors use that accepted round, and deterministic
+fixture mode appears only when explicitly requested.
+
+Out of scope: CUDA receipts, new drand cryptography, public 7-day deployment evidence, bespoke
+per-validator VRF construction, and public evidence full-spec promotion.
+
+Split trigger: split if live network fetching requires external connectivity in required tests; in that
+case use injected deterministic verified drand payloads to prove the chain/runtime boundary separately
+from HTTP availability.
+
+Implementation summary: `RandomnessBeaconRuntimeConfig::from_env()` now defaults to `public_drand`, while
+explicit `off` and `local_deterministic` remain opt-in modes. Block child-state application now preserves
+the accepted external randomness beacon when the block beacon is backed by a chain-recorded drand/fixture
+record, so verified drand is not overwritten by `tensor-vm-finalized-beacon-v2` after a block. Height-0
+parent-beacon validation now respects a pre-block accepted drand parent state.
+
+Validation evidence:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused chain regression:
+  `cargo test -p tensor_vm produced_blocks_preserve_accepted_verified_chained_drand_beacon --lib` passed.
+- Existing block-hash ban regression:
+  `cargo test -p tensor_vm block_validation_rejects_block_hash_beacon_randomness --lib` passed.
+- Existing parent-beacon regression:
+  `cargo test -p tensor_vm produced_blocks_use_parent_finalized_beacon_not_own_hash --lib` passed.
+- Runtime default regressions:
+  `cargo test -p tensor_vm randomness_beacon_config_defaults_to_public_drand --lib` and
+  `cargo test -p tensor_vm explicit_off_randomness_beacon_mode_disables_runtime_beacon --lib` passed.
+- Runtime public-drand persistence:
+  `cargo test -p tensor_vm role_runtime_public_drand_fetch_tick_persists_chain_and_status` and
+  `cargo test -p tensor_vm role_runtime_public_drand_polling_skips_stale_rounds_and_backs_off_failures`
+  passed.
+- Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  `cargo fmt --check`, and `git diff --check` passed.
+
+### Iteration 223: Export Chain-Accepted Randomness Evidence Records
+
+Feature capability: emit public raw supporting-record lines from chain-accepted drand beacon records and
+chain-accepted validator VRF reveal records, so public evidence operators can derive signed
+`summary-file` and `artifact-file` roots from deployed node stores instead of hand-shaped records.
+
+Readiness requirements covered: `upow.md` §10 and `mvp_spec.md` §31.4/§35 require unbiasable
+drand/VRF randomness evidence and raw supporting artifacts from a deployed run. This iteration provides
+the local/deployed node-store export boundary while keeping full public completion deployment-gated.
+
+Canonical owner: `ChainState` owns accepted randomness/reveal state; a read-only exporter owns line
+generation; `PublicTestnetEvidenceBundle::evaluate` remains the full-spec admission owner.
+
+Adapter callers: `tvmd node` read-only export command, existing `tvmd public evidence record summary-file`
+and `artifact-file` commands, docs/status reports, and public evidence tests.
+
+Old shortcut being removed: operators had to hand-shape `randomness_beacon_record=...` and
+`validator_vrf_lifecycle=...` files even when a node store already contained chain-accepted drand/reveal
+state.
+
+Regression test that proves the shortcut is gone: a node store containing accepted drand and validator VRF
+reveal state exports typed raw-record lines whose roots can be summarized by the existing record-file
+commands; local fixture or zero-round state cannot be promoted into public full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; the exporter reads persisted chain
+state only and does not create jobs, receipts, blocks, votes, or rewards.
+
+Behavior for producer and non-producer roles: unchanged; any role with a consistent node store can export
+the accepted records it has persisted.
+
+Structured evidence source: `ChainState::external_randomness_beacons`,
+`ChainState::validator_vrf_reveals`, and `ChainState::receipt_randomness_anchors`, loaded through
+`NodeStore::load_chain`.
+
+Finality source: persisted chain state; no new finality rule.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; output is line-oriented public evidence text
+validated by existing record-file parsers.
+
+Parallel subagents to run: readiness mapper, codebase explorer, and test-coverage explorer. All three ran
+read-only before implementation.
+
+Parallelizable implementation workstreams: code/test/docs edits remain single-writer; read-only mapping
+and test discovery ran in parallel.
+
+Tests/checkers/docs to add or update: exporter unit/CLI tests, record summary-file/artifact-file coverage
+for exported records, parser help/API docs if applicable, public evidence/status/coverage/tarpaulin notes,
+and this exec plan.
+
+Narrow validation commands: Gate 0 first, focused exporter CLI tests, focused chain randomness tests as
+needed, and public evidence record-file tests.
+
+Broad validation commands before commit: `cargo test -p tensor_vm --lib`, `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+`cargo fmt --all -- --check`, `git diff --check`, and tarpaulin/report update if coverage changes.
+
+Expected observable evidence: `tvmd node export-public-evidence --kind randomness-beacon` and
+`--kind validator-vrf-lifecycle` emit deterministic raw lines from accepted chain state, and those files
+round-trip through existing public record aggregation.
+
+Out of scope: new manifest fields, new drand proof schema, changing randomness p2p payloads, deploying
+public infrastructure, relaxing full-spec criteria, CUDA evidence, and 7-day public-run generation.
+
+Split trigger: split if making exported records count as verified full-spec evidence requires manifest
+schema changes or new deployed proof material rather than a pure node-store export.
+
+Implementation summary: added `tvmd node export-public-evidence --kind randomness-beacon` and
+`--kind validator-vrf-lifecycle`. The command opens the node store with `NodeStore::load_chain`, renders
+accepted external randomness beacons and validator VRF reveal lifecycle records through the existing public
+raw-record structs, rejects missing/zero proof-critical state, and leaves all full-spec public deployment
+criteria gated.
+
+Validation evidence:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused exporter round-trip: `cargo test -p tensor_vm local_node_exports_chain_accepted --release`
+  passed.
+- Parser/API surface: `cargo test -p tensor_vm parses_documented_node_commands --release` passed.
+- App helper: `cargo test -p tensor_vm exports_chain_accepted_randomness_beacon_records --release`
+  passed.
+- Broad library suite: `cargo test -p tensor_vm --lib --release` passed, 570 tests.
+- Lints/format/whitespace: `cargo fmt --check`, `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  and `git diff --check` passed.
 
 ### Iteration 222: Verified Public Randomness Gates Full Spec
 
@@ -2161,7 +2359,12 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
 - `tensorvm-verifier` is not a repository binary. Validation uses the `tvmd` CLI surfaces
   (`public evidence validate`, `localnet verify`), tests, clippy, and tarpaulin.
 - Do not spawn subagents unless the user explicitly asks for delegation.
-- Public/CUDA/deployed evidence remains blocked until real external infrastructure and CUDA kernels exist.
+- (2026-06-23 owner override; supersedes the line below) v0 scope rescoped: (1) drand is the canonical v0
+  randomness beacon — bespoke per-validator VRF is roadmap; v0 §10 = verified drand round → chain-epoch
+  binding + validator commit→reveal; (2) real CUDA miner/runtime + per-op CUDA conformance is in v0 scope
+  and provable on the local A100×8 box, not deployment-gated; (3) the 7-day external public run + full
+  public-deployment evidence is roadmap (production-launch milestone), not a v0 done gate. Recorded in
+  `goal.md` "v0 Scope Decisions"; `mvp_spec.md` §35 and `upow.md` §10 status note updated to match.
 - Reward claims remain delayed and chain-owned; valid matured claims become spendable only through
   beneficiary `ClaimReward`, while voided/prunable claims may be swept without credit.
 
