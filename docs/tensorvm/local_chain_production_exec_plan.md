@@ -5,13 +5,13 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 237 complete: CUDA Field Broadcast Graph Kernel/Conformance.
+- Active feature: Iteration 238 complete: CUDA Field Mean Graph Kernel/Conformance.
 - Current status: v0 work is redirected by the 2026-06-23 owner scope decision toward live verified drand
-  consensus randomness and local A100 CUDA evidence. Iteration 237 added device-side CUDA field
-  `broadcast` graph execution for canonical NumPy-style shape expansion, extending the supported CUDA
-  graph/conformance subset without claiming binary broadcasting, fixed-point broadcast, CUDA `mean`,
-  quantization, structural ops beyond the implemented broadcast path, or full frozen-registry CUDA
-  coverage.
+  consensus randomness and local A100 CUDA evidence. Iteration 238 added device-side CUDA field
+  `mean(dim,keepdim)` graph execution for the scale-0 field subset by reusing fixed-order field reduction
+  plus canonical field inverse of the reduction count, extending CUDA graph/conformance evidence without
+  claiming fixed-point mean, broadcast reductions, quantization, remaining structural ops, or full
+  frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
 - Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
@@ -31,10 +31,104 @@ archive commit anchors only.
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
-| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
+| CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 238: CUDA Field Mean Graph Kernel/Conformance
+
+Feature capability: add CUDA field `mean(dim,keepdim)`/global `mean` graph execution for scale-0 field
+tensors using deterministic ascending-index field sum multiplied by the canonical field inverse of the
+reduction count, route graph `mean` through `GpuMinerBackend`, and expand the supported CUDA
+graph/conformance/miner-role fixture so an admitted exact reduction beyond `sum` is exercised on the local
+A100 path.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` §3.1-§3.3, §4.7, §4.8,
+§7, and §16 require bit-exact CUDA evidence for admitted exact ops. `mean` is a Tier-B reduction with
+canonical field/fixed-point division by count; this iteration covers only the scale-0 field subset.
+
+Canonical owner: CUDA runtime owns accelerated scale-0 field `mean` for canonical reduction semantics;
+`TensorGraph` continues to own shape inference, dtype/scale validation, fixed-point mean, broadcast
+reductions, and broader reduction behavior outside the CUDA subset.
+
+Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+focused runtime/miner-role tests.
+
+Old shortcut removed: exact graph `mean` currently stops at the CUDA graph boundary, so CUDA conformance
+cannot include an admitted reduction that the CPU canonical interpreter supports.
+
+Regression test that proves the shortcut is gone: CUDA-feature runtime tests assert direct CUDA field
+`mean` parity against CPU exact field arithmetic for explicit dimensions, keepdim, and global reduction;
+supported CUDA graph parity includes a kwargs-backed `mean` op; and miner-role CUDA graph receipt tests
+submit the expanded graph through `BackendKind::GpuMiner`.
+
+Behavior with local synthetic block production disabled: unchanged; graph execution uses existing chain
+jobs and backend-selected receipt execution.
+
+Behavior for producer and non-producer roles: unchanged; validators/proposers consume the same graph
+receipts and finality logic, and miners do not produce blocks.
+
+Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+miner-role `backend_kind`, direct CUDA `mean` kernel parity assertions, and explicit unsupported-op CUDA
+graph errors for still-unsupported ops.
+
+Finality source: unchanged; this iteration does not alter block admission, settlement, voting, rewards,
+reward maturity, delayed claims, TensorWork activation, or finality.
+
+Wire-size and codec boundary: no wire or codec changes; existing graph/job/receipt payload codecs remain
+unchanged.
+
+Parallel subagents: none. Available subagent tooling currently says not to spawn agents unless the user
+explicitly asks for delegation, so the parent remains the single writer.
+
+Tests/checkers/docs to add or update: CUDA runtime direct kernel parity, CUDA graph conformance profile,
+miner-role supported CUDA graph fixture, unsupported CUDA-op boundary, `upow.md`, coverage matrix,
+implementation status, tarpaulin report, and this execution plan.
+
+Narrow validation commands: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib`;
+`cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend`; default unsupported
+CUDA-feature boundary test.
+
+Broad validation commands before commit: `cargo fmt --check`; `cargo test -p tensor_vm --lib`;
+`cargo test --workspace --release`; `cargo clippy --workspace --all-targets -- -D warnings`;
+post-change Gate 0; `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`;
+full CUDA release and CUDA-feature clippy.
+
+Expected observable evidence: CUDA `mean` output matches CPU canonical field mean for the supported field
+subset, CUDA graph CPU/GPU receipt roots match with `mean` included, and GPU conformance only reports
+`mean` after the parity case passes.
+
+Out of scope: reward workarounds, immediate reward release, fixed-point `mean`, broadcast reductions,
+CUDA quantization, other structural ops, consensus changes, and public deployment evidence.
+
+Split trigger: split smaller if field inverse/count semantics collide with reduction shape support, if
+direct kernel parity fails on A100, or if expanding the miner-role fixture requires unrelated graph
+receipt changes.
+
+Validation evidence:
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- Focused CUDA runtime: `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed on
+  June 23, 2026, including direct `field_mean` parity for dimension, keepdim, and global reductions,
+  supported CPU/GPU graph parity with a kwargs-backed `mean`, and unsupported-op boundary coverage.
+- Focused miner role: `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed on June 23,
+  2026 with the supported CUDA graph fixture including `mean`.
+- Formatting/default validation: `cargo fmt --check`; `cargo test -p tensor_vm --lib` (573 tests);
+  `cargo test --workspace --release`; and `cargo clippy --workspace --all-targets -- -D warnings` passed
+  on June 23, 2026.
+- Post-change Gate 0: `cargo test -p tensor_vm local_testnet --release` passed on June 23, 2026.
+- Coverage: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
+  June 23, 2026 with 588 instrumented tests and 84.98% line coverage, 23831/28044 lines covered. The
+  portable run does not instrument native CUDA, so CUDA `mean` evidence comes from the CUDA-feature
+  runtime and miner-role tests.
+- Full CUDA validation: `cargo test -p tensor_vm --features cuda-kernels --release` passed on June 23,
+  2026 with 580 TensorVM library tests, 1 local CPU compose test, 9 `tvmd_cli` tests, 54 `tvmd_runtime`
+  tests, and doc tests.
+- CUDA lint and diff hygiene: `cargo clippy -p tensor_vm --features cuda-kernels --all-targets --
+  -D warnings` and `git diff --check` passed on June 23, 2026.
 
 ### Iteration 237: CUDA Field Broadcast Graph Kernel/Conformance
 

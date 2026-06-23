@@ -456,6 +456,13 @@ fn execute_cuda_graph_op(
             let keepdim = optional_graph_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
             cuda::field_sum(device_index, tensor, dim, keepdim)?
         }
+        "mean" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?;
+            let keepdim = optional_graph_bool_kwarg(kwargs, "keepdim")?.unwrap_or(false);
+            cuda::field_mean(device_index, tensor, dim, keepdim)?
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -679,6 +686,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "div",
             "clamp",
             "sum",
+            "mean",
             "broadcast",
             "eq",
             "gt",
@@ -959,8 +967,15 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
             },
             OpNode {
                 id: 20,
+                op: "mean".to_owned(),
+                args: vec![IrRef::Op { id: 18, idx: 0 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
+                out: vec![TensorSpec::field("meaned", vec![2])],
+            },
+            OpNode {
+                id: 21,
                 op: "broadcast".to_owned(),
-                args: vec![IrRef::Op { id: 19, idx: 0 }],
+                args: vec![IrRef::Op { id: 20, idx: 0 }],
                 kwargs: BTreeMap::from([(
                     "shape".to_owned(),
                     IrValue::Literal(IrLiteral::List(vec![
@@ -973,7 +988,7 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
         ],
         outputs: vec![GraphOutput {
             name: "broadcasted".to_owned(),
-            value: IrRef::Op { id: 20, idx: 0 },
+            value: IrRef::Op { id: 21, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1125,6 +1140,16 @@ mod cuda {
             len: u64,
             rows: u64,
             cols: u64,
+            mode: u32,
+        ) -> i32;
+        fn tensor_vm_cuda_field_mean(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+            rows: u64,
+            cols: u64,
+            reduce_count: u64,
             mode: u32,
         ) -> i32;
         fn tensor_vm_cuda_field_broadcast(
@@ -1423,6 +1448,61 @@ mod cuda {
                 input.len() as u64,
                 rows as u64,
                 cols as u64,
+                mode,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(output_shape, input.dtype(), out)
+    }
+
+    pub fn field_mean(
+        device_index: u32,
+        input: &Tensor,
+        dim: Option<usize>,
+        keepdim: bool,
+    ) -> Result<Tensor> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        let (mode, rows, cols, reduce_count, output_shape) = match dim {
+            Some(0) => {
+                let rows = input.rows()?;
+                let cols = input.cols()?;
+                let shape = if keepdim { vec![1, cols] } else { vec![cols] };
+                (0, rows, cols, rows, shape)
+            }
+            Some(1) => {
+                let rows = input.rows()?;
+                let cols = input.cols()?;
+                let shape = if keepdim { vec![rows, 1] } else { vec![rows] };
+                (1, rows, cols, cols, shape)
+            }
+            Some(_) => return Err(TvmError::InvalidReceipt("cuda graph op not supported")),
+            None => {
+                let shape = if keepdim {
+                    vec![1; input.shape().len()]
+                } else {
+                    vec![1]
+                };
+                (2, 0, 0, input.len(), shape)
+            }
+        };
+        if reduce_count == 0 {
+            return Err(TvmError::InvalidReceipt("tensor ir mean over empty axis"));
+        }
+        let mut out = vec![0; output_shape.iter().product()];
+        let code = unsafe {
+            tensor_vm_cuda_field_mean(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                rows as u64,
+                cols as u64,
+                reduce_count as u64,
                 mode,
             )
         };
@@ -1820,10 +1900,11 @@ mod tests {
             "relu",
             "scalar_mul",
             "mse_loss",
+            "mean",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["mean", "einsum", "quantize_int8_per_channel", "reshape"] {
+        for op in ["einsum", "quantize_int8_per_channel", "reshape"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -1899,18 +1980,20 @@ mod tests {
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "mean".to_owned(),
+                op: "reshape".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
                 kwargs: BTreeMap::from([(
-                    "dim".to_owned(),
-                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
+                    "shape".to_owned(),
+                    crate::ir::IrValue::Literal(crate::ir::IrLiteral::List(vec![
+                        crate::ir::IrLiteral::Uint(4),
+                    ])),
                 )]),
-                out: vec![TensorSpec::field("summed", vec![2])],
+                out: vec![TensorSpec::field("reshaped", vec![4])],
             }],
             outputs: vec![GraphOutput {
-                name: "summed".to_owned(),
+                name: "reshaped".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
@@ -2175,6 +2258,57 @@ mod tests {
         )
         .unwrap();
         assert_eq!(sum_global, expected_sum_global);
+
+        let field_pow = |mut base: Elem, mut exponent: Elem| {
+            let mut acc = 1;
+            base %= MODULUS;
+            while exponent > 0 {
+                if exponent & 1 == 1 {
+                    acc = crate::field::mul(acc, base);
+                }
+                base = crate::field::mul(base, base);
+                exponent >>= 1;
+            }
+            acc
+        };
+        let inv_2 = field_pow(2, MODULUS - 2);
+        let inv_3 = field_pow(3, MODULUS - 2);
+        let inv_6 = field_pow(6, MODULUS - 2);
+
+        let mean_dim0 = cuda::field_mean(0, &lhs, Some(0), false).unwrap();
+        let expected_mean_dim0 = Tensor::from_vec(
+            vec![3],
+            lhs.dtype(),
+            expected_sum_dim0
+                .as_slice()
+                .iter()
+                .map(|value| crate::field::mul(*value, inv_2))
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(mean_dim0, expected_mean_dim0);
+
+        let mean_dim1_keepdim = cuda::field_mean(0, &lhs, Some(1), true).unwrap();
+        let expected_mean_dim1_keepdim = Tensor::from_vec(
+            vec![2, 1],
+            lhs.dtype(),
+            expected_sum_dim1_keepdim
+                .as_slice()
+                .iter()
+                .map(|value| crate::field::mul(*value, inv_3))
+                .collect(),
+        )
+        .unwrap();
+        assert_eq!(mean_dim1_keepdim, expected_mean_dim1_keepdim);
+
+        let mean_global = cuda::field_mean(0, &lhs, None, false).unwrap();
+        let expected_mean_global = Tensor::from_vec(
+            vec![1],
+            lhs.dtype(),
+            vec![crate::field::mul(expected_sum_global.as_slice()[0], inv_6)],
+        )
+        .unwrap();
+        assert_eq!(mean_global, expected_mean_global);
 
         let column = Tensor::from_vec(vec![2, 1], lhs.dtype(), vec![7, MODULUS - 4]).unwrap();
         let broadcast_columns = cuda::field_broadcast(0, &column, &[2, 3]).unwrap();

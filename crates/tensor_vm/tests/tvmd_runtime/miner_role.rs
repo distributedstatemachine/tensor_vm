@@ -266,8 +266,18 @@ fn supported_cuda_graph_execution_case() -> (
             },
             tensor_vm::OpNode {
                 id: 20,
+                op: "mean".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 18, idx: 0 }],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("meaned", vec![2])],
+            },
+            tensor_vm::OpNode {
+                id: 21,
                 op: "broadcast".to_owned(),
-                args: vec![tensor_vm::IrRef::Op { id: 19, idx: 0 }],
+                args: vec![tensor_vm::IrRef::Op { id: 20, idx: 0 }],
                 kwargs: BTreeMap::from([(
                     "shape".to_owned(),
                     tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::List(vec![
@@ -280,7 +290,7 @@ fn supported_cuda_graph_execution_case() -> (
         ],
         outputs: vec![tensor_vm::GraphOutput {
             name: "broadcasted".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 20, idx: 0 },
+            value: tensor_vm::IrRef::Op { id: 21, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([
