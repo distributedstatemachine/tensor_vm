@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 207 in progress: Public Supporting Artifact URI Diversity Gate.
+- Active feature: Iteration 207 pushed: Public Supporting Artifact URI Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. The current iteration tightens the
@@ -104,6 +104,8 @@ Split trigger: split if URI diversity requires active artifact download or conte
 validating signed locator metadata.
 
 Commit `452c57d` (`Validate public artifact URIs`) prepared on June 23, 2026.
+Metadata commit `9195b3c` (`Record public artifact URI validation`) pushed to `origin/main` on
+June 23, 2026.
 
 ### Iteration 206: Reward-Finality Formal Status Alignment
 
@@ -1053,6 +1055,9 @@ Commit `6a50ad6` (`Require full-run randomness evidence`) pushed to `origin/main
   `git diff --check`.
 - Current Iteration 207 feature commit `452c57d`
   (`Validate public artifact URIs`) prepared on June 23, 2026.
+- Current Iteration 207 validation metadata commit `9195b3c`
+  (`Record public artifact URI validation`) pushed to `origin/main` on June 23, 2026.
+- Current Iteration 207 push result on June 23, 2026: `e1df583..9195b3c main -> main`.
 - Current Iteration 203 focused validation passed on June 23, 2026:
   `cargo fmt --all && cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_randomness_records --lib`.
 - Current Iteration 203 hygiene validation passed on June 23, 2026:
