@@ -92,9 +92,11 @@ external run publishes real records. Run-level finality and data-availability co
 internally consistent: finalized blocks cannot exceed observed blocks, and available receipts cannot exceed
 checked receipts. The run-derived supporting-record counts must be exact, not padded: block-history and
 finality-history record counts must match observed blocks, data-availability measurement count must match
-checked receipts and use distinct nonzero receipt roots, invalid-work rejection record count must match invalid receipts submitted,
+checked receipts and use distinct nonzero receipt roots, invalid-work rejection record count must match
+invalid receipts submitted and use distinct nonzero receipt roots,
 detection-measurement record count must be positive for full-spec evidence, validator-VRF-lifecycle
-record count must match checked receipts, and the
+record count must match checked receipts, reward-settlement raw records must use distinct nonzero receipt
+roots and nonzero miner/validator IDs, and the
 production-libp2p network-runtime observation count must match the counted independent miner and validator
 operator total exactly.
 
@@ -561,7 +563,8 @@ the signed randomness-beacon summary count to equal `observed_blocks`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
 manifest-level raw `block_history_record=...`, `finality_history_record=...`,
 `data_availability_measurement=...` lines with distinct nonzero receipt roots,
-`invalid_work_rejection=...`, `reward_settlement=...`, and
+`invalid_work_rejection=...` lines with distinct nonzero receipt roots,
+`reward_settlement=...` lines with distinct nonzero receipt roots and nonzero miner/validator IDs, and
 `detection_measurement=...` lines, plus raw `validator_vrf_lifecycle=...` lines with distinct receipt roots whose aggregate roots
 match the signed chain-history and operational summaries. Full-spec randomness
 records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a

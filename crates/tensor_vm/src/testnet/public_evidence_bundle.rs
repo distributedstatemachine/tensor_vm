@@ -522,22 +522,8 @@ impl PublicTestnetEvidenceBundle {
 
     fn has_public_operational_records(&self) -> bool {
         self.has_public_data_availability_measurement_records()
-            && self.raw_operational_records_match(
-                PublicEvidenceRecordKind::InvalidWorkRejections,
-                self.invalid_work_rejection_records,
-                &self.invalid_work_rejection_root,
-                self.invalid_work_raw_records
-                    .iter()
-                    .map(|record| record.record_root()),
-            )
-            && self.raw_operational_records_match(
-                PublicEvidenceRecordKind::RewardSettlements,
-                self.run.reward_settlement_records,
-                &self.reward_settlement_root,
-                self.reward_settlement_raw_records
-                    .iter()
-                    .map(|record| record.record_root()),
-            )
+            && self.has_public_invalid_work_rejection_records()
+            && self.has_public_reward_settlement_records()
             && self.raw_operational_records_match(
                 PublicEvidenceRecordKind::DetectionMeasurements,
                 self.detection_measurement_records,
@@ -560,6 +546,43 @@ impl PublicTestnetEvidenceBundle {
             self.data_availability_measurement_records,
             &self.data_availability_measurement_root,
             self.data_availability_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn has_public_invalid_work_rejection_records(&self) -> bool {
+        let mut receipt_roots = BTreeSet::new();
+        if self.invalid_work_raw_records.iter().any(|record| {
+            record.receipt_root == [0; 32] || !receipt_roots.insert(record.receipt_root)
+        }) {
+            return false;
+        }
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::InvalidWorkRejections,
+            self.invalid_work_rejection_records,
+            &self.invalid_work_rejection_root,
+            self.invalid_work_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn has_public_reward_settlement_records(&self) -> bool {
+        let mut receipt_roots = BTreeSet::new();
+        if self.reward_settlement_raw_records.iter().any(|record| {
+            record.receipt_root == [0; 32]
+                || record.miner_id == [0; 32]
+                || record.validator_id == [0; 32]
+                || !receipt_roots.insert(record.receipt_root)
+        }) {
+            return false;
+        }
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::RewardSettlements,
+            self.run.reward_settlement_records,
+            &self.reward_settlement_root,
+            self.reward_settlement_raw_records
                 .iter()
                 .map(|record| record.record_root()),
         )

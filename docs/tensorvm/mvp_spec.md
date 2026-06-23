@@ -2424,7 +2424,9 @@ graph-execution receipt checks in the public run, and signed `validator_vrf_life
 reward-delay lifecycle for checked receipts with distinct receipt roots. Full-spec evidence requires
 the CUDA miner count to cover the counted public miners, the CUDA graph-execution receipt count to be
 positive without exceeding checked or available receipt counts, raw data-availability measurement records
-to equal the checked receipt count with distinct nonzero receipt roots, signed validator VRF lifecycle
+to equal the checked receipt count with distinct nonzero receipt roots, raw invalid-work and
+reward-settlement records to use distinct nonzero receipt roots and nonzero settlement participant IDs,
+signed validator VRF lifecycle
 records to equal the checked receipt count, use distinct receipt roots, and aggregate to the signed lifecycle root,
 and positive signed deployed detection-measurement records with raw
 records that aggregate to the signed detection summary; a public run with otherwise valid services,

@@ -222,6 +222,118 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let mut duplicate_invalid_work_receipt = full_spec_bundle.clone();
+    let mut second_invalid_work =
+        duplicate_invalid_work_receipt.invalid_work_raw_records[0].clone();
+    second_invalid_work.observed_block = second_invalid_work.observed_block.saturating_add(1);
+    duplicate_invalid_work_receipt
+        .invalid_work_raw_records
+        .push(second_invalid_work);
+    duplicate_invalid_work_receipt
+        .run
+        .invalid_receipts_submitted = 2;
+    duplicate_invalid_work_receipt.run.invalid_receipts_rejected = 2;
+    duplicate_invalid_work_receipt.invalid_work_rejection_records = 2;
+    let duplicate_invalid_work_roots = duplicate_invalid_work_receipt
+        .invalid_work_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let duplicate_invalid_work_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        &duplicate_invalid_work_roots,
+    )
+    .unwrap();
+    resign_record_summary_and_artifact(
+        &mut duplicate_invalid_work_receipt,
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        duplicate_invalid_work_root,
+        2,
+    );
+    let report = duplicate_invalid_work_receipt.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut zero_invalid_work_receipt = full_spec_bundle.clone();
+    zero_invalid_work_receipt.invalid_work_raw_records[0].receipt_root = [0; 32];
+    let zero_invalid_work_roots = zero_invalid_work_receipt
+        .invalid_work_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let zero_invalid_work_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        &zero_invalid_work_roots,
+    )
+    .unwrap();
+    resign_record_summary_and_artifact(
+        &mut zero_invalid_work_receipt,
+        PublicEvidenceRecordKind::InvalidWorkRejections,
+        zero_invalid_work_root,
+        1,
+    );
+    let report = zero_invalid_work_receipt.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut duplicate_reward_settlement_receipt = full_spec_bundle.clone();
+    let mut second_reward_settlement =
+        duplicate_reward_settlement_receipt.reward_settlement_raw_records[0].clone();
+    second_reward_settlement.observed_block =
+        second_reward_settlement.observed_block.saturating_add(1);
+    second_reward_settlement.miner_id = address(b"full-spec-reward-settlement-second-miner");
+    second_reward_settlement.validator_id =
+        address(b"full-spec-reward-settlement-second-validator");
+    duplicate_reward_settlement_receipt
+        .reward_settlement_raw_records
+        .push(second_reward_settlement);
+    duplicate_reward_settlement_receipt
+        .run
+        .reward_settlement_records = 2;
+    let duplicate_reward_settlement_roots = duplicate_reward_settlement_receipt
+        .reward_settlement_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let duplicate_reward_settlement_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RewardSettlements,
+        &duplicate_reward_settlement_roots,
+    )
+    .unwrap();
+    resign_record_summary_and_artifact(
+        &mut duplicate_reward_settlement_receipt,
+        PublicEvidenceRecordKind::RewardSettlements,
+        duplicate_reward_settlement_root,
+        2,
+    );
+    let report =
+        duplicate_reward_settlement_receipt.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut zero_reward_settlement_participant = full_spec_bundle.clone();
+    zero_reward_settlement_participant.reward_settlement_raw_records[0].miner_id = [0; 32];
+    let zero_reward_settlement_roots = zero_reward_settlement_participant
+        .reward_settlement_raw_records
+        .iter()
+        .map(|record| record.record_root())
+        .collect::<Vec<_>>();
+    let zero_reward_settlement_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::RewardSettlements,
+        &zero_reward_settlement_roots,
+    )
+    .unwrap();
+    resign_record_summary_and_artifact(
+        &mut zero_reward_settlement_participant,
+        PublicEvidenceRecordKind::RewardSettlements,
+        zero_reward_settlement_root,
+        1,
+    );
+    let report =
+        zero_reward_settlement_participant.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_data_root = full_spec_bundle;
     let record_count = mismatched_data_root.data_availability_measurement_records;
     resign_record_summary_and_artifact(
