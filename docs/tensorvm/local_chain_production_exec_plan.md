@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 201 pushed: Public Detection Measurement Field Gate.
+- Active feature: Iteration 202 in progress: Public Chain History Consistency Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -16,7 +16,7 @@ archive commit anchors only.
   same checked-receipt coverage rule to raw public data-availability measurement records. Iteration 200
   extends semantic receipt coverage checks to invalid-work and reward-settlement raw records. Iteration 201
   aligns direct bundle validation for raw deployed detection measurements with the manifest parser's field
-  checks.
+  checks. Iteration 202 adds semantic consistency checks for raw public block/finality history records.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -40,6 +40,77 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 202: Public Chain History Consistency Gate
+
+Feature capability: require full-spec raw block-history and finality-history evidence to cover distinct
+nonzero block roots, bind finality records to the same block roots, and match the finalized block count in
+run evidence.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require public chain-history
+records to support observed/finalized block counts, not just arbitrary raw record roots with matching
+summary signatures.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns full-spec public evidence admission and raw
+chain-history record checks.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: signed block/finality summaries could aggregate distinct raw record roots that
+duplicated block numbers, used zero block roots, disagreed between block-history and finality roots, or
+reported finalized status counts inconsistent with `finalized_blocks`.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_raw_chain_history_records` will include recomputed signed summaries
+for duplicate block numbers, zero block roots, block/finality root mismatch, and finalized-count mismatch
+that still fail full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: typed raw `block_history_record=<block>,<block-root>` and
+`finality_history_record=<block>,<block-root>,finalized|unfinalized` records.
+
+Finality source: unchanged; this checks public evidence consistency, not consensus finality rules.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence bundle
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle chain-history regressions and public evidence
+docs/status wording.
+
+Narrow validation commands: focused public evidence raw chain-history test and public evidence manifest
+round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise complete full-spec public evidence remains non-full-spec when
+signed raw chain-history records do not prove distinct, root-consistent observed/finalized blocks.
+
+Out of scope: proving real deployed block availability, changing chain finality, or generating public run
+artifacts.
+
+Split trigger: split if chain-history validation requires replaying deployed block bodies rather than raw
+record consistency.
+
+Validation evidence, June 23, 2026:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused regression:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_chain_history_records --lib` passed.
+- Formatting and diff hygiene: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Full library validation: `cargo test -p tensor_vm --lib` passed, 559 tests.
+- Release local-testnet validation: `cargo test -p tensor_vm local_testnet --release` passed after the patch.
+- Release CLI evidence validation:
+  `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
+- Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 
 ### Iteration 201: Public Detection Measurement Field Gate
 

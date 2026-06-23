@@ -1498,6 +1498,78 @@ fn public_testnet_evidence_bundle_requires_raw_chain_history_records() {
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let resign_block_history_records = |bundle: &mut PublicTestnetEvidenceBundle| {
+        let block_roots = bundle
+            .block_history_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>();
+        let block_root = aggregate_public_evidence_record_roots(
+            PublicEvidenceRecordKind::BlockHistory,
+            &block_roots,
+        )
+        .unwrap();
+        let record_count = bundle.block_history_records;
+        resign_record_summary_and_artifact(
+            bundle,
+            PublicEvidenceRecordKind::BlockHistory,
+            block_root,
+            record_count,
+        );
+    };
+    let resign_finality_history_records = |bundle: &mut PublicTestnetEvidenceBundle| {
+        let finality_roots = bundle
+            .finality_history_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>();
+        let finality_root = aggregate_public_evidence_record_roots(
+            PublicEvidenceRecordKind::FinalityHistory,
+            &finality_roots,
+        )
+        .unwrap();
+        let record_count = bundle.finality_history_records;
+        resign_record_summary_and_artifact(
+            bundle,
+            PublicEvidenceRecordKind::FinalityHistory,
+            finality_root,
+            record_count,
+        );
+    };
+
+    let mut duplicate_block_number = full_spec_bundle.clone();
+    duplicate_block_number.block_history_raw_records[1].block =
+        duplicate_block_number.block_history_raw_records[0].block;
+    resign_block_history_records(&mut duplicate_block_number);
+    let report = duplicate_block_number.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut zero_block_root = full_spec_bundle.clone();
+    zero_block_root.block_history_raw_records[0].block_root = [0; 32];
+    zero_block_root.finality_history_raw_records[0].block_root = [0; 32];
+    resign_block_history_records(&mut zero_block_root);
+    resign_finality_history_records(&mut zero_block_root);
+    let report = zero_block_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_finality_block_root = full_spec_bundle.clone();
+    mismatched_finality_block_root.finality_history_raw_records[0].block_root =
+        hash_bytes(b"test", &[b"public-finality-root-not-in-block-history"]);
+    resign_finality_history_records(&mut mismatched_finality_block_root);
+    let report = mismatched_finality_block_root.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut mismatched_finalized_count = full_spec_bundle.clone();
+    mismatched_finalized_count.finality_history_raw_records[0].status =
+        PublicFinalityHistoryStatus::Unfinalized;
+    resign_finality_history_records(&mut mismatched_finalized_count);
+    let report = mismatched_finalized_count.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_block_root = full_spec_bundle.clone();
     let record_count = mismatched_block_root.block_history_records;
     resign_record_summary_and_artifact(

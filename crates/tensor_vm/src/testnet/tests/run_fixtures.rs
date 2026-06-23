@@ -315,7 +315,8 @@ pub(super) fn full_spec_public_evidence_bundle(
             .collect::<Vec<_>>(),
     )
     .expect("generated block history roots should aggregate");
-    let finality_history_raw_records = full_spec_finality_history_records(observed_blocks);
+    let finality_history_raw_records =
+        full_spec_finality_history_records(&block_history_raw_records);
     let finality_history_root = aggregate_public_evidence_record_roots(
         PublicEvidenceRecordKind::FinalityHistory,
         &finality_history_raw_records
@@ -435,15 +436,13 @@ pub(super) fn full_spec_block_history_records(
 }
 
 pub(super) fn full_spec_finality_history_records(
-    observed_blocks: u64,
+    block_history: &[PublicBlockHistoryRecord],
 ) -> Vec<PublicFinalityHistoryRecord> {
-    (0..observed_blocks)
-        .map(|index| PublicFinalityHistoryRecord {
-            block: index,
-            block_root: hash_bytes(
-                b"test",
-                &[format!("full-spec-public-finality-root-{index}").as_bytes()],
-            ),
+    block_history
+        .iter()
+        .map(|record| PublicFinalityHistoryRecord {
+            block: record.block,
+            block_root: record.block_root,
             status: PublicFinalityHistoryStatus::Finalized,
         })
         .collect()

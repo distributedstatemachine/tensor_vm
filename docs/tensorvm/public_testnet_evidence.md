@@ -91,7 +91,9 @@ extra operator records do not count. These local checks are still only evidence-
 external run publishes real records. Run-level finality and data-availability counters must also be
 internally consistent: finalized blocks cannot exceed observed blocks, and available receipts cannot exceed
 checked receipts. The run-derived supporting-record counts must be exact, not padded: block-history and
-finality-history record counts must match observed blocks, data-availability measurement count must match
+finality-history record counts must match observed blocks, use distinct nonzero block roots, agree on the
+block root for each block number, and contain a finalized status count equal to `finalized_blocks`,
+data-availability measurement count must match
 checked receipts and use distinct nonzero receipt roots, invalid-work rejection record count must match
 invalid receipts submitted and use distinct nonzero receipt roots,
 detection-measurement record count must be positive for full-spec evidence, validator-VRF-lifecycle
@@ -561,7 +563,8 @@ aggregating to the signed lifecycle root,
 positive signed deployed `detection_measurement_records`,
 the signed randomness-beacon summary count to equal `observed_blocks`,
 manifest-level raw `randomness_beacon_record=...` lines for every signed randomness summary record, and
-manifest-level raw `block_history_record=...`, `finality_history_record=...`,
+manifest-level raw `block_history_record=...` and `finality_history_record=...` lines with distinct
+nonzero block roots, matching block numbers/roots, and finalized status counts matching `finalized_blocks`,
 `data_availability_measurement=...` lines with distinct nonzero receipt roots,
 `invalid_work_rejection=...` lines with distinct nonzero receipt roots,
 `reward_settlement=...` lines with distinct nonzero receipt roots and nonzero miner/validator IDs, and

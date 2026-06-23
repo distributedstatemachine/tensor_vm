@@ -13,7 +13,7 @@ use super::{
 };
 use crate::hash::hex;
 use crate::types::{Hash, Signature, address, verify_signature};
-use std::collections::BTreeSet;
+use std::collections::{BTreeMap, BTreeSet};
 
 impl PublicTestnetEvidenceBundle {
     pub fn new(
@@ -649,6 +649,35 @@ impl PublicTestnetEvidenceBundle {
     }
 
     fn has_public_chain_history_records(&self) -> bool {
+        let mut block_roots_by_height = BTreeMap::new();
+        if self.block_history_raw_records.iter().any(|record| {
+            record.block_root == [0; 32]
+                || block_roots_by_height
+                    .insert(record.block, record.block_root)
+                    .is_some()
+        }) {
+            return false;
+        }
+
+        let mut finality_blocks = BTreeSet::new();
+        let mut finalized_blocks = 0_u64;
+        for record in &self.finality_history_raw_records {
+            if record.block_root == [0; 32] || !finality_blocks.insert(record.block) {
+                return false;
+            }
+            if block_roots_by_height.get(&record.block) != Some(&record.block_root) {
+                return false;
+            }
+            if record.status == super::PublicFinalityHistoryStatus::Finalized {
+                finalized_blocks = finalized_blocks.saturating_add(1);
+            }
+        }
+        if finality_blocks.len() != block_roots_by_height.len()
+            || finalized_blocks != self.run.finalized_blocks
+        {
+            return false;
+        }
+
         self.raw_operational_records_match(
             PublicEvidenceRecordKind::BlockHistory,
             self.block_history_records,

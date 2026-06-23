@@ -272,6 +272,9 @@ data-availability, invalid-work, and reward-settlement records cannot repeat rec
 receipt coverage and that reward settlements cannot use zero participant IDs, and
 `testnet::tests::public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec`
 now proves raw detection-measurement records cannot bypass manifest field validation when directly bundled, and
+`testnet::tests::public_testnet_evidence_bundle_requires_raw_chain_history_records` now proves raw
+block/finality history must use distinct nonzero block roots, matching block/finality roots, and finalized
+status counts matching the run evidence, and
 `testnet::tests::public_testnet_evidence_bundle_requires_raw_validator_vrf_lifecycle_records_for_full_spec`
 proves the full-spec gate also requires raw revealed lifecycle records that aggregate to the signed
 lifecycle summary root and cannot repeat receipt roots to pad checked-receipt coverage.

@@ -2418,6 +2418,8 @@ sample count must be nonzero, detected count cannot exceed sample count, and det
 subject roots must be nonzero.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
+Raw block-history and finality-history records must cover distinct nonzero block roots, agree on the block
+root for each block number, and expose a finalized status count equal to `finalized_blocks`.
 The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and
 device checks for the counted public miner set, `cuda_graph_execution_receipts`, derived from CUDA
 graph-execution receipt checks in the public run, and signed `validator_vrf_lifecycle_records` plus raw
