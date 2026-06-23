@@ -359,6 +359,12 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(rhs)?;
             cuda::field_mul(device_index, lhs, rhs)?
         }
+        "div" => {
+            let [lhs, rhs] = two_graph_tensor_values(args)?;
+            require_graph_field_tensor(lhs)?;
+            require_graph_field_tensor(rhs)?;
+            cuda::field_div(device_index, lhs, rhs)?
+        }
         "eq" => {
             let [lhs, rhs] = two_graph_tensor_values(args)?;
             require_graph_field_tensor(lhs)?;
@@ -592,8 +598,8 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             return Err(TvmError::VerificationFailed("gpu graph conformance failed"));
         }
         passed_ops.extend([
-            "add", "mul", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg", "abs", "sign",
-            "relu",
+            "add", "mul", "div", "eq", "gt", "lt", "ge", "le", "where", "identity", "neg", "abs",
+            "sign", "relu",
         ]);
 
         Ok(ConformanceProfile {
@@ -831,10 +837,22 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::new(),
                 out: vec![TensorSpec::field("selected", vec![2, 2])],
             },
+            OpNode {
+                id: 17,
+                op: "div".to_owned(),
+                args: vec![
+                    IrRef::Op { id: 16, idx: 0 },
+                    IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec::field("quotient", vec![2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "selected".to_owned(),
-            value: IrRef::Op { id: 16, idx: 0 },
+            name: "quotient".to_owned(),
+            value: IrRef::Op { id: 17, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -885,6 +903,13 @@ mod cuda {
             len: u64,
         ) -> i32;
         fn tensor_vm_cuda_field_mul(
+            device_index: u32,
+            lhs: *const u64,
+            rhs: *const u64,
+            out: *mut u64,
+            len: u64,
+        ) -> i32;
+        fn tensor_vm_cuda_field_div(
             device_index: u32,
             lhs: *const u64,
             rhs: *const u64,
@@ -1071,6 +1096,26 @@ mod cuda {
         let mut out = vec![0; lhs.len()];
         let code = unsafe {
             tensor_vm_cuda_field_mul(
+                device_index,
+                lhs.as_slice().as_ptr(),
+                rhs.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                lhs.len() as u64,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec(lhs.shape().to_vec(), lhs.dtype(), out)
+    }
+
+    pub fn field_div(device_index: u32, lhs: &Tensor, rhs: &Tensor) -> Result<Tensor> {
+        require_same_shape(lhs, rhs)?;
+        require_field_element_tensor(lhs)?;
+        require_field_element_tensor(rhs)?;
+        let mut out = vec![0; lhs.len()];
+        let code = unsafe {
+            tensor_vm_cuda_field_div(
                 device_index,
                 lhs.as_slice().as_ptr(),
                 rhs.as_slice().as_ptr(),
@@ -1326,6 +1371,7 @@ mod cuda {
             -4 => TvmError::InvalidReceipt("cuda host-device copy failed"),
             -5 => TvmError::InvalidReceipt("cuda kernel execution failed"),
             -6 => TvmError::InvalidReceipt("cuda device index out of range"),
+            -7 => TvmError::InvalidReceipt("cuda field division by zero"),
             _ => TvmError::InvalidReceipt("cuda kernel failed"),
         }
     }
@@ -1473,6 +1519,7 @@ mod tests {
             "sub",
             "matmul",
             "mul",
+            "div",
             "eq",
             "gt",
             "lt",
@@ -1490,7 +1537,6 @@ mod tests {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
         for op in [
-            "div",
             "sum",
             "mean",
             "einsum",
@@ -1658,6 +1704,16 @@ mod tests {
 
         let multiplied = cuda::field_mul(0, &lhs, &rhs).unwrap();
         assert_eq!(multiplied, lhs.mul(&rhs).unwrap());
+
+        let divided = cuda::field_div(0, &lhs, &rhs).unwrap();
+        assert_eq!(divided, lhs.div(&rhs).unwrap());
+
+        let zero_divisor =
+            Tensor::from_vec(rhs.shape().to_vec(), rhs.dtype(), vec![1, 2, 0, 4, 5, 6]).unwrap();
+        assert!(matches!(
+            cuda::field_div(0, &lhs, &zero_divisor),
+            Err(TvmError::InvalidReceipt("cuda field division by zero"))
+        ));
 
         let expected_compare = |predicate: fn(Elem, Elem) -> bool| {
             Tensor::from_vec(

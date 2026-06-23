@@ -226,10 +226,22 @@ fn supported_cuda_graph_execution_case() -> (
                 kwargs: BTreeMap::new(),
                 out: vec![tensor_vm::TensorSpec::field("selected", vec![2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 17,
+                op: "div".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 16, idx: 0 },
+                    tensor_vm::IrRef::Input {
+                        name: "bias".to_owned(),
+                    },
+                ],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_vm::TensorSpec::field("quotient", vec![2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "selected".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 16, idx: 0 },
+            name: "quotient".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 17, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([
