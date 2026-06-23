@@ -118,6 +118,7 @@ Validation evidence (June 23, 2026):
 - `cargo test -p tensor_vm --test tvmd_runtime` passed: 46 passed, 0 failed.
 - `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 - `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `b56a674` (`Scope local runtime knobs to local profile`).
 
 ### Iteration 208: Public Preflight Service URL Diversity Gate
 
