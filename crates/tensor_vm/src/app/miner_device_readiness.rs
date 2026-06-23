@@ -1,7 +1,9 @@
 use super::KeyValueReportWriter;
 #[cfg(feature = "cuda-kernels")]
-use crate::runtime::cuda_device_count;
+use crate::hash::hex;
 use crate::runtime::cuda_kernels_compiled;
+#[cfg(feature = "cuda-kernels")]
+use crate::runtime::{GpuMinerBackend, backend_conformance_profile, cuda_device_count};
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub(super) enum MinerDeviceReadiness {
@@ -10,6 +12,7 @@ pub(super) enum MinerDeviceReadiness {
     Cuda {
         device_index: u32,
         device_count: u32,
+        conformance_suite_hash: crate::types::Hash,
     },
 }
 
@@ -24,12 +27,15 @@ impl MinerDeviceReadiness {
             Self::Cuda {
                 device_index,
                 device_count,
+                conformance_suite_hash,
             } => {
                 report.field("device_backend", "cuda");
                 report.field("gpu_backend_ready", true);
                 report.field("cuda_kernels_compiled", true);
                 report.field("cuda_device_index", device_index);
                 report.field("cuda_device_count", device_count);
+                report.field("cuda_conformance_passed", true);
+                report.field("cuda_conformance_suite_hash", hex(conformance_suite_hash));
             }
         }
     }
@@ -66,9 +72,13 @@ pub(super) fn miner_device_readiness(
         if device_index >= device_count {
             return Err("cuda device unavailable".to_owned());
         }
+        let backend = GpuMinerBackend::new(format!("cuda:{device_index}"));
+        let conformance_profile =
+            backend_conformance_profile(&backend).map_err(|error| error.to_string())?;
         Ok(MinerDeviceReadiness::Cuda {
             device_index,
             device_count,
+            conformance_suite_hash: conformance_profile.suite_hash,
         })
     }
 }

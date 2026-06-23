@@ -7,7 +7,9 @@ archive commit anchors only.
 
 - Active feature: Iteration 224 in progress: Live Verified Drand Consensus Randomness.
 - Current status: v0 work is redirected by the 2026-06-23 scope decision toward live verified drand
-  consensus randomness and local A100 CUDA evidence. Iteration 224 defaults runtime randomness to public
+  consensus randomness and local A100 CUDA evidence. Iteration 225 tightens CUDA miner readiness so a
+  CUDA device can report ready only after the CUDA backend passes the canonical conformance profile; local
+  executable CUDA evidence is currently blocked by missing `nvcc` despite visible A100 GPUs. Iteration 224 defaults runtime randomness to public
   drand and keeps accepted verified drand as the finalized consensus beacon across block application
   instead of synthesizing a post-block fixture beacon. Public evidence remains deployment-gated;
   Iteration 223 exports chain-accepted drand
@@ -69,8 +71,8 @@ archive commit anchors only.
 - Current blockers:
   - None gating v0. (Former blockers "7-day external run" and "deployed full VRF construction" are
     reclassified to roadmap per the scope decision above.)
-- Next action: harden remaining live-drand edges, then land real CUDA matmul/graph receipts on the local
-  A100×8 box that are bit-exact with the CPU reference.
+- Next action: install/provide CUDA toolkit `nvcc` for the local A100×8 box, then run the `cuda-kernels`
+  feature tests and land real CUDA matmul/graph receipts that are bit-exact with the CPU reference.
   Stop the public-evidence-validator tightening loop; redirect iterations to drand-live + CUDA blocks.
 
 ## Readiness Matrix
@@ -91,6 +93,87 @@ archive commit anchors only.
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 225: CUDA Readiness Requires Runtime Conformance
+
+Feature capability: require `tvmd miner check --device cuda:N` to execute the CUDA backend conformance
+profile before reporting GPU readiness, so CUDA readiness proves bit-exact CPU/CUDA parity for the current
+TensorOp and LinearTrainingStep runtime paths instead of only proving that a CUDA device exists.
+
+Readiness requirements covered: `upow.md` §3.2/§3.3 and `goal.md` v0 Scope Decisions require GPU/CUDA
+outputs to match canonical `F_p` CPU semantics before CUDA miner/runtime evidence can count for v0.
+
+Files/modules likely touched: `app/miner_device_readiness.rs`, CUDA CLI readiness tests, exec-plan status.
+
+Canonical owner: `runtime::backend_conformance_profile` owns backend conformance; miner readiness only
+reports the result.
+
+Adapter callers: `tvmd miner check`, public preflight CUDA readiness collection, deployment runbook
+commands.
+
+Old shortcut being removed: CUDA miner readiness could report `gpu_backend_ready=true` from compiled
+kernels plus device count without proving the CUDA backend produced canonical TensorOp/LinearTrainingStep
+outputs.
+
+Regression test that proves the shortcut is gone: with `cuda-kernels` enabled and a visible device,
+`miner_start_requires_real_cuda_readiness_for_cuda_devices` must report `cuda_conformance_passed=true` and
+the canonical `cuda_conformance_suite_hash`; without `cuda-kernels`, the same command still rejects CUDA
+claims.
+
+Behavior with local synthetic block production disabled: unchanged; this is a preflight/readiness gate.
+
+Behavior for producer and non-producer roles: unchanged; miners use the gate before claiming CUDA
+execution, validators continue verifying receipts through canonical conformance profiles.
+
+Structured evidence source: `cuda_conformance_passed`, `cuda_conformance_suite_hash`,
+`cuda_device_index`, and `cuda_device_count` fields in the miner readiness report.
+
+Finality source: unchanged; this iteration does not alter chain finality.
+
+Wire-size and codec boundary: no wire or codec changes.
+
+Parallel subagents to run: none; the implementation is a narrow single-owner readiness boundary.
+
+Parallelizable implementation workstreams: none.
+
+Tests/checkers/docs to add or update: CUDA readiness CLI test expectations and this exec plan.
+
+Narrow validation commands: Gate 0 first, focused CUDA-readiness CLI tests, runtime backend conformance
+tests, operator check report tests, and the `cuda-kernels` focused command when the toolkit is available.
+
+Broad validation commands before commit: `cargo test -p tensor_vm --lib`, `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+`cargo fmt --check`, and `git diff --check`.
+
+Expected observable evidence: CUDA readiness reports conformance only after running the backend parity
+profile. On hosts without `cuda-kernels`, CUDA readiness still fails.
+
+Out of scope: installing the CUDA toolkit, changing CUDA kernels, or counting public 7-day deployment
+evidence.
+
+Split trigger: split if installing `nvcc` or rebuilding CUDA toolchains is required; record that as an
+environment blocker for executable CUDA evidence.
+
+Implementation summary: `miner_device_readiness` now constructs a `GpuMinerBackend` and calls
+`backend_conformance_profile` before returning CUDA readiness. The CUDA readiness report includes
+`cuda_conformance_passed=true` and `cuda_conformance_suite_hash=<canonical-suite-hash>` only after that
+profile succeeds.
+
+Validation evidence:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Default-feature CUDA claim rejection:
+  `cargo test -p tensor_vm miner_start_requires_real_cuda_readiness_for_cuda_devices` passed.
+- Runtime default-feature CUDA rejection/conformance boundary:
+  `cargo test -p tensor_vm gpu_backend_reports_device_and_requires_cuda_kernels --lib` passed.
+- Operator report parser:
+  `cargo test -p tensor_vm operator_check_reports_are_parseable --lib` passed.
+- Broad library suite: `cargo test -p tensor_vm --lib` passed, 573 tests.
+- Lints/format/whitespace: `cargo clippy -p tensor_vm --all-targets -- -D warnings`,
+  `cargo fmt --check`, and `git diff --check` passed.
+- CUDA-feature focused command blocked before test execution:
+  `cargo test -p tensor_vm miner_start_requires_real_cuda_readiness_for_cuda_devices --features cuda-kernels`
+  failed in `build.rs` because `nvcc` was not found (`No such file or directory`). `nvidia-smi` shows
+  eight NVIDIA A100-SXM4-80GB GPUs, so the current blocker is the missing CUDA toolkit/compiler, not GPU
+  absence.
 
 ### Iteration 224: Live Verified Drand Consensus Randomness
 

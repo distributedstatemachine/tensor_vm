@@ -35,6 +35,7 @@ fn miner_start_requires_real_cuda_readiness_for_cuda_devices() {
             ])
             .unwrap();
             let device_count_field = device_count.to_string();
+            let suite_hash = crate::hash::hex(&crate::conformance::conformance_suite_hash());
             super::assert_report_fields(
                 &report,
                 &[
@@ -45,6 +46,8 @@ fn miner_start_requires_real_cuda_readiness_for_cuda_devices() {
                     ("cuda_kernels_compiled", "true"),
                     ("cuda_device_index", "0"),
                     ("cuda_device_count", device_count_field.as_str()),
+                    ("cuda_conformance_passed", "true"),
+                    ("cuda_conformance_suite_hash", suite_hash.as_str()),
                 ],
             );
         }
