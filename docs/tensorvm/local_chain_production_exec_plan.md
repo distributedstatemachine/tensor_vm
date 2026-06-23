@@ -136,7 +136,7 @@ Validation evidence (June 23, 2026):
   --all-targets -- -D warnings`.
 - Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
   target/tarpaulin` produced 85.04% workspace line coverage, 23637/27796 lines covered.
-- Implementation commit: pending.
+- Implementation commit: `f27f858` (`Require public chain history range coverage`).
 
 ### Iteration 219: Public Raw Records Bound Observed Blocks To Run Window
 
