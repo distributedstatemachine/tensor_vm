@@ -177,7 +177,15 @@ fn public_testnet_run_evidence_requires_independent_external_operators() {
     assert!(sufficient.has_reward_settlement_records);
     assert!(sufficient.has_production_libp2p_runtime);
     assert!(sufficient.has_deployed_public_services);
+    assert!(!sufficient.has_validator_vrf_lifecycle_evidence);
     assert!(sufficient.public_criterion_met);
+
+    let mut fully_available_lifecycle = run.clone();
+    fully_available_lifecycle.available_receipts = fully_available_lifecycle.checked_receipts;
+    let fully_available_lifecycle = fully_available_lifecycle.evaluate(&criteria, 6, true);
+    assert!(fully_available_lifecycle.has_required_data_availability);
+    assert!(fully_available_lifecycle.has_validator_vrf_lifecycle_evidence);
+    assert!(fully_available_lifecycle.public_criterion_met);
 
     let mut graph_without_cuda_miners = run.clone();
     graph_without_cuda_miners.cuda_verified_miner_count = 0;

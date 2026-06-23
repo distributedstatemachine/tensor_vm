@@ -2431,7 +2431,7 @@ The post-run evidence manifest must also include `cuda_verified_miner_count`, de
 device checks for the counted public miner set, `cuda_graph_execution_receipts`, derived from CUDA
 graph-execution receipt checks in the public run, and signed `validator_vrf_lifecycle_records` plus raw
 `validator_vrf_lifecycle=...` records derived from the direct deployed validator VRF commit-to-reveal
-reward-delay lifecycle for checked receipts with distinct receipt roots. Full-spec evidence requires
+reward-delay lifecycle for checked and available receipts with distinct receipt roots. Full-spec evidence requires
 the CUDA miner count to cover the counted public miners, the CUDA graph-execution receipt count to be
 positive without exceeding checked or available receipt counts, raw data-availability measurement records
 to equal the checked receipt count with distinct nonzero receipt roots, raw invalid-work and
@@ -2439,7 +2439,8 @@ reward-settlement records to use distinct nonzero receipt roots and nonzero sett
 raw detection-measurement records to use valid mechanism labels, nonzero subject roots, nonzero samples,
 and detected counts not exceeding samples,
 signed validator VRF lifecycle
-records to equal the checked receipt count, use distinct receipt roots, and aggregate to the signed lifecycle root,
+records to equal the checked receipt count only when every checked receipt is available, use distinct
+receipt roots, and aggregate to the signed lifecycle root,
 and positive signed deployed detection-measurement records with raw
 records that aggregate to the signed detection summary; a public run with otherwise valid services,
 operators, network observations, and raw supporting records but missing, undercounted, or overcounted

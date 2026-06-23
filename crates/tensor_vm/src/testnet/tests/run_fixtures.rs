@@ -174,7 +174,7 @@ pub(super) fn complete_public_run_evidence() -> PublicTestnetRunEvidence {
         observed_blocks: 10,
         finalized_blocks: 10,
         checked_receipts: 20,
-        available_receipts: 19,
+        available_receipts: 20,
         invalid_receipts_submitted: 1,
         invalid_receipts_rejected: 1,
         reward_settlement_records: 1,

@@ -5,8 +5,10 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 213 complete and pushed: Index-Consistency Ops Rejected at Program Registration.
-- Current status: index-consistency Tensor IR ops are registry vocabulary only; this iteration adds
+- Active feature: Iteration 214 in progress: Validator VRF Lifecycle Requires Available Receipts.
+- Current status: public evidence remains deployment-gated; this iteration tightens the scalar
+  validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
+  artifacts. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
   chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
   program bodies until their index-consistency proofs exist. Reward-delay work is implemented locally for
   receipt, proposer, and challenge rewards;
@@ -55,6 +57,61 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 214: Validator VRF Lifecycle Requires Available Receipts
+
+Feature capability: require complete data availability for checked receipts before public scalar run
+evidence can claim validator VRF lifecycle coverage for those receipts.
+
+Readiness requirements covered: public full-spec evidence must not claim complete deployed validator VRF
+commit-to-reveal/reward-delay lifecycle coverage when any checked receipt lacks available artifacts.
+
+Canonical owner: `PublicTestnetRunEvidence::evaluate` owns scalar public run evidence flags consumed by
+bundle validation and CLI reports.
+
+Adapter callers: `tvmd public evidence validate`, manifest bundle validation, public evidence docs, and
+readiness reports consume the scalar flag.
+
+Old shortcut being removed: `has_validator_vrf_lifecycle_evidence` could be true when
+`validator_vrf_lifecycle_records == checked_receipts` even if `available_receipts < checked_receipts`.
+
+Regression test that proves the shortcut is gone: an otherwise full-spec evidence bundle with one
+unavailable checked receipt keeps public criteria/independent records where applicable but clears
+`has_validator_vrf_lifecycle_evidence`, validator lifecycle record summary, and full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run evidence gate.
+
+Behavior for producer and non-producer roles: unchanged; role behavior is observed through public evidence.
+
+Structured evidence source: `checked_receipts`, `available_receipts`, and
+`validator_vrf_lifecycle_records`.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Parallelizable implementation workstreams: read-only inspection was parallelized; code/docs edits are
+single-writer.
+
+Tests/checkers/docs to add or update: public run/bundle evidence regressions, public evidence docs, and
+this exec plan.
+
+Narrow validation commands: focused run-evidence/bundle lifecycle tests.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, clippy with warnings
+denied, rustfmt check, and diff check.
+
+Expected observable evidence: validator VRF lifecycle evidence remains false unless checked receipts are
+all available and lifecycle records exactly cover those checked receipts.
+
+Out of scope: generating real deployed VRF records, changing manifest syntax, or changing raw lifecycle
+record hashing.
+
+Split trigger: split if the stricter scalar flag requires changing raw record schema or public manifest
+parsing.
 
 ### Iteration 213: Index-Consistency Ops Rejected at Program Registration
 
@@ -124,7 +181,7 @@ Validation evidence (June 23, 2026):
 - `cargo fmt --all -- --check` and `git diff --check` passed.
 - Implementation commit: `a12d4d9` (`Reject index-consistency graphs at registration`).
 - Validation metadata commit: `079b679` (`Record index registration validation`).
-- Pushed to `main`: `33be5c3..079b679`.
+- Pushed to `main`: `33be5c3..18774f0`.
 
 ### Iteration 212: Block-Check Challenges Block Late Proposer Reward Materialization
 

@@ -34,7 +34,7 @@ fn validate_public_evidence_manifest_reports_default_criteria_status() {
             ("observed_blocks", "10"),
             ("required_blocks", "100800"),
             ("finality_rate_bps", "10000"),
-            ("data_availability_bps", "9500"),
+            ("data_availability_bps", "10000"),
             ("invalid_receipts_submitted", "1"),
             ("invalid_receipts_rejected", "1"),
             ("invalid_work_rejection_rate_bps", "10000"),

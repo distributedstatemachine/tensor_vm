@@ -1451,7 +1451,7 @@ fn public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec() 
     let unavailable_graph_report =
         unavailable_graph_execution.evaluate(&full_spec_criteria, full_spec_block_time);
     assert!(!unavailable_graph_report.run_evidence.public_criterion_met);
-    assert!(unavailable_graph_report.independently_checkable);
+    assert!(!unavailable_graph_report.independently_checkable);
     assert!(!unavailable_graph_report.has_cuda_graph_execution_evidence);
     assert!(!unavailable_graph_report.full_spec_evidence_met);
 }
@@ -1470,6 +1470,24 @@ fn public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec
             .has_validator_vrf_lifecycle_evidence
     );
     assert!(full_spec_report.full_spec_evidence_met);
+
+    let mut unavailable_lifecycle = full_spec_bundle.clone();
+    unavailable_lifecycle.run.available_receipts =
+        unavailable_lifecycle.run.checked_receipts.saturating_sub(1);
+    let unavailable_lifecycle_report =
+        unavailable_lifecycle.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(
+        unavailable_lifecycle_report
+            .run_evidence
+            .public_criterion_met
+    );
+    assert!(
+        !unavailable_lifecycle_report
+            .run_evidence
+            .has_validator_vrf_lifecycle_evidence
+    );
+    assert!(!unavailable_lifecycle_report.has_validator_vrf_lifecycle_record_summary);
+    assert!(!unavailable_lifecycle_report.full_spec_evidence_met);
 
     let mut missing_lifecycle = full_spec_bundle.clone();
     missing_lifecycle.run.validator_vrf_lifecycle_records = 0;
