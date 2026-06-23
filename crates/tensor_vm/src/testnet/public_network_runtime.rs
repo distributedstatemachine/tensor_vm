@@ -80,6 +80,20 @@ impl PublicNetworkRuntimeObservation {
         }
     }
 
+    #[cfg(test)]
+    pub(super) fn with_listen_address_for_testing(&self, listen_address: String) -> Self {
+        let mut details = self.details();
+        details.listen_address = listen_address;
+        Self::new(details)
+    }
+
+    #[cfg(test)]
+    pub(super) fn with_peer_id_for_testing(&self, peer_id: String) -> Self {
+        let mut details = self.details();
+        details.peer_id = peer_id;
+        Self::new(details)
+    }
+
     pub(super) fn has_public_network_observation_proof(&self) -> bool {
         let details = self.details();
         self.operator_id != [0; 32]

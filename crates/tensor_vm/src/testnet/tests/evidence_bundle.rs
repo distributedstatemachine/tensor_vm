@@ -1020,6 +1020,60 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     assert!(!stale_network_observation.independently_checkable);
 
     bundle = complete_public_evidence_bundle();
+    let duplicate_listen_address = bundle.network_runtime_observations[0]
+        .listen_address
+        .clone();
+    bundle.network_runtime_observations[1] = bundle.network_runtime_observations[1]
+        .with_listen_address_for_testing(duplicate_listen_address);
+    let duplicate_listen_roots = bundle
+        .network_runtime_observations
+        .iter()
+        .map(|observation| observation.record_root)
+        .collect::<Vec<_>>();
+    let duplicate_listen_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::NetworkRuntimeObservations,
+        &duplicate_listen_roots,
+    )
+    .expect("duplicate-listen network observation roots should aggregate");
+    let duplicate_listen_record_count = bundle.network_runtime_observation_records;
+    resign_record_summary_and_artifact(
+        &mut bundle,
+        PublicEvidenceRecordKind::NetworkRuntimeObservations,
+        duplicate_listen_root,
+        duplicate_listen_record_count,
+    );
+    let duplicate_listen_observation = bundle.evaluate(&criteria, 6);
+    assert!(!duplicate_listen_observation.has_network_runtime_observations);
+    assert!(duplicate_listen_observation.has_public_supporting_record_artifacts);
+    assert!(!duplicate_listen_observation.independently_checkable);
+
+    bundle = complete_public_evidence_bundle();
+    let duplicate_peer_id = bundle.network_runtime_observations[0].peer_id.clone();
+    bundle.network_runtime_observations[1] =
+        bundle.network_runtime_observations[1].with_peer_id_for_testing(duplicate_peer_id);
+    let duplicate_peer_roots = bundle
+        .network_runtime_observations
+        .iter()
+        .map(|observation| observation.record_root)
+        .collect::<Vec<_>>();
+    let duplicate_peer_root = aggregate_public_evidence_record_roots(
+        PublicEvidenceRecordKind::NetworkRuntimeObservations,
+        &duplicate_peer_roots,
+    )
+    .expect("duplicate-peer network observation roots should aggregate");
+    let duplicate_peer_record_count = bundle.network_runtime_observation_records;
+    resign_record_summary_and_artifact(
+        &mut bundle,
+        PublicEvidenceRecordKind::NetworkRuntimeObservations,
+        duplicate_peer_root,
+        duplicate_peer_record_count,
+    );
+    let duplicate_peer_observation = bundle.evaluate(&criteria, 6);
+    assert!(!duplicate_peer_observation.has_network_runtime_observations);
+    assert!(duplicate_peer_observation.has_public_supporting_record_artifacts);
+    assert!(!duplicate_peer_observation.independently_checkable);
+
+    bundle = complete_public_evidence_bundle();
     let network_runtime_root = bundle.network_runtime_observation_root;
     let underreported_network_runtime_count = bundle
         .operator_identity_attestation_records

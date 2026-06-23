@@ -827,14 +827,21 @@ impl PublicTestnetEvidenceBundle {
             return false;
         }
         let mut observed_operator_ids = BTreeSet::new();
+        let mut observed_peer_ids = BTreeSet::new();
+        let mut observed_listen_addresses = BTreeSet::new();
         let mut record_roots = Vec::with_capacity(required_count);
         for observation in &self.network_runtime_observations {
+            let Ok(listen_address) = observation.listen_address.parse::<libp2p::Multiaddr>() else {
+                return false;
+            };
             if !expected_operator_ids.contains(&observation.operator_id)
                 || !self
                     .run
                     .observation_is_within_run(observation.observed_at_unix_seconds)
                 || !observation.has_public_network_observation_proof()
                 || !observed_operator_ids.insert(observation.operator_id)
+                || !observed_peer_ids.insert(observation.peer_id.clone())
+                || !observed_listen_addresses.insert(listen_address.to_string())
             {
                 return false;
             }

@@ -100,8 +100,9 @@ detection-measurement record count must be positive for full-spec evidence, vali
 record count must match checked receipts, reward-settlement raw records must use distinct nonzero receipt
 roots and nonzero miner/validator IDs, and the
 production-libp2p network-runtime observation count must match the counted independent miner and validator
-operator total exactly. Raw randomness-beacon records must be accepted public `drand-v1` or
-`validator-vrf-v1` records covering each observed block exactly once with distinct source/round pairs.
+operator total exactly and use distinct public peer IDs and listen multiaddrs. Raw randomness-beacon
+records must be accepted public `drand-v1` or `validator-vrf-v1` records covering each observed block
+exactly once with distinct source/round pairs.
 
 ## Manifest Format
 
@@ -177,7 +178,8 @@ invalid-work, or network-runtime summary records do not satisfy the independentl
 network-runtime summary must also be backed by exactly one valid signed `network_runtime_observation`
 record for every counted public miner and validator operator; each observation must name that operator,
 use a valid libp2p peer ID, use a public nonzero-TCP listen multiaddr, have an observation timestamp inside
-the signed run window, and aggregate to the signed network-runtime root.
+the signed run window, use a distinct peer ID and listen multiaddr, and aggregate to the signed
+network-runtime root.
 The reference service process serves `GET /health` for shared-host deployments and scoped
 `GET /rpc/health`, `GET /explorer/health`, `GET /faucet/health`, and `GET /telemetry/health` endpoints
 when operators publish distinct public service hostnames or paths. Public service-content observations
@@ -535,7 +537,8 @@ saved line-oriented raw-record file. Blank lines and `#` comments are ignored; g
 `network_runtime_observation=...` lines emitted by the network-observation commands. File-derived
 network-runtime roots verify the full signed observation line, including the libp2p peer ID, public
 listen multiaddr, nonzero discovery/gossip/request-response/DoS-control counters, observation root, and
-observation signature, before the root can be aggregated. Non-network supporting-record files can contain
+observation signature, before the root can be aggregated; full bundle validation also rejects counted
+operators that reuse the same peer ID or public listen multiaddr. Non-network supporting-record files can contain
 exact `block_history_record=...`, `finality_history_record=...`, `randomness_beacon_record=...`,
 `data_availability_measurement=...`, `invalid_work_rejection=...`, `reward_settlement=...`,
 `detection_measurement=...`, or `validator_vrf_lifecycle=...` raw record lines. These typed lines are hashed

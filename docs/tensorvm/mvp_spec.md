@@ -2366,9 +2366,10 @@ reserved IP hosts. Full-spec evidence must include exactly one valid signed netw
 record for every counted public miner and validator operator. Each record must be bound to that operator
 ID, a valid libp2p peer ID, a public listen multiaddr, an observation timestamp inside the signed run
 window, nonzero discovery/gossip/request-response/DoS-control counters, a matching observation root, and a
-matching observation signature. The `network-runtime` summary root must aggregate those raw observation
-roots; a signed summary root without the corresponding per-operator `network_runtime_observation` manifest
-lines does not satisfy the public evidence gate.
+matching observation signature. Counted observations must use distinct public peer IDs and listen
+multiaddrs. The `network-runtime` summary root must aggregate those raw observation roots; a signed summary
+root without the corresponding per-operator `network_runtime_observation` manifest lines does not satisfy
+the public evidence gate.
 The `evidence network from-service-log` command derives the peer ID, protocol counts, bootstrap-peer
 count, and DoS-control settings from an exact captured `tvmd node serve` log. It must reject logs that
 do not show `command=service_serve` and `p2p_runtime=libp2p`, and it still requires the observer-supplied

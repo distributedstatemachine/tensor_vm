@@ -463,7 +463,7 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   randomness-beacon summary counts that match the observed run block count, raw chain-history and operational-record
   parser coverage for malformed block/finality/DA/invalid-work/reward statuses and field counts, distinct node-address
   counting for public operators, plus network-runtime observation rejection for missing records,
-  unmatched operators, non-public listen addresses, stale timestamps, undercounts, and overcounts against
+  unmatched operators, non-public listen addresses, duplicate peer/listen endpoints, stale timestamps, undercounts, and overcounts against
   every counted public operator before full-spec evidence can be considered
   independently checkable; the `public_evidence_full_spec`
   report flag also requires `cuda_verified_miner_count` to cover the counted public miners and

@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 203 pushed: Public Randomness Beacon Coverage Gate.
+- Active feature: Iteration 204 in progress: Public Network Runtime Endpoint Diversity Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -18,7 +18,8 @@ archive commit anchors only.
   aligns direct bundle validation for raw deployed detection measurements with the manifest parser's field
   checks. Iteration 202 adds semantic consistency checks for raw public block/finality history records.
   Iteration 203 requires raw public randomness-beacon records to cover distinct observed blocks and beacon
-  rounds exactly.
+  rounds exactly. Iteration 204 requires counted public network-runtime observations to use distinct peer
+  IDs and public listen multiaddrs.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -42,6 +43,82 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 204: Public Network Runtime Endpoint Diversity Gate
+
+Feature capability: require signed public network-runtime observations for counted public operators to use
+distinct peer IDs and distinct public listen multiaddrs before they can satisfy the independently checkable
+public evidence gate.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require exactly one valid
+production-libp2p network observation per counted independent public miner/validator operator. The raw
+records should prove distinct public node endpoints, not only distinct operator IDs with reusable endpoint
+metadata.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns independently checkable public evidence
+admission and network-runtime observation matching.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: counted public operators could present separate signed observation roots while
+reusing the same public listen multiaddr, so the network-runtime gate proved operator IDs but not distinct
+public libp2p endpoints.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_raw_operational_records` includes recomputed signed
+network-runtime summaries where two counted operators reuse one public listen multiaddr or one peer ID;
+supporting artifacts still match, but network-runtime evidence and independent checkability fail.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: signed `network_runtime_observation=...` records with operator ID, peer ID,
+public listen multiaddr, runtime counters, record root, and observation signature.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence bundle
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle network-runtime regression and public evidence
+docs/status wording.
+
+Narrow validation commands: focused public evidence publication/audit/network-runtime test and public
+evidence manifest round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise signed public evidence is not independently checkable when counted
+operators reuse a public peer ID or listen multiaddr.
+
+Out of scope: proving real deployed peer reachability, changing libp2p runtime behavior, or generating
+public run artifacts.
+
+Split trigger: split if endpoint diversity requires active network probing rather than validating signed
+raw observation records.
+
+Validation evidence, June 23, 2026:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused regressions:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_publication_and_audit_records --lib`
+  passed, and
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib`
+  passed after adding duplicate public listen multiaddr and duplicate peer ID cases.
+- Formatting and diff hygiene: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Full library validation: `cargo test -p tensor_vm --lib` passed, 559 tests.
+- Release local-testnet validation: `cargo test -p tensor_vm local_testnet --release` passed after the patch.
+- Release CLI evidence validation:
+  `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
+- Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 
 ### Iteration 203: Public Randomness Beacon Coverage Gate
 

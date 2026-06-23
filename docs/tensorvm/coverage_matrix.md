@@ -378,6 +378,9 @@ new `ReceiptRewardPending` settlement events expose `claimable_at_height=None` a
   required post-run evidence-bundle shape is
   documented in
   [`public_testnet_evidence.md`](public_testnet_evidence.md), but no complete external bundle is linked yet.
+- `testnet::tests::public_testnet_evidence_bundle_requires_raw_operational_records` also proves counted
+  public operators cannot satisfy the network-runtime evidence gate by reusing the same public listen
+  multiaddr or peer ID behind otherwise signed per-operator observation records.
 - Public production libp2p run evidence, HTTP deployment, full durable database, and deployed browser web
   services remain outside the local reference crate. The crate has mandatory rust-libp2p runtime wiring with
   TCP/TLS/Yamux swarm construction, Gossipsub subscriptions, Identify, Kademlia discovery/address
