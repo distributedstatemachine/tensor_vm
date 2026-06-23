@@ -342,6 +342,7 @@ impl PublicTestnetEvidenceBundle {
                 self.validator_vrf_lifecycle_records,
                 &self.validator_vrf_lifecycle_signature,
             );
+        let has_deployed_public_service_evidence = run_evidence.has_deployed_public_services;
         let required_supporting_artifacts = [
             (
                 PublicEvidenceRecordKind::BlockHistory,
@@ -408,6 +409,7 @@ impl PublicTestnetEvidenceBundle {
             && has_finality_history
             && has_operator_identity_attestations
             && has_network_runtime_observations
+            && has_deployed_public_service_evidence
             && has_randomness_beacon_evidence
             && has_data_availability_measurements
             && has_invalid_work_rejection_records
@@ -442,6 +444,7 @@ impl PublicTestnetEvidenceBundle {
             has_data_availability_measurements,
             has_invalid_work_rejection_records,
             has_reward_settlement_record_summary,
+            has_deployed_public_service_evidence,
             has_deployed_detection_measurement_records,
             has_validator_vrf_lifecycle_record_summary,
             has_public_supporting_record_artifacts,

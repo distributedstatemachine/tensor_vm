@@ -175,7 +175,9 @@ not satisfy the deployed public-service gate. Counted service-health URLs and se
 distinct across service kinds. Counted service-content records must have observation timestamps inside the
 signed run window. Every counted service health summary must likewise span the full observed block range
 and carry at least one reachable observation and one signed health check per observed block. The reachable
-observation count must not exceed the signed health-check count.
+observation count must not exceed the signed health-check count. A bundle missing any required service
+health or service-content record, or carrying service content whose endpoint ID or HTTPS authority does not
+match the corresponding health record, is not independently checkable.
 Finalized-block and available-receipt totals must not exceed their corresponding observed-block and
 checked-receipt denominators; capped percentage output does not make impossible counter sets satisfy the
 public gate. Signed overcounts or undercounts for block-history, finality-history, data-availability,

@@ -17,6 +17,7 @@ fn validate_public_evidence_manifest_reports_default_criteria_status() {
             ("finality_history", "true"),
             ("operator_identity_attestations", "true"),
             ("network_runtime_observations", "true"),
+            ("deployed_public_service_evidence", "true"),
             ("randomness_beacon_evidence", "true"),
             ("data_availability_measurements", "true"),
             ("signed_invalid_work_rejection_records", "true"),
@@ -119,6 +120,8 @@ fn validate_public_evidence_manifest_reports_default_criteria_status() {
     assert_report_fields(
         &missing_service_content_report,
         &[
+            ("deployed_public_service_evidence", "false"),
+            ("independently_checkable", "false"),
             ("deployed_public_service_content", "false"),
             ("deployed_public_services", "false"),
         ],

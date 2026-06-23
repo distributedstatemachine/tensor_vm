@@ -345,7 +345,8 @@ until a keyed Ed25519 reveal matching the registered validator key is submitted.
   validation with traversal/query/fragment path rejection, signed deployed detection-measurement evidence
   with raw records whose aggregate root matches the signed summary, and deployed public-service reachability with exactly
   one service-health and one service-content record per deployed service kind, distinct endpoint IDs, and distinct content
-  roots with at least 64 observed bytes bound to external HTTPS URLs. A local launch
+  roots with at least 64 observed bytes bound to external HTTPS URLs before the bundle can report
+  independently checkable evidence. A local launch
   preflight manifest is documented in
   [`public_testnet_preflight.md`](public_testnet_preflight.md), requires a CUDA-ready miner count matching
   the planned miner count plus a libp2p-ready node count matching planned miners and validators before

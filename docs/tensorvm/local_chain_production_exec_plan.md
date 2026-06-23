@@ -5,9 +5,11 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 220 implemented and validated locally: Public Chain History Covers Observed
-  Block Range.
-- Current status: public evidence remains deployment-gated; Iteration 220 tightens public full-spec raw
+- Active feature: Iteration 221 implemented and validated locally: Public Service Evidence Required For
+  Independent Bundles.
+- Current status: public evidence remains deployment-gated; Iteration 221 requires deployed public service
+  health/content evidence before a public evidence bundle can report `independently_checkable=true`.
+  Iteration 220 tightens public full-spec raw
   block/finality history so signed records must cover the exact observed block range rather than a shifted
   range with the same count. Iteration 219 tightens public full-spec raw
   operational, detection-measurement, and validator-VRF-lifecycle evidence so signed records cannot satisfy
@@ -71,6 +73,79 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 221: Public Service Evidence Required For Independent Bundles
+
+Feature capability: require independently checkable public evidence bundles to include deployed public
+service health and content evidence for RPC, explorer, faucet, and telemetry, using the existing exact
+endpoint/path/authority/count/content checks.
+
+Readiness requirements covered: `mvp_spec.md` §31.4 and §35 require public service health and
+service-content roots as independently checkable deployment evidence, not only as a full-spec/public
+criterion side gate.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns bundle-level independent checkability;
+`PublicTestnetRunEvidence::evaluate` owns detailed service health/content validation.
+
+Adapter callers: manifest validation, `tvmd public evidence validate`, deployment docs/tests, and public
+evidence reports.
+
+Old shortcut being removed: a bundle with missing deployed service-health or service-content records could
+still report `independently_checkable=true` when other signed record summaries and artifacts were present.
+
+Regression test that proves the shortcut is gone: clearing service-health or service-content evidence from
+an otherwise complete bundle must now make both `independently_checkable=false` and
+`public_evidence_full_spec=false`; parsed manifest service-content mismatches must likewise fail the
+service evidence gate.
+
+Behavior with local synthetic block production disabled: unchanged; this is post-run public evidence
+validation.
+
+Behavior for producer and non-producer roles: unchanged; this consumes deployed public service records.
+
+Structured evidence source: signed `service=...` health records and signed `service_content=...` content
+records already parsed into `PublicTestnetRunEvidence`.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no p2p/consensus wire changes.
+
+Parallel subagents to run: read-only service-evidence mapper and test-coverage explorer.
+
+Parallelizable implementation workstreams: code/docs edits remain single-writer; read-only mapping and
+test discovery ran in parallel.
+
+Tests/checkers/docs to add or update: public evidence bundle service regressions, manifest mismatch
+regression if needed, coverage/status/tarpaulin notes, and this exec plan.
+
+Narrow validation commands: focused public evidence bundle and manifest service tests.
+
+Broad validation commands before commit: Gate 0 first, `cargo test -p tensor_vm --lib`, clippy with
+warnings denied, rustfmt check, diff check, and tarpaulin/report update if coverage changes.
+
+Expected observable evidence: `independently_checkable=true` is impossible without exact deployed service
+health and content evidence for all four public service kinds.
+
+Out of scope: generating real deployed service records, changing service CLI signature formats, or changing
+public URL validation rules.
+
+Split trigger: split if making service evidence independently checkable requires changing manifest schema
+or public report output formats beyond a boolean report field.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused public evidence checks passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_raw_operational_records --lib` and
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`.
+- CLI report regression passed:
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+- Broad lib validation passed: `cargo test -p tensor_vm --lib` reported 567 passed, 0 failed.
+- Hygiene passed: `cargo fmt --all -- --check`, `git diff --check`, and `cargo clippy -p tensor_vm
+  --all-targets -- -D warnings`.
+- Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
+  target/tarpaulin` produced 85.04% workspace line coverage, 23641/27800 lines covered.
 
 ### Iteration 220: Public Chain History Covers Observed Block Range
 

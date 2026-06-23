@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 220 with:
+Latest completed run: June 23, 2026 from the workspace root during Iteration 221 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -15,7 +15,7 @@ Result:
 - 1 tensor_vm_explorer library test
 
 85.04% workspace line coverage
-23637/27796 workspace lines covered
+23641/27800 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
@@ -319,6 +319,10 @@ events.
 Iteration 127 adds the checked Codex 5.5 local-chain workflow document. Focused deployment-doc coverage
 guards the Gate 0-first rule, context refresh list, local Docker gate, broad validation sequence,
 tarpaulin/Docker blockers, and commit/push evidence flow.
+Iteration 221 makes deployed public service health/content evidence part of bundle independent
+checkability. Focused public evidence bundle and manifest tests cover missing service-health or
+service-content records and re-signed service-content records whose endpoint/authority do not match the
+corresponding service-health record.
 
 The optional CUDA kernel feature is verified separately because the standard Tarpaulin configuration keeps
 the portable default feature set:

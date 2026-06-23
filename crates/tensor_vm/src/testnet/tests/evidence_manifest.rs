@@ -191,7 +191,59 @@ fn public_testnet_evidence_manifest_parses_into_bundle() {
             .run_evidence
             .has_deployed_public_service_content
     );
+    assert!(!missing_service_content_report.has_deployed_public_service_evidence);
+    assert!(!missing_service_content_report.independently_checkable);
     assert!(!missing_service_content_report.full_spec_evidence_met);
+
+    let mismatched_rpc_content = PublicServiceContentEvidence::new(
+        PublicServiceKind::Rpc,
+        hash_bytes(b"test", &[b"rpc-service"]),
+        "https://rpc-content.tensorvm.net/chain/head",
+        public_service_content_path(PublicServiceKind::Rpc),
+        hash_bytes(b"test", &[b"rpc-service", b"content-root"]),
+        1_700_000_000,
+        PUBLIC_SERVICE_MIN_CONTENT_BYTES,
+    );
+    let mismatched_rpc_content_line = format!(
+        "service_content=rpc,{},{},{},{},{},{},{}",
+        hex(&mismatched_rpc_content.endpoint_id),
+        mismatched_rpc_content.public_url,
+        mismatched_rpc_content.content_path,
+        hex(&mismatched_rpc_content.content_root),
+        mismatched_rpc_content.observed_at_unix_seconds,
+        mismatched_rpc_content.min_content_bytes,
+        hex(&mismatched_rpc_content.content_signature)
+    );
+    let valid_rpc_content_line =
+        manifest_service_content_line(PublicServiceKind::Rpc, b"rpc-service");
+    let mismatched_rpc_content_manifest =
+        manifest.replace(&valid_rpc_content_line, &mismatched_rpc_content_line);
+    let parsed_mismatched_rpc_content =
+        parse_public_testnet_evidence_manifest(&mismatched_rpc_content_manifest).unwrap();
+    let mismatched_rpc_content_report = parsed_mismatched_rpc_content.evaluate(&criteria, 6);
+    assert!(
+        !mismatched_rpc_content_report
+            .run_evidence
+            .has_deployed_rpc_service
+    );
+    assert!(
+        !mismatched_rpc_content_report
+            .run_evidence
+            .has_deployed_public_service_content
+    );
+    assert!(!mismatched_rpc_content_report.has_deployed_public_service_evidence);
+    assert!(
+        !mismatched_rpc_content_report
+            .run_evidence
+            .has_deployed_public_services
+    );
+    assert!(
+        !mismatched_rpc_content_report
+            .run_evidence
+            .public_criterion_met
+    );
+    assert!(!mismatched_rpc_content_report.independently_checkable);
+    assert!(!mismatched_rpc_content_report.full_spec_evidence_met);
 
     let uppercase_hash = manifest_hash(b"test", b"public-evidence-bundle").to_uppercase();
     assert_eq!(

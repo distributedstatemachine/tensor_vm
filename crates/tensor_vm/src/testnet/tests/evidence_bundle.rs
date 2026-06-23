@@ -1322,14 +1322,16 @@ fn public_testnet_evidence_bundle_requires_raw_operational_records() {
     bundle = complete_public_evidence_bundle();
     bundle.run.services.clear();
     let missing_services = bundle.evaluate(&criteria, 6);
-    assert!(missing_services.independently_checkable);
+    assert!(!missing_services.has_deployed_public_service_evidence);
+    assert!(!missing_services.independently_checkable);
     assert!(!missing_services.run_evidence.public_criterion_met);
     assert!(!missing_services.full_spec_evidence_met);
 
     bundle = complete_public_evidence_bundle();
     bundle.run.service_content.clear();
     let missing_service_content = bundle.evaluate(&criteria, 6);
-    assert!(missing_service_content.independently_checkable);
+    assert!(!missing_service_content.has_deployed_public_service_evidence);
+    assert!(!missing_service_content.independently_checkable);
     assert!(
         !missing_service_content
             .run_evidence

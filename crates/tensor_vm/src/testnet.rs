@@ -329,6 +329,7 @@ pub struct PublicTestnetEvidenceBundleReport {
     pub has_data_availability_measurements: bool,
     pub has_invalid_work_rejection_records: bool,
     pub has_reward_settlement_record_summary: bool,
+    pub has_deployed_public_service_evidence: bool,
     pub has_deployed_detection_measurement_records: bool,
     pub has_validator_vrf_lifecycle_record_summary: bool,
     pub has_public_supporting_record_artifacts: bool,
