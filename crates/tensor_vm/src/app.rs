@@ -55,6 +55,7 @@ pub use randomness_beacon::{
     tick_randomness_beacon_once_with_client,
 };
 pub use role_services::RoleServiceRunner;
+pub(crate) use runtime_config::runtime_bootstrap_addresses;
 pub use runtime_config::{
     RoleServiceConfig, RuntimeRole, ServiceRuntimeConfig, chain_profile_from_label,
     role_wallet_address, runtime_node_config, runtime_role_wallet_address_text,

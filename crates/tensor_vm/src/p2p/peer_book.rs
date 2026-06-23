@@ -116,6 +116,17 @@ impl PeerBookStore {
     }
 }
 
+pub fn normalize_bootstrap_multiaddr(address: &str) -> TvmResult<String> {
+    let address = parse_multiaddr(address)?;
+    if !multiaddr_has_nonzero_tcp(&address) {
+        return Err(TvmError::Storage("bootstrap address missing tcp port"));
+    }
+    if bootstrap_peer_address(&address).is_none() {
+        return Err(TvmError::Storage("bootstrap address missing peer id"));
+    }
+    Ok(address.to_string())
+}
+
 pub(super) fn parse_multiaddr(address: &str) -> TvmResult<Multiaddr> {
     address
         .parse()
@@ -318,6 +329,28 @@ mod tests {
         );
 
         let _ = std::fs::remove_file(path);
+    }
+
+    #[test]
+    fn bootstrap_multiaddr_normalization_requires_tcp_and_peer_id() {
+        let peer = PeerId::random();
+        let address = format!("/dns/bootstrap.tensorvm.example/tcp/4001/p2p/{peer}");
+
+        assert_eq!(normalize_bootstrap_multiaddr(&address).unwrap(), address);
+        assert_eq!(
+            normalize_bootstrap_multiaddr("/dns/bootstrap.tensorvm.example/tcp/4001"),
+            Err(TvmError::Storage("bootstrap address missing peer id"))
+        );
+        assert_eq!(
+            normalize_bootstrap_multiaddr(&format!(
+                "/dns/bootstrap.tensorvm.example/tcp/0/p2p/{peer}"
+            )),
+            Err(TvmError::Storage("bootstrap address missing tcp port"))
+        );
+        assert_eq!(
+            normalize_bootstrap_multiaddr("not-a-multiaddr"),
+            Err(TvmError::InvalidReceipt("invalid libp2p multiaddr"))
+        );
     }
 
     #[test]

@@ -3,6 +3,7 @@ use std::time::Duration;
 use crate::{
     Chain, ChainNetwork, ChainProfile, NetworkConfig, NodeConfig, NodeRole,
     hash::hex,
+    p2p::normalize_bootstrap_multiaddr,
     types::{Address, address},
 };
 
@@ -79,6 +80,7 @@ pub fn runtime_node_config(
     let local_runtime = matches!(profile.network, ChainNetwork::Local);
     let mut config = NodeConfig::new(profile, role.node_role(), data_dir).with_network(
         NetworkConfig::new(listen, p2p_listen)
+            .with_bootstrap_addresses(runtime_bootstrap_addresses()?)
             .with_identity_seed(identity_seed)
             .with_auth_token(auth_token)
             .with_max_requests(max_requests),
@@ -181,6 +183,24 @@ fn runtime_bool_env(name: &str) -> bool {
     }
 }
 
+pub(crate) fn runtime_bootstrap_addresses() -> std::result::Result<Vec<String>, String> {
+    let Some(value) = std::env::var("TENSORVM_BOOTSTRAP_PEERS")
+        .ok()
+        .filter(|value| !value.trim().is_empty())
+    else {
+        return Ok(Vec::new());
+    };
+    value
+        .split(',')
+        .map(str::trim)
+        .filter(|address| !address.is_empty())
+        .map(|address| {
+            normalize_bootstrap_multiaddr(address)
+                .map_err(|error| format!("invalid TENSORVM_BOOTSTRAP_PEERS address: {error}"))
+        })
+        .collect()
+}
+
 fn runtime_local_synthetic_job_producer() -> bool {
     runtime_bool_env("TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER")
 }
@@ -217,6 +237,7 @@ mod tests {
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER",
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
         "TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS",
+        "TENSORVM_BOOTSTRAP_PEERS",
     ];
 
     struct RuntimeEnvGuard {
@@ -266,6 +287,10 @@ mod tests {
             3,
         )
         .expect("runtime node config should build")
+    }
+
+    fn bootstrap_peer_address() -> String {
+        format!("/ip4/127.0.0.1/tcp/4001/p2p/{}", libp2p::PeerId::random())
     }
 
     #[test]
@@ -323,5 +348,40 @@ mod tests {
         assert!(config.can_produce_local_blocks());
         assert!(config.local_synthetic_producer());
         assert!(config.local_block_proposer());
+    }
+
+    #[test]
+    fn runtime_node_config_loads_valid_bootstrap_peer_env() {
+        let _env = RuntimeEnvGuard::new();
+        let bootstrap = bootstrap_peer_address();
+        unsafe {
+            std::env::set_var("TENSORVM_BOOTSTRAP_PEERS", &bootstrap);
+        }
+
+        let config = runtime_validator_config();
+
+        assert_eq!(config.network.bootstrap_addresses, vec![bootstrap]);
+    }
+
+    #[test]
+    fn runtime_node_config_rejects_malformed_bootstrap_peer_env() {
+        let _env = RuntimeEnvGuard::new();
+        unsafe {
+            std::env::set_var("TENSORVM_BOOTSTRAP_PEERS", "/ip4/127.0.0.1/tcp/4001");
+        }
+
+        let error = runtime_node_config(
+            "runtime-profile-test",
+            RuntimeRole::Validator,
+            "127.0.0.1:0",
+            "/ip4/127.0.0.1/tcp/0",
+            None,
+            "token",
+            3,
+        )
+        .expect_err("missing peer id must reject bootstrap env");
+
+        assert!(error.contains("invalid TENSORVM_BOOTSTRAP_PEERS address"));
+        assert!(error.contains("bootstrap address missing peer id"));
     }
 }

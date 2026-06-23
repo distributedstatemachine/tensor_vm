@@ -141,6 +141,7 @@ pub struct NodeConfig {
 pub struct NetworkConfig {
     pub rpc_listen: String,
     pub p2p_listen: String,
+    pub bootstrap_addresses: Vec<String>,
     pub identity_seed: Option<[u8; 32]>,
     pub auth_token: String,
     pub max_requests: usize,
@@ -151,10 +152,16 @@ impl NetworkConfig {
         Self {
             rpc_listen: rpc_listen.into(),
             p2p_listen: p2p_listen.into(),
+            bootstrap_addresses: Vec::new(),
             identity_seed: None,
             auth_token: String::new(),
             max_requests: 0,
         }
+    }
+
+    pub fn with_bootstrap_addresses(mut self, addresses: Vec<String>) -> Self {
+        self.bootstrap_addresses = addresses;
+        self
     }
 
     pub fn with_identity_seed(mut self, identity_seed: Option<[u8; 32]>) -> Self {
@@ -410,6 +417,7 @@ mod tests {
         assert_eq!(local_validator.network.identity_seed, Some([7; 32]));
         assert_eq!(local_validator.network.auth_token, "secret");
         assert_eq!(local_validator.network.max_requests, 25);
+        assert!(local_validator.network.bootstrap_addresses.is_empty());
         assert!(!local_gateway.can_produce_local_blocks());
         assert!(!local_gateway.local_block_proposer());
         assert!(!local_gateway.local_synthetic_producer());

@@ -8,7 +8,7 @@ mod wire;
 
 pub use behaviour::TensorVmNetworkBehaviour;
 pub use node::{TensorVmLibp2pNode, build_libp2p_node};
-pub use peer_book::{PeerBookStore, PeerRecord};
+pub use peer_book::{PeerBookStore, PeerRecord, normalize_bootstrap_multiaddr};
 pub use request_response::P2pRequestResponseBehaviour;
 pub use service::{TensorVmLibp2pService, TensorVmLibp2pServiceInfo, spawn_libp2p_service};
 pub use wire::{

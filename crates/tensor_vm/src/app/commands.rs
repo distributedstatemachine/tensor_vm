@@ -1,6 +1,7 @@
 use std::path::Path;
 
-use super::{KeyValueReportWriter, p2p_identity_report};
+use super::runtime_services::merged_bootstrap_addresses;
+use super::{KeyValueReportWriter, p2p_identity_report, runtime_bootstrap_addresses};
 use crate::{
     Chain, Libp2pControlPlaneConfig, NodeStore, NodeStoreStatus, PeerRecord, hash::hex,
     spawn_libp2p_service, types::hash_bytes,
@@ -80,14 +81,8 @@ pub fn check_service_readiness(
     store
         .load_chain()
         .map_err(|error| format!("failed to load node store {data_dir}: {error}"))?;
-    let bootstrap_addresses = if store.peer_book_store().path().exists() {
-        store
-            .peer_book_store()
-            .load_bootstrap_addresses()
-            .map_err(|error| format!("failed to load libp2p peer book {data_dir}: {error}"))?
-    } else {
-        Vec::new()
-    };
+    let configured_bootstrap_addresses = runtime_bootstrap_addresses()?;
+    let bootstrap_addresses = merged_bootstrap_addresses(&store, &configured_bootstrap_addresses)?;
     let bootstrap_peer_count = bootstrap_addresses.len();
     let p2p_config = Libp2pControlPlaneConfig {
         listen_addresses: vec![p2p_listen.to_owned()],

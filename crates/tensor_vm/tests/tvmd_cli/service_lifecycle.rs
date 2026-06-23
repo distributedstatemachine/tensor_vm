@@ -471,3 +471,61 @@ fn service_cli_lifecycle_starts_libp2p_and_serves_public_surfaces() {
 
     std::fs::remove_dir_all(data_dir).expect("test dir must be removed");
 }
+
+#[test]
+fn service_readiness_loads_runtime_bootstrap_peers_from_env_without_peer_book() {
+    let data_dir = unique_test_dir("service-env-bootstrap");
+    let data_dir_text = data_dir.to_string_lossy().into_owned();
+
+    let init = run_tvmd(&["node", "init", "--data-dir", &data_dir_text]);
+    assert_eq!(stdout_value(&init, "command"), "service_init");
+    assert!(!data_dir.join("peers.book").exists());
+
+    let peer_id = PeerId::random();
+    let bootstrap_address = format!("/ip4/127.0.0.1/tcp/4001/p2p/{peer_id}");
+    let readiness = Command::new(env!("CARGO_BIN_EXE_tvmd"))
+        .args([
+            "node",
+            "check",
+            "--p2p-listen",
+            "/ip4/127.0.0.1/tcp/0",
+            "--data-dir",
+            &data_dir_text,
+        ])
+        .env("TENSORVM_BOOTSTRAP_PEERS", &bootstrap_address)
+        .current_dir(workspace_root())
+        .output()
+        .expect("tvmd node check must execute");
+    assert!(
+        readiness.status.success(),
+        "tvmd node check failed\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&readiness.stdout),
+        String::from_utf8_lossy(&readiness.stderr)
+    );
+    let readiness = String::from_utf8(readiness.stdout).expect("readiness stdout must be utf8");
+    assert_eq!(stdout_value(&readiness, "command"), "service_readiness");
+    assert_eq!(stdout_u64(&readiness, "p2p_bootstrap_peers"), 1);
+
+    let failure = Command::new(env!("CARGO_BIN_EXE_tvmd"))
+        .args([
+            "node",
+            "check",
+            "--p2p-listen",
+            "/ip4/127.0.0.1/tcp/0",
+            "--data-dir",
+            &data_dir_text,
+        ])
+        .env("TENSORVM_BOOTSTRAP_PEERS", "/ip4/127.0.0.1/tcp/4001")
+        .current_dir(workspace_root())
+        .output()
+        .expect("tvmd node check must execute");
+    assert!(
+        !failure.status.success(),
+        "tvmd node check unexpectedly succeeded\nstdout:\n{}\nstderr:\n{}",
+        String::from_utf8_lossy(&failure.stdout),
+        String::from_utf8_lossy(&failure.stderr)
+    );
+    let stderr = String::from_utf8(failure.stderr).expect("failure stderr must be utf8");
+    assert!(stderr.contains("invalid TENSORVM_BOOTSTRAP_PEERS address"));
+    assert!(stderr.contains("bootstrap address missing peer id"));
+}

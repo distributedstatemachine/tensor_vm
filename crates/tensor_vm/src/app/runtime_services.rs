@@ -3,7 +3,7 @@ use crate::{
     Faucet, Libp2pControlPlaneConfig, NodeStore, RpcGateway, RpcHttpServer, RpcNode, RpcPolicy,
     Tensor, TensorVmLibp2pService, spawn_libp2p_service, storage::TensorArtifact, types::Hash,
 };
-use std::collections::BTreeMap;
+use std::collections::{BTreeMap, BTreeSet};
 
 pub struct RuntimeServices {
     pub store: NodeStore,
@@ -51,19 +51,8 @@ pub fn start_runtime_services(
             config.node.data_dir().display()
         )
     })?;
-    let bootstrap_addresses = if store.peer_book_store().path().exists() {
-        store
-            .peer_book_store()
-            .load_bootstrap_addresses()
-            .map_err(|error| {
-                format!(
-                    "failed to load libp2p peer book {}: {error}",
-                    config.node.data_dir().display()
-                )
-            })?
-    } else {
-        Vec::new()
-    };
+    let bootstrap_addresses =
+        merged_bootstrap_addresses(&store, &config.node.network.bootstrap_addresses)?;
     let bootstrap_peer_count = bootstrap_addresses.len();
     let p2p_config = Libp2pControlPlaneConfig {
         listen_addresses: vec![network.p2p_listen.clone()],
@@ -121,6 +110,36 @@ pub fn start_runtime_services(
         p2p_service,
         p2p_metadata,
     })
+}
+
+pub(super) fn merged_bootstrap_addresses(
+    store: &NodeStore,
+    configured_addresses: &[String],
+) -> std::result::Result<Vec<String>, String> {
+    let mut seen = BTreeSet::new();
+    let mut addresses = Vec::new();
+    for address in configured_addresses {
+        if seen.insert(address.clone()) {
+            addresses.push(address.clone());
+        }
+    }
+    if store.peer_book_store().path().exists() {
+        for address in store
+            .peer_book_store()
+            .load_bootstrap_addresses()
+            .map_err(|error| {
+                format!(
+                    "failed to load libp2p peer book {}: {error}",
+                    store.data_dir().display()
+                )
+            })?
+        {
+            if seen.insert(address.clone()) {
+                addresses.push(address);
+            }
+        }
+    }
+    Ok(addresses)
 }
 
 fn hydrate_program_store(

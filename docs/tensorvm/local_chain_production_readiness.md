@@ -836,8 +836,10 @@ profile in serve/status surfaces, and gates synthetic production through `NodeCo
 interval, local-producer settings, network listen/auth/identity/max-request settings, and storage path.
 `runtime_node_config` now scopes `TENSORVM_LOCAL_CPU_*` production knobs to the local CPU profile, and
 `NodeConfig` rejects local synthetic/block-proposer capability for public-testnet and mainnet profiles even
-if a shared operator environment still exports local-only flags. Bootstrap peer loading still comes from
-the persisted peer book.
+if a shared operator environment still exports local-only flags. Runtime adapters now also accept
+`TENSORVM_BOOTSTRAP_PEERS` as comma-separated full libp2p bootstrap multiaddrs, validate them through the
+same peer-book bootstrap rules, and merge them with persisted peer-book records for service startup and
+readiness checks.
 
 ### Phase 6: Restart And Recovery
 

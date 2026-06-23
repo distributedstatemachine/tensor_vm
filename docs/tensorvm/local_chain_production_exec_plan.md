@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 209 validation passed: Profile-Scoped Local Runtime Knobs.
+- Active feature: Iteration 210 in validation: Runtime Bootstrap Peer Policy.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. Iteration 207 tightened the
@@ -24,7 +24,8 @@ archive commit anchors only.
   same URL-diversity rule to pre-run public service launch plans so reused service URLs cannot pass
   public preflight. Iteration 209 scopes local CPU runtime production knobs to the local CPU profile so
   public/mainnet profiles cannot inherit local synthetic producer/proposer behavior from a shared
-  environment.
+  environment. Iteration 210 adds runtime-configured bootstrap peers so startup/readiness can merge
+  `TENSORVM_BOOTSTRAP_PEERS` with durable peer-book records.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -39,7 +40,7 @@ archive commit anchors only.
 | Shared chain engine/profile-neutral API | Complete for current core | Shared `ChainEngine`, `ChainCommand`, profile tests, runtime profile env-scope tests, Gate 0 | Preserve one transition engine while adding runtime features |
 | Role-owned miner receipts | Implemented locally | Miner role submits receipts through `ChainCommand::SubmitReceipt`; Docker checker reports live miner submissions | Keep Docker checker in local CPU gate |
 | Role-owned validator attestations/votes/proposer tick | Implemented locally | Validator role submits attestations, block votes, and useful proposals through chain commands; local CPU proof covers convergence and delayed proposer rewards | Continue public/CUDA evidence |
-| Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection messages, drand, and validator reveals | Extend only through shared codecs/events |
+| Network-visible event ingestion | Implemented locally | Node runtime ingests decoded jobs, receipts, attestations, blocks, votes, audits, block-check challenges, trace-bisection messages, drand, validator reveals, and runtime/peer-book bootstrap config | Extend only through shared codecs/events |
 | Canonical useful-verification block validity | Partial | UVPoW, selected roots, checks roots, beacon binding, parent snapshots, delayed rewards, diagnostic challenges, side branches, and trace-bisection admission/economics | Add deployed public/CUDA proof and deployed dispute evidence |
 | Tensor IR graph language | Partial | `TensorGraph`, canonical JSON/`graph_id`, registry validation, graph receipts, exact Tier-B replay, receipt verification scenarios, packed int8 APIs, const blobs, role-owned graph execution, local checker graph evidence, and explorer API graph rendering | Continue CUDA graph evidence |
 | Redundancy and delayed settlement | Partial | Independent miner assignment, operator-distinct redundant quorum, watcher flags, state-rooted redundant delay records, delayed pending reward holds, and state-rooted proposer reward release tombstones | Continue Tier-C committee policy and deployed public-operator evidence |
@@ -48,6 +49,78 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 210: Runtime Bootstrap Peer Policy
+
+Feature capability: allow node runtime adapters to accept profile/runtime-scoped bootstrap libp2p
+multiaddrs from `TENSORVM_BOOTSTRAP_PEERS`, validate them through the shared bootstrap multiaddr rules, and
+merge them with the durable peer book when starting or checking libp2p.
+
+Readiness requirements covered: shared profiles and runtime adapters should own public bootstrap policy;
+bootstrap loading should not depend only on a pre-seeded persisted peer book.
+
+Canonical owner: `NetworkConfig` owns runtime network bootstrap policy; `p2p::peer_book` owns bootstrap
+multiaddr validation and normalization.
+
+Adapter callers: `tvmd node serve`, `tvmd miner run`, `tvmd validator run`, `tvmd proposer run`, and
+`tvmd node check`.
+
+Old shortcut being removed: runtime bootstrap peers could only come from persisted peer-book state, so
+public/testnet runtime launch policy had to be staged through `tvmd node peer add` even when an operator
+provided bootstrap peers in the process environment.
+
+Regression test that proves the shortcut is gone: set `TENSORVM_BOOTSTRAP_PEERS` with a valid full
+`/p2p/<peer-id>` multiaddr and assert runtime node config carries it; set malformed, zero-TCP, or
+peer-id-less values and assert config construction rejects them.
+
+Behavior with local synthetic block production disabled: unchanged; bootstrap policy is independent of
+local production.
+
+Behavior for producer and non-producer roles: all roles use the same bootstrap merge path.
+
+Structured evidence source: readiness/runtime status `p2p_bootstrap_peers` count from merged runtime
+bootstrap addresses and peer-book records.
+
+Finality source: unchanged.
+
+Wire-size and codec boundary: no consensus wire change; libp2p bootstrap multiaddrs remain bounded by
+normal `Multiaddr` parsing before service startup.
+
+Parallel subagents to run: none. Tooling requires explicit delegation authorization, so the parent remains
+the single writer.
+
+Tests/checkers/docs to add or update: runtime config env tests, service lifecycle readiness coverage,
+readiness/status docs, and this exec plan.
+
+Narrow validation commands: focused runtime-config and service lifecycle tests.
+
+Broad validation commands before commit: Gate 0 first, full tensor_vm lib tests, selected tvmd CLI/runtime
+tests, clippy with warnings denied, rustfmt check, and diff check.
+
+Expected observable evidence: `TENSORVM_BOOTSTRAP_PEERS` can start/check libp2p with nonzero
+`p2p_bootstrap_peers` even without a peer-book file, while persisted peer-book bootstrap peers still work.
+
+Out of scope: public DNS ownership, external reachability probing, Kademlia rendezvous, or deployed
+7-day evidence.
+
+Split trigger: split if runtime bootstrap env support requires changing libp2p discovery behavior rather
+than config validation and startup merging.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused bootstrap multiaddr validation passed:
+  `cargo test -p tensor_vm p2p::peer_book::tests::bootstrap_multiaddr_normalization_requires_tcp_and_peer_id --lib`.
+- Focused runtime bootstrap env config passed:
+  `cargo test -p tensor_vm app::runtime_config::tests::runtime_node_config_ --lib`.
+- Focused process readiness bootstrap env path passed:
+  `cargo test -p tensor_vm --test tvmd_cli service_readiness_loads_runtime_bootstrap_peers_from_env_without_peer_book`.
+- `cargo test -p tensor_vm --lib` passed: 564 passed, 0 failed.
+- `cargo test -p tensor_vm --test tvmd_cli` passed: 9 passed, 0 failed.
+- `cargo test -p tensor_vm --test tvmd_runtime` passed: 46 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
 
 ### Iteration 209: Profile-Scoped Local Runtime Knobs
 
