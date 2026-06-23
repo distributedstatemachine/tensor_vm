@@ -5,8 +5,9 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 214 in progress: Validator VRF Lifecycle Requires Available Receipts.
-- Current status: public evidence remains deployment-gated; this iteration tightens the scalar
+- Active feature: Iteration 214 complete locally, pending validation metadata push: Validator VRF Lifecycle
+  Requires Available Receipts.
+- Current status: public evidence remains deployment-gated; Iteration 214 tightens the scalar
   validator-VRF lifecycle evidence flag so it cannot pass when checked receipts exceed available receipt
   artifacts. Index-consistency Tensor IR ops are registry vocabulary only; Iteration 213 adds
   chain-command boundary evidence that `gather`/`scatter`/`embedding` cannot be registered as consensus
@@ -112,6 +113,24 @@ record hashing.
 
 Split trigger: split if the stricter scalar flag requires changing raw record schema or public manifest
 parsing.
+
+Validation evidence (June 23, 2026):
+
+- Gate 0 first command passed: `cargo test -p tensor_vm local_testnet --release` ran five release lib
+  local-testnet tests plus `local_testnet_service_gateway_does_not_produce_local_blocks`.
+- Focused run-evidence regression passed:
+  `cargo test -p tensor_vm public_testnet_run_evidence_requires_independent_external_operators --lib`.
+- Focused lifecycle bundle regression passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_validator_vrf_lifecycle_for_full_spec --lib`.
+- Affected evidence fixture/regression tests passed:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_cuda_graph_execution_for_full_spec --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_publication_and_audit_records --lib`,
+  `cargo test -p tensor_vm public_testnet_evidence_manifest_parses_into_bundle --lib`, and
+  `cargo test -p tensor_vm validate_public_evidence_manifest_reports_default_criteria_status --lib`.
+- `cargo test -p tensor_vm --lib` passed: 566 passed, 0 failed.
+- `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
+- `cargo fmt --all -- --check` and `git diff --check` passed.
+- Implementation commit: `b0040b7` (`Require availability for VRF lifecycle evidence`).
 
 ### Iteration 213: Index-Consistency Ops Rejected at Program Registration
 
