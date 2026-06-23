@@ -137,7 +137,7 @@ Validation evidence (June 23, 2026):
   --all-targets -- -D warnings`.
 - Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
   target/tarpaulin` produced 85.02% workspace line coverage, 23593/27749 lines covered.
-- Implementation commit: pending.
+- Implementation commit: `d185f28` (`Delay keyed validator rewards until keyed VRF reveal`).
 
 ### Iteration 216: Compact Full-Spec Evidence Fixtures For Coverage Runs
 
