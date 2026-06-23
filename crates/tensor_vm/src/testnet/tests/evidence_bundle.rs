@@ -1182,6 +1182,63 @@ fn public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_f
     assert!(report.independently_checkable);
     assert!(!report.full_spec_evidence_met);
 
+    let resign_detection_records = |bundle: &mut PublicTestnetEvidenceBundle| {
+        let detection_roots = bundle
+            .detection_measurement_raw_records
+            .iter()
+            .map(|record| record.record_root())
+            .collect::<Vec<_>>();
+        let detection_root = aggregate_public_evidence_record_roots(
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            &detection_roots,
+        )
+        .unwrap();
+        let record_count = bundle.detection_measurement_records;
+        resign_record_summary_and_artifact(
+            bundle,
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            detection_root,
+            record_count,
+        );
+    };
+
+    let mut malformed_mechanism = full_spec_bundle.clone();
+    malformed_mechanism.detection_measurement_raw_records[0].mechanism =
+        String::from("bad_mechanism");
+    resign_detection_records(&mut malformed_mechanism);
+    let report = malformed_mechanism.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut zero_subject = full_spec_bundle.clone();
+    zero_subject.detection_measurement_raw_records[0].subject_root = [0; 32];
+    resign_detection_records(&mut zero_subject);
+    let report = zero_subject.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut zero_sample = full_spec_bundle.clone();
+    zero_sample.detection_measurement_raw_records[0].sample_count = 0;
+    zero_sample.detection_measurement_raw_records[0].detected_count = 0;
+    resign_detection_records(&mut zero_sample);
+    let report = zero_sample.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
+    let mut overdetected = full_spec_bundle.clone();
+    overdetected.detection_measurement_raw_records[0].detected_count = overdetected
+        .detection_measurement_raw_records[0]
+        .sample_count
+        .saturating_add(1);
+    resign_detection_records(&mut overdetected);
+    let report = overdetected.evaluate(&full_spec_criteria, full_spec_block_time);
+    assert!(report.has_deployed_detection_measurement_records);
+    assert!(report.independently_checkable);
+    assert!(!report.full_spec_evidence_met);
+
     let mut mismatched_raw_root = full_spec_bundle;
     let record_count = mismatched_raw_root.detection_measurement_records;
     resign_record_summary_and_artifact(

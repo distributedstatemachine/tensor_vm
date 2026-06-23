@@ -524,14 +524,7 @@ impl PublicTestnetEvidenceBundle {
         self.has_public_data_availability_measurement_records()
             && self.has_public_invalid_work_rejection_records()
             && self.has_public_reward_settlement_records()
-            && self.raw_operational_records_match(
-                PublicEvidenceRecordKind::DetectionMeasurements,
-                self.detection_measurement_records,
-                &self.detection_measurement_root,
-                self.detection_measurement_raw_records
-                    .iter()
-                    .map(|record| record.record_root()),
-            )
+            && self.has_public_detection_measurement_records()
     }
 
     fn has_public_data_availability_measurement_records(&self) -> bool {
@@ -586,6 +579,37 @@ impl PublicTestnetEvidenceBundle {
                 .iter()
                 .map(|record| record.record_root()),
         )
+    }
+
+    fn has_public_detection_measurement_records(&self) -> bool {
+        if !self
+            .detection_measurement_raw_records
+            .iter()
+            .all(Self::detection_measurement_record_fields_valid)
+        {
+            return false;
+        }
+        self.raw_operational_records_match(
+            PublicEvidenceRecordKind::DetectionMeasurements,
+            self.detection_measurement_records,
+            &self.detection_measurement_root,
+            self.detection_measurement_raw_records
+                .iter()
+                .map(|record| record.record_root()),
+        )
+    }
+
+    fn detection_measurement_record_fields_valid(
+        record: &super::PublicDetectionMeasurementRecord,
+    ) -> bool {
+        !record.mechanism.is_empty()
+            && record
+                .mechanism
+                .bytes()
+                .all(|byte| byte.is_ascii_lowercase() || byte.is_ascii_digit() || byte == b'-')
+            && record.subject_root != [0; 32]
+            && record.sample_count > 0
+            && record.detected_count <= record.sample_count
     }
 
     fn has_public_validator_vrf_lifecycle_records(&self) -> bool {

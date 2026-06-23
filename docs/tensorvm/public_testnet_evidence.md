@@ -547,7 +547,7 @@ with the record kind and exact line bytes only after the file parser validates t
 `validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,committed|revealed,<block>`.
 Reward-settlement participant IDs must be valid 64-character hex IDs, detection mechanisms must be
 lowercase ASCII letters, digits, or `-`, sample count must be nonzero, and detected count cannot exceed
-sample count. Saved raw artifacts can therefore produce matching
+sample count. Detection measurement subject roots must be nonzero. Saved raw artifacts can therefore produce matching
 summary roots and artifact locators without hand-copying individual `record_root=<hex>` values.
 Whitespace-padded record lines and empty fields are rejected.
 
@@ -565,7 +565,8 @@ manifest-level raw `block_history_record=...`, `finality_history_record=...`,
 `data_availability_measurement=...` lines with distinct nonzero receipt roots,
 `invalid_work_rejection=...` lines with distinct nonzero receipt roots,
 `reward_settlement=...` lines with distinct nonzero receipt roots and nonzero miner/validator IDs, and
-`detection_measurement=...` lines, plus raw `validator_vrf_lifecycle=...` lines with distinct receipt roots whose aggregate roots
+`detection_measurement=...` lines with valid mechanism labels, nonzero subject roots, nonzero samples,
+and detected counts not exceeding samples, plus raw `validator_vrf_lifecycle=...` lines with distinct receipt roots whose aggregate roots
 match the signed chain-history and operational summaries. Full-spec randomness
 records must be `accepted` and use `drand-v1` or `validator-vrf-v1`; a
 `local-deterministic-fixture-v1` record can exercise parsers but cannot satisfy full-spec public randomness

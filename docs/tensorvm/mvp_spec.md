@@ -2414,7 +2414,8 @@ operators can derive summary roots and artifact locators from captured records w
 `validator_vrf_lifecycle=<receipt-root-hex>,<validator-id-hex>,<beacon-round>,committed|revealed,<block>`.
 Whitespace-padded record lines or empty fields are rejected, reward-settlement participant IDs must be
 valid 64-character hex IDs, detection mechanisms must be lowercase ASCII letters, digits, or `-`,
-sample count must be nonzero, and detected count cannot exceed sample count.
+sample count must be nonzero, detected count cannot exceed sample count, and detection measurement
+subject roots must be nonzero.
 Run-level counters must be internally consistent before the public evidence gate can pass: finalized
 blocks cannot exceed observed blocks, and available tensor receipts cannot exceed checked tensor receipts.
 The post-run evidence manifest must also include `cuda_verified_miner_count`, derived from CUDA kernel and
@@ -2426,6 +2427,8 @@ the CUDA miner count to cover the counted public miners, the CUDA graph-executio
 positive without exceeding checked or available receipt counts, raw data-availability measurement records
 to equal the checked receipt count with distinct nonzero receipt roots, raw invalid-work and
 reward-settlement records to use distinct nonzero receipt roots and nonzero settlement participant IDs,
+raw detection-measurement records to use valid mechanism labels, nonzero subject roots, nonzero samples,
+and detected counts not exceeding samples,
 signed validator VRF lifecycle
 records to equal the checked receipt count, use distinct receipt roots, and aggregate to the signed lifecycle root,
 and positive signed deployed detection-measurement records with raw

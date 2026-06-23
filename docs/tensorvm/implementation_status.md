@@ -470,7 +470,8 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   `cuda_graph_execution_receipts` to prove at least one CUDA graph-execution receipt without exceeding
   checked or available receipt counts, raw data-availability measurement records to cover checked receipts
   with distinct nonzero receipt roots, raw invalid-work and reward-settlement records to use distinct
-  nonzero receipt roots with nonzero settlement participant IDs, and signed `validator_vrf_lifecycle_records` with raw revealed
+  nonzero receipt roots with nonzero settlement participant IDs, raw detection-measurement records to match
+  manifest field semantics, and signed `validator_vrf_lifecycle_records` with raw revealed
   lifecycle records to cover every checked receipt's deployed validator VRF commit-to-reveal reward-delay
   lifecycle with distinct receipt roots and aggregate to the signed lifecycle root, plus positive signed deployed
   detection-measurement records whose raw records aggregate to the signed summary, plus the default 7-day, 10-miner,

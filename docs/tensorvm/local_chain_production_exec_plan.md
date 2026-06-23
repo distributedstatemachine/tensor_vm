@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 200 pushed: Unique Public Settlement Receipt Coverage Gate.
+- Active feature: Iteration 201 in progress: Public Detection Measurement Field Gate.
 - Current status: post-run public evidence requires `cuda_verified_miner_count` to cover counted public
   miners, positive `cuda_graph_execution_receipts` within checked/available receipt counts, and
   `validator_vrf_lifecycle_records` covering checked receipts exactly. This iteration adds signed
@@ -14,7 +14,9 @@ archive commit anchors only.
   can pass. Iteration 198 tightened that gate so raw lifecycle records must cover distinct checked receipt
   roots rather than padding the count with multiple records for the same receipt. Iteration 199 applies the
   same checked-receipt coverage rule to raw public data-availability measurement records. Iteration 200
-  extends semantic receipt coverage checks to invalid-work and reward-settlement raw records.
+  extends semantic receipt coverage checks to invalid-work and reward-settlement raw records. Iteration 201
+  aligns direct bundle validation for raw deployed detection measurements with the manifest parser's field
+  checks.
 - Current blockers:
   - Public 7-day external deployment evidence and real CUDA miner/runtime evidence remain outside the
     local CPU proof.
@@ -38,6 +40,78 @@ archive commit anchors only.
 | Public deployment evidence | Not complete | Public evidence validators/templates exist; no real 7-day external run | Keep deployment-gated and do not claim full spec |
 
 ## Active Feature Iteration
+
+### Iteration 201: Public Detection Measurement Field Gate
+
+Feature capability: require full-spec raw deployed detection-measurement records to have a valid mechanism
+label, nonzero subject root, nonzero sample count, and `detected_count <= sample_count` before their signed
+aggregate can satisfy public evidence.
+
+Readiness requirements covered: `mvp_spec.md` and `public_testnet_evidence.md` require deployed detection
+measurements to be independently checkable raw records. Direct bundle construction should enforce the same
+field semantics as line-oriented manifest parsing.
+
+Canonical owner: `PublicTestnetEvidenceBundle::evaluate` owns full-spec public evidence admission and raw
+operational record checks.
+
+Adapter callers: `tvmd public evidence validate`, checked evidence manifests, deployment examples, and
+public evidence docs consume the bundle report.
+
+Old shortcut being removed: a signed detection-measurement summary could aggregate raw records with an
+empty/unknown mechanism, zero subject root, zero sample count, or detected count exceeding sample count
+when the bundle was constructed directly instead of through the manifest parser.
+
+Regression test that proves the shortcut is gone:
+`public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec` will include
+malformed raw detection records whose recomputed signed summaries still fail full-spec evidence.
+
+Behavior with local synthetic block production disabled: unchanged; this is a post-run public evidence
+gate.
+
+Behavior for producer and non-producer roles: unchanged; counted role behavior is observed through public
+run evidence, not mutated by this validator.
+
+Structured evidence source: typed raw
+`detection_measurement=<mechanism>,<subject-root>,<sample-count>,<detected-count>,<block>` records with
+manifest-equivalent field validation.
+
+Finality source: unchanged; signed run-window, block-history, and finality-history evidence remain
+separate gates.
+
+Wire-size and codec boundary: no p2p/consensus wire changes; this only tightens public evidence bundle
+validation.
+
+Parallel subagents to run: none. The decision log says not to spawn subagents without explicit delegation.
+
+Tests/checkers/docs to add or update: public evidence bundle detection-measurement regressions and public
+evidence docs/status wording.
+
+Narrow validation commands: focused public evidence deployed detection-measurement test and public evidence
+manifest round-trip.
+
+Broad validation commands before commit: `cargo fmt --all -- --check`, `git diff --check`,
+`cargo test -p tensor_vm --lib`, `cargo test -p tensor_vm local_testnet --release`, targeted release CLI
+validation, and `cargo clippy -p tensor_vm --all-targets -- -D warnings`.
+
+Expected observable evidence: otherwise complete full-spec public evidence remains non-full-spec when signed
+raw detection-measurement records have malformed fields.
+
+Out of scope: proving the real deployed detection-measurement source, generating external artifacts, or
+changing chain reward-delay mechanics.
+
+Split trigger: split if detection measurement validation needs deployed-run trace replay rather than raw
+record field validation.
+
+Validation evidence, June 23, 2026:
+- Gate 0 first command: `cargo test -p tensor_vm local_testnet --release` passed.
+- Focused regression:
+  `cargo test -p tensor_vm public_testnet_evidence_bundle_requires_deployed_detection_measurements_for_full_spec --lib` passed.
+- Formatting and diff hygiene: `cargo fmt --all -- --check` and `git diff --check` passed.
+- Full library validation: `cargo test -p tensor_vm --lib` passed, 559 tests.
+- Release local-testnet validation: `cargo test -p tensor_vm local_testnet --release` passed after the patch.
+- Release CLI evidence validation:
+  `cargo test -p tensor_vm --test tvmd_cli generated_public_evidence_manifest_round_trips_through_tvmd_validator --release` passed.
+- Lint validation: `cargo clippy -p tensor_vm --all-targets -- -D warnings` passed.
 
 ### Iteration 200: Unique Public Settlement Receipt Coverage Gate
 
