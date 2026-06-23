@@ -144,7 +144,7 @@ Validation evidence (June 23, 2026):
   --all-targets -- -D warnings`.
 - Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
   target/tarpaulin` produced 85.04% workspace line coverage, 23627/27785 lines covered.
-- Implementation commit: `991afcd` (`Bind public raw records to run window`).
+- Implementation commit: `ef2024b` (`Bind public raw records to run window`).
 
 ### Iteration 218: Public VRF Lifecycle Requires Commit/Reveal Pairs
 
