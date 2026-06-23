@@ -137,7 +137,7 @@ Validation evidence (June 23, 2026):
   --all-targets -- -D warnings`.
 - Coverage refresh passed: `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir
   target/tarpaulin` produced 85.03% workspace line coverage, 23616/27775 lines covered.
-- Implementation commit: pending.
+- Implementation commit: `dc9e05b` (`Require public VRF lifecycle commit reveal pairs`).
 
 ### Iteration 217: Keyed VRF Reveals Gate Validator Reward Release
 
