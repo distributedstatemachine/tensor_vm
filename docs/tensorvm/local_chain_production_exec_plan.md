@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 244 in progress: CUDA Field Split Graph Kernel/Conformance.
+- Active feature: Iteration 244 complete and pushed: CUDA Field Split Graph Kernel/Conformance.
 - Current status: v0 work follows the 2026-06-23 owner scope decision: live verified drand consensus
   randomness and local A100 CUDA evidence are in v0 scope; 7-day external public-run evidence is a
   production-launch roadmap milestone. The latest CUDA graph subset now covers scale-0 field
@@ -140,6 +140,8 @@ Validation evidence:
 - `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
   June 24, 2026 with 588 instrumented tests and 84.95% workspace line coverage
   (23831/28053 lines).
+- Commit: `97e5128` (`Add CUDA field split graph support`).
+- Push: `97e5128` pushed to `origin/main` on June 24, 2026.
 
 ## Recent Iterations
 
