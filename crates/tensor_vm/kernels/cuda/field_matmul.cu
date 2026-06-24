@@ -578,6 +578,201 @@ __global__ void field_squared_error_sum_kernel(
     }
 }
 
+// ---- Canonical fixed-point exp-family (Q-format, bit-exact with the CPU
+// reference in tensor.rs; see upow.md §4.8.1). All integer, round-half-to-even.
+typedef __int128 i128;
+
+constexpr uint32_t kQFrac = 32;
+constexpr i128 kQOne = (i128)1 << kQFrac;
+constexpr i128 kQExpUnderflow = (i128)64 << kQFrac;
+constexpr uint32_t kQExpSquarings = 10;
+constexpr i128 kGeluC = (i128)3426888095LL; // round(sqrt(2/pi) * 2^32)
+constexpr i128 kGeluA = (i128)192049463LL;  // round(0.044715  * 2^32)
+
+__device__ i128 q_signed_elem_to_i128(uint64_t v) {
+    uint64_t n = v % kModulus;
+    return n > kModulus / 2 ? (i128)n - (i128)kModulus : (i128)n;
+}
+
+__device__ uint64_t q_signed_i128_to_elem(i128 v) {
+    i128 m = (i128)kModulus;
+    i128 r = v % m;
+    if (r < 0) {
+        r += m;
+    }
+    return (uint64_t)r;
+}
+
+__device__ i128 q_round_div_pow2_half_even(i128 value, uint32_t shift) {
+    if (shift == 0) {
+        return value;
+    }
+    i128 divisor = (i128)1 << shift;
+    i128 magnitude = value < 0 ? -value : value;
+    i128 quotient = magnitude / divisor;
+    i128 remainder = magnitude % divisor;
+    i128 half = divisor / 2;
+    bool round_up = remainder > half || (remainder == half && (quotient & 1) == 1);
+    i128 rounded = round_up ? quotient + 1 : quotient;
+    return value < 0 ? -rounded : rounded;
+}
+
+__device__ i128 q_round_div_half_even(i128 value, i128 divisor) {
+    bool negative = (value < 0) ^ (divisor < 0);
+    i128 num = value < 0 ? -value : value;
+    i128 den = divisor < 0 ? -divisor : divisor;
+    i128 quotient = num / den;
+    i128 remainder = num % den;
+    i128 twice = remainder * 2;
+    bool round_up = twice > den || (twice == den && (quotient & 1) == 1);
+    i128 rounded = round_up ? quotient + 1 : quotient;
+    return negative ? -rounded : rounded;
+}
+
+__device__ i128 q_rescale_half_even(i128 value, int64_t from_scale, int64_t to_scale) {
+    int64_t delta = to_scale - from_scale;
+    if (delta >= 0) {
+        return value * ((i128)1 << (uint32_t)delta);
+    }
+    return q_round_div_pow2_half_even(value, (uint32_t)(-delta));
+}
+
+__device__ i128 q_from_elem(uint64_t v, int64_t scale) {
+    return q_rescale_half_even(q_signed_elem_to_i128(v), scale, (int64_t)kQFrac);
+}
+
+__device__ uint64_t q_to_elem(i128 v, int64_t scale) {
+    return q_signed_i128_to_elem(q_rescale_half_even(v, (int64_t)kQFrac, scale));
+}
+
+__device__ i128 q_mul(i128 a, i128 b) {
+    return q_round_div_pow2_half_even(a * b, kQFrac);
+}
+
+__device__ i128 q_div(i128 a, i128 b) {
+    return q_round_div_half_even(a * kQOne, b);
+}
+
+__device__ i128 q_exp_nonpos(i128 dq) {
+    if (dq > 0) {
+        return 0;
+    }
+    if (dq <= -kQExpUnderflow) {
+        return 0;
+    }
+    i128 r = q_round_div_pow2_half_even(dq, kQExpSquarings);
+    i128 inv2 = kQOne / 2;
+    i128 inv6 = q_round_div_half_even(kQOne, 6);
+    i128 inv24 = q_round_div_half_even(kQOne, 24);
+    i128 inv120 = q_round_div_half_even(kQOne, 120);
+    i128 p = inv120;
+    p = q_mul(p, r) + inv24;
+    p = q_mul(p, r) + inv6;
+    p = q_mul(p, r) + inv2;
+    p = q_mul(p, r) + kQOne;
+    p = q_mul(p, r) + kQOne;
+    for (uint32_t i = 0; i < kQExpSquarings; ++i) {
+        p = q_mul(p, p);
+    }
+    return p;
+}
+
+__device__ i128 q_exp(i128 xq) {
+    if (xq <= 0) {
+        return q_exp_nonpos(xq);
+    }
+    i128 e = q_exp_nonpos(-xq);
+    if (e == 0) {
+        return 0; // overflow sentinel; CPU reference errors, so unused in-domain
+    }
+    return q_div(kQOne, e);
+}
+
+__device__ i128 q_sigmoid(i128 xq) {
+    if (xq >= 0) {
+        i128 e = q_exp_nonpos(-xq);
+        return q_div(kQOne, kQOne + e);
+    }
+    i128 e = q_exp_nonpos(xq);
+    return q_div(e, kQOne + e);
+}
+
+__device__ i128 q_tanh(i128 zq) {
+    i128 s = q_sigmoid(zq * 2);
+    return s * 2 - kQOne;
+}
+
+__device__ i128 q_silu(i128 xq) {
+    return q_mul(xq, q_sigmoid(xq));
+}
+
+__device__ i128 q_gelu(i128 xq) {
+    i128 x2 = q_mul(xq, xq);
+    i128 x3 = q_mul(x2, xq);
+    i128 inner = q_mul(kGeluC, xq + q_mul(kGeluA, x3));
+    i128 t = q_tanh(inner);
+    i128 scaled = q_mul(xq, kQOne + t);
+    return q_round_div_pow2_half_even(scaled, 1);
+}
+
+// 0=exp 1=sigmoid 2=tanh 3=silu 4=gelu
+__device__ i128 q_fixed_unary(uint32_t op, i128 xq) {
+    switch (op) {
+        case 0: return q_exp(xq);
+        case 1: return q_sigmoid(xq);
+        case 2: return q_tanh(xq);
+        case 3: return q_silu(xq);
+        default: return q_gelu(xq);
+    }
+}
+
+__global__ void fixed_unary_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len,
+    int64_t scale,
+    uint32_t op) {
+    uint64_t index = blockIdx.x * blockDim.x + threadIdx.x;
+    if (index < len) {
+        i128 xq = q_from_elem(input[index], scale);
+        out[index] = q_to_elem(q_fixed_unary(op, xq), scale);
+    }
+}
+
+__global__ void fixed_softmax_kernel(
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t outer,
+    uint64_t axis,
+    uint64_t inner,
+    int64_t scale) {
+    uint64_t gid = blockIdx.x * blockDim.x + threadIdx.x;
+    uint64_t groups = outer * inner;
+    if (gid >= groups || axis == 0) {
+        return;
+    }
+    uint64_t o = gid / inner;
+    uint64_t i = gid % inner;
+    i128 max_q = q_from_elem(input[(o * axis) * inner + i], scale);
+    for (uint64_t l = 1; l < axis; ++l) {
+        i128 q = q_from_elem(input[((o * axis) + l) * inner + i], scale);
+        if (q > max_q) {
+            max_q = q;
+        }
+    }
+    i128 sum = 0;
+    for (uint64_t l = 0; l < axis; ++l) {
+        i128 q = q_from_elem(input[((o * axis) + l) * inner + i], scale);
+        sum += q_exp_nonpos(q - max_q);
+    }
+    for (uint64_t l = 0; l < axis; ++l) {
+        uint64_t idx = ((o * axis) + l) * inner + i;
+        i128 q = q_from_elem(input[idx], scale);
+        i128 e = q_exp_nonpos(q - max_q);
+        out[idx] = q_to_elem(q_div(e, sum), scale);
+    }
+}
+
 int fail(cudaError_t status, int code) {
     return status == cudaSuccess ? 0 : code;
 }
@@ -2212,5 +2407,116 @@ extern "C" int tensor_vm_cuda_field_squared_error_sum(
     cudaFree(device_lhs);
     cudaFree(device_rhs);
     cudaFree(device_partials);
+    return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_fixed_unary(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t len,
+    int64_t scale,
+    uint32_t op) {
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (op > 4) {
+        return -2;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t blocks = block_count(len);
+        fixed_unary_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_input, device_out, len, scale, op);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
+    return fail(status, -5);
+}
+
+extern "C" int tensor_vm_cuda_fixed_softmax(
+    uint32_t device_index,
+    const uint64_t* input,
+    uint64_t* out,
+    uint64_t outer,
+    uint64_t axis,
+    uint64_t inner,
+    int64_t scale) {
+    if (input == nullptr || out == nullptr) {
+        return -1;
+    }
+    if (axis == 0) {
+        return -2;
+    }
+    int device_status = select_device(device_index);
+    if (device_status != 0) {
+        return device_status;
+    }
+    uint64_t len = outer * axis * inner;
+    if (len == 0) {
+        return 0;
+    }
+
+    uint64_t* device_input = nullptr;
+    uint64_t* device_out = nullptr;
+    size_t bytes = static_cast<size_t>(len * sizeof(uint64_t));
+    cudaError_t status = cudaMalloc(&device_input, bytes);
+    if (status != cudaSuccess) {
+        return -3;
+    }
+    status = cudaMalloc(&device_out, bytes);
+    if (status != cudaSuccess) {
+        cudaFree(device_input);
+        return -3;
+    }
+
+    status = cudaMemcpy(device_input, input, bytes, cudaMemcpyHostToDevice);
+    if (status == cudaSuccess) {
+        constexpr uint64_t threads_per_block = 256;
+        uint64_t groups = outer * inner;
+        uint64_t blocks = block_count(groups);
+        fixed_softmax_kernel<<<static_cast<unsigned int>(blocks), threads_per_block>>>(
+            device_input, device_out, outer, axis, inner, scale);
+        status = cudaGetLastError();
+    }
+    if (status == cudaSuccess) {
+        status = cudaDeviceSynchronize();
+    }
+    if (status == cudaSuccess) {
+        status = cudaMemcpy(out, device_out, bytes, cudaMemcpyDeviceToHost);
+    }
+
+    cudaFree(device_input);
+    cudaFree(device_out);
     return fail(status, -5);
 }

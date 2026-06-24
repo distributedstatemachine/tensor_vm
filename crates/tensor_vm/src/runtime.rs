@@ -419,6 +419,17 @@ fn execute_cuda_graph_op(
             require_graph_field_tensor(tensor)?;
             cuda::field_relu(device_index, tensor)?
         }
+        "exp" => cuda::field_exp(device_index, one_graph_tensor_value(args)?)?,
+        "sigmoid" => cuda::field_sigmoid(device_index, one_graph_tensor_value(args)?)?,
+        "tanh" => cuda::field_tanh(device_index, one_graph_tensor_value(args)?)?,
+        "silu" => cuda::field_silu(device_index, one_graph_tensor_value(args)?)?,
+        "gelu" => cuda::field_gelu(device_index, one_graph_tensor_value(args)?)?,
+        "softmax" => {
+            let tensor = one_graph_tensor_value(args)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?
+                .ok_or(TvmError::InvalidReceipt("softmax requires dim"))?;
+            cuda::field_softmax(device_index, tensor, dim)?
+        }
         "identity" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -833,6 +844,55 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "sign",
             "relu",
         ]);
+
+        // Canonical fixed-point exp-family: the GPU kernels must be bit-exact
+        // with the CPU Q-format reference (upow.md §4.8.1), joining the
+        // determinism gate. These ops stay Tier-C / not consensus-admitted.
+        let device_index = match backend.kind() {
+            BackendKind::GpuMiner { device } => device
+                .strip_prefix("cuda:")
+                .and_then(|index| index.parse::<u32>().ok())
+                .unwrap_or(0),
+            BackendKind::CpuReference => 0,
+        };
+        let exp_family_input = Tensor::from_vec_with_scale(
+            vec![2, 3],
+            DType::Fixed32,
+            16,
+            [-65536_i128, -32768, 0, 32768, 65536, 131072]
+                .into_iter()
+                .map(crate::tensor::signed_i128_to_elem)
+                .collect(),
+        )?;
+        type CpuUnary = fn(&Tensor) -> Result<Tensor>;
+        type GpuUnary = fn(u32, &Tensor) -> Result<Tensor>;
+        let unary_checks: [(&str, CpuUnary, GpuUnary); 5] = [
+            ("exp", crate::tensor::fixed_point_exp, cuda::field_exp),
+            (
+                "sigmoid",
+                crate::tensor::fixed_point_sigmoid,
+                cuda::field_sigmoid,
+            ),
+            ("tanh", crate::tensor::fixed_point_tanh, cuda::field_tanh),
+            ("silu", crate::tensor::fixed_point_silu, cuda::field_silu),
+            ("gelu", crate::tensor::fixed_point_gelu, cuda::field_gelu),
+        ];
+        for (name, cpu_op, gpu_op) in unary_checks {
+            if cpu_op(&exp_family_input)? != gpu_op(device_index, &exp_family_input)? {
+                return Err(TvmError::VerificationFailed(
+                    "gpu exp-family conformance failed",
+                ));
+            }
+            passed_ops.insert(name);
+        }
+        if crate::tensor::fixed_point_softmax(&exp_family_input, 1)?
+            != cuda::field_softmax(device_index, &exp_family_input, 1)?
+        {
+            return Err(TvmError::VerificationFailed(
+                "gpu softmax conformance failed",
+            ));
+        }
+        passed_ops.insert("softmax");
 
         Ok(ConformanceProfile {
             suite_hash: conformance_suite_hash(),
@@ -1471,6 +1531,23 @@ mod cuda {
             out: *mut u64,
             len: u64,
         ) -> i32;
+        fn tensor_vm_cuda_fixed_unary(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            len: u64,
+            scale: i64,
+            op: u32,
+        ) -> i32;
+        fn tensor_vm_cuda_fixed_softmax(
+            device_index: u32,
+            input: *const u64,
+            out: *mut u64,
+            outer: u64,
+            axis: u64,
+            inner: u64,
+            scale: i64,
+        ) -> i32;
     }
 
     pub fn device_count() -> Result<u32> {
@@ -1653,6 +1730,92 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(input.shape().to_vec(), input.dtype(), out)
+    }
+
+    fn require_fixed32_tensor(tensor: &Tensor) -> Result<()> {
+        if tensor.dtype() == DType::Fixed32 {
+            Ok(())
+        } else {
+            Err(TvmError::InvalidReceipt(
+                "cuda fixed transcendental requires fixed-point dtype",
+            ))
+        }
+    }
+
+    // Canonical fixed-point exp-family op codes; must match field_matmul.cu.
+    const FIXED_EXP: u32 = 0;
+    const FIXED_SIGMOID: u32 = 1;
+    const FIXED_TANH: u32 = 2;
+    const FIXED_SILU: u32 = 3;
+    const FIXED_GELU: u32 = 4;
+
+    fn fixed_unary(device_index: u32, input: &Tensor, op: u32) -> Result<Tensor> {
+        require_fixed32_tensor(input)?;
+        let mut out = vec![0; input.len()];
+        let code = unsafe {
+            tensor_vm_cuda_fixed_unary(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                input.len() as u64,
+                input.scale(),
+                op,
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec_with_scale(input.shape().to_vec(), input.dtype(), input.scale(), out)
+    }
+
+    pub fn field_exp(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        fixed_unary(device_index, input, FIXED_EXP)
+    }
+
+    pub fn field_sigmoid(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        fixed_unary(device_index, input, FIXED_SIGMOID)
+    }
+
+    pub fn field_tanh(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        fixed_unary(device_index, input, FIXED_TANH)
+    }
+
+    pub fn field_silu(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        fixed_unary(device_index, input, FIXED_SILU)
+    }
+
+    pub fn field_gelu(device_index: u32, input: &Tensor) -> Result<Tensor> {
+        fixed_unary(device_index, input, FIXED_GELU)
+    }
+
+    pub fn field_softmax(device_index: u32, input: &Tensor, dim: usize) -> Result<Tensor> {
+        require_fixed32_tensor(input)?;
+        let shape = input.shape().to_vec();
+        if dim >= shape.len() {
+            return Err(TvmError::InvalidReceipt("cuda softmax dim out of range"));
+        }
+        let axis = shape[dim];
+        if axis == 0 {
+            return Err(TvmError::InvalidReceipt("cuda softmax over empty axis"));
+        }
+        let inner: usize = shape[dim + 1..].iter().product();
+        let outer: usize = shape[..dim].iter().product();
+        let mut out = vec![0; input.len()];
+        let code = unsafe {
+            tensor_vm_cuda_fixed_softmax(
+                device_index,
+                input.as_slice().as_ptr(),
+                out.as_mut_ptr(),
+                outer as u64,
+                axis as u64,
+                inner as u64,
+                input.scale(),
+            )
+        };
+        if code != 0 {
+            return Err(cuda_error(code));
+        }
+        Tensor::from_vec_with_scale(shape, input.dtype(), input.scale(), out)
     }
 
     pub fn field_identity(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -2422,6 +2585,61 @@ mod tests {
         );
         assert_eq!(gpu.device(), "cuda:0");
         assert_eq!(cpu_out.commitment_root(), gpu_out.commitment_root());
+    }
+
+    #[cfg(feature = "cuda-kernels")]
+    #[test]
+    fn cpu_and_gpu_backends_match_fixed_exp_family() {
+        let raw = [
+            -131072_i128,
+            -65536,
+            -32768,
+            0,
+            32768,
+            65536,
+            131072,
+            262144,
+        ];
+        let data: Vec<_> = raw
+            .into_iter()
+            .map(crate::tensor::signed_i128_to_elem)
+            .collect();
+        let input = Tensor::from_vec_with_scale(vec![2, 4], DType::Fixed32, 16, data).unwrap();
+        let device = 0u32;
+        assert_eq!(
+            crate::tensor::fixed_point_exp(&input).unwrap(),
+            cuda::field_exp(device, &input).unwrap()
+        );
+        assert_eq!(
+            crate::tensor::fixed_point_sigmoid(&input).unwrap(),
+            cuda::field_sigmoid(device, &input).unwrap()
+        );
+        assert_eq!(
+            crate::tensor::fixed_point_tanh(&input).unwrap(),
+            cuda::field_tanh(device, &input).unwrap()
+        );
+        assert_eq!(
+            crate::tensor::fixed_point_silu(&input).unwrap(),
+            cuda::field_silu(device, &input).unwrap()
+        );
+        assert_eq!(
+            crate::tensor::fixed_point_gelu(&input).unwrap(),
+            cuda::field_gelu(device, &input).unwrap()
+        );
+        assert_eq!(
+            crate::tensor::fixed_point_softmax(&input, 1).unwrap(),
+            cuda::field_softmax(device, &input, 1).unwrap()
+        );
+    }
+
+    #[cfg(feature = "cuda-kernels")]
+    #[test]
+    fn gpu_conformance_profile_includes_exp_family() {
+        let gpu = GpuMinerBackend::new("cuda:0");
+        let profile = backend_conformance_profile(&gpu).unwrap();
+        for op in ["exp", "sigmoid", "tanh", "silu", "gelu", "softmax"] {
+            assert!(profile.passes(op), "gpu profile missing {op}");
+        }
     }
 
     #[cfg(feature = "cuda-kernels")]

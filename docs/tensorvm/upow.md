@@ -352,6 +352,61 @@ Each op MUST have a single canonical `F_p` result for given inputs, identical on
 
 > TODO: publish the canonical fixed-point reference for each transcendental op with its error bound and a conformance vector set (§3.3). This is the gating work item for admitting Tier-C ops to consensus.
 
+### 4.8.1 Canonical fixed-point reference: the exp-family
+This is the first published canonical reference for transcendental ops, covering `exp` and everything that reduces to it: `sigmoid`, `tanh`, `silu`, `gelu`, and `softmax`. It is what lets a miner train on **any** float hardware while the chain verifies a hardware-independent fixed-point recomputation (§1.3, §3.4): the reference is pure integer arithmetic, so every conformant runtime (CPU reference, CUDA) produces identical bits and can be checked by the §3.3 conformance suite.
+
+**Evaluation domain.** All intermediate math runs in a fixed **Q-format**: a signed integer `X` represents the real value `X · 2^{−F}` with `F = 32` fractional bits. Inputs in `fixedNN_s` are converted to Q-format by a round-half-to-even rescale (`s → F`), and outputs are rescaled back (`F → s`). Every multiply rounds half-to-even immediately after the product (`q_mul(a,b) = round½even(a·b / 2^F)`); every divide computes `round½even(a·2^F / b)`. There is no floating point anywhere in the reference.
+
+**`exp(x)` (the primitive).** Defined for all `x`; the core is the non-positive branch:
+- Underflow: if `x ≤ −64`, `exp(x) := 0` (canonical; `exp(−64) ≈ 1.6·10⁻²⁸` is sub-ulp at any consensus-sane scale).
+- Range reduction by squaring: let `r = round½even(x / 2^{M})` with **`M = 10`**, so `|r| ≤ 2^{−4}`. Then `exp(x) = exp(r)^{2^{M}}`, computed by squaring `M` times.
+- Reduced evaluation: `exp(r)` is the **degree-5 Taylor polynomial** `1 + r + r²/2 + r³/6 + r⁴/24 + r⁵/120` in Horner form. On `|r| ≤ 2^{−4}` the truncation error is `< r⁶/720 ≈ 10⁻⁹`, far below Q-format resolution.
+- Positive branch: `exp(x) = 1 / exp(−x)` for `x > 0` (overflow if `exp(−x)` underflowed to 0 — saturation is a TODO).
+
+**Derived ops** (all from `exp`, branching on sign so `exp` is only ever evaluated on a non-positive argument):
+- `sigmoid(x) = 1/(1+exp(−x))` for `x ≥ 0`, else `exp(x)/(1+exp(x))`.
+- `tanh(z) = 2·sigmoid(2z) − 1`.
+- `silu(x) = x · sigmoid(x)`.
+- `gelu(x) = ½·x·(1 + tanh( c·(x + a·x³) ))` with canonical Q-format constants `c = round(√(2/π)·2^{32}) = 3 426 888 095` and `a = round(0.044715·2^{32}) = 192 049 463` (the standard tanh approximation).
+- `softmax(x, dim)`: subtract the per-group max (order-stable, exact), exponentiate each non-positive shifted logit, sum in **ascending index order** (the `AscendingFixedPoint` reduction class, §3.4), then divide each by the sum. Shift-invariant by construction.
+
+**Two distinct gates — determinism vs. accuracy.** These are deliberately separate, because conflating them is a mistake:
+- **Determinism (consensus-relevant).** The suite (§3.3) carries a Fixed32 vector per op whose expected output is the canonical reference's own output, checked by **exact equality**. This pins CPU == CUDA == every runtime and freezes the reference via the suite hash, so any change to the algorithm or a constant is a detectable protocol change. This is the only gate consensus needs: for the chain, "correct" *is* "equals the canonical reference," so expected values **must** be reference-derived. (Exact-match "golden" vectors against an external truth are impossible here — a transcendental reference is itself an approximation and will not equal `round(true value)` to sub-ulp everywhere.)
+- **Accuracy (usefulness / pre-freeze diligence).** A separate, **tolerance-based** harness (test-only `f64`, never in the consensus path) measures the reference's max error against the `f64` evaluation of the same algorithm, isolating quantization error. This does not affect consensus security; it validates that the approximation is good enough to be worth freezing as immutable protocol vocabulary, and that miners training against it get faithful gradients.
+
+**Worst-case error decomposition (toward a full-domain bound).** The error at output scale `s` splits into three independent, separately-bounded parts:
+
+```
+error(scale s)  ≤  0.5·2^{−s}            (output requantization Q32 → s; ½ ulp, exact by construction)
+                +  E_q32                  (internal algorithm error in Q32; SCALE-INDEPENDENT)
+                +  input-representation    (inherent to a fixed-point input; not the op's error)
+```
+
+Two facts make this close to a full-domain proof rather than a finite sweep:
+- **Scale is not a real axis.** The algorithm runs entirely in Q32 regardless of `s`; only the in/out conversions touch `s`, and each is `±½ ulp` by construction. So bounding all scales reduces to bounding the single scale-independent constant `E_q32` plus the closed-form `0.5·2^{−s}` term.
+- **The active input domain is bounded.** Range reduction caps the reduced argument to `|r| ≤ 2^{−4}` (analytic Taylor tail `< r⁶/720 ≈ 10⁻⁹`), and outside `|x| ≳ 64` the functions saturate *exactly* (`exp→0`, `sigmoid→{0,1}`, `tanh→±1`, `gelu→{0,x}`), so the tail is exact and only `|x| ≤ 64` carries approximation.
+
+`E_q32` is **exhaustively proven** at the conformance scale: because the field bounds both the scale and the value range, the representable input set over `|x| ≤ 64` at `s = 16` is *finite* (all `8.4·10⁶` `Fixed32` values), so enumerating every one of them is a complete proof for that scale — there is no continuum to sample. The oracle is `f64` evaluation of the exact formula; `f64` libm error here is `≤ ~10⁻¹¹` absolute (`~10⁻¹⁵` relative on `|value| ≤ 16384`), `≥ 3` orders of magnitude below the result, and is carried as an explicit margin in the proof:
+
+| op | `E_q32` | metric |
+|---|---|---|
+| `exp` | `≤ 1·10⁻⁵` | relative, over its representable range (`exp(x) ≥ 2^{−16}`) |
+| `sigmoid` / `silu` / `gelu` | `≤ 1·10⁻⁷` | absolute (`≈ 2^{−24}`) |
+| `tanh` | `≤ 1.5·10⁻⁷` | absolute |
+
+So e.g. at `s = 16` (ulp `≈ 1.5·10⁻⁵`) the bounded ops are dominated by the `0.5·2^{−16} ≈ 7.6·10⁻⁶` requantization term, with internal error only `~5·10⁻⁸` on top — matching the directly-measured scale-16 figure.
+
+**`softmax` (multi-input)** is not exhaustively enumerable, so its bound is by composition: each `exp` term carries `E_q32(exp)` relative error, the ascending-order sum of `n` terms adds `≤ (n−1)` accumulation roundings, and the final division adds `≤ ½ ulp`; the normalized result is therefore within `≈ n·E_q32(exp) + O(2^{−s})`.
+
+**Admission.** These ops remain **Tier C and gated out of consensus** (`consensus_admitted = false`): a deterministic, accurate reference satisfies the §3.3 *determinism* obligation but not the §6–§8 *verifiability* obligation. They become consensus-eligible only once a verifier exists — redundancy/committee (§8.1) now, interactive fraud proofs over the trace (§8.2) for 1-of-N honesty.
+
+**`log` and `sqrt`** are also provided as canonical Q-format references: `sqrt(x)` by round-to-nearest integer square root (`sqrt(x)·2^F = isqrt(x_q·2^F)`); `ln(x)` by range reduction `x = m·2^e` (`m ∈ [1,2)`) with `ln(m) = 2·atanh((m−1)/(m+1))` evaluated as an odd-power series to `t^13` plus `e·ln2`. These unlock `log_softmax`/`layer_norm`/`rmsnorm`/`cross_entropy` as expressible vocabulary, though those *compositions* are not yet assembled.
+
+**GPU determinism (CUDA).** The exp-family (`exp`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax`) is also implemented as CUDA device kernels in the exact same Q-format integer arithmetic (`__int128`, round-half-to-even), and the GPU backend's conformance profile now requires each GPU kernel to be **bit-exact** with the CPU reference before it is admitted to `passed_ops` — i.e. the GPU path has joined the determinism gate. Verified on the local A100×8 box: `cpu_and_gpu_backends_match_fixed_exp_family` and `gpu_conformance_profile_includes_exp_family` pass under `--features cuda-kernels`.
+
+> Status (implemented): `exp`, `log`, `sqrt`, `sigmoid`, `tanh`, `silu`, `gelu` (arity-1) and `softmax` (`dim`) execute through the exact interpreter on `Fixed32` tensors via the canonical Q-format reference above, are present in the frozen registry as Tier-C `CanonicalReferenceRequired` ops, and are covered by Fixed32 determinism vectors gated through the CPU reference profile; the exp-family additionally has bit-exact CUDA kernels gated through the GPU profile. Unit-tested: sanity goldens (`exp(0)=1`, `sigmoid(0)=½`, `tanh(0)=0`, `gelu(0)=0`, `sqrt(4)=2`, `ln(1)=0`, softmax uniform/shift-invariance/monotone-sigmoid), CPU/GPU bit-exact determinism, a fast scale-16 accuracy check, a dense cross-scale `E_q32` sweep, and an `#[ignore]`d **exhaustive** scale-16 proof enumerating all `8.4·10⁶` representable inputs (complete for that scale) producing the bounds tabled above.
+> TODO: (a) extend the exhaustive proof from the conformance scale to every field-representable scale (`s ≤ ~24`, `~2·10⁹` inputs) and add a symbolic bound that removes even the negligible bounded `f64`-oracle margin, plus a formal `softmax` composition proof; (b) input saturation instead of overflow errors; (c) CUDA `log`/`sqrt` kernels and exhaustive `E_q32`/error bounds for `log`/`sqrt`; (d) assemble `log_softmax`/`layer_norm`/`rmsnorm`/`cross_entropy` compositions from the primitives; (e) a verifier (§8.1/§8.2) before any consensus admission.
+
 ### 4.9 Canonical jobs (v0)
 1. **`TensorOp`** — a single `matmul` `C = A·B` over `F_p`. The minimal verifiable unit, fully Freivalds-checkable.
 2. **`LinearTrainingStep`** — forward (`X·W`), fixed-point loss, backward (`dW = Xᵀ·dY`), optimizer update (`W' = W − η·dW`). A real learning step whose pieces are all matmul-like → Freivalds-verifiable.
@@ -784,8 +839,20 @@ This section is non-normative guidance on how the spec components partition into
 ## 16. Open Problems / TODO
 
 - [~] **Determinism conformance suite**: current executable TensorOp/LinearTrainingStep exact-op `F_p`
-  vectors exist and gate those receipt validation paths; CUDA evidence and Tier-C/transcendental coverage
-  remain blocking for full §3.3 safety.
+  vectors exist and gate those receipt validation paths. The first canonical Tier-C transcendental
+  reference (the `exp`-family: `exp`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax`, §4.8.1) now executes through
+  the exact interpreter in fixed Q-format integer math and is CPU-conformance gated as auxiliary (Tier-C,
+  not consensus-admitted). The exp-family carries both gates: exact-match determinism vectors (the
+  consensus-relevant gate) plus a tolerance-based accuracy harness measuring max error vs. `f64`
+  (`≤ 2.5e-4` for `exp`, `≤ 1e-5` for the rest at scale 16, `|x| ≤ 8`). Also landed: bit-exact CUDA
+  kernels for the exp-family (`__int128` Q-format) gated through the GPU conformance profile and verified
+  on the local A100×8 box; CPU `log`/`sqrt` references; and a full-domain accuracy decomposition
+  `error(s) ≤ 0.5·2^{−s} + E_q32` with closed-form requant/saturated-tail terms and `E_q32` proven
+  exhaustively at the conformance scale (s=16, 8.4M inputs; `exp` rel `≤ 1e-5`, `sigmoid`/`silu`/`gelu`
+  `≤ 1e-7`, `tanh` `≤ 1.5e-7`). Remaining for full §3.3 safety: extend the exhaustive `E_q32` proof to all
+  field-representable scales (s ≤ ~24) plus a formal `softmax` composition proof; CUDA `log`/`sqrt` kernels
+  and their bounds; assemble `log_softmax`/`layer_norm`/`rmsnorm`/`cross_entropy` compositions; and a
+  §8.1/§8.2 verifier before any consensus admission.
 - [~] Exact `F_p` choice and fixed-point scale discipline: runtime tensor scale metadata, input-scale
   enforcement, fixed-point `cast`/`round` round-half-even rescale, mixed-scale `Fixed32` `add`/`sub`
   RHS-to-lhs/output rescale, mixed-scale `Fixed32` `mul` rescale from product scale back to the declared

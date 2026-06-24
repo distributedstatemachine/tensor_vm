@@ -807,6 +807,18 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
         "dequantize_int8_per_channel" => dequantize_int8_per_channel(&args)?,
         "quantize_pack_int8" => quantize_pack_int8(one_tensor_value(&args)?, &op.kwargs)?,
         "unpack_dequantize_int8" => unpack_dequantize_int8(one_tensor_value(&args)?, &op.kwargs)?,
+        "exp" => crate::tensor::fixed_point_exp(one_tensor_value(&args)?)?,
+        "log" => crate::tensor::fixed_point_log(one_tensor_value(&args)?)?,
+        "sqrt" => crate::tensor::fixed_point_sqrt(one_tensor_value(&args)?)?,
+        "sigmoid" => crate::tensor::fixed_point_sigmoid(one_tensor_value(&args)?)?,
+        "tanh" => crate::tensor::fixed_point_tanh(one_tensor_value(&args)?)?,
+        "silu" => crate::tensor::fixed_point_silu(one_tensor_value(&args)?)?,
+        "gelu" => crate::tensor::fixed_point_gelu(one_tensor_value(&args)?)?,
+        "softmax" => {
+            let dim = optional_usize_kwarg(&op.kwargs, "dim")?
+                .ok_or(TvmError::InvalidReceipt("softmax requires dim"))?;
+            crate::tensor::fixed_point_softmax(one_tensor_value(&args)?, dim)?
+        }
         _ => {
             return Err(TvmError::InvalidReceipt(
                 "tensor ir op is not executable by exact interpreter",
@@ -3241,7 +3253,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 49] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 53] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -3649,6 +3661,46 @@ const FROZEN_OP_REGISTRY: [OpSpec; 49] = [
         output_count: IrOutputCount::Exact(1),
         allowed_kwargs: &["dim"],
         required_kwargs: &["dim"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "sigmoid",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(1),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &[],
+        required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "tanh",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(1),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &[],
+        required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "silu",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(1),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &[],
+        required_kwargs: &[],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "gelu",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(1),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &[],
+        required_kwargs: &[],
         verification: IrVerificationClass::CanonicalReferenceRequired,
         consensus_admitted: false,
     },

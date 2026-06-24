@@ -11,7 +11,7 @@ use crate::tensor::{
 use crate::types::{Hash, hash_bytes};
 use crate::vm;
 
-const SUITE_VERSION: u64 = 1;
+const SUITE_VERSION: u64 = 2;
 
 #[derive(Clone, Debug, Eq, PartialEq)]
 pub struct ConformanceOutput {
@@ -754,7 +754,128 @@ pub fn conformance_vectors() -> Vec<ConformanceVector> {
             &[3, 5, 7, 9],
             &[4],
         ),
+        // Canonical fixed-point exp-family references (Tier C, scale 16). Expected
+        // values are reference-derived: the gate enforces cross-runtime determinism
+        // and freezes the reference via the suite hash. Inputs are raw fixed-point
+        // integers (value = round(real * 2^16)).
+        fixed_transcendental_vector(
+            "fixed32-exp-half-even-v1",
+            "exp",
+            16,
+            &[4],
+            &[-131072, -65536, 0, 65536],
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-sigmoid-half-even-v1",
+            "sigmoid",
+            16,
+            &[5],
+            &[-131072, -65536, 0, 65536, 131072],
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-tanh-half-even-v1",
+            "tanh",
+            16,
+            &[5],
+            &[-131072, -65536, 0, 65536, 131072],
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-silu-half-even-v1",
+            "silu",
+            16,
+            &[5],
+            &[-131072, -65536, 0, 65536, 131072],
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-gelu-tanh-approx-half-even-v1",
+            "gelu",
+            16,
+            &[5],
+            &[-131072, -65536, 0, 65536, 131072],
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-softmax-lastdim-half-even-v1",
+            "softmax",
+            16,
+            &[2, 3],
+            &[0, 65536, 131072, -65536, 0, 65536],
+            Some(1),
+        ),
+        fixed_transcendental_vector(
+            "fixed32-log-half-even-v1",
+            "log",
+            16,
+            &[4],
+            &[32768, 65536, 131072, 178145], // 0.5, 1, 2, ~e
+            None,
+        ),
+        fixed_transcendental_vector(
+            "fixed32-sqrt-half-even-v1",
+            "sqrt",
+            16,
+            &[4],
+            &[16384, 65536, 131072, 262144], // 0.25, 1, 2, 4
+            None,
+        ),
     ]
+}
+
+/// Builds a Fixed32 transcendental conformance vector. `raw_inputs` are the
+/// stored fixed-point integers (value = round(real * 2^scale)); the expected
+/// output is produced by the canonical reference itself so the suite pins that
+/// reference and any CUDA path must reproduce it bit-for-bit.
+fn fixed_transcendental_vector(
+    id: &'static str,
+    op_name: &'static str,
+    scale: i64,
+    shape: &[usize],
+    raw_inputs: &[i128],
+    dim: Option<u64>,
+) -> ConformanceVector {
+    let input_data: Vec<Elem> = raw_inputs
+        .iter()
+        .map(|raw| crate::tensor::signed_i128_to_elem(*raw))
+        .collect();
+    let input =
+        Tensor::from_vec_with_scale(shape.to_vec(), DType::Fixed32, scale, input_data.clone())
+            .expect("fixed transcendental conformance input must be valid");
+    let output = match op_name {
+        "exp" => crate::tensor::fixed_point_exp(&input),
+        "log" => crate::tensor::fixed_point_log(&input),
+        "sqrt" => crate::tensor::fixed_point_sqrt(&input),
+        "sigmoid" => crate::tensor::fixed_point_sigmoid(&input),
+        "tanh" => crate::tensor::fixed_point_tanh(&input),
+        "silu" => crate::tensor::fixed_point_silu(&input),
+        "gelu" => crate::tensor::fixed_point_gelu(&input),
+        "softmax" => crate::tensor::fixed_point_softmax(
+            &input,
+            dim.expect("softmax conformance vector requires dim") as usize,
+        ),
+        _ => panic!("unknown fixed transcendental op {op_name}"),
+    }
+    .expect("canonical fixed transcendental reference must succeed");
+    let params = dim.map(|d| vec![("dim", d)]).unwrap_or_default();
+    ConformanceVector {
+        id,
+        op_name,
+        tier: "C",
+        dtype: DType::Fixed32,
+        input_dtypes: vec![DType::Fixed32],
+        input_scales: vec![scale],
+        input_shapes: vec![shape.to_vec()],
+        params,
+        input_data: vec![input_data],
+        expected_dtype: DType::Fixed32,
+        expected_scale: scale,
+        expected_data: output.as_slice().to_vec(),
+        expected_shape: output.shape().to_vec(),
+        expected_outputs: Vec::new(),
+    }
 }
 
 pub fn conformance_suite_hash() -> Hash {
@@ -845,6 +966,16 @@ fn execute_vector_outputs(vector: &ConformanceVector) -> Result<Vec<Tensor>> {
         "sign" => unary_tensor(&tensors[0], signed_sign),
         "round" => round_tensor(&tensors[0]),
         "relu" => unary_tensor(&tensors[0], signed_relu),
+        "exp" => crate::tensor::fixed_point_exp(&tensors[0]),
+        "log" => crate::tensor::fixed_point_log(&tensors[0]),
+        "sqrt" => crate::tensor::fixed_point_sqrt(&tensors[0]),
+        "sigmoid" => crate::tensor::fixed_point_sigmoid(&tensors[0]),
+        "tanh" => crate::tensor::fixed_point_tanh(&tensors[0]),
+        "silu" => crate::tensor::fixed_point_silu(&tensors[0]),
+        "gelu" => crate::tensor::fixed_point_gelu(&tensors[0]),
+        "softmax" => {
+            crate::tensor::fixed_point_softmax(&tensors[0], param(vector, "dim")? as usize)
+        }
         "transpose" => tensors[0].transpose(),
         "reshape" => Tensor::from_vec_with_scale(
             vec![
@@ -1819,7 +1950,12 @@ mod tests {
     }
 
     fn auxiliary_conformance_ops() -> BTreeSet<&'static str> {
-        BTreeSet::from(["mse_loss"])
+        // `mse_loss` is a hashed scalar helper; the exp-family transcendentals are
+        // Tier-C canonical-reference ops that are conformance-gated for cross-runtime
+        // determinism (upow.md §4.8.1) but remain gated out of consensus admission.
+        BTreeSet::from([
+            "mse_loss", "exp", "log", "sqrt", "sigmoid", "tanh", "silu", "gelu", "softmax",
+        ])
     }
 
     #[test]
