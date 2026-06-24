@@ -1,1 +1,7 @@
 /target/
+.cursor/goal-supervisor/state.json
+.cursor/goal-supervisor/*.tmp
+.cursor/goal-supervisor/lock
+.cursor/goal-supervisor/logs/
+.cursor/goal-supervisor/*.env
+.cursor/goal-supervisor/__pycache__/

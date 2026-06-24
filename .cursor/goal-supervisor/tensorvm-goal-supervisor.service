@@ -1,0 +1,19 @@
+[Unit]
+Description=TensorVM goal.md Cursor supervisor
+Documentation=file:/home/ubuntu/tensor_vm/.cursor/goal-supervisor/README.md
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+WorkingDirectory=/home/ubuntu/tensor_vm
+EnvironmentFile=/home/ubuntu/tensor_vm/.cursor/goal-supervisor/supervisor.env
+Environment=PATH=%h/.local/bin:/usr/local/bin:/usr/bin:/bin
+ExecStart=/usr/bin/env uv run --script /home/ubuntu/tensor_vm/.cursor/goal-supervisor/supervisor.py --loop
+Restart=on-abnormal
+RestartSec=30
+KillSignal=SIGTERM
+TimeoutStopSec=300
+
+[Install]
+WantedBy=default.target
