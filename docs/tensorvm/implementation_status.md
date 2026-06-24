@@ -106,10 +106,10 @@ propagation support now exist as diagnostic chain/node/runtime helpers. See
   chunks, and Merkle openings use the normal public tensor artifact path. Automatic role-loop fetching for
   graph program, tensor artifacts, and trace-opening samples is implemented locally. CUDA graph execution
   locally covers the current synthetic graph shape and a same-shape field-op subset
-  (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`tril`/`triu`/`concat`/`stack`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
+  (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`/`concat`/`stack`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
   through `GpuMinerBackend`; the full interactive dispute game, binary-op CUDA broadcasting, fixed-point
-  CUDA graph ops, fixed-point `mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`tril`/`triu`,
-  fixed-point or broadcast reductions, multi-output split, vector clamp bounds, bool-mask selection, and full
+  CUDA graph ops, fixed-point `mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`/`concat`/`stack`,
+  fixed-point or broadcast reductions, vector clamp bounds, bool-mask selection, and full
   frozen-registry CUDA graph execution remain open.
 - Deterministic `F_p` conformance vectors for the current executable admitted op surface used by TensorOp
   and LinearTrainingStep plus field-only unary/shaping/generator coverage (`add`, `sub`, `mul`, `div`,

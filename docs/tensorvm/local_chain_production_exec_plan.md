@@ -5,7 +5,7 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 243 complete and pushed: CUDA Field Concat/Stack Graph Kernel/Conformance.
+- Active feature: Iteration 244 in progress: CUDA Field Split Graph Kernel/Conformance.
 - Current status: v0 work follows the 2026-06-23 owner scope decision: live verified drand consensus
   randomness and local A100 CUDA evidence are in v0 scope; 7-day external public-run evidence is a
   production-launch roadmap milestone. The latest CUDA graph subset now covers scale-0 field
@@ -15,8 +15,8 @@ archive commit anchors only.
   full frozen-registry CUDA coverage.
 - Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
   construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: continue broadening CUDA kernels/conformance for remaining admitted exact ops without CPU
-  fallback or overclaiming unsupported frozen-registry coverage.
+- Next action: add CUDA graph execution for admitted exact multi-output `split(dim,sizes)` without CPU
+  fallback or overclaiming fixed-point/quantization/full-registry CUDA coverage.
 
 ## Readiness Matrix
 
@@ -36,6 +36,112 @@ archive commit anchors only.
 | Public deployment evidence (7-day run) | Roadmap, not v0 | Public evidence validators/templates exist; reclassified out of v0 scope on 2026-06-23 | Carry as production-launch milestone; do not treat as a v0 blocker |
 
 ## Active Feature Iteration
+
+### Iteration 244: CUDA Field Split Graph Kernel/Conformance
+
+Feature capability: add CUDA field `split(dim,sizes)` graph execution for scale-0 field tensors by routing
+each canonical output segment through CUDA-backed field slicing, return all graph outputs through the
+multi-output runtime path, and expand CUDA conformance/miner-role fixtures so the remaining exact
+structural multi-output op is exercised on the local A100 path without CPU fallback.
+
+Readiness requirements covered: `goal.md` v0 CUDA scope decision plus `upow.md` sections 3.1-3.3, 4.7,
+4.8, 7, and 16 require bit-exact CUDA evidence for admitted exact ops. `split` is a Tier-B structural op
+with deterministic row-major slice semantics and multiple outputs; this iteration covers only scale-0
+field tensors in the CUDA graph subset.
+
+Ownership boundary:
+
+- Canonical owner: CUDA runtime owns accelerated scale-0 field `split` for canonical structural partition
+  semantics.
+- Adapter callers: CUDA miner readiness, `tvmd miner run --device cuda:N`, role service runtime loop, and
+  focused runtime/miner-role tests.
+- Old shortcut being removed: exact graph `split` currently stops at the CUDA graph boundary, leaving the
+  CUDA graph subset unable to execute the admitted multi-output structural op.
+- Regression test that proves the shortcut is gone: CUDA-feature runtime tests assert direct field `split`
+  parity and graph-level multi-output trace parity; miner-role CUDA graph receipt tests submit a graph that
+  references both split outputs through `BackendKind::GpuMiner`; unsupported CUDA-op coverage moves to a
+  still-unsupported fixed-point/quantization op.
+- Behavior with local synthetic block production disabled: unchanged.
+- Behavior for producer and non-producer roles: unchanged.
+- Structured evidence source: `ConformanceProfile.passed_ops`, CPU/GPU GraphExecution trace roots,
+  miner-role `backend_kind`, direct CUDA split parity assertions, and explicit unsupported-op errors.
+- Finality source: unchanged; no block admission, settlement, voting, rewards, reward maturity, delayed
+  claims, TensorWork activation, or finality changes. Rewards remain delayed claims with maturity and
+  challenge holds.
+- Wire-size and codec boundary: no wire or codec changes; the CUDA Rust wrapper composes existing CUDA
+  field slice kernels behind `--features cuda-kernels`.
+
+Files/modules likely touched: `crates/tensor_vm/src/runtime.rs`,
+`crates/tensor_vm/tests/tvmd_runtime/miner_role.rs`, `docs/tensorvm/coverage_matrix.md`,
+`docs/tensorvm/implementation_status.md`, `docs/tensorvm/tarpaulin_report.md`, and `docs/tensorvm/upow.md`.
+
+Parallel subagents: none. Available subagent tooling currently says not to spawn agents unless the user
+explicitly asks for delegation, so the parent remains the single writer.
+
+Parallelizable implementation workstreams: read-only code/test inspection can run in parallel; all edits
+stay with the parent to avoid colliding in `runtime.rs` and graph fixture tests.
+
+Tests/checkers/docs to add or update: direct CUDA split parity/mismatch tests, CUDA graph supported-op
+fixture, CUDA miner-role graph fixture, conformance profile supported-op list, unsupported-op negative
+test, and CUDA status docs.
+
+Narrow validation commands:
+
+- `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib`
+- `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend`
+
+Broad validation commands before commit:
+
+- `cargo fmt --check`
+- `cargo test -p tensor_vm --lib`
+- `cargo test -p tensor_vm local_testnet --release`
+- `cargo test --workspace --release`
+- `cargo clippy --workspace --all-targets -- -D warnings`
+- `cargo test -p tensor_vm --features cuda-kernels --release`
+- `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings`
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin`
+- `git diff --check`
+
+Expected observable evidence: CUDA graph `split` produces multiple output tensors whose roots match CPU
+exact execution, both outputs can feed later graph ops, miner-role CUDA GraphExecution receipts include the
+expanded graph and still verify bit-exactly, and unsupported CUDA coverage remains explicit for a
+still-unimplemented admitted/frozen-registry area.
+
+Out of scope: reward workarounds, immediate reward release, fixed-point structural CUDA ops, CUDA
+quantization, consensus changes, finality changes, and public deployment evidence.
+
+Split trigger: if multi-output graph dispatch requires a broad runtime contract change beyond CUDA graph
+execution, split the feature into a runtime multi-output dispatch commit followed by CUDA split coverage.
+
+Validation evidence:
+
+- Gate 0 first executable acceptance command: `cargo test -p tensor_vm local_testnet --release` passed on
+  June 23, 2026 before other acceptance commands in this resumed iteration.
+- `cargo test -p tensor_vm --features cuda-kernels runtime::tests --lib` passed on June 24, 2026 with
+  10 CUDA-feature runtime tests, including direct field `split` parity, supported CUDA graph parity
+  through `split` -> `concat`, and unsupported `cast` rejection.
+- `cargo test -p tensor_vm --features cuda-kernels --test tvmd_runtime
+  miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_backend` passed on
+  June 24, 2026 with the supported miner-role CUDA graph fixture extended through `stack` -> `split` ->
+  `concat`.
+- `cargo fmt --check` passed on June 24, 2026.
+- `git diff --check` passed on June 24, 2026.
+- `cargo test -p tensor_vm --lib` passed on June 24, 2026 with 573 tests.
+- Post-change Gate 0 `cargo test -p tensor_vm local_testnet --release` passed on June 24, 2026 with 5
+  release local_testnet library tests and 1 service-gateway CLI test.
+- `cargo test --workspace --release` passed on June 24, 2026 with 14 experiments tests, 573 tensor_vm
+  library tests, 9 tvmd CLI tests, 50 tvmd runtime tests, 1 local CPU compose test, 1 explorer library
+  test, and 2 explorer CLI tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` passed on June 24, 2026.
+- `cargo test -p tensor_vm --features cuda-kernels --release` passed on June 24, 2026 with 580
+  CUDA-feature tensor_vm library tests, 9 tvmd CLI tests, 54 tvmd runtime tests, and doc-tests.
+- `cargo clippy -p tensor_vm --features cuda-kernels --all-targets -- -D warnings` passed on
+  June 24, 2026.
+- `cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin` passed on
+  June 24, 2026 with 588 instrumented tests and 84.95% workspace line coverage
+  (23831/28053 lines).
+
+## Recent Iterations
 
 ### Iteration 243: CUDA Field Concat/Stack Graph Kernel/Conformance
 

@@ -529,6 +529,16 @@ fn execute_cuda_graph_op(
             )?;
             cuda::field_stack(device_index, &tensors, dim)?
         }
+        "split" => {
+            let tensor = one_graph_tensor_value(args)?;
+            require_graph_field_tensor(tensor)?;
+            let dim = optional_graph_usize_kwarg(kwargs, "dim")?.ok_or(
+                TvmError::InvalidReceipt("tensor ir split requires explicit dim"),
+            )?;
+            let sizes = graph_split_sizes_kwarg(kwargs, "sizes")?;
+            let outputs = cuda::field_split(device_index, tensor, dim, &sizes)?;
+            return Ok(outputs.into_iter().map(GraphRuntimeValue::Tensor).collect());
+        }
         "broadcast" => {
             let tensor = one_graph_tensor_value(args)?;
             require_graph_field_tensor(tensor)?;
@@ -604,6 +614,26 @@ fn graph_shape_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Ve
             })
             .collect(),
         _ => Err(TvmError::InvalidReceipt("missing tensor ir shape kwarg")),
+    }
+}
+
+#[cfg(feature = "cuda-kernels")]
+fn graph_split_sizes_kwarg(kwargs: &BTreeMap<String, IrValue>, key: &str) -> Result<Vec<usize>> {
+    match kwargs.get(key) {
+        Some(IrValue::Literal(IrLiteral::List(values))) if !values.is_empty() => values
+            .iter()
+            .map(|value| match value {
+                IrLiteral::Int(size) if *size > 0 => usize::try_from(*size)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir split size")),
+                IrLiteral::Uint(size) if *size > 0 => usize::try_from(*size)
+                    .map_err(|_| TvmError::InvalidReceipt("invalid tensor ir split size")),
+                _ => Err(TvmError::InvalidReceipt("invalid tensor ir split size")),
+            })
+            .collect(),
+        Some(IrValue::Literal(IrLiteral::List(_))) => {
+            Err(TvmError::InvalidReceipt("invalid tensor ir split size"))
+        }
+        _ => Err(TvmError::InvalidReceipt("missing tensor ir split sizes")),
     }
 }
 
@@ -785,6 +815,7 @@ fn gpu_backend_conformance_profile<B: ExecutionBackend>(backend: &B) -> Result<C
             "squeeze",
             "unsqueeze",
             "slice",
+            "split",
             "tril",
             "triu",
             "concat",
@@ -1163,10 +1194,36 @@ fn supported_cuda_graph_conformance_case() -> Result<CudaGraphConformanceCase> {
                 kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
                 out: vec![TensorSpec::field("stacked", vec![2, 2, 2])],
             },
+            OpNode {
+                id: 31,
+                op: "split".to_owned(),
+                args: vec![IrRef::Op { id: 30, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                    (
+                        "sizes".to_owned(),
+                        IrValue::Literal(IrLiteral::List(vec![
+                            IrLiteral::Uint(1),
+                            IrLiteral::Uint(1),
+                        ])),
+                    ),
+                ]),
+                out: vec![
+                    TensorSpec::field("split_left", vec![2, 1, 2]),
+                    TensorSpec::field("split_right", vec![2, 1, 2]),
+                ],
+            },
+            OpNode {
+                id: 32,
+                op: "concat".to_owned(),
+                args: vec![IrRef::Op { id: 31, idx: 0 }, IrRef::Op { id: 31, idx: 1 }],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)))]),
+                out: vec![TensorSpec::field("rejoined", vec![2, 2, 2])],
+            },
         ],
         outputs: vec![GraphOutput {
-            name: "stacked".to_owned(),
-            value: IrRef::Op { id: 30, idx: 0 },
+            name: "rejoined".to_owned(),
+            value: IrRef::Op { id: 32, idx: 0 },
         }],
     };
     graph.validate_for_consensus()?;
@@ -1744,6 +1801,42 @@ mod cuda {
             return Err(cuda_error(code));
         }
         Tensor::from_vec(output_shape, tensors[0].dtype(), out)
+    }
+
+    pub fn field_split(
+        device_index: u32,
+        input: &Tensor,
+        dim: usize,
+        sizes: &[usize],
+    ) -> Result<Vec<Tensor>> {
+        require_field_element_tensor(input)?;
+        if input.scale() != 0 {
+            return Err(TvmError::InvalidReceipt("cuda graph op not supported"));
+        }
+        if dim >= input.shape().len() || sizes.is_empty() {
+            return Err(TvmError::InvalidReceipt("tensor ir split dim mismatch"));
+        }
+        let total = sizes.iter().try_fold(0usize, |acc, size| {
+            if *size == 0 {
+                return Err(TvmError::InvalidReceipt("invalid tensor ir split size"));
+            }
+            acc.checked_add(*size)
+                .ok_or(TvmError::InvalidReceipt("tensor ir split size mismatch"))
+        })?;
+        if total != input.shape()[dim] {
+            return Err(TvmError::InvalidReceipt("tensor ir split size mismatch"));
+        }
+
+        let mut outputs = Vec::with_capacity(sizes.len());
+        let mut start = 0usize;
+        for size in sizes {
+            let end = start
+                .checked_add(*size)
+                .ok_or(TvmError::InvalidReceipt("tensor ir split size mismatch"))?;
+            outputs.push(field_slice(device_index, input, dim, start, end)?);
+            start = end;
+        }
+        Ok(outputs)
     }
 
     pub fn field_neg(device_index: u32, input: &Tensor) -> Result<Tensor> {
@@ -2391,12 +2484,13 @@ mod tests {
             "squeeze",
             "unsqueeze",
             "slice",
+            "split",
             "tril",
             "triu",
         ] {
             assert!(gpu_profile.passes(op), "gpu profile missing {op}");
         }
-        for op in ["einsum", "quantize_int8_per_channel", "split"] {
+        for op in ["einsum", "quantize_int8_per_channel", "cast"] {
             assert!(
                 !gpu_profile.passes(op),
                 "gpu profile must not overclaim {op}"
@@ -2472,30 +2566,31 @@ mod tests {
             params: Vec::new(),
             ops: vec![OpNode {
                 id: 0,
-                op: "split".to_owned(),
+                op: "cast".to_owned(),
                 args: vec![IrRef::Input {
                     name: "x".to_owned(),
                 }],
                 kwargs: BTreeMap::from([
                     (
-                        "dim".to_owned(),
-                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Uint(0)),
+                        "dtype".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::String(
+                            "fixed32".to_owned(),
+                        )),
                     ),
                     (
-                        "sizes".to_owned(),
-                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::List(vec![
-                            crate::ir::IrLiteral::Uint(1),
-                            crate::ir::IrLiteral::Uint(1),
-                        ])),
+                        "scale".to_owned(),
+                        crate::ir::IrValue::Literal(crate::ir::IrLiteral::Int(4)),
                     ),
                 ]),
-                out: vec![
-                    TensorSpec::field("first", vec![1, 2]),
-                    TensorSpec::field("second", vec![1, 2]),
-                ],
+                out: vec![TensorSpec {
+                    name: "fixed".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Fixed32,
+                    scale: 4,
+                }],
             }],
             outputs: vec![GraphOutput {
-                name: "first".to_owned(),
+                name: "fixed".to_owned(),
                 value: IrRef::Op { id: 0, idx: 0 },
             }],
         };
@@ -2746,6 +2841,25 @@ mod tests {
         assert!(matches!(
             cuda::field_stack(0, &[&stack_first, &concat_left], 0),
             Err(TvmError::InvalidReceipt("tensor ir shape mismatch"))
+        ));
+
+        let split_input =
+            Tensor::from_vec(vec![2, 3], lhs.dtype(), vec![1, 2, 3, 4, 5, 6]).unwrap();
+        let split = cuda::field_split(0, &split_input, 1, &[1, 2]).unwrap();
+        assert_eq!(
+            split,
+            vec![
+                Tensor::from_vec(vec![2, 1], lhs.dtype(), vec![1, 4]).unwrap(),
+                Tensor::from_vec(vec![2, 2], lhs.dtype(), vec![2, 3, 5, 6]).unwrap(),
+            ]
+        );
+        assert!(matches!(
+            cuda::field_split(0, &split_input, 1, &[1, 1]),
+            Err(TvmError::InvalidReceipt("tensor ir split size mismatch"))
+        ));
+        assert!(matches!(
+            cuda::field_split(0, &split_input, 2, &[3]),
+            Err(TvmError::InvalidReceipt("tensor ir split dim mismatch"))
         ));
 
         let neg = cuda::field_neg(0, &lhs).unwrap();

@@ -395,10 +395,45 @@ fn supported_cuda_graph_execution_case() -> (
                 )]),
                 out: vec![tensor_vm::TensorSpec::field("stacked", vec![2, 2, 2])],
             },
+            tensor_vm::OpNode {
+                id: 31,
+                op: "split".to_owned(),
+                args: vec![tensor_vm::IrRef::Op { id: 30, idx: 0 }],
+                kwargs: BTreeMap::from([
+                    (
+                        "dim".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                    ),
+                    (
+                        "sizes".to_owned(),
+                        tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::List(vec![
+                            tensor_vm::IrLiteral::Uint(1),
+                            tensor_vm::IrLiteral::Uint(1),
+                        ])),
+                    ),
+                ]),
+                out: vec![
+                    tensor_vm::TensorSpec::field("split_left", vec![2, 1, 2]),
+                    tensor_vm::TensorSpec::field("split_right", vec![2, 1, 2]),
+                ],
+            },
+            tensor_vm::OpNode {
+                id: 32,
+                op: "concat".to_owned(),
+                args: vec![
+                    tensor_vm::IrRef::Op { id: 31, idx: 0 },
+                    tensor_vm::IrRef::Op { id: 31, idx: 1 },
+                ],
+                kwargs: BTreeMap::from([(
+                    "dim".to_owned(),
+                    tensor_vm::IrValue::Literal(tensor_vm::IrLiteral::Uint(1)),
+                )]),
+                out: vec![tensor_vm::TensorSpec::field("rejoined", vec![2, 2, 2])],
+            },
         ],
         outputs: vec![tensor_vm::GraphOutput {
-            name: "stacked".to_owned(),
-            value: tensor_vm::IrRef::Op { id: 30, idx: 0 },
+            name: "rejoined".to_owned(),
+            value: tensor_vm::IrRef::Op { id: 32, idx: 0 },
         }],
     };
     let inputs = BTreeMap::from([

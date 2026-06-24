@@ -28,6 +28,10 @@ Throughout, the load-bearing idea is stated once and reused:
 | **Trace root** | Merkle root over per-op output commitments of an execution, enabling interactive fraud proofs. |
 | **Field `F_p`** | The prime field all consensus-critical arithmetic happens in. |
 | **TensorWork** | A reward/telemetry metric for miners. **Never** selects proposers or influences consensus. |
+| **Normalization** | The deterministic, semantics-preserving pass pipeline applied to a graph before `graph_id` so the id addresses the computation, not its syntax (§4.5.1). |
+| **Reduction-order class** | A per-op, dtype-derived tag (`OrderFree` for `field`, `AscendingFixedPoint` for `fixedNN`) fixing whether accumulation order is observable (§3.4). |
+| **Verification class / region fusion** | The per-op verifier kind (Freivalds / random-linear / replay / index-consistency / redundancy) and the lattice-join rule that lets contiguous regions be checked once (§4.11). |
+| **Prover/verifier seam** | The single asymmetry boundary: miners compute offline, validators check cheaply on-chain; the IR is the contract across it (§1.3). |
 
 ---
 
@@ -45,6 +49,20 @@ Traditional PoW proves energy was burned on hash preimage search. This chain pro
 - Subjective "usefulness" scoring.
 
 These are roadmap items (§13), not v0.
+
+### 1.3 Execution model: offline prover, on-chain verifier
+The chain is built around exactly one asymmetry boundary. Heavy tensor compute happens **offline** on miner hardware; consensus only ever performs **cheap checks** on-chain. Nothing about block validity requires any node to redo the miner's FLOPs — that would make the work redundant rather than useful.
+
+| Concern | Where it lives | Cost | Reference |
+|---|---|---|---|
+| Program (IR graph), input commitments, job body | on-chain consensus state | hashes | §4, §5 |
+| Full tensors, intermediate activations, the actual execution | **offline, miner box** | GB / `O(expensive)` | §5, §9 |
+| Receipt: output commitments + `trace_root` + bond + sig | on-chain | hashes | §5.3 |
+| Freivalds / random-linear checks, availability sampling, `checks_root` | **validator, on-chain** | sublinear (§6–§7) | §6, §7, §11 |
+| Full execution trace | offline; served via DA **only if disputed** | `O(expensive)`, served lazily | §8.2, §9 |
+| One-op re-execution after dispute bisection | on-chain / referee committee | `O(one op)` | §8.2 |
+
+The IR (§4) is the **contract** across this boundary: `graph_id` fixes the program both sides agree on before any FLOP is spent, and every verifier check (§6–§8) is defined relative to that fixed program. Consequently the compiler-style machinery introduced in §4 (canonical encoding, structural normalization §4.5.1, the op DAG as an execution trace §4.10, verification-class composition §4.11) is judged **solely** by whether it (a) makes the offline→on-chain contract unambiguous, (b) shrinks the on-chain verifier, or (c) makes disputes bisectable — never by raw execution speed. Speed is the miner's private concern; correctness-under-cheap-checking is the protocol's.
 
 ---
 
@@ -102,13 +120,34 @@ Equality-of-commitment verification (Freivalds, hash equality, fraud-proof bisec
 > miner-role receipt submission for those two paths through `tvmd miner run --device cuda:N` runtime
 > config pass under `--features cuda-kernels`. CUDA graph receipt evidence now covers the current local
 > synthetic GraphExecution shape (`add` -> `relu`) plus a focused supported-op CUDA graph
-> (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`tril`/`triu`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
+> (`matmul`/`add`/`sub`/`mul`/`div`/`clamp`/`sum`/`mean`/`reshape`/`squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`/`concat`/`stack`/`broadcast`/`transpose`/`scalar_mul`/`relu`/`identity`/`neg`/`abs`/`sign`/`eq`/`gt`/`lt`/`ge`/`le`/`where`)
 > through the CUDA miner backend with bit-exact CPU/GPU receipt roots. CUDA conformance reporting is
 > limited to the exercised field subset instead of over-claiming binary op broadcasting, vector clamp
-> bounds, fixed-point division/comparisons/selection/clamp/broadcast/mean/reshape/squeeze/unsqueeze/slice/tril/triu, fixed-point or broadcast
-> reductions, split/concat/stack, bool masks, or the full CPU reference profile. The full frozen-registry CUDA vector suite and
+> bounds, fixed-point division/comparisons/selection/clamp/broadcast/mean/reshape/squeeze/unsqueeze/slice/split/tril/triu/concat/stack, fixed-point or broadcast
+> reductions, bool masks, or the full CPU reference profile. The full frozen-registry CUDA vector suite and
 > Tier-C/transcendental vector references remain TODO before claiming complete §3.3 coverage for every
 > runtime.
+
+### 3.4 Where determinism is free, and where it is earned
+A subtle but load-bearing consequence of working in `F_p`: **for any computation that stays inside the field, the result is a unique field element independent of evaluation/reduction order.** Field addition and multiplication are exactly associative and commutative, so a matmul `C = A·B`, a `sum`, or a `mean` numerator has one canonical value no matter what order a runtime accumulates it in.
+
+This splits the determinism problem cleanly:
+
+- **Inside the field, cross-hardware determinism is automatic.** Two correct runtimes agree on `field`-dtype results even if one accumulates serially and another uses a parallel reduction tree. Freivalds (§6) and exact-replay committees (§8.1) verify the *value*, which is order-invariant. A fixed serial reduction order is therefore **not** required for `field` dtype, and reduction order is left free (a balanced tree is admissible and GPU-friendly).
+- **At the field boundary, determinism must be specified explicitly.** Order and representation become observable only when a step leaves exact field arithmetic:
+  - **Fixed-point (`fixedNN_s`)**: intermediate magnitude can exceed the logical scale and each rescale rounds, so reduction order *is* observable. For `fixedNN` reductions the canonical order is **fixed ascending index order** with round-half-to-even at each declared rescale point (§4.8). A tree reorder is a fault.
+  - **Tier-C approximations** (transcendental, order statistics): determinism comes from a canonical integer reference algorithm (§4.8), never from arithmetic associativity.
+
+> Normative refinement: each reduction/contraction op carries a canonical **reduction-order class** that is a pure function of its output dtype — `OrderFree` for `field`, `AscendingFixedPoint` for `fixedNN`. Because it is derived (not authored), it does not affect `graph_id`; it constrains conformant runtimes and is exactly what the §3.3 conformance vectors pin. This is the only place a computation's "schedule" is consensus-relevant: it is earned precisely at the field boundary and free everywhere inside it. The earlier blanket "fixed ascending reduction order" framing is superseded by this dtype-scoped rule.
+
+### 3.5 Datatype definition framework
+A consensus datatype is defined not by a host-language type but by a triple: **(value embedding into `F_p`, per-op lowering rules, conformance vector set)**. Adding or changing a dtype is a protocol-version change that ships all three:
+
+- **Embedding** — how values map into/out of `F_p` (raw `field`; `round(v·2^s) mod p` for `fixedNN_s`; sign-extended modular embedding for ints; §4.1).
+- **Lowering** — how each admitting op consumes/produces the dtype: rescale-after-multiply, division mode (modular inverse for `field` vs. signed reciprocal for `fixedNN`), reduction-order class (§3.4), rounding (round-half-to-even), saturation/clamp.
+- **Conformance vectors** — the §3.3 suite is the *normative definition* of the dtype's behavior, not merely a test of it; a runtime is conformant for a dtype iff it reproduces every vector bit-exactly on every backend (CPU reference and any GPU path).
+
+> This makes "is this committed value correct?" a closed question: the answer is "does it equal the canonical lowering," and the conformance suite *is* the canonical lowering made executable. It is also the clean extension path — a new exact dtype (another modulus, a different fixed-point scale) is a new triple, not a kernel rewrite.
 
 ---
 
@@ -182,10 +221,22 @@ Graph {
 > through explorer HTTP/WebSocket plus local checker evidence. CUDA graph execution now covers the current
 > local synthetic GraphExecution shape and a supported same-shape field-op graph including elementwise
 > `mul`/`div`, scalar-bounds field `clamp`, deterministic field `sum`, field `mean`, field
-> `reshape`/`squeeze`/`unsqueeze`/`slice`/`tril`/`triu`, unary field `broadcast`, exact field `identity`/`neg`/`abs`/`sign`, field comparison masks `eq`/`gt`/`lt`/`ge`/`le`, and mask-fed
+> `reshape`/`squeeze`/`unsqueeze`/`slice`/`split`/`tril`/`triu`/`concat`/`stack`, unary field `broadcast`, exact field `identity`/`neg`/`abs`/`sign`, field comparison masks `eq`/`gt`/`lt`/`ge`/`le`, and mask-fed
 > field `where` through miner-role `cuda:N` backend selection;
 > broader CUDA graph op coverage
 > and public deployed graph evidence remain TODO.
+
+### 4.5.1 Canonical normalization before `graph_id`
+`graph_id` content-addresses the *program*, and rewards, blockspace accounting, and work-dedup all key off it (§11–§12). Syntactic hashing alone lets an adversary mint many distinct `graph_id`s for the **same computation** — reordered commutative operands, dead nodes, renamed intermediates, permuted independent ops — and thereby claim the same useful work multiple times, occupy multiple blockspace slots, or evade caching. To make `graph_id` address semantics rather than syntax, a graph is **normalized** before hashing by a fixed, deterministic pass pipeline:
+
+1. **Dead-op elimination** — drop ops not reachable from `outputs`.
+2. **Common-subexpression elimination** — merge ops with identical `(op, args, kwargs, out)` after their predecessors are normalized.
+3. **Commutative operand canonicalization** — for declared-commutative ops (`add`, `mul`, `eq`; `concat`/`stack` only when the spec marks the axis order-insensitive) sort `args` by a canonical ref key.
+4. **Canonical topological renumbering** — assign `id`s by a deterministic topological order (e.g. Kahn with a total tie-break on `(op, canonical-arg-keys)`), preserving the §4.6 dense, gap-free invariant.
+
+`graph_id = SHA256(canonical_json(normalize(graph)))`. Normalization MUST be **idempotent** (`normalize(normalize(g)) == normalize(g)`) and **semantics-preserving** (it never changes any output value for any admissible input); both properties are conformance-tested. Two graphs computing the same function therefore share a `graph_id` by construction, which is the anti-grinding property §10/§12 rely on.
+
+> Scope note (design): normalization is purely *structural* — it never reorders a reduction's internal accumulation (that is governed by §3.4). v0 MAY ship a reduced pipeline (DCE + canonical renumbering) and treat CSE / commutative canonicalization as a hardening follow-up, provided the implemented subset is still idempotent and semantics-preserving. Until the full pipeline lands, the residual grinding surface is tracked in §14/§16.
 
 ### 4.6 Structural validity rules
 A graph is **structurally valid** iff all of the following hold (checked before any execution; an invalid graph cannot appear in a job):
@@ -294,7 +345,7 @@ The op set is **frozen per protocol version**. Each op has a fixed arity, a fixe
 ### 4.8 Determinism obligations per op class
 Each op MUST have a single canonical `F_p` result for given inputs, identical on every conformant runtime:
 - **Exact ops** (Tier A/B integer & fixed-point arithmetic, shaping, comparisons): the field/fixed-point operation is exact; the only freedom is rounding after scale changes, which is **round-half-to-even** by spec, and broadcasting, which follows the canonical NumPy-style rule with a fixed alignment.
-- **Reductions**: the reduction order is **fixed** (ascending index order) so fixed-point accumulation is bit-identical; no hardware reduction-tree freedom is permitted.
+- **Reductions**: the reduction-order class is set by output dtype (§3.4). For `field` dtype the result is order-invariant, so any accumulation order — including hardware reduction trees — is admissible. For `fixedNN` dtype the order is **fixed ascending index order** with round-half-to-even at each rescale, and hardware reduction-tree reordering is a fault.
 - **Transcendental ops** (`exp`, `log`, `sqrt`, trig, `sigmoid`, `tanh`, `gelu`, `softmax`, `log_softmax`, `cross_entropy`, `rmsnorm`, `layer_norm`): defined by a **canonical fixed-point reference algorithm** (specified polynomial/LUT + fixed iteration count + canonical rounding), not by an IEEE library call. Two runtimes agree because they run the *same* integer approximation, not because their floats happen to match. Until that reference is published per op, the op is **not consensus-eligible** (Tier C, deferred).
 - **PRNG ops** (`normal`, `uniform`, `data_indexer`): use a **canonical, seeded, integer PRNG over `F_p`** (e.g. a counter-based PRF), never a platform RNG. Output is a pure function of `(seed, shape, dtype)`.
 - **Order-dependent ops** (`sort`, `topk`, `max`, `min`, `argmax`-like): ties are broken by **lowest index**, making the result a total function of the input.
@@ -306,6 +357,28 @@ Each op MUST have a single canonical `F_p` result for given inputs, identical on
 2. **`LinearTrainingStep`** — forward (`X·W`), fixed-point loss, backward (`dW = Xᵀ·dY`), optimizer update (`W' = W − η·dW`). A real learning step whose pieces are all matmul-like → Freivalds-verifiable.
 
 **v0 admits only ops whose canonical `F_p` semantics are fully specified and exactly verifiable:** Tier A (`matmul`, contraction `einsum`), the exact Tier B ops (elementwise integer/fixed-point arithmetic, `relu`, shaping, `sum`/`mean`, comparisons, exact quantization), plus whatever minimal set `LinearTrainingStep` requires. Transcendental and order-dependent ops are carried in the registry as the workload vocabulary but are gated out of consensus until §4.8 references and their verifiers exist (§13 roadmap).
+
+### 4.10 The op DAG as the canonical execution trace
+The IR is deliberately a flat, dense-`id`, gap-free, SSA-like, side-effect-free DAG (§4.3–§4.6). That structure *is* a linear execution program: op `id` is a program counter, each op reads only already-defined values and writes its `out` slots, and `trace_root = MerkleRoot([op_output_commit(i)])` (§5.2) commits the full instruction-by-instruction execution. **No separate bytecode is required — the canonical graph is the canonical trace**, which is why the verification ladder needs no per-op-type dispute machinery.
+
+Consequences the rest of the spec depends on:
+
+- **Uniform dispute granularity.** Every step has the same shape `(pc = i, op, input refs → committed inputs, committed outputs)`, so the §8.2 bisection game binary-searches a single integer `pc` and isolates exactly one op regardless of which ops a graph uses.
+- **Single-step re-execution is well-defined.** Because inputs are pure refs to earlier committed outputs, the §8.2 step-4 referee re-runs one op on agreed inputs with no hidden state and rules `O(one op)`.
+- **DA addresses the trace.** Each `op_output_commit(i)` is independently openable (§5.2), so availability sampling and dispute openings address execution at op granularity (§9).
+
+> Multi-output ops commit a vector `op_output_commit(i) = MerkleRoot([commit(out_j)])`. The bisection Merkle layout pads `#ops` to a power of two (§16 edge case). This subsection is descriptive of the existing IR + `trace_root` design, not a new artifact: it names the property that makes §8.2 tractable.
+
+### 4.11 Verification-class algebra and region fusion
+Each op has a verification class — Tier A → full Freivalds (§6); affine Tier B → random-linear (§7); exact non-affine Tier B → deterministic replay; index ops → index-consistency; Tier C → redundancy/fraud-proof (§8). A validator that checked every op independently would pay per-op verifier cost growing with `#ops`. Because the classes compose, contiguous regions can be checked **once**:
+
+- **Affine ∘ affine = affine.** A maximal connected region of random-linear-checkable ops (`add`, `sub`, const `mul`, `reshape`/`transpose`/`broadcast`, `sum`/`mean`) collapses to a single affine relation verified with one random-linear check (§7), soundness still `≥ 1 − 1/p` per rep over the region.
+- **Freivalds absorbs surrounding affine.** A `matmul` composed with affine pre/post-ops is verified as one linear check on the fused relation.
+- **Poisoning classes don't fuse.** Any op requiring index-consistency or canonical-reference / redundancy verification poisons its region: the region splits at that op and the poisoning op is verified by its own class. Fusion never upgrades a weaker class into a stronger guarantee.
+
+The fused class of a region is the **lattice join** of its members over the order `Freivalds/RandomLinear ⊑ DeterministicReplay ⊑ IndexConsistency ⊑ CanonicalReference/Redundancy`. `checks_root` (§11) commits the *canonical region decomposition* used, so every other validator recomputes the same regions deterministically from the normalized graph (§4.5.1).
+
+> Verifier-cost relevance: region fusion is what keeps on-chain verification sublinear in `#ops` for affine-heavy graphs, directly improving the §12 `bond ≥ gain-from-fraud` margin (cheaper honest verification) and block throughput. The decomposition is a deterministic pass over the normalized graph, so it cannot be ground to any party's advantage. Design status: the per-op verification class exists in the frozen registry today (§7 status); the *fusion/region* algebra is a design addition tracked in §16.
 
 ---
 
@@ -395,7 +468,7 @@ For elementwise/affine relations `Y = f(X)` where `f` is affine over `F_p` (e.g.
 draw r; check  <r, Y - f(X)>  == 0   over F_p
 ```
 
-This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used for Tier B ops that are not bilinear.
+This catches any nonzero error with probability `≥ 1 − 1/p` per rep. Used for Tier B ops that are not bilinear. Adjacent affine ops are fused into a single region and checked once (§4.11), keeping per-receipt verifier cost sublinear in `#ops`.
 
 > Status: the frozen IR registry now carries an executable verifier classification for every current op.
 > Tier-A `matmul` and the admitted rank-2 matrix-contraction `einsum` subset use full Freivalds;
@@ -427,7 +500,7 @@ Tier C ops (`softmax`, `gelu`, `topk`, `cross_entropy`, `data_indexer`, quantiza
 Assign each Tier-C-containing receipt to `k` independent validators (selection via §10 randomness). They each re-execute the relevant op(s) (or full job for small jobs) and commit results. Agreement among `k` honest-majority validators settles the receipt; disagreement triggers **delayed settlement** and escalation to §8.2 or full re-execution. Soundness rests on honest-majority *within the sampled committee* — explicitly weaker than Levels 1–2; redundancy `k` and selection randomness are the security parameters.
 
 ### 8.2 Interactive fraud proofs (the general, asymptotically-cheap mechanism)
-This is where the chain becomes secure for *arbitrary* workloads, and it is built directly on the IR DAG + `trace_root`.
+This is where the chain becomes secure for *arbitrary* workloads, and it is built directly on the IR DAG + `trace_root`. The bisection treats the op DAG as a canonical instruction stream (§4.10): op `id` is the program counter the parties binary-search over, which is why a single dispute protocol covers every op in the registry with no per-op-type special-casing.
 
 Setup: the miner's receipt commits `trace_root` over per-op output commitments. A **challenger** (any node) asserts the result is wrong.
 
@@ -657,6 +730,16 @@ TensorBlock {
 
 The v0 → 3b transition is the most important: it removes the honest-majority-of-compute assumption and is what lets the chain secure **real nonlinear training**, not just matmul. It is designed to be non-breaking because `trace_root` ships in the v0 receipt.
 
+Three cross-cutting IR refinements harden the verifier rather than extending the ladder, and slot in without a consensus break:
+
+| Refinement | Buys | Status |
+|---|---|---|
+| Canonical normalization before `graph_id` (§4.5.1) | anti-grinding / work-dedup on `graph_id` | design; v0 may ship a reduced pipeline |
+| Verification-class region fusion (§4.11) | sublinear on-chain verification for affine-heavy graphs | per-op classes exist; region algebra is design |
+| Dtype definition framework (§3.5) + reduction-order class (§3.4) | closed correctness question per value; field-boundary determinism | partial (fixed-point/int dtypes + conformance vectors landing) |
+
+These are all consequences of treating the IR as a *compilation contract* between the offline prover and the on-chain verifier (§1.3): each one either tightens the contract, shrinks the verifier, or closes a grinding surface — none of them change what work is useful, only how unambiguously and cheaply it is checked.
+
 ---
 
 ## 14. Threat Model & Soundness Summary
@@ -671,6 +754,8 @@ The v0 → 3b transition is the most important: it removes the honest-majority-o
 | Proposer grinds randomness | Beacon/VRF, block-hash randomness banned (§10) | beacon liveness dependency |
 | Data withholding | Availability sampling + timeout slashing | durable DA is future work |
 | Sybil / monopoly | Stake + bond + reward concentration analysis | economic, ongoing |
+| Graph-id grinding (same work, many `graph_id`s) | Canonical normalization before `graph_id` (§4.5.1) | residual: v0 may ship a reduced normalization pipeline |
+| Reduction-order divergence across hardware | Order-free inside `F_p`; fixed ascending for fixed-point (§3.4); conformance vectors (§3.3) | residual: fixed-point / Tier-C vector coverage |
 | Circular proposer selection | TensorWork barred from proposer choice (§11.3) | by construction |
 
 **Honest framing:** v0 is a *probabilistically verified tensor-work testnet under a bounded adversarial model* — Tier A is cryptographically strong; Tier C rests on committee honesty until fraud proofs (3b) land. Do not claim base-layer economic security until 3b, unbiasable randomness, durable DA, and slashing are all live.
@@ -690,7 +775,9 @@ This section is non-normative guidance on how the spec components partition into
 | Chain / consensus / p2p / runtime (§11) | a useful-verification-PoW + BFT-finality chain with deterministic settled-receipt blockspace; the heaviest infra component, well-suited to a Rust node implementation |
 | Interactive fraud proofs (§8.2) | a dedicated `dispute`/`referee` subsystem keyed off the receipt `trace_root` (the general-verification upgrade; ships after the redundancy baseline) |
 
-> Build order: (1) determinism contract + conformance vectors (§3, §4.8) — everything depends on it; (2) IR + Tier-A/B exact ops + Freivalds; (3) records, p2p, settled-receipt blockspace, UVPoW + BFT; (4) randomness beacon binding; (5) redundancy (§8.1); (6) interactive fraud proofs (§8.2); (7) durable DA and transcendental-op references.
+> Build order: (1) determinism contract + conformance vectors (§3, §4.8) — everything depends on it; (2) IR + Tier-A/B exact ops + Freivalds, with canonical normalization before `graph_id` (§4.5.1); (3) records, p2p, settled-receipt blockspace, UVPoW + BFT; (4) randomness beacon binding; (5) redundancy (§8.1); (6) interactive fraud proofs (§8.2) over the op-DAG instruction stream (§4.10); (7) verification-class region fusion (§4.11), durable DA, and transcendental-op references.
+
+> Design lineage (non-normative): the IR/verification design borrows structure from ML compilers — a content-addressed graph-level IR, structural normalization/CSE, op classes used to reason about whole regions, and a flat SSA instruction stream as the execution form. The borrow is deliberately partial: those systems optimize for *speed on one device*, whereas here the same machinery is repurposed for an unambiguous prover/verifier contract (§1.3), sublinear on-chain verification (§4.11), and bisectable disputes (§4.10, §8.2). Numerically the borrow is *inverted* — a compiler's freedom to reassociate floating point is exactly what the §3 determinism contract forbids; here reassociation is admissible only where the field makes it exact (§3.4).
 
 ---
 
@@ -784,10 +871,13 @@ This section is non-normative guidance on how the spec components partition into
   chain state instead of a sentinel height. Invalid-output, data-unavailability, and block-check challenge paths clear pending work
   before it can activate, while telemetry/study reporting still tracks raw concentration. Deployed-run
   concentration measurements and governance tuning remain open.
+- [ ] Canonical normalization pipeline (§4.5.1): fix the declared-commutative op set, the canonical ref-key/tie-break ordering, and CSE/renumbering determinism; prove (and conformance-test) idempotence and semantics-preservation; decide the v0 subset vs. full pipeline and record the residual grinding surface.
+- [ ] Verification-class region fusion (§4.11): canonical region decomposition over the normalized graph, lattice-join correctness, soundness of the fused affine/Freivalds checks over a region, and committing the decomposition into `checks_root` so it is recomputable.
+- [~] Reduction-order class (§3.4): `field` `OrderFree` vs. `fixedNN` `AscendingFixedPoint`. Fixed ascending accumulation is implemented for `Fixed32` `matmul`; broader fixed-point reductions plus their conformance vectors, and the explicit admission of free reduction order for `field` reductions on the GPU path, remain.
+- [ ] Datatype definition framework (§3.5): make `(embedding, lowering, conformance vectors)` the single source of truth for each dtype so a new exact dtype is a data change, not a kernel change; audit current dtypes against this triple.
 - [ ] Defining "externally useful" jobs without introducing subjective scoring or grindable job content (§2 job-source determinism).
 - [~] Edge case: jobs with `#ops` not a power of two in bisection; multi-output ops; ops with
   `const_blob` inputs. Exact graph execution now loads `const_blob` tensors by content URI from local
   tensor artifacts and checks shape/dtype/root before replay; availability of those blobs during a future
   interactive dispute remains open.
 - [ ] Edge case: floating-point miners producing off-by-one-ULP fixed-point results — define the canonical rounding so this is a *fault*, not noise.
-```

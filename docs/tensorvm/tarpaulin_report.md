@@ -1,6 +1,6 @@
 # TensorVM Tarpaulin Report
 
-Latest completed run: June 23, 2026 from the workspace root during Iteration 243 with:
+Latest completed run: June 24, 2026 from the workspace root during Iteration 244 with:
 
 ```bash
 cargo tarpaulin --workspace --timeout 120 --out Xml --output-dir target/tarpaulin
@@ -15,11 +15,18 @@ Result:
 - 1 tensor_vm_explorer library test
 
 84.95% workspace line coverage
-23831/28052 workspace lines covered
+23831/28053 workspace lines covered
 ```
 
 The report was written under `target/tarpaulin/`. `cargo-tarpaulin` is installed in this environment as
 `/home/ubuntu/.cargo/bin/cargo-tarpaulin` version `0.35.5`.
+
+Iteration 244 coverage-changing work added CUDA-feature-only scale-0 field `split(dim,sizes)` multi-output
+graph execution support and conformance coverage for the supported CUDA subset. The default Tarpaulin run
+passed under the portable feature set and does not instrument the native CUDA path, so the new CUDA
+structural-partition evidence is recorded through separate `--features cuda-kernels` runtime and miner-role
+tests in the execution plan. The portable coverage numbers are 84.95%, 23831/28053 lines, with 588
+instrumented tests.
 
 Iteration 243 coverage-changing work added CUDA-feature-only scale-0 field `concat`/`stack` graph
 execution support and conformance coverage for the supported CUDA subset. The default Tarpaulin run
