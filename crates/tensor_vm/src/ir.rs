@@ -819,6 +819,16 @@ fn execute_op(op: &OpNode, args: Vec<RuntimeValue>) -> Result<Vec<RuntimeValue>>
                 .ok_or(TvmError::InvalidReceipt("softmax requires dim"))?;
             crate::tensor::fixed_point_softmax(one_tensor_value(&args)?, dim)?
         }
+        "layer_norm" => {
+            let eps = field_kwarg(&op.kwargs, "eps")?;
+            let [x, weight, bias] = three_tensor_values(&args)?;
+            crate::tensor::fixed_point_layer_norm(x, weight, bias, eps)?
+        }
+        "rmsnorm" => {
+            let eps = field_kwarg(&op.kwargs, "eps")?;
+            let [x, weight] = two_tensor_values(&args)?;
+            crate::tensor::fixed_point_rmsnorm(x, weight, eps)?
+        }
         _ => {
             return Err(TvmError::InvalidReceipt(
                 "tensor ir op is not executable by exact interpreter",
@@ -1741,6 +1751,19 @@ fn two_tensor_values(values: &[RuntimeValue]) -> Result<[&Tensor; 2]> {
     }
 }
 
+fn three_tensor_values(values: &[RuntimeValue]) -> Result<[&Tensor; 3]> {
+    match values {
+        [
+            RuntimeValue::Tensor(a),
+            RuntimeValue::Tensor(b),
+            RuntimeValue::Tensor(c),
+        ] => Ok([a, b, c]),
+        _ => Err(TvmError::InvalidReceipt(
+            "tensor ir expected tensor arguments",
+        )),
+    }
+}
+
 fn tensor_and_scalar_values(values: &[RuntimeValue]) -> Result<(&Tensor, Elem)> {
     match values {
         [RuntimeValue::Tensor(tensor), RuntimeValue::Field(scalar)] => Ok((tensor, *scalar)),
@@ -2168,6 +2191,18 @@ fn infer_outputs(
             }
         }
         "exp" | "log" | "sqrt" | "softmax" => one_arg(args)?.clone(),
+        "layer_norm" => {
+            if args.len() != 3 {
+                return Err(TvmError::InvalidReceipt("tensor ir op arity mismatch"));
+            }
+            args[0].clone()
+        }
+        "rmsnorm" => {
+            if args.len() != 2 {
+                return Err(TvmError::InvalidReceipt("tensor ir op arity mismatch"));
+            }
+            args[0].clone()
+        }
         "gather" | "embedding" => {
             if args.len() != 2 {
                 return Err(TvmError::InvalidReceipt("tensor ir op arity mismatch"));
@@ -3253,7 +3288,7 @@ fn escape_json(value: &str) -> String {
     out
 }
 
-const FROZEN_OP_REGISTRY: [OpSpec; 53] = [
+const FROZEN_OP_REGISTRY: [OpSpec; 55] = [
     OpSpec {
         name: "matmul",
         tier: IrOpTier::A,
@@ -3705,6 +3740,26 @@ const FROZEN_OP_REGISTRY: [OpSpec; 53] = [
         consensus_admitted: false,
     },
     OpSpec {
+        name: "layer_norm",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(3),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &["eps"],
+        required_kwargs: &["eps"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
+        name: "rmsnorm",
+        tier: IrOpTier::C,
+        arity: IrArity::Exact(2),
+        output_count: IrOutputCount::Exact(1),
+        allowed_kwargs: &["eps"],
+        required_kwargs: &["eps"],
+        verification: IrVerificationClass::CanonicalReferenceRequired,
+        consensus_admitted: false,
+    },
+    OpSpec {
         name: "gather",
         tier: IrOpTier::C,
         arity: IrArity::Exact(2),
@@ -3802,6 +3857,79 @@ mod tests {
         let mut changed = graph.clone();
         changed.inputs[0].shape = vec![2, 4];
         assert_ne!(graph.graph_id(), changed.graph_id());
+    }
+
+    #[test]
+    fn layer_norm_composes_in_graph_language() {
+        use crate::tensor::signed_i128_to_elem;
+        let x = Tensor::from_vec_with_scale(
+            vec![2, 3],
+            DType::Fixed32,
+            16,
+            vec![
+                signed_i128_to_elem(19661),
+                signed_i128_to_elem(-32768),
+                signed_i128_to_elem(65536),
+                signed_i128_to_elem(-65536),
+                signed_i128_to_elem(32768),
+                signed_i128_to_elem(98304),
+            ],
+        )
+        .unwrap();
+        let weight =
+            Tensor::from_vec_with_scale(vec![3], DType::Fixed32, 16, vec![65536, 65536, 65536])
+                .unwrap();
+        let bias = Tensor::from_vec_with_scale(vec![3], DType::Fixed32, 16, vec![0, 0, 0]).unwrap();
+        let eps = 66_u64;
+        let expected = crate::tensor::fixed_point_layer_norm(&x, &weight, &bias, eps).unwrap();
+
+        let mut kwargs = BTreeMap::new();
+        kwargs.insert("eps".to_owned(), IrValue::Literal(IrLiteral::Field(eps)));
+        let op = OpNode {
+            id: 0,
+            op: "layer_norm".to_owned(),
+            args: vec![input_ref("x"), input_ref("weight"), input_ref("bias")],
+            kwargs,
+            out: vec![tensor_spec("y", vec![2, 3], DType::Fixed32, 16)],
+        };
+
+        // The op executes through the canonical IR op dispatch.
+        let outputs = execute_op(
+            &op,
+            vec![
+                RuntimeValue::Tensor(x.clone()),
+                RuntimeValue::Tensor(weight.clone()),
+                RuntimeValue::Tensor(bias.clone()),
+            ],
+        )
+        .unwrap();
+        match &outputs[0] {
+            RuntimeValue::Tensor(tensor) => assert_eq!(*tensor, expected),
+            _ => panic!("layer_norm must return a tensor"),
+        }
+
+        // It is a well-formed graph citizen: structurally valid and stably
+        // addressed, but Tier-C and gated out of consensus until a verifier exists.
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("x", vec![2, 3], DType::Fixed32, 16),
+                tensor_spec("weight", vec![3], DType::Fixed32, 16),
+                tensor_spec("bias", vec![3], DType::Fixed32, 16),
+            ],
+            params: Vec::new(),
+            ops: vec![op],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        graph.validate(false).unwrap();
+        assert!(
+            graph.validate_for_consensus().is_err(),
+            "layer_norm is Tier-C and must be gated out of consensus"
+        );
+        assert_eq!(graph.graph_id(), graph.graph_id());
     }
 
     #[test]

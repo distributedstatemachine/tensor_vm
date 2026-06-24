@@ -1230,6 +1230,122 @@ fn q_ln(xq: i128) -> Result<i128> {
         .ok_or_else(q_overflow)
 }
 
+/// Canonical fixed-point `layer_norm` over the last dim, composed from the
+/// canonical primitives (mean, center, variance, sqrt, normalize, affine):
+/// `y = (x - mean) / sqrt(var + eps) * weight + bias`. Proves the primitives
+/// assemble into a real transformer building block (upow.md §4.8.1). `mean`/
+/// `var` use exact round-half-even integer division (the IR `mean` op uses a
+/// field inverse, valid only for `field` dtype), so this is computed in-Q here.
+pub fn fixed_point_layer_norm(
+    x: &Tensor,
+    weight: &Tensor,
+    bias: &Tensor,
+    eps: Elem,
+) -> Result<Tensor> {
+    let (shape, n, s) = layer_norm_dims(x, &[weight, bias])?;
+    let eps_q = q_from_elem(eps, s)?;
+    let wq = q_row(weight, s)?;
+    let bq = q_row(bias, s)?;
+    let src = x.as_slice();
+    let mut out = vec![0; src.len()];
+    let n_i = n as i128;
+    for o in 0..(src.len() / n) {
+        let base = o * n;
+        let mut xq = Vec::with_capacity(n);
+        let mut sum = 0_i128;
+        for i in 0..n {
+            let q = q_from_elem(src[base + i], s)?;
+            sum = sum.checked_add(q).ok_or_else(q_overflow)?;
+            xq.push(q);
+        }
+        let mean = round_div_i128_half_even(sum, n_i)?;
+        let mut var_sum = 0_i128;
+        let mut centered = Vec::with_capacity(n);
+        for value in &xq {
+            let c = value - mean;
+            var_sum = var_sum.checked_add(q_mul(c, c)?).ok_or_else(q_overflow)?;
+            centered.push(c);
+        }
+        let var = round_div_i128_half_even(var_sum, n_i)?;
+        let std = q_sqrt(var.checked_add(eps_q).ok_or_else(q_overflow)?)?;
+        if std == 0 {
+            return Err(TvmError::InvalidReceipt("layer_norm zero variance"));
+        }
+        for i in 0..n {
+            let norm = q_div(centered[i], std)?;
+            let scaled = q_mul(norm, wq[i])?
+                .checked_add(bq[i])
+                .ok_or_else(q_overflow)?;
+            out[base + i] = q_to_elem(scaled, s)?;
+        }
+    }
+    Tensor::from_vec_with_scale(shape, x.dtype, s, out)
+}
+
+/// Canonical fixed-point `rmsnorm`: `y = x / sqrt(mean(x^2) + eps) * weight`.
+pub fn fixed_point_rmsnorm(x: &Tensor, weight: &Tensor, eps: Elem) -> Result<Tensor> {
+    let (shape, n, s) = layer_norm_dims(x, &[weight])?;
+    let eps_q = q_from_elem(eps, s)?;
+    let wq = q_row(weight, s)?;
+    let src = x.as_slice();
+    let mut out = vec![0; src.len()];
+    let n_i = n as i128;
+    for o in 0..(src.len() / n) {
+        let base = o * n;
+        let mut xq = Vec::with_capacity(n);
+        let mut sq_sum = 0_i128;
+        for i in 0..n {
+            let q = q_from_elem(src[base + i], s)?;
+            sq_sum = sq_sum.checked_add(q_mul(q, q)?).ok_or_else(q_overflow)?;
+            xq.push(q);
+        }
+        let ms = round_div_i128_half_even(sq_sum, n_i)?;
+        let rms = q_sqrt(ms.checked_add(eps_q).ok_or_else(q_overflow)?)?;
+        if rms == 0 {
+            return Err(TvmError::InvalidReceipt("rmsnorm zero magnitude"));
+        }
+        for i in 0..n {
+            out[base + i] = q_to_elem(q_mul(q_div(xq[i], rms)?, wq[i])?, s)?;
+        }
+    }
+    Tensor::from_vec_with_scale(shape, x.dtype, s, out)
+}
+
+fn layer_norm_dims(x: &Tensor, params: &[&Tensor]) -> Result<(Vec<usize>, usize, i64)> {
+    if x.dtype != DType::Fixed32 {
+        return Err(TvmError::InvalidReceipt(
+            "layer_norm requires fixed-point dtype",
+        ));
+    }
+    let s = x.scale;
+    let shape = x.shape.clone();
+    let n = *shape.last().ok_or(TvmError::InvalidReceipt(
+        "layer_norm needs a normalized dim",
+    ))?;
+    if n == 0 {
+        return Err(TvmError::InvalidReceipt("layer_norm over empty dim"));
+    }
+    for param in params {
+        if param.dtype != DType::Fixed32 || param.scale != s {
+            return Err(TvmError::InvalidReceipt(
+                "layer_norm param dtype/scale mismatch",
+            ));
+        }
+        if param.shape.as_slice() != [n] {
+            return Err(TvmError::InvalidReceipt("layer_norm param shape mismatch"));
+        }
+    }
+    Ok((shape, n, s))
+}
+
+fn q_row(tensor: &Tensor, scale: i64) -> Result<Vec<i128>> {
+    tensor
+        .as_slice()
+        .iter()
+        .map(|value| q_from_elem(*value, scale))
+        .collect()
+}
+
 pub fn fixed_point_log(tensor: &Tensor) -> Result<Tensor> {
     fixed_unary(tensor, q_ln)
 }
@@ -1593,6 +1709,72 @@ mod tests {
             Q_LN2,
             (std::f64::consts::LN_2 * (Q_ONE as f64)).round() as i128
         );
+    }
+
+    #[test]
+    fn fixed_layer_norm_composes_into_transformer_block() {
+        let s = 16;
+        let one = 65536.0_f64;
+        // x: [2,4], weight=1.0, bias=0.0, eps ~ 1e-3.
+        let x = fx(
+            &[19661, -32768, 65536, 13107, -65536, 32768, 6554, 98304],
+            vec![2, 4],
+            s,
+        );
+        let w = fx(&[65536, 65536, 65536, 65536], vec![4], s);
+        let b = fx(&[0, 0, 0, 0], vec![4], s);
+        let eps_raw = 66_u64; // ~0.001007
+        let out = fixed_point_layer_norm(&x, &w, &b, eps_raw).unwrap();
+        assert_eq!(out.shape(), [2, 4]);
+        // determinism
+        assert_eq!(out, fixed_point_layer_norm(&x, &w, &b, eps_raw).unwrap());
+
+        // f64 reference: y = (x - mean)/sqrt(var + eps) over the last dim.
+        let got = raw(&out);
+        let xs = raw(&x);
+        let eps = eps_raw as f64 / one;
+        for row in 0..2 {
+            let vals: Vec<f64> = (0..4).map(|i| xs[row * 4 + i] as f64 / one).collect();
+            let mean = vals.iter().sum::<f64>() / 4.0;
+            let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / 4.0;
+            let std = (var + eps).sqrt();
+            for i in 0..4 {
+                let expected = (vals[i] - mean) / std;
+                let actual = got[row * 4 + i] as f64 / one;
+                assert!(
+                    (actual - expected).abs() <= 3e-3,
+                    "layer_norm row {row} idx {i}: got {actual} expected {expected}"
+                );
+            }
+        }
+    }
+
+    #[test]
+    fn fixed_rmsnorm_matches_float_reference() {
+        let s = 16;
+        let one = 65536.0_f64;
+        let x = fx(
+            &[65536, 131072, -65536, 32768, 98304, -32768],
+            vec![2, 3],
+            s,
+        );
+        let w = fx(&[65536, 65536, 65536], vec![3], s);
+        let eps_raw = 66_u64;
+        let out = fixed_point_rmsnorm(&x, &w, eps_raw).unwrap();
+        assert_eq!(out, fixed_point_rmsnorm(&x, &w, eps_raw).unwrap());
+        let got = raw(&out);
+        let xs = raw(&x);
+        let eps = eps_raw as f64 / one;
+        for row in 0..2 {
+            let vals: Vec<f64> = (0..3).map(|i| xs[row * 3 + i] as f64 / one).collect();
+            let ms = vals.iter().map(|v| v * v).sum::<f64>() / 3.0;
+            let rms = (ms + eps).sqrt();
+            for i in 0..3 {
+                let expected = vals[i] / rms;
+                let actual = got[row * 3 + i] as f64 / one;
+                assert!((actual - expected).abs() <= 3e-3, "rmsnorm {row},{i}");
+            }
+        }
     }
 
     #[test]
