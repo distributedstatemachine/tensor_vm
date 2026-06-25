@@ -21,7 +21,7 @@ use crate::{
         encode_trace_bisection_open_payload, encode_trace_bisection_referee_payload,
         encode_trace_bisection_round_payload,
     },
-    scheduler::{JobSource, SyntheticLocalJobSource},
+    scheduler::SyntheticLocalJobSource,
     types::{Address, Hash, parse_hash_hex},
 };
 use std::collections::{BTreeMap, BTreeSet};
@@ -196,7 +196,12 @@ pub fn produce_and_publish_synthetic_job_with_store(
         return Ok(None);
     };
     let announcement_checkpoint = chain_announcement_checkpoint(&server.gateway().node.chain);
-    let Some(job) = job_source.next_job(&server.gateway().node.chain) else {
+    // Drive job uniqueness from a monotonic nonce (the chain job count) rather than
+    // the chain height, so the producer keeps minting distinct jobs every round and
+    // the work pipeline does not stall when the head is briefly static.
+    let production_nonce = server.gateway().node.chain.state().jobs().len() as u64;
+    let Some(job) = job_source.next_job_with_nonce(&server.gateway().node.chain, production_nonce)
+    else {
         return Ok(None);
     };
     let job_id = job.job_id();

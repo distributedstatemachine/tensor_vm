@@ -95,6 +95,83 @@ impl SyntheticLocalJobSource {
         )
     }
 
+    /// Monotonic-nonce job production for the live synthetic producer. Unlike the
+    /// height-keyed `next_job`, the job's uniqueness is keyed on `nonce` (a value
+    /// the producer advances every round, e.g. the chain job count), so the
+    /// producer keeps minting distinct jobs and never stalls when the chain head
+    /// is briefly static (the height-keyed path would re-emit the same job id and
+    /// freeze the work pipeline). Existing height-keyed `next_*_job` are unchanged.
+    pub fn next_job_with_nonce(&mut self, chain: &Chain, nonce: u64) -> Option<JobState> {
+        match nonce % 3 {
+            0 => Some(JobState::TensorOp(self.matmul_job_for_nonce(chain, nonce))),
+            1 => Some(JobState::LinearTrainingStep(
+                self.linear_job_for_nonce(chain, nonce),
+            )),
+            _ => Some(JobState::GraphExecution(
+                self.graph_job_for_nonce(chain, nonce),
+            )),
+        }
+    }
+
+    fn synthetic_deadline(chain: &Chain) -> u64 {
+        chain
+            .state()
+            .height()
+            .saturating_add(chain.params().receipt_submission_window)
+    }
+
+    fn matmul_job_for_nonce(&self, chain: &Chain, nonce: u64) -> MatmulJob {
+        self.scheduler.generate_small_matmul(
+            chain.state().epoch(),
+            nonce,
+            &chain.state().finalized_randomness(),
+            Self::synthetic_deadline(chain),
+        )
+    }
+
+    fn linear_job_for_nonce(&self, chain: &Chain, nonce: u64) -> LinearTrainingStepJob {
+        let weights = Self::linear_training_weights();
+        let nonce_bytes = nonce.to_le_bytes();
+        LinearTrainingStepJob::from_spec(LinearTrainingStepSpec {
+            model_id: hash_bytes(
+                b"tensor-vm-local-linear-model-v1",
+                &[&chain.state().finalized_randomness(), &nonce_bytes],
+            ),
+            step: 0,
+            batch_seed: hash_bytes(
+                b"tensor-vm-local-linear-batch-v1",
+                &[&chain.state().finalized_randomness(), &nonce_bytes],
+            ),
+            weight_root_before: weights.commitment_root(),
+            input_shape: vec![4, 3],
+            weight_shape: vec![3, 2],
+            target_shape: vec![4, 2],
+            lr: 2,
+            deadline_block: Self::synthetic_deadline(chain),
+        })
+    }
+
+    fn graph_job_for_nonce(&self, chain: &Chain, nonce: u64) -> GraphJob {
+        let graph = Self::graph_execution_graph();
+        let inputs = Self::graph_execution_inputs();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        // The graph body and inputs are fixed (so every node agrees on them); the
+        // job's uniqueness comes from `nonce` carried in the epoch field, which the
+        // chain does not validate against the live epoch for graph jobs.
+        GraphJob::new(
+            nonce,
+            graph.graph_id(),
+            input_roots,
+            BTreeMap::new(),
+            Self::synthetic_deadline(chain),
+            1,
+            12,
+        )
+    }
+
     pub fn graph_execution_graph() -> TensorGraph {
         TensorGraph {
             ir_version: 1,
