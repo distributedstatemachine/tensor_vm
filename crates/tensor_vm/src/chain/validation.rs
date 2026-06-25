@@ -581,6 +581,19 @@ pub fn has_attestation_quorum(chain: &Chain, receipt_id: &Hash) -> bool {
         && valid_stake.saturating_mul(stake_den) >= assigned_stake.saturating_mul(stake_num)
 }
 
+/// §8.1: the number of distinct assigned committee validators that agree on one
+/// result root for `receipt_id` (the honest-majority count settlement gates on).
+pub fn committee_agreement_observed(chain: &Chain, receipt_id: &Hash) -> usize {
+    let assigned = assigned_validators(chain, *receipt_id);
+    let attestations = chain
+        .state
+        .attestations
+        .get(receipt_id)
+        .map(Vec::as_slice)
+        .unwrap_or(&[]);
+    crate::verify::committee_agreement_count(attestations, &assigned)
+}
+
 pub fn submit_validator_audit_report(
     chain: &mut Chain,
     report: ValidatorAuditReport,

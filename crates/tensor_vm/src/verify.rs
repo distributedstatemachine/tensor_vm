@@ -597,6 +597,15 @@ pub fn committee_agreement(
     assigned: &std::collections::BTreeSet<Address>,
     min_committee: usize,
 ) -> bool {
+    committee_agreement_count(attestations, assigned) >= min_committee.max(1)
+}
+
+/// The size of the largest set of distinct assigned validators that submitted a
+/// valid, available, correctly-signed attestation sharing one agreement root.
+pub fn committee_agreement_count(
+    attestations: &[ValidatorAttestation],
+    assigned: &std::collections::BTreeSet<Address>,
+) -> usize {
     let mut by_root: std::collections::BTreeMap<Hash, std::collections::BTreeSet<Address>> =
         std::collections::BTreeMap::new();
     for attestation in attestations {
@@ -618,7 +627,6 @@ pub fn committee_agreement(
         .map(|validators| validators.len())
         .max()
         .unwrap_or(0)
-        >= min_committee.max(1)
 }
 
 fn verify_graph_execution_inner(

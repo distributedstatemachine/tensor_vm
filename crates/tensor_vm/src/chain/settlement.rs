@@ -2,10 +2,50 @@ use super::{
     Chain, ChainEvent, ChainState, PendingReceiptReward, ReceiptRewardKind, ReceiptRewardMaturity,
     ReceiptState, RedundantSettlementDelayRecord,
 };
+use crate::ir::TensorGraph;
 use crate::jobs::LinearTrainingStepReceipt;
 use crate::types::{Address, Hash, hash_bytes};
 use crate::verify::VerificationResult;
 use std::collections::{BTreeMap, BTreeSet};
+
+/// §8.1: a receipt takes the committee path iff it is a graph receipt whose
+/// registered body requires committee verification (contains a Tier-C
+/// canonical-reference op). Tier-A/B receipts keep the Freivalds quorum path.
+fn receipt_requires_committee(chain: &Chain, receipt: &ReceiptState) -> bool {
+    let ReceiptState::GraphExecution(graph_receipt) = receipt else {
+        return false;
+    };
+    chain
+        .state
+        .program_bodies
+        .get(&graph_receipt.graph_id)
+        .and_then(|bytes| TensorGraph::from_canonical_json_bytes(bytes).ok())
+        .map(|graph| graph.requires_committee_verification())
+        .unwrap_or(false)
+}
+
+fn committee_settlement_delay_record(
+    chain: &Chain,
+    receipt_id: Hash,
+    receipt: &ReceiptState,
+    observed_agreement: usize,
+) -> RedundantSettlementDelayRecord {
+    RedundantSettlementDelayRecord {
+        receipt_id,
+        job_id: receipt.job_id(),
+        primitive_type: receipt.primitive_type(),
+        observed_agreeing_miners: observed_agreement,
+        observed_agreeing_operators: observed_agreement,
+        required_agreement_quorum: chain.params.redundancy_k.max(1),
+        conflicting_quorum_receipts: 0,
+        recorded_at_height: chain.state.height,
+        reward_delay_until_height: chain
+            .state
+            .height
+            .saturating_add(chain.params.reward_maturity_delay_blocks()),
+        reason: "awaiting tier-c committee agreement".to_owned(),
+    }
+}
 
 pub(super) fn redundant_agreement_count(chain: &Chain, receipt_id: &Hash) -> usize {
     redundant_agreeing_miners(chain, receipt_id).len()
@@ -61,6 +101,32 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
         }
         if chain.state.challenged_receipts.contains(receipt_id) {
             clear_delay_ids.push(*receipt_id);
+            continue;
+        }
+        if receipt_requires_committee(chain, receipt) {
+            // §8.1 Tier-C settlement: gate on honest-majority committee agreement
+            // over the deterministic result root, not the Freivalds quorum.
+            let observed = super::validation::committee_agreement_observed(chain, receipt_id);
+            if observed >= chain.params.redundancy_k.max(1) {
+                let reward_maturity = chain
+                    .state
+                    .redundant_settlement_delays
+                    .get(receipt_id)
+                    .map(|record| {
+                        ReceiptRewardMaturity::AwaitingInclusionUntil(
+                            record.reward_delay_until_height,
+                        )
+                    })
+                    .unwrap_or(ReceiptRewardMaturity::AwaitingInclusion);
+                newly_settled.push((*receipt_id, receipt.clone(), reward_maturity));
+            } else if observed >= 1 {
+                delayed_records.push(committee_settlement_delay_record(
+                    chain,
+                    *receipt_id,
+                    receipt,
+                    observed,
+                ));
+            }
             continue;
         }
         if chain.has_attestation_quorum(receipt_id) {

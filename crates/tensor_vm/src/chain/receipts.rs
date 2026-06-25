@@ -6,7 +6,9 @@ use crate::types::Hash;
 
 pub fn register_program_body(chain: &mut Chain, graph_id: GraphId, bytes: Vec<u8>) -> Result<()> {
     let graph = TensorGraph::from_canonical_json_bytes(&bytes)?;
-    let validated_graph_id = graph.validate_for_consensus()?;
+    // Admit consensus (Tier-A/B) and §8.1 committee (Tier-C canonical-reference)
+    // graph bodies; the verification path is chosen per receipt class.
+    let validated_graph_id = graph.validate_for_committee()?;
     if validated_graph_id != graph_id {
         return Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"));
     }
@@ -27,7 +29,7 @@ pub fn register_program_body(chain: &mut Chain, graph_id: GraphId, bytes: Vec<u8
 
 pub fn submit_job(chain: &mut Chain, job: JobState) {
     if let Some(graph) = job.tensor_ir_graph()
-        && graph.validate_for_consensus().is_ok()
+        && graph.validate_for_committee().is_ok()
     {
         let graph_id = graph.graph_id();
         chain
@@ -150,7 +152,7 @@ fn registered_graph(chain: &Chain, graph_id: &GraphId) -> Result<TensorGraph> {
         .get(graph_id)
         .ok_or(TvmError::InvalidReceipt("unknown tensor ir graph body"))?;
     let graph = TensorGraph::from_canonical_json_bytes(bytes)?;
-    if graph.validate_for_consensus()? != *graph_id {
+    if graph.validate_for_committee()? != *graph_id {
         return Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"));
     }
     Ok(graph)

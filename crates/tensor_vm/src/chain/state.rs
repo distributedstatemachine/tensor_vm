@@ -26,6 +26,10 @@ pub struct ChainParams {
     pub proposer_reward_hold_epochs: u64,
     pub replication_factor: usize,
     pub agreement_quorum: usize,
+    /// §8.1 committee size `k`: the number of distinct assigned validators that
+    /// must re-execute a Tier-C receipt and agree on one result root before it
+    /// settles.
+    pub redundancy_k: usize,
     pub finality_stake_numerator: u64,
     pub finality_stake_denominator: u64,
     pub miner_reward_bps: u64,
@@ -64,6 +68,7 @@ impl Default for ChainParams {
             proposer_reward_hold_epochs: 1,
             replication_factor: 5,
             agreement_quorum: 3,
+            redundancy_k: 3,
             finality_stake_numerator: 2,
             finality_stake_denominator: 3,
             miner_reward_bps: 7_000,

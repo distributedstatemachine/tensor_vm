@@ -950,6 +950,247 @@ fn quorum_and_agreement_helpers_reject_unknown_receipts() {
 }
 
 #[test]
+fn tier_c_receipt_settles_only_on_committee_agreement() {
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorGraph, TensorSpec};
+    use crate::tensor::{DType, Tensor};
+    use crate::verify::committee_checks_root;
+
+    let beacon = hash_bytes(b"test", &[b"committee-beacon"]);
+    let params = ChainParams {
+        redundancy_k: 3,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 3,
+            validators_per_job: 3,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"committee-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("committee-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+
+    // A Tier-C (gelu) graph: committee-admissible, not consensus-admissible.
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![TensorSpec {
+            name: "x".to_owned(),
+            shape: vec![2, 3],
+            dtype: DType::Fixed32,
+            scale: 16,
+        }],
+        params: Vec::new(),
+        ops: vec![OpNode {
+            id: 0,
+            op: "gelu".to_owned(),
+            args: vec![IrRef::Input {
+                name: "x".to_owned(),
+            }],
+            kwargs: BTreeMap::new(),
+            out: vec![TensorSpec {
+                name: "y".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+        }],
+        outputs: vec![GraphOutput {
+            name: "y".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_committee().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+
+    let input = Tensor::from_vec_with_scale(
+        vec![2, 3],
+        DType::Fixed32,
+        16,
+        vec![0, 32768, 65536, 98304, 131072, 16384],
+    )
+    .unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+    let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 6);
+    chain.submit_job(JobState::GraphExecution(job.clone()));
+    let (receipt, _) =
+        GraphReceipt::from_committee_execution(&job, &graph, miner, &inputs, 1, 2).unwrap();
+    chain.submit_graph_receipt(receipt.clone()).unwrap();
+
+    let agreement_root = committee_checks_root(
+        &graph_id,
+        &receipt.receipt_id,
+        &receipt.trace_root,
+        &receipt.output_roots,
+    );
+    let attest = |chain: &mut Chain, validator: Address| {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::GraphExecution,
+                    result: VerificationResult::Valid,
+                    checks_root: agreement_root,
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    };
+
+    // Two committee validators agree — below k=3, so settlement is delayed.
+    attest(&mut chain, validators[0]);
+    attest(&mut chain, validators[1]);
+    chain.settle_epoch(1_000, 500);
+    assert!(chain.state().settled_receipts().is_empty());
+    let delay = chain
+        .state()
+        .redundant_settlement_delays()
+        .get(&receipt.receipt_id)
+        .expect("under-agreed Tier-C receipt records a committee settlement delay");
+    assert_eq!(delay.reason, "awaiting tier-c committee agreement");
+    assert_eq!(delay.observed_agreeing_operators, 2);
+    assert_eq!(delay.required_agreement_quorum, 3);
+
+    // The third committee validator reaches honest-majority agreement → settles.
+    attest(&mut chain, validators[2]);
+    chain.settle_epoch(1_000, 500);
+    assert!(
+        chain
+            .state()
+            .settled_receipts()
+            .contains(&receipt.receipt_id)
+    );
+}
+
+#[test]
+fn tier_c_committee_disagreement_blocks_settlement() {
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorGraph, TensorSpec};
+    use crate::tensor::{DType, Tensor};
+    use crate::verify::committee_checks_root;
+
+    let beacon = hash_bytes(b"test", &[b"committee-split-beacon"]);
+    let params = ChainParams {
+        redundancy_k: 3,
+        agreement_quorum: 1,
+        freivalds: FreivaldsParams {
+            minimum_validators: 3,
+            validators_per_job: 3,
+            minimum_stake_numerator: 1,
+            minimum_stake_denominator: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"split-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..3)
+        .map(|i| address(format!("split-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![TensorSpec {
+            name: "x".to_owned(),
+            shape: vec![2, 3],
+            dtype: DType::Fixed32,
+            scale: 16,
+        }],
+        params: Vec::new(),
+        ops: vec![OpNode {
+            id: 0,
+            op: "gelu".to_owned(),
+            args: vec![IrRef::Input {
+                name: "x".to_owned(),
+            }],
+            kwargs: BTreeMap::new(),
+            out: vec![TensorSpec {
+                name: "y".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+        }],
+        outputs: vec![GraphOutput {
+            name: "y".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_committee().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+
+    let input = Tensor::from_vec_with_scale(
+        vec![2, 3],
+        DType::Fixed32,
+        16,
+        vec![0, 32768, 65536, 98304, 131072, 16384],
+    )
+    .unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+    let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 6);
+    chain.submit_job(JobState::GraphExecution(job.clone()));
+    let (receipt, _) =
+        GraphReceipt::from_committee_execution(&job, &graph, miner, &inputs, 1, 2).unwrap();
+    chain.submit_graph_receipt(receipt.clone()).unwrap();
+
+    let honest_root = committee_checks_root(
+        &graph_id,
+        &receipt.receipt_id,
+        &receipt.trace_root,
+        &receipt.output_roots,
+    );
+    let dishonest_root = hash_bytes(b"test", &[b"wrong-committee-root"]);
+    let attest = |chain: &mut Chain, validator: Address, root: Hash| {
+        chain
+            .submit_attestation(ValidatorAttestation::new(
+                validator,
+                10_000,
+                AttestationStatement {
+                    receipt_id: receipt.receipt_id,
+                    job_id: receipt.job_id,
+                    primitive_type: PrimitiveType::GraphExecution,
+                    result: VerificationResult::Valid,
+                    checks_root: root,
+                    data_availability_passed: true,
+                },
+            ))
+            .unwrap();
+    };
+
+    // 2 honest + 1 dishonest: the largest agreeing group is 2 < k=3 → no settlement.
+    attest(&mut chain, validators[0], honest_root);
+    attest(&mut chain, validators[1], honest_root);
+    attest(&mut chain, validators[2], dishonest_root);
+    chain.settle_epoch(1_000, 500);
+    assert!(chain.state().settled_receipts().is_empty());
+}
+
+#[test]
 fn redundant_agreement_quorum_is_required_before_settlement() {
     let beacon = hash_bytes(b"test", &[b"beacon"]);
     let params = ChainParams {

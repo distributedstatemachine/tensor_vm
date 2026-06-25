@@ -251,14 +251,27 @@ impl ReferenceValidatorRole {
                     ..
                 },
             ) => {
-                let report = crate::verify::verify_graph_execution_with_const_blobs(
-                    job,
-                    receipt,
-                    graph,
-                    inputs,
-                    const_blobs,
-                    validation_seed,
-                )?;
+                // Tier-C committee receipts re-execute under the committee policy
+                // and commit a seed-independent agreement root (§8.1); strict
+                // Tier-A/B graphs stay on the per-validator Freivalds-style path.
+                let report = if graph.requires_committee_verification() {
+                    crate::verify::verify_graph_execution_committee(
+                        job,
+                        receipt,
+                        graph,
+                        inputs,
+                        const_blobs,
+                    )?
+                } else {
+                    crate::verify::verify_graph_execution_with_const_blobs(
+                        job,
+                        receipt,
+                        graph,
+                        inputs,
+                        const_blobs,
+                        validation_seed,
+                    )?
+                };
                 Ok(ValidatorAttestation::new(
                     self.address,
                     self.stake,

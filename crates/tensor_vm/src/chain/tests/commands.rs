@@ -528,7 +528,7 @@ fn chain_engine_rejects_index_consistency_ops_at_program_registration() {
             bytes: graph.canonical_json().into_bytes(),
         }),
         Err(TvmError::InvalidReceipt(
-            "tensor ir op is not consensus admitted"
+            "tensor ir op is not committee admissible"
         ))
     );
     assert!(chain.state().program_bodies().is_empty());
