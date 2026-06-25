@@ -1519,7 +1519,7 @@ fn round_div_pow2_half_even(value: i128, shift: u32) -> Result<i128> {
     }
 }
 
-fn round_div_i128_half_even(value: i128, divisor: i128) -> Result<i128> {
+pub fn round_div_i128_half_even(value: i128, divisor: i128) -> Result<i128> {
     if divisor == 0 {
         return Err(TvmError::InvalidReceipt("tensor fixed division by zero"));
     }

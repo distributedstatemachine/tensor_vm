@@ -871,6 +871,27 @@ fn reduce_tensor(
     }
 
     let output_len = checked_usize_product(&output_shape)?;
+    if mean && tensor.dtype() == DType::Fixed32 {
+        // Fixed-point mean: a field inverse (the path below) computes a modular
+        // inverse, not the integer average, so for `fixedNN` it is wrong. Instead
+        // accumulate signed values in i128 in ascending index order (no field
+        // wraparound) and divide by the count with round-half-to-even (§3.4).
+        let mut acc = vec![0_i128; output_len];
+        for (input_index, value) in tensor.as_slice().iter().enumerate() {
+            let output_index =
+                reduction_output_index(input_shape, &output_shape, dim, keepdim, input_index)?;
+            acc[output_index] = acc[output_index]
+                .checked_add(crate::tensor::signed_elem_to_i128(*value))
+                .ok_or(TvmError::InvalidReceipt("tensor ir fixed mean overflow"))?;
+        }
+        let mut data = Vec::with_capacity(output_len);
+        for sum in acc {
+            data.push(crate::tensor::signed_i128_to_elem(
+                crate::tensor::round_div_i128_half_even(sum, reduce_count as i128)?,
+            ));
+        }
+        return Tensor::from_vec_with_scale(output_shape, tensor.dtype(), tensor.scale(), data);
+    }
     let mut data = vec![0; output_len];
     for (input_index, value) in tensor.as_slice().iter().enumerate() {
         let output_index =
@@ -3930,6 +3951,192 @@ mod tests {
             "layer_norm is Tier-C and must be gated out of consensus"
         );
         assert_eq!(graph.graph_id(), graph.graph_id());
+    }
+
+    #[test]
+    fn fixed_point_mean_uses_round_half_even_integer_division() {
+        // Fixed32 mean must be integer averaging, not a field inverse.
+        let x = Tensor::from_vec_with_scale(
+            vec![1, 3],
+            DType::Fixed32,
+            16,
+            vec![65536, 131072, 131072],
+        )
+        .unwrap();
+        let mut kwargs = BTreeMap::new();
+        kwargs.insert("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1)));
+        let op = OpNode {
+            id: 0,
+            op: "mean".to_owned(),
+            args: vec![input_ref("x")],
+            kwargs,
+            out: vec![tensor_spec("m", vec![1], DType::Fixed32, 16)],
+        };
+        let outputs = execute_op(&op, vec![RuntimeValue::Tensor(x)]).unwrap();
+        match &outputs[0] {
+            // round_half_even((65536 + 131072 + 131072) / 3) = round_half_even(327680 / 3) = 109227
+            RuntimeValue::Tensor(tensor) => assert_eq!(tensor.as_slice(), &[109227_u64][..]),
+            _ => panic!("mean must return a tensor"),
+        }
+    }
+
+    #[test]
+    fn raw_multi_op_graph_computes_layer_norm() {
+        // With Fixed32 `mean` fixed, layer_norm is expressible as a raw graph of
+        // primitives (mean/broadcast/sub/mul/mean/add/sqrt/div/mul/add) — no fused
+        // op. Each op requantizes to scale 16, so we check the composed result
+        // against an f64 reference rather than the all-Q32 fused reference.
+        use crate::tensor::signed_i128_to_elem;
+        let s = 16;
+        let to_elems =
+            |raws: &[i128]| -> Vec<u64> { raws.iter().map(|r| signed_i128_to_elem(*r)).collect() };
+        let x_raw = [19661_i128, -32768, 65536, 13107, -65536, 32768, 6554, 98304];
+        let eps_raw = 66_i128;
+        let inputs: BTreeMap<String, Tensor> = BTreeMap::from([
+            (
+                "x".to_owned(),
+                Tensor::from_vec_with_scale(vec![2, 4], DType::Fixed32, s, to_elems(&x_raw))
+                    .unwrap(),
+            ),
+            (
+                "weight".to_owned(),
+                Tensor::from_vec_with_scale(
+                    vec![4],
+                    DType::Fixed32,
+                    s,
+                    vec![65536, 65536, 65536, 65536],
+                )
+                .unwrap(),
+            ),
+            (
+                "bias".to_owned(),
+                Tensor::from_vec_with_scale(vec![4], DType::Fixed32, s, vec![0, 0, 0, 0]).unwrap(),
+            ),
+            (
+                "eps".to_owned(),
+                Tensor::from_vec_with_scale(
+                    vec![2, 1],
+                    DType::Fixed32,
+                    s,
+                    to_elems(&[eps_raw, eps_raw]),
+                )
+                .unwrap(),
+            ),
+        ]);
+        let params = BTreeMap::new();
+
+        let op_ref = |id: usize| IrRef::Op { id, idx: 0 };
+        let shape_lit = |dims: &[i64]| {
+            IrValue::Literal(IrLiteral::List(
+                dims.iter().map(|d| IrLiteral::Int(*d)).collect(),
+            ))
+        };
+        let reduce_kwargs = || {
+            BTreeMap::from([
+                ("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(1))),
+                (
+                    "keepdim".to_owned(),
+                    IrValue::Literal(IrLiteral::Bool(true)),
+                ),
+            ])
+        };
+        let bcast_kwargs = || BTreeMap::from([("shape".to_owned(), shape_lit(&[2, 4]))]);
+        let f24 = || vec![tensor_spec("t", vec![2, 4], DType::Fixed32, s)];
+        let f21 = || vec![tensor_spec("t", vec![2, 1], DType::Fixed32, s)];
+        let node = |id, op: &str, args, kwargs, out| OpNode {
+            id,
+            op: op.to_owned(),
+            args,
+            kwargs,
+            out,
+        };
+
+        let ops = vec![
+            node(0, "mean", vec![input_ref("x")], reduce_kwargs(), f21()),
+            node(1, "broadcast", vec![op_ref(0)], bcast_kwargs(), f24()),
+            node(
+                2,
+                "sub",
+                vec![input_ref("x"), op_ref(1)],
+                BTreeMap::new(),
+                f24(),
+            ),
+            node(3, "mul", vec![op_ref(2), op_ref(2)], BTreeMap::new(), f24()),
+            node(4, "mean", vec![op_ref(3)], reduce_kwargs(), f21()),
+            node(
+                5,
+                "add",
+                vec![op_ref(4), input_ref("eps")],
+                BTreeMap::new(),
+                f21(),
+            ),
+            node(6, "sqrt", vec![op_ref(5)], BTreeMap::new(), f21()),
+            node(7, "broadcast", vec![op_ref(6)], bcast_kwargs(), f24()),
+            node(8, "div", vec![op_ref(2), op_ref(7)], BTreeMap::new(), f24()),
+            node(
+                9,
+                "broadcast",
+                vec![input_ref("weight")],
+                bcast_kwargs(),
+                f24(),
+            ),
+            node(
+                10,
+                "mul",
+                vec![op_ref(8), op_ref(9)],
+                BTreeMap::new(),
+                f24(),
+            ),
+            node(
+                11,
+                "broadcast",
+                vec![input_ref("bias")],
+                bcast_kwargs(),
+                f24(),
+            ),
+            node(
+                12,
+                "add",
+                vec![op_ref(10), op_ref(11)],
+                BTreeMap::new(),
+                f24(),
+            ),
+        ];
+
+        let mut op_outputs: Vec<Vec<RuntimeValue>> = Vec::new();
+        for op in &ops {
+            let args = op
+                .args
+                .iter()
+                .map(|arg| resolve_runtime_ref(arg, &inputs, &params, &op_outputs))
+                .collect::<Result<Vec<_>>>()
+                .unwrap();
+            op_outputs.push(execute_op(op, args).unwrap());
+        }
+        let out = match &op_outputs[12][0] {
+            RuntimeValue::Tensor(tensor) => tensor.clone(),
+            _ => panic!("layer_norm graph must end in a tensor"),
+        };
+        assert_eq!(out.shape(), [2, 4]);
+
+        // f64 reference layer_norm (weight=1, bias=0).
+        let one = 65536.0_f64;
+        let eps = eps_raw as f64 / one;
+        for row in 0..2 {
+            let vals: Vec<f64> = (0..4).map(|i| x_raw[row * 4 + i] as f64 / one).collect();
+            let mean = vals.iter().sum::<f64>() / 4.0;
+            let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / 4.0;
+            let std = (var + eps).sqrt();
+            for i in 0..4 {
+                let expected = (vals[i] - mean) / std;
+                let actual =
+                    crate::tensor::signed_elem_to_i128(out.as_slice()[row * 4 + i]) as f64 / one;
+                assert!(
+                    (actual - expected).abs() <= 5e-3,
+                    "raw-graph layer_norm {row},{i}: got {actual} expected {expected}"
+                );
+            }
+        }
     }
 
     #[test]
