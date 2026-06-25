@@ -660,8 +660,10 @@ fn local_graph_receipt_evidence_graph(
     };
     let graph = TensorGraph::from_canonical_json_bytes(bytes)
         .map_err(|error| format!("failed to decode trace-bisection graph body: {error}"))?;
+    // Committee admission (superset of consensus) so the runtime challenger can
+    // also open and resolve disputes over Tier-C committee graphs.
     let validated = graph
-        .validate_for_consensus()
+        .validate_for_committee()
         .map_err(|error| format!("failed to validate trace-bisection graph body: {error}"))?;
     if validated != graph_id {
         return Ok(None);
@@ -708,8 +710,10 @@ fn local_graph_receipt_execution(
     let Some(inputs) = local_graph_receipt_inputs(node, job, graph)? else {
         return Ok(None);
     };
+    // Committee execution runs the identical op loop as execute_exact for strict
+    // graphs, and additionally replays Tier-C committee graphs.
     let execution = graph
-        .execute_exact(&inputs)
+        .execute_committee(&inputs)
         .map_err(|error| format!("failed to replay trace-bisection graph receipt: {error}"))?;
     Ok(Some(execution))
 }

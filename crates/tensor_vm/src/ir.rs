@@ -439,7 +439,12 @@ impl TensorGraph {
     }
 
     pub fn referee_op(&self, witness: &IrOpRefereeWitness) -> Result<IrOpRefereeVerdict> {
-        self.validate_for_consensus()?;
+        // Committee admission is a superset of consensus admission, so this still
+        // accepts every strict Tier-A/B graph while also admitting Tier-C
+        // canonical-reference graphs — the single op is re-executed
+        // deterministically below, which is exactly what makes the §8.2 fraud
+        // proof resolve Tier-C disputes with 1-of-N honesty.
+        self.validate_for_committee()?;
         let op = self
             .ops
             .get(witness.op_index as usize)
@@ -482,7 +487,9 @@ impl TensorGraph {
         inputs: &IrExecutionInputs,
         op_index: u64,
     ) -> Result<IrOpRefereeWitness> {
-        self.validate_for_consensus()?;
+        // Committee admission (superset of consensus) so the witness can be
+        // derived for Tier-C committee graphs as well as strict ones.
+        self.validate_for_committee()?;
         validate_execution_inputs(self, inputs)?;
         let target = op_index as usize;
         if target >= self.ops.len() {

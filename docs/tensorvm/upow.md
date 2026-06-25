@@ -578,6 +578,8 @@ Properties:
 - Data availability is enforced by the game: a miner who withholds the data needed to reveal the disputed op's inputs/outputs **loses by timeout** (§9).
 
 > v0 ships §8.1 (redundancy). §8.2 is the priority post-v0 upgrade because it removes the honest-majority-committee assumption and unlocks Tier-C-heavy real training. The receipt `trace_root` field exists in v0 specifically to make this a non-breaking addition.
+>
+> Status (implemented — Tier-C disputes): the trace-bisection game (open → signed midpoint rounds → isolate one op → one-op referee verdict → slash loser + delayed challenger bounty, with responder/challenger timeouts) is implemented and **now resolves Tier-C committee receipts**. The one-op referee (`TensorGraph::referee_op` / `referee_witness`) and the runtime challenger's local replay (`execute_committee` / `validate_for_committee`) admit committee graphs, so a **single honest challenger** can punish a wrong Tier-C (e.g. `gelu`) receipt by isolating the disputed op and having the chain re-execute just that op against the canonical reference — 1-of-N honesty, independent of committee honesty. Trace openings are Merkle-only and were already admission-agnostic; the committee receipt's `trace_root` (from `execute_committee`) is bisected identically. Proven end to end: a fraudulent `gelu` receipt is refereed, the miner is slashed, and a delayed challenger bounty is recorded. **Not yet wired:** auto-escalation from a §8.1 committee disagreement to *automatically opening* a dispute — disputes remain challenger-initiated (the standard optimistic model: any 1-of-N honest node opens with a bond). That auto-open trigger is a separate, optional policy.
 
 ### 8.3 Level 4 (future): ZK proofs
 Per-op or per-segment SNARK/STARK proofs replace interaction for the most expensive disputes. Out of scope for v0; the IR/trace structure is ZK-friendly (uniform op semantics over `F_p`).
@@ -784,7 +786,7 @@ TensorBlock {
 | 1 | Freivalds | matmul / bilinear | v0 |
 | 2 | Random-linear | affine / elementwise | v0 (partial) |
 | 3a | Redundancy + agreement | nonlinear (honest-majority committee) | v0 |
-| 3b | Interactive fraud proofs over `trace_root` | **arbitrary ops, 1-of-N honest** | **next** |
+| 3b | Interactive fraud proofs over `trace_root` | **arbitrary ops, 1-of-N honest** | implemented for Tier-A/B and Tier-C committee disputes; auto-escalation from §8.1 disagreement still challenger-initiated |
 | 4 | ZK proofs of op/segment execution | expensive disputes, light clients | future |
 | — | Durable erasure-coded DA | data availability | future |
 | — | Externally-useful workloads (real training/inference) | usefulness | future |

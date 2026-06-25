@@ -448,6 +448,156 @@ fn isolated_trace_bisection_referee_records_one_op_verdict() {
 }
 
 #[test]
+fn trace_bisection_referee_resolves_tier_c_committee_dispute() {
+    // A single honest challenger punishes a wrong Tier-C (gelu) receipt via the
+    // §8.2 game — 1-of-N honesty, independent of committee honesty (§8.1).
+    let beacon = hash_bytes(b"test", &[b"tier-c-bisection-chain"]);
+    let mut chain = Chain::new(beacon);
+    let miner = address(b"tier-c-bisection-miner");
+    let challenger = address(b"tier-c-bisection-challenger");
+    chain.register_miner(miner, 100).unwrap();
+    chain.register_validator(challenger, 10_000).unwrap();
+
+    let fixed = |name: &str| TensorSpec {
+        name: name.to_owned(),
+        shape: vec![2, 2],
+        dtype: DType::Fixed32,
+        scale: 16,
+    };
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![fixed("x")],
+        params: Vec::new(),
+        ops: vec![
+            OpNode {
+                id: 0,
+                op: "gelu".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![fixed("activated")],
+            },
+            OpNode {
+                id: 1,
+                op: "identity".to_owned(),
+                args: vec![IrRef::Op { id: 0, idx: 0 }],
+                kwargs: BTreeMap::new(),
+                out: vec![fixed("out")],
+            },
+        ],
+        outputs: vec![GraphOutput {
+            name: "out".to_owned(),
+            value: IrRef::Op { id: 1, idx: 0 },
+        }],
+    };
+    // Tier-C: only committee admission accepts this graph.
+    assert!(graph.validate_for_consensus().is_err());
+    let graph_id = graph.validate_for_committee().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+
+    let x =
+        Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 16, vec![0, 32768, 65536, 98304])
+            .unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), x.clone())]);
+    let input_roots = inputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+    let execution = job
+        .committee_ir_execution_with_const_blobs(&graph, &inputs, &BTreeMap::new())
+        .unwrap();
+    // Miner commits a wrong trace: tamper the gelu op output.
+    let mut bad_execution = execution.clone();
+    let bad_output_root = hash_bytes(b"test", &[b"tier-c-bisection-bad-gelu-output"]);
+    bad_execution.op_traces[0].output_roots = vec![bad_output_root];
+    bad_execution.trace_root = merkle_root(&bad_execution.trace_leaves());
+    let output_roots = execution
+        .outputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let receipt =
+        GraphReceipt::from_roots(&job, miner, output_roots, bad_execution.trace_root, 1, 3);
+    chain
+        .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(job)))
+        .unwrap();
+    chain
+        .apply_command(ChainCommand::SubmitReceipt(ReceiptState::GraphExecution(
+            receipt.clone(),
+        )))
+        .unwrap();
+
+    let open_events = chain
+        .apply_command(ChainCommand::OpenTraceBisection(TraceBisectionConfig {
+            receipt_id: receipt.receipt_id,
+            trace_root: receipt.trace_root,
+            challenger,
+            responder: receipt.miner,
+            op_count: bad_execution.op_traces.len() as u64,
+            response_deadline_height: 9,
+            challenger_bond: 7,
+            responder_bond: 11,
+        }))
+        .unwrap();
+    let [ChainEvent::TraceBisectionOpened { challenge_id, .. }] = open_events.as_slice() else {
+        panic!("expected trace bisection open event");
+    };
+    let challenge_id = *challenge_id;
+    let state = chain
+        .state()
+        .trace_bisection_challenges()
+        .get(&challenge_id)
+        .unwrap()
+        .state
+        .clone();
+    let opening = bad_execution.trace_opening(0).unwrap();
+    let expected_output_roots = execution.op_traces[0].output_roots.clone();
+    submit_trace_bisection_expectation(&mut chain, challenge_id, expected_output_roots.clone());
+    let round = TraceBisectionRound::new(&state, expected_output_roots.clone(), opening).unwrap();
+    assert!(matches!(
+        chain
+            .apply_command(ChainCommand::SubmitTraceBisectionRound(round))
+            .unwrap()
+            .as_slice(),
+        [ChainEvent::TraceBisectionIsolated { op_index: 0, .. }]
+    ));
+
+    // The referee re-executes the isolated gelu op on agreed inputs and rules.
+    let witness = IrOpRefereeWitness {
+        op_index: 0,
+        input_values: vec![IrOpWitnessValue::Tensor(x)],
+    };
+    let events = chain
+        .apply_command(ChainCommand::RefereeTraceBisection {
+            challenge_id,
+            witness,
+        })
+        .unwrap();
+    assert!(matches!(
+        events.as_slice(),
+        [
+            ChainEvent::TraceBisectionRefereed {
+                dishonest_party,
+                canonical_output_roots,
+                disputed_output_roots,
+                ..
+            },
+            ChainEvent::ChallengeRewardPending { amount: 5, .. }
+        ] if *dishonest_party == miner
+            && canonical_output_roots == &expected_output_roots
+            && disputed_output_roots == &vec![bad_output_root]
+    ));
+    assert_eq!(chain.state().miners().get(&miner).unwrap().stake, 89);
+}
+
+#[test]
 fn trace_bisection_referee_slashes_miner_and_delays_challenger_reward() {
     let beacon = hash_bytes(b"test", &[b"trace-bisection-bounty-chain"]);
     let mut chain = Chain::new(beacon);
