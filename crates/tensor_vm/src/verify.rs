@@ -514,18 +514,117 @@ pub fn verify_graph_execution_with_const_blobs(
             conformance_profile: &profile,
         },
         const_blobs,
+        false,
     )
 }
 
 pub fn verify_graph_execution_with_conformance_profile(
     input: GraphConformanceVerification<'_>,
 ) -> Result<GraphVerificationReport> {
-    verify_graph_execution_inner(input, &std::collections::BTreeMap::new())
+    verify_graph_execution_inner(input, &std::collections::BTreeMap::new(), false)
+}
+
+/// §8.1 Verification Level 3a: committee re-execution of a Tier-C graph receipt.
+/// Identical exact-replay check to the strict path, but the graph is admitted
+/// under the committee policy (Tier-C canonical-reference ops allowed) and the
+/// resulting `checks_root` is the seed-independent agreement root, so honest
+/// committee validators produce identical roots and can be counted for agreement.
+pub fn verify_graph_execution_committee(
+    job: &GraphJob,
+    receipt: &GraphReceipt,
+    graph: &TensorGraph,
+    tensors: &std::collections::BTreeMap<String, Tensor>,
+    const_blobs: &std::collections::BTreeMap<String, Tensor>,
+) -> Result<GraphVerificationReport> {
+    let profile = cpu_reference_conformance_profile()?;
+    verify_graph_execution_inner(
+        GraphConformanceVerification {
+            job,
+            receipt,
+            graph,
+            tensors,
+            // unused on the committee path; the agreement root is seed-independent.
+            validation_seed: &[0_u8; 32],
+            conformance_profile: &profile,
+        },
+        const_blobs,
+        true,
+    )
+}
+
+pub fn verify_graph_execution_committee_with_conformance_profile(
+    input: GraphConformanceVerification<'_>,
+) -> Result<GraphVerificationReport> {
+    verify_graph_execution_inner(input, &std::collections::BTreeMap::new(), true)
+}
+
+/// Seed-independent §8.1 committee agreement root: a deterministic commitment to
+/// the receipt's claimed outputs and trace under the active conformance suite.
+/// Every honest committee validator that re-executes the graph produces this
+/// exact root, which is what honest-majority agreement is counted against.
+pub fn committee_checks_root(
+    graph_id: &Hash,
+    receipt_id: &Hash,
+    trace_root: &Hash,
+    output_roots: &std::collections::BTreeMap<String, Hash>,
+) -> Hash {
+    let mut encoded_outputs = Vec::new();
+    for (name, root) in output_roots {
+        encoded_outputs.extend_from_slice(&(name.len() as u64).to_le_bytes());
+        encoded_outputs.extend_from_slice(name.as_bytes());
+        encoded_outputs.extend_from_slice(root);
+    }
+    hash_bytes(
+        b"tensor-vm-committee-checks-v1",
+        &[
+            graph_id,
+            receipt_id,
+            trace_root,
+            &encoded_outputs,
+            &conformance_suite_hash(),
+        ],
+    )
+}
+
+/// §8.1 honest-majority agreement: among the assigned committee, returns true
+/// when at least `min_committee` distinct assigned validators submitted a valid,
+/// available, correctly-signed attestation sharing one agreement root. Counting
+/// distinct validators per root means a disagreeing minority (or a split) cannot
+/// reach the threshold, and an honest majority that re-executed deterministically
+/// will. `min_committee` is the redundancy parameter `k` (§12).
+pub fn committee_agreement(
+    attestations: &[ValidatorAttestation],
+    assigned: &std::collections::BTreeSet<Address>,
+    min_committee: usize,
+) -> bool {
+    let mut by_root: std::collections::BTreeMap<Hash, std::collections::BTreeSet<Address>> =
+        std::collections::BTreeMap::new();
+    for attestation in attestations {
+        if !assigned.contains(&attestation.validator) {
+            continue;
+        }
+        if attestation.result == VerificationResult::Valid
+            && attestation.data_availability_passed
+            && attestation.verify_signature()
+        {
+            by_root
+                .entry(attestation.checks_root)
+                .or_default()
+                .insert(attestation.validator);
+        }
+    }
+    by_root
+        .values()
+        .map(|validators| validators.len())
+        .max()
+        .unwrap_or(0)
+        >= min_committee.max(1)
 }
 
 fn verify_graph_execution_inner(
     input: GraphConformanceVerification<'_>,
     const_blobs: &std::collections::BTreeMap<String, Tensor>,
+    committee: bool,
 ) -> Result<GraphVerificationReport> {
     let GraphConformanceVerification {
         job,
@@ -535,7 +634,14 @@ fn verify_graph_execution_inner(
         validation_seed,
         conformance_profile,
     } = input;
-    if graph.validate_for_consensus()? != job.graph_id {
+    // §8.1 committee verification admits Tier-C canonical-reference ops; the
+    // strict path stays consensus-only.
+    let validated_graph_id = if committee {
+        graph.validate_for_committee()?
+    } else {
+        graph.validate_for_consensus()?
+    };
+    if validated_graph_id != job.graph_id {
         return Err(TvmError::InvalidReceipt("tensor ir graph id mismatch"));
     }
     for op in &graph.ops {
@@ -566,7 +672,11 @@ fn verify_graph_execution_inner(
     if !verify_signature(&receipt.miner, &receipt.receipt_id, &receipt.signature) {
         return Err(TvmError::InvalidReceipt("bad receipt signature"));
     }
-    let execution = job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?;
+    let execution = if committee {
+        job.committee_ir_execution_with_const_blobs(graph, tensors, const_blobs)?
+    } else {
+        job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?
+    };
     let output_roots = execution
         .outputs
         .iter()
@@ -580,23 +690,36 @@ fn verify_graph_execution_inner(
     } else {
         VerificationResult::Invalid
     };
-    let mut encoded_outputs = Vec::new();
-    for (name, root) in &receipt.output_roots {
-        encoded_outputs.extend_from_slice(&(name.len() as u64).to_le_bytes());
-        encoded_outputs.extend_from_slice(name.as_bytes());
-        encoded_outputs.extend_from_slice(root);
-    }
-    let checks_root = hash_bytes(
-        b"tensor-vm-graph-checks-v1",
-        &[
-            validation_seed,
+    // For the committee path the checks root MUST be seed-independent so that all
+    // honest committee validators commit the *same* root (honest-majority
+    // agreement is checked against it, §8.1). For the strict path it stays
+    // per-validator (Freivalds-style) keyed by the validation seed.
+    let checks_root = if committee {
+        committee_checks_root(
             &job.graph_id,
             &receipt.receipt_id,
             &receipt.trace_root,
-            &encoded_outputs,
-            &conformance_suite_hash(),
-        ],
-    );
+            &receipt.output_roots,
+        )
+    } else {
+        let mut encoded_outputs = Vec::new();
+        for (name, root) in &receipt.output_roots {
+            encoded_outputs.extend_from_slice(&(name.len() as u64).to_le_bytes());
+            encoded_outputs.extend_from_slice(name.as_bytes());
+            encoded_outputs.extend_from_slice(root);
+        }
+        hash_bytes(
+            b"tensor-vm-graph-checks-v1",
+            &[
+                validation_seed,
+                &job.graph_id,
+                &receipt.receipt_id,
+                &receipt.trace_root,
+                &encoded_outputs,
+                &conformance_suite_hash(),
+            ],
+        )
+    };
     Ok(GraphVerificationReport {
         result,
         exact_replay_passed,
@@ -1464,6 +1587,137 @@ mod tests {
                 "graph op not conformance admitted"
             ))
         );
+    }
+
+    #[test]
+    fn committee_verifier_accepts_tier_c_gelu_receipt_with_deterministic_root() {
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "gelu".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "y".to_owned(),
+                    shape: vec![2, 3],
+                    dtype: DType::Fixed32,
+                    scale: 16,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        // Tier-C: only the committee admission accepts it.
+        assert!(graph.validate_for_consensus().is_err());
+        let graph_id = graph.validate_for_committee().unwrap();
+
+        let input = Tensor::from_vec_with_scale(
+            vec![2, 3],
+            DType::Fixed32,
+            16,
+            vec![0, 32768, 65536, 98304, 131072, 16384],
+        )
+        .unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), input.clone())]);
+        let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 6);
+        let (receipt, _outputs) = GraphReceipt::from_committee_execution(
+            &job,
+            &graph,
+            address(b"gelu-miner"),
+            &inputs,
+            1,
+            2,
+        )
+        .unwrap();
+
+        let report =
+            verify_graph_execution_committee(&job, &receipt, &graph, &inputs, &BTreeMap::new())
+                .unwrap();
+        assert_eq!(report.result, VerificationResult::Valid);
+        // The committee checks root is seed-independent (so committee validators agree).
+        assert_eq!(
+            report.checks_root,
+            committee_checks_root(
+                &job.graph_id,
+                &receipt.receipt_id,
+                &receipt.trace_root,
+                &receipt.output_roots
+            )
+        );
+
+        // A receipt claiming the wrong output (self-consistent digest) is rejected.
+        let bad_receipt = GraphReceipt::from_roots(
+            &job,
+            address(b"gelu-miner"),
+            BTreeMap::from([("y".to_owned(), [9_u8; 32])]),
+            receipt.trace_root,
+            1,
+            2,
+        );
+        let bad_report =
+            verify_graph_execution_committee(&job, &bad_receipt, &graph, &inputs, &BTreeMap::new())
+                .unwrap();
+        assert_eq!(bad_report.result, VerificationResult::Invalid);
+    }
+
+    #[test]
+    fn committee_agreement_requires_honest_majority_on_one_root() {
+        let validator = |n: u8| address(format!("committee-validator-{n}").as_bytes());
+        let assigned: std::collections::BTreeSet<Address> = (0..3).map(validator).collect();
+        let attest = |n: u8, root: Hash| {
+            ValidatorAttestation::new(
+                validator(n),
+                100,
+                AttestationStatement {
+                    receipt_id: [1; 32],
+                    job_id: [2; 32],
+                    primitive_type: PrimitiveType::GraphExecution,
+                    result: VerificationResult::Valid,
+                    checks_root: root,
+                    data_availability_passed: true,
+                },
+            )
+        };
+        let root_a = [7_u8; 32];
+        let root_b = [8_u8; 32];
+
+        // Three assigned validators agree on one root.
+        let agree = vec![attest(0, root_a), attest(1, root_a), attest(2, root_a)];
+        assert!(committee_agreement(&agree, &assigned, 3));
+        // Only two attested → below the committee threshold.
+        assert!(!committee_agreement(&agree[..2], &assigned, 3));
+        // A 2-vs-1 split never reaches a 3-agreement; the plurality of 2 reaches k=2.
+        let split = vec![attest(0, root_a), attest(1, root_a), attest(2, root_b)];
+        assert!(!committee_agreement(&split, &assigned, 3));
+        assert!(committee_agreement(&split, &assigned, 2));
+        // Unassigned validators do not count toward agreement.
+        let outsider = ValidatorAttestation::new(
+            address(b"unassigned-validator"),
+            100,
+            AttestationStatement {
+                receipt_id: [1; 32],
+                job_id: [2; 32],
+                primitive_type: PrimitiveType::GraphExecution,
+                result: VerificationResult::Valid,
+                checks_root: root_a,
+                data_availability_passed: true,
+            },
+        );
+        let with_outsider = vec![attest(0, root_a), attest(1, root_a), outsider];
+        assert!(!committee_agreement(&with_outsider, &assigned, 3));
     }
 
     #[test]

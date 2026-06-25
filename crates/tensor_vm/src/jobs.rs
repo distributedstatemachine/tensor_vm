@@ -95,6 +95,26 @@ impl GraphJob {
         tensors: &BTreeMap<String, Tensor>,
         const_blobs: &BTreeMap<String, Tensor>,
     ) -> Result<IrExecution> {
+        self.ir_execution_with_const_blobs(graph, tensors, const_blobs, false)
+    }
+
+    /// §8.1 committee execution: admits Tier-C canonical-reference graphs.
+    pub fn committee_ir_execution_with_const_blobs(
+        &self,
+        graph: &TensorGraph,
+        tensors: &BTreeMap<String, Tensor>,
+        const_blobs: &BTreeMap<String, Tensor>,
+    ) -> Result<IrExecution> {
+        self.ir_execution_with_const_blobs(graph, tensors, const_blobs, true)
+    }
+
+    fn ir_execution_with_const_blobs(
+        &self,
+        graph: &TensorGraph,
+        tensors: &BTreeMap<String, Tensor>,
+        const_blobs: &BTreeMap<String, Tensor>,
+        committee: bool,
+    ) -> Result<IrExecution> {
         for (name, expected_root) in &self.input_roots {
             let Some(tensor) = tensors.get(name) else {
                 return Err(TvmError::InvalidReceipt("missing graph input tensor"));
@@ -115,10 +135,15 @@ impl GraphJob {
                 return Err(TvmError::InvalidReceipt("graph const_blob input collision"));
             }
         }
-        graph.execute_exact(&IrExecutionInputs {
+        let inputs = IrExecutionInputs {
             tensors: execution_tensors,
             field_params: self.field_params.clone(),
-        })
+        };
+        if committee {
+            graph.execute_committee(&inputs)
+        } else {
+            graph.execute_exact(&inputs)
+        }
     }
 }
 
@@ -167,6 +192,20 @@ impl GraphReceipt {
         execution_time_ms: u64,
     ) -> Result<(Self, BTreeMap<String, Tensor>)> {
         let execution = job.exact_ir_execution_with_const_blobs(graph, tensors, const_blobs)?;
+        Self::from_ir_execution(job, miner, execution, submitted_at_block, execution_time_ms)
+    }
+
+    /// Build a receipt from a §8.1 committee execution (admits Tier-C graphs).
+    pub fn from_committee_execution(
+        job: &GraphJob,
+        graph: &TensorGraph,
+        miner: Address,
+        tensors: &BTreeMap<String, Tensor>,
+        submitted_at_block: u64,
+        execution_time_ms: u64,
+    ) -> Result<(Self, BTreeMap<String, Tensor>)> {
+        let execution =
+            job.committee_ir_execution_with_const_blobs(graph, tensors, &BTreeMap::new())?;
         Self::from_ir_execution(job, miner, execution, submitted_at_block, execution_time_ms)
     }
 

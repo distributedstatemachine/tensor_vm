@@ -35,6 +35,32 @@ pub enum IrVerificationClass {
     CanonicalReferenceRequired,
 }
 
+/// Op-admission policy for graph validation. `Consensus` is the strict
+/// Tier-A/B path (Freivalds / random-linear / exact replay). `Committee` also
+/// admits Tier-C ops with a published canonical fixed-point reference
+/// (`CanonicalReferenceRequired`), since those are deterministic and can be
+/// settled by §8.1 redundancy + honest-majority committee agreement; it still
+/// rejects index-consistency ops, which need more than re-execution.
+#[derive(Clone, Copy, Debug, Eq, PartialEq)]
+pub enum OpAdmission {
+    Structural,
+    Committee,
+    Consensus,
+}
+
+impl OpAdmission {
+    fn admits(self, spec: &OpSpec) -> bool {
+        match self {
+            OpAdmission::Structural => true,
+            OpAdmission::Committee => {
+                spec.consensus_admitted
+                    || spec.verification == IrVerificationClass::CanonicalReferenceRequired
+            }
+            OpAdmission::Consensus => spec.consensus_admitted,
+        }
+    }
+}
+
 #[derive(Clone, Copy, Debug, Eq, PartialEq)]
 pub enum IrOutputCount {
     Exact(usize),
@@ -318,8 +344,38 @@ impl TensorGraph {
         Ok(self.graph_id())
     }
 
+    /// Structural validation under the §8.1 committee-admission policy: admits
+    /// Tier-A/B consensus ops plus Tier-C canonical-reference ops (deterministic,
+    /// settleable by redundancy + committee agreement), but not index-consistency
+    /// ops. Returns the `graph_id` on success.
+    pub fn validate_for_committee(&self) -> Result<GraphId> {
+        self.validate_with_admission(OpAdmission::Committee)?;
+        Ok(self.graph_id())
+    }
+
+    /// True when the graph is committee-admissible but not strictly
+    /// consensus-admissible — i.e. it contains at least one Tier-C
+    /// canonical-reference op and must take the §8.1 committee path.
+    pub fn requires_committee_verification(&self) -> bool {
+        self.validate_for_committee().is_ok() && self.validate_for_consensus().is_err()
+    }
+
     pub fn execute_exact(&self, inputs: &IrExecutionInputs) -> Result<IrExecution> {
-        let graph_id = self.validate_for_consensus()?;
+        self.execute_admitted(inputs, false)
+    }
+
+    /// §8.1 committee execution: identical exact replay to `execute_exact`, but
+    /// admits Tier-C canonical-reference ops (validate_for_committee).
+    pub fn execute_committee(&self, inputs: &IrExecutionInputs) -> Result<IrExecution> {
+        self.execute_admitted(inputs, true)
+    }
+
+    fn execute_admitted(&self, inputs: &IrExecutionInputs, committee: bool) -> Result<IrExecution> {
+        let graph_id = if committee {
+            self.validate_for_committee()?
+        } else {
+            self.validate_for_consensus()?
+        };
         validate_execution_inputs(self, inputs)?;
 
         let mut op_outputs = Vec::<Vec<RuntimeValue>>::new();
@@ -459,6 +515,14 @@ impl TensorGraph {
     }
 
     pub fn validate(&self, require_consensus_admitted: bool) -> Result<()> {
+        self.validate_with_admission(if require_consensus_admitted {
+            OpAdmission::Consensus
+        } else {
+            OpAdmission::Structural
+        })
+    }
+
+    fn validate_with_admission(&self, admission: OpAdmission) -> Result<()> {
         if self.ir_version != 1 {
             return Err(TvmError::InvalidReceipt("unsupported tensor ir version"));
         }
@@ -471,10 +535,12 @@ impl TensorGraph {
                 return Err(TvmError::InvalidReceipt("non-dense tensor ir op ids"));
             }
             let spec = op_spec(&op.op).ok_or(TvmError::InvalidReceipt("unknown tensor ir op"))?;
-            if require_consensus_admitted && !spec.consensus_admitted {
-                return Err(TvmError::InvalidReceipt(
-                    "tensor ir op is not consensus admitted",
-                ));
+            if !admission.admits(spec) {
+                return Err(TvmError::InvalidReceipt(match admission {
+                    OpAdmission::Consensus => "tensor ir op is not consensus admitted",
+                    OpAdmission::Committee => "tensor ir op is not committee admissible",
+                    OpAdmission::Structural => "tensor ir op is not admitted",
+                }));
             }
             validate_arity(spec, op.args.len())?;
             validate_kwargs(spec, &op.kwargs)?;
@@ -2211,7 +2277,9 @@ fn infer_outputs(
                 },
             }
         }
-        "exp" | "log" | "sqrt" | "softmax" => one_arg(args)?.clone(),
+        "exp" | "log" | "sqrt" | "softmax" | "sigmoid" | "tanh" | "silu" | "gelu" => {
+            one_arg(args)?.clone()
+        }
         "layer_norm" => {
             if args.len() != 3 {
                 return Err(TvmError::InvalidReceipt("tensor ir op arity mismatch"));
@@ -4137,6 +4205,58 @@ mod tests {
                 );
             }
         }
+    }
+
+    #[test]
+    fn committee_admission_allows_tier_c_reference_ops_only() {
+        // gelu: Tier-C canonical reference — committee-admissible, not consensus.
+        let gelu = TensorGraph {
+            ir_version: 1,
+            inputs: vec![tensor_spec("x", vec![2, 3], DType::Fixed32, 16)],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "gelu".to_owned(),
+                args: vec![input_ref("x")],
+                kwargs: BTreeMap::new(),
+                out: vec![tensor_spec("y", vec![2, 3], DType::Fixed32, 16)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        assert!(gelu.validate_for_committee().is_ok());
+        assert!(gelu.validate_for_consensus().is_err());
+        assert!(gelu.requires_committee_verification());
+
+        // matmul: consensus-admissible — does NOT require the committee path.
+        let matmul = canonical_matmul_graph(2, 3, 4, DType::FieldElement);
+        assert!(matmul.validate_for_committee().is_ok());
+        assert!(matmul.validate_for_consensus().is_ok());
+        assert!(!matmul.requires_committee_verification());
+
+        // gather: index-consistency op — not admissible even on the committee path.
+        let gather = TensorGraph {
+            ir_version: 1,
+            inputs: vec![
+                tensor_spec("x", vec![2, 3], DType::Fixed32, 16),
+                tensor_spec("idx", vec![2], DType::Int64, 0),
+            ],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "gather".to_owned(),
+                args: vec![input_ref("x"), input_ref("idx")],
+                kwargs: BTreeMap::from([("dim".to_owned(), IrValue::Literal(IrLiteral::Uint(0)))]),
+                out: vec![tensor_spec("g", vec![2, 3], DType::Fixed32, 16)],
+            }],
+            outputs: vec![GraphOutput {
+                name: "g".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        assert!(gather.validate_for_committee().is_err());
     }
 
     #[test]
