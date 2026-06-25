@@ -11,7 +11,7 @@ use std::collections::{BTreeMap, BTreeSet};
 /// §8.1: a receipt takes the committee path iff it is a graph receipt whose
 /// registered body requires committee verification (contains a Tier-C
 /// canonical-reference op). Tier-A/B receipts keep the Freivalds quorum path.
-fn receipt_requires_committee(chain: &Chain, receipt: &ReceiptState) -> bool {
+pub(super) fn receipt_requires_committee(chain: &Chain, receipt: &ReceiptState) -> bool {
     let ReceiptState::GraphExecution(graph_receipt) = receipt else {
         return false;
     };

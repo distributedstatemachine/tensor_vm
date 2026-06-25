@@ -652,6 +652,16 @@ pub fn submit_validator_audit_report(
     {
         return Err(TvmError::InvalidReceipt("validator audit already slashed"));
     }
+    // §8.1: committee receipts commit a deterministic agreement root, so the
+    // audit also checks the root — a validator attesting `Valid` with a
+    // non-canonical root is lying about its re-execution and is slashed. Tier-A/B
+    // checks roots are per-validator (Freivalds seed) and are NOT compared.
+    let committee = chain
+        .state
+        .receipts
+        .get(&assignment.receipt_id)
+        .map(|receipt| settlement::receipt_requires_committee(chain, receipt))
+        .unwrap_or(false);
     let audited_attestation = chain
         .state
         .attestations
@@ -664,9 +674,12 @@ pub fn submit_validator_audit_report(
         .ok_or(TvmError::InvalidReceipt(
             "audited validator attestation missing",
         ))?;
+    let canonical_root_matches =
+        !committee || audited_attestation.checks_root == report.checks_root;
     let passed = audited_attestation.result == report.canonical_result
         && audited_attestation.data_availability_passed
-            == report.canonical_data_availability_passed;
+            == report.canonical_data_availability_passed
+        && canonical_root_matches;
     let result = ValidatorAuditResult {
         audit_id: report.audit_id,
         receipt_id: assignment.receipt_id,

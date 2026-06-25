@@ -659,6 +659,155 @@ fn validator_audit_slashes_lazy_committee_validator_on_wrong_tier_c_receipt() {
 }
 
 #[test]
+fn validator_audit_slashes_committee_validator_for_noncanonical_root() {
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorGraph, TensorSpec};
+    use crate::jobs::{GraphJob, GraphReceipt};
+    use crate::tensor::{DType, Tensor};
+    use crate::verify::committee_checks_root;
+    use std::collections::BTreeMap;
+
+    let beacon = hash_bytes(b"test", &[b"committee-root-audit-beacon"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        reward_settlement_delay_epochs: 0,
+        challenge_window_epochs: 0,
+        redundancy_k: 3,
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 3,
+        validator_audit_slash_amount: 55,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"committee-root-audit-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..4)
+        .map(|i| address(format!("committee-root-audit-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![TensorSpec {
+            name: "x".to_owned(),
+            shape: vec![2, 2],
+            dtype: DType::Fixed32,
+            scale: 16,
+        }],
+        params: Vec::new(),
+        ops: vec![OpNode {
+            id: 0,
+            op: "gelu".to_owned(),
+            args: vec![IrRef::Input {
+                name: "x".to_owned(),
+            }],
+            kwargs: BTreeMap::new(),
+            out: vec![TensorSpec {
+                name: "y".to_owned(),
+                shape: vec![2, 2],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+        }],
+        outputs: vec![GraphOutput {
+            name: "y".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_committee().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+
+    let x =
+        Tensor::from_vec_with_scale(vec![2, 2], DType::Fixed32, 16, vec![0, 32768, 65536, 98304])
+            .unwrap();
+    let inputs = BTreeMap::from([("x".to_owned(), x.clone())]);
+    let input_roots = BTreeMap::from([("x".to_owned(), x.commitment_root())]);
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+    chain.submit_job(JobState::GraphExecution(job.clone()));
+    // A CORRECT receipt (canonical result is Valid).
+    let (receipt, _) =
+        GraphReceipt::from_committee_execution(&job, &graph, miner, &inputs, 1, 2).unwrap();
+    chain.submit_graph_receipt(receipt.clone()).unwrap();
+
+    // The validator attests Valid but commits a NON-CANONICAL root (lying about
+    // its re-execution) — the result is correct so a result-only audit would miss it.
+    let canonical_root = committee_checks_root(
+        &graph_id,
+        &receipt.receipt_id,
+        &receipt.trace_root,
+        &receipt.output_roots,
+    );
+    let bogus_root = hash_bytes(b"test", &[b"committee-bogus-root"]);
+    assert_ne!(canonical_root, bogus_root);
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let audited = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            audited,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::GraphExecution,
+                result: VerificationResult::Valid,
+                checks_root: bogus_root,
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    let proposer = chain
+        .proposer_for_next_epoch(&chain.state().finalized_randomness())
+        .expect("a fallback proposer must be selected");
+    chain.produce_block(proposer, 1_000).unwrap();
+    let audit_id = *chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("committee attestation must be audit-assignable");
+    let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
+
+    // The honest auditor reports canonical result = Valid AND the canonical root.
+    let starting_stake = chain.state().validators().get(&audited).unwrap().stake;
+    let report = ValidatorAuditReport::new(
+        audit_id,
+        auditor,
+        VerificationResult::Valid,
+        true,
+        canonical_root,
+    );
+    chain.submit_validator_audit_report(report).unwrap();
+
+    // The matching result would have passed; the non-canonical root is slashed.
+    assert!(
+        chain
+            .state()
+            .validator_audit_slashes()
+            .contains_key(&audit_id)
+    );
+    assert_eq!(
+        chain.state().validators().get(&audited).unwrap().stake,
+        starting_stake - 55
+    );
+}
+
+#[test]
 fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result() {
     let beacon = hash_bytes(b"test", &[b"audit-report-beacon"]);
     let params = ChainParams {
