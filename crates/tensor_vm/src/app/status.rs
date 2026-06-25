@@ -1013,7 +1013,7 @@ mod tests {
         );
         assert_eq!(
             fields.value("detection_probability_mechanism_count"),
-            Some("9")
+            Some("10")
         );
         assert_eq!(
             fields.value("detection_probability_full_freivalds_detection_probability_bps"),

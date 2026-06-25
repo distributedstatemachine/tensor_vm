@@ -630,7 +630,7 @@ fn explorer_overview_exports_validator_audit_economic_calibration() {
     }));
 
     let detection = &overview["detection_probability_evidence"];
-    assert_eq!(detection["mechanism_count"].as_u64(), Some(9));
+    assert_eq!(detection["mechanism_count"].as_u64(), Some(10));
     let mechanisms = detection["mechanisms"].as_array().unwrap();
     let row_sampling = mechanisms
         .iter()

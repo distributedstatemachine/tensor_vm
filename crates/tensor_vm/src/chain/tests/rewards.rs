@@ -957,7 +957,7 @@ fn detection_probability_evidence_uses_live_jobs_and_params() {
     chain.submit_job(JobState::LinearTrainingStep(linear_job));
 
     let evidence = chain.state().detection_probability_evidence(chain.params());
-    assert_eq!(evidence.mechanism_count, 9);
+    assert_eq!(evidence.mechanism_count, 10);
     assert!(evidence.live_subject_count >= 2);
 
     let full_freivalds = evidence

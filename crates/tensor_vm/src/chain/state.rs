@@ -2083,11 +2083,28 @@ impl ChainState {
             .values()
             .filter(|job| matches!(job, JobState::LinearTrainingStep(_)))
             .count();
-        let graph_job_count = self
-            .jobs
-            .values()
-            .filter(|job| matches!(job, JobState::GraphExecution(_)))
-            .count();
+        // Split graph jobs by verification class: strict (Tier-A/B) graphs get
+        // deterministic single-validator exact replay (100% detection), whereas
+        // §8.1 committee (Tier-C) graphs rest on honest-majority committee
+        // agreement enforced by validator-audit slashing — a weaker model that
+        // must not be reported as 100% exact-replay detection.
+        let mut strict_graph_job_count = 0_usize;
+        let mut committee_graph_job_count = 0_usize;
+        for job in self.jobs.values() {
+            if let JobState::GraphExecution(graph_job) = job {
+                let committee = self
+                    .program_bodies
+                    .get(&graph_job.graph_id)
+                    .and_then(|bytes| crate::ir::TensorGraph::from_canonical_json_bytes(bytes).ok())
+                    .map(|graph| graph.requires_committee_verification())
+                    .unwrap_or(false);
+                if committee {
+                    committee_graph_job_count += 1;
+                } else {
+                    strict_graph_job_count += 1;
+                }
+            }
+        }
         let audit_denominator = params.validator_audit_sample_denominator.max(1);
         let audit_numerator = params
             .validator_audit_sample_numerator
@@ -2131,12 +2148,29 @@ impl ChainState {
             },
             DetectionProbabilityEvidence {
                 mechanism: "graph_exact_replay",
-                source: "registered_graph_jobs",
+                source: "registered_strict_graph_jobs",
                 sample_numerator: 1,
                 sample_denominator: 1,
                 detection_probability_bps: 10_000,
                 false_accept_probability_bps: 0,
-                live_subject_count: graph_job_count,
+                live_subject_count: strict_graph_job_count,
+            },
+            DetectionProbabilityEvidence {
+                // §8.1: Tier-C committee receipts are not deterministically
+                // single-validator-replayed; safety is honest-majority within the
+                // k-validator committee, with lazy/wrong validators caught by the
+                // validator-audit deterrent (the enforceable detection probability).
+                mechanism: "committee_agreement",
+                source: "tier_c_committee_honest_majority+validator_audit_sample",
+                sample_numerator: params.redundancy_k.max(1) as u64,
+                sample_denominator: params
+                    .freivalds
+                    .validators_per_job
+                    .max(params.redundancy_k.max(1)) as u64,
+                detection_probability_bps: bps_from_ratio(audit_numerator, audit_denominator),
+                false_accept_probability_bps: 10_000_u64
+                    .saturating_sub(bps_from_ratio(audit_numerator, audit_denominator)),
+                live_subject_count: committee_graph_job_count,
             },
             DetectionProbabilityEvidence {
                 mechanism: "data_availability_replication",

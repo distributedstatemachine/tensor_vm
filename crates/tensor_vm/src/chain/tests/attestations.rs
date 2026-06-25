@@ -507,6 +507,158 @@ fn mandatory_validator_audit_assignment_requires_separate_auditor() {
 }
 
 #[test]
+fn validator_audit_slashes_lazy_committee_validator_on_wrong_tier_c_receipt() {
+    use crate::ir::{GraphOutput, IrRef, OpNode, TensorGraph, TensorSpec};
+    use crate::jobs::{GraphJob, GraphReceipt};
+    use crate::tensor::{DType, Tensor};
+    use crate::verify::committee_checks_root;
+    use std::collections::BTreeMap;
+
+    let beacon = hash_bytes(b"test", &[b"committee-audit-beacon"]);
+    let params = ChainParams {
+        epoch_length: 1,
+        reward_settlement_delay_epochs: 0,
+        challenge_window_epochs: 0,
+        redundancy_k: 3,
+        agreement_quorum: 1,
+        validator_audit_sample_numerator: 1,
+        validator_audit_sample_denominator: 1,
+        validator_audit_window_blocks: 3,
+        validator_audit_slash_amount: 55,
+        freivalds: FreivaldsParams {
+            validators_per_job: 1,
+            minimum_validators: 1,
+            ..FreivaldsParams::default()
+        },
+        ..ChainParams::default()
+    };
+    let mut chain = Chain::with_params(params, beacon);
+    let miner = address(b"committee-audit-miner");
+    chain.register_miner(miner, 100).unwrap();
+    let validators: Vec<_> = (0..4)
+        .map(|i| address(format!("committee-audit-validator-{i}").as_bytes()))
+        .collect();
+    for validator in &validators {
+        chain.register_validator(*validator, 10_000).unwrap();
+    }
+
+    // A Tier-C (gelu) committee graph.
+    let graph = TensorGraph {
+        ir_version: 1,
+        inputs: vec![TensorSpec {
+            name: "x".to_owned(),
+            shape: vec![2, 3],
+            dtype: DType::Fixed32,
+            scale: 16,
+        }],
+        params: Vec::new(),
+        ops: vec![OpNode {
+            id: 0,
+            op: "gelu".to_owned(),
+            args: vec![IrRef::Input {
+                name: "x".to_owned(),
+            }],
+            kwargs: BTreeMap::new(),
+            out: vec![TensorSpec {
+                name: "y".to_owned(),
+                shape: vec![2, 3],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+        }],
+        outputs: vec![GraphOutput {
+            name: "y".to_owned(),
+            value: IrRef::Op { id: 0, idx: 0 },
+        }],
+    };
+    let graph_id = graph.validate_for_committee().unwrap();
+    chain
+        .apply_command(ChainCommand::RegisterProgramBody {
+            graph_id,
+            bytes: graph.canonical_json().into_bytes(),
+        })
+        .unwrap();
+
+    let input = Tensor::from_vec_with_scale(
+        vec![2, 3],
+        DType::Fixed32,
+        16,
+        vec![0, 32768, 65536, 98304, 131072, 16384],
+    )
+    .unwrap();
+    let input_roots = BTreeMap::from([("x".to_owned(), input.commitment_root())]);
+    let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 6);
+    chain.submit_job(JobState::GraphExecution(job.clone()));
+
+    // A FRAUDULENT receipt: claims a wrong output root (self-consistent digest).
+    let wrong_outputs = BTreeMap::from([("y".to_owned(), [9_u8; 32])]);
+    let trace_root = hash_bytes(b"test", &[b"committee-audit-trace"]);
+    let receipt = GraphReceipt::from_roots(&job, miner, wrong_outputs, trace_root, 1, 2);
+    chain.submit_graph_receipt(receipt.clone()).unwrap();
+
+    // A lazy committee validator rubber-stamps it Valid with the receipt-derived
+    // agreement root (computed without re-executing).
+    let assignment_seed = chain.validator_assignment_seed(&receipt.receipt_id);
+    let audited = JobScheduler::default()
+        .assign_validators(&chain, receipt.receipt_id, &assignment_seed)
+        .validators[0];
+    let agreement_root = committee_checks_root(
+        &graph_id,
+        &receipt.receipt_id,
+        &receipt.trace_root,
+        &receipt.output_roots,
+    );
+    chain
+        .submit_attestation(ValidatorAttestation::new(
+            audited,
+            10_000,
+            AttestationStatement {
+                receipt_id: receipt.receipt_id,
+                job_id: receipt.job_id,
+                primitive_type: PrimitiveType::GraphExecution,
+                result: VerificationResult::Valid,
+                checks_root: agreement_root,
+                data_availability_passed: true,
+            },
+        ))
+        .unwrap();
+
+    // Block production assigns the mandatory audit (sample rate 1/1).
+    chain.produce_block(validators[0], 1_000).unwrap();
+    let audit_id = *chain
+        .state()
+        .validator_audit_assignments()
+        .keys()
+        .next()
+        .expect("a Tier-C committee receipt attestation must be audit-assignable");
+    let auditor = chain.state().validator_audit_assignments()[&audit_id].auditor;
+
+    // The honest auditor re-executes via the committee verifier and finds the
+    // receipt invalid; the lazy Valid attestation is contradicted and slashed.
+    let starting_stake = chain.state().validators().get(&audited).unwrap().stake;
+    let report = ValidatorAuditReport::new(
+        audit_id,
+        auditor,
+        VerificationResult::Invalid,
+        true,
+        hash_bytes(b"test", &[b"committee-audit-canonical"]),
+    );
+    chain.submit_validator_audit_report(report).unwrap();
+
+    let slash = chain
+        .state()
+        .validator_audit_slashes()
+        .get(&audit_id)
+        .cloned()
+        .expect("lazy committee validator must be slashed");
+    assert_eq!(slash.validator, audited);
+    assert_eq!(
+        chain.state().validators().get(&audited).unwrap().stake,
+        starting_stake - 55
+    );
+}
+
+#[test]
 fn validator_audit_report_slashes_contradicted_attestation_and_accepts_matching_result() {
     let beacon = hash_bytes(b"test", &[b"audit-report-beacon"]);
     let params = ChainParams {
