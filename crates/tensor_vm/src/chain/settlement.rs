@@ -29,6 +29,8 @@ fn committee_settlement_delay_record(
     receipt_id: Hash,
     receipt: &ReceiptState,
     observed_agreement: usize,
+    conflicting_roots: usize,
+    reason: &str,
 ) -> RedundantSettlementDelayRecord {
     RedundantSettlementDelayRecord {
         receipt_id,
@@ -37,13 +39,13 @@ fn committee_settlement_delay_record(
         observed_agreeing_miners: observed_agreement,
         observed_agreeing_operators: observed_agreement,
         required_agreement_quorum: chain.params.redundancy_k.max(1),
-        conflicting_quorum_receipts: 0,
+        conflicting_quorum_receipts: conflicting_roots,
         recorded_at_height: chain.state.height,
         reward_delay_until_height: chain
             .state
             .height
             .saturating_add(chain.params.reward_maturity_delay_blocks()),
-        reason: "awaiting tier-c committee agreement".to_owned(),
+        reason: reason.to_owned(),
     }
 }
 
@@ -120,11 +122,25 @@ pub(super) fn settle_epoch(chain: &mut Chain, miner_reward_pool: u64, validator_
                     .unwrap_or(ReceiptRewardMaturity::AwaitingInclusion);
                 newly_settled.push((*receipt_id, receipt.clone(), reward_maturity));
             } else if observed >= 1 {
+                // Distinguish a genuine committee disagreement (>= 2 distinct
+                // result roots) from merely-insufficient agreement. A genuine
+                // disagreement is escalated to a §8.2 fraud proof, which now
+                // resolves Tier-C disputes with 1-of-N honesty; the receipt stays
+                // unsettled and an honest challenger opens the trace-bisection game.
+                let conflicting_roots =
+                    super::validation::committee_distinct_agreement_roots(chain, receipt_id);
+                let reason = if conflicting_roots >= 2 {
+                    "tier-c committee disagreement escalated to fraud proof"
+                } else {
+                    "awaiting tier-c committee agreement"
+                };
                 delayed_records.push(committee_settlement_delay_record(
                     chain,
                     *receipt_id,
                     receipt,
                     observed,
+                    conflicting_roots,
+                    reason,
                 ));
             }
             continue;

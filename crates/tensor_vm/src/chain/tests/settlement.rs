@@ -1188,6 +1188,18 @@ fn tier_c_committee_disagreement_blocks_settlement() {
     attest(&mut chain, validators[2], dishonest_root);
     chain.settle_epoch(1_000, 500);
     assert!(chain.state().settled_receipts().is_empty());
+    // The genuine disagreement (2 distinct result roots) is escalated to §8.2,
+    // distinct from merely-insufficient agreement.
+    let delay = chain
+        .state()
+        .redundant_settlement_delays()
+        .get(&receipt.receipt_id)
+        .expect("a disagreeing committee records an escalation record");
+    assert_eq!(
+        delay.reason,
+        "tier-c committee disagreement escalated to fraud proof"
+    );
+    assert_eq!(delay.conflicting_quorum_receipts, 2);
 }
 
 #[test]

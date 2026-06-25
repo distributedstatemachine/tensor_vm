@@ -594,6 +594,28 @@ pub fn committee_agreement_observed(chain: &Chain, receipt_id: &Hash) -> usize {
     crate::verify::committee_agreement_count(attestations, &assigned)
 }
 
+/// §8.1: the number of distinct result roots committed by valid, available,
+/// correctly-signed attestations from assigned committee validators. `>= 2` means
+/// the committee genuinely disagrees on the result (vs. merely not enough
+/// attestations yet), which routes the receipt to a §8.2 fraud proof.
+pub fn committee_distinct_agreement_roots(chain: &Chain, receipt_id: &Hash) -> usize {
+    let assigned = assigned_validators(chain, *receipt_id);
+    let Some(attestations) = chain.state.attestations.get(receipt_id) else {
+        return 0;
+    };
+    let mut roots = BTreeSet::new();
+    for attestation in attestations {
+        if assigned.contains(&attestation.validator)
+            && attestation.result == VerificationResult::Valid
+            && attestation.data_availability_passed
+            && attestation.verify_signature()
+        {
+            roots.insert(attestation.checks_root);
+        }
+    }
+    roots.len()
+}
+
 pub fn submit_validator_audit_report(
     chain: &mut Chain,
     report: ValidatorAuditReport,
