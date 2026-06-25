@@ -169,12 +169,23 @@ pub fn execute_graph_job_with_backend<B: ExecutionBackend>(
     backend: B,
     execution: GraphJobExecution<'_>,
 ) -> Result<RoleReceiptBundle> {
-    let ir_execution = backend.execute_graph_exact(
-        execution.job,
-        execution.graph,
-        execution.inputs,
-        execution.const_blobs,
-    )?;
+    // Tier-C committee graphs are executed via the deterministic canonical
+    // reference (committee admission), so a miner can produce a §8.1-settleable
+    // receipt; strict Tier-A/B graphs keep the backend's exact path (CPU/GPU).
+    let ir_execution = if execution.graph.requires_committee_verification() {
+        execution.job.committee_ir_execution_with_const_blobs(
+            execution.graph,
+            execution.inputs,
+            execution.const_blobs,
+        )?
+    } else {
+        backend.execute_graph_exact(
+            execution.job,
+            execution.graph,
+            execution.inputs,
+            execution.const_blobs,
+        )?
+    };
     let (receipt, outputs) = GraphReceipt::from_ir_execution(
         execution.job,
         address,
@@ -317,8 +328,112 @@ mod tests {
     use crate::jobs::{GraphJob, LinearTrainingStepJob, LinearTrainingStepSpec, MatmulJob};
     use crate::tensor::DType;
     use crate::types::{address, hash_bytes};
-    use crate::verify::VerificationResult;
+    use crate::verify::{
+        VerificationResult, committee_checks_root, verify_graph_execution,
+        verify_graph_execution_committee,
+    };
     use std::collections::BTreeMap;
+
+    #[test]
+    fn miner_and_validator_roles_handle_tier_c_committee_graph() {
+        // The miner role must be able to produce a Tier-C committee receipt and
+        // the validator role must verify it via the committee verifier — the
+        // production role functions the live (Docker) miner/validator processes
+        // call. Settlement on committee agreement is covered in chain tests.
+        let graph = TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![2, 2],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "gelu".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "y".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Fixed32,
+                    scale: 16,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        };
+        let graph_id = graph.validate_for_committee().unwrap();
+        assert!(graph.requires_committee_verification());
+
+        let x = Tensor::from_vec_with_scale(
+            vec![2, 2],
+            DType::Fixed32,
+            16,
+            vec![0, 32768, 65536, 98304],
+        )
+        .unwrap();
+        let inputs = BTreeMap::from([("x".to_owned(), x.clone())]);
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+        let const_blobs = BTreeMap::new();
+
+        // Miner role execution path (the same one the runtime miner tick uses).
+        let miner = address(b"tier-c-role-miner");
+        let bundle = execute_graph_job_with_backend(
+            miner,
+            CpuReferenceBackend,
+            GraphJobExecution {
+                job: &job,
+                graph: &graph,
+                inputs: &inputs,
+                const_blobs: &const_blobs,
+                submitted_at_block: 1,
+                execution_time_ms: 1,
+            },
+        )
+        .unwrap();
+        let ReceiptState::GraphExecution(receipt) = &bundle.receipt else {
+            panic!("miner role must produce a graph receipt for a committee graph");
+        };
+
+        // The receipt verifies under the committee path (and not the strict one).
+        assert!(
+            verify_graph_execution(&job, receipt, &graph, &inputs, &[0_u8; 32]).is_err(),
+            "Tier-C receipt must not verify on the strict consensus path"
+        );
+        let committee_report =
+            verify_graph_execution_committee(&job, receipt, &graph, &inputs, &const_blobs).unwrap();
+        assert_eq!(committee_report.result, VerificationResult::Valid);
+
+        // Validator role attests via the committee verifier with the deterministic root.
+        let attestation = ReferenceValidatorRole::new(address(b"tier-c-role-validator"), 10_000)
+            .verify_receipt(
+                &JobState::GraphExecution(job.clone()),
+                &bundle,
+                &[0_u8; 32],
+                &FreivaldsParams::default(),
+            )
+            .unwrap();
+        assert_eq!(attestation.result, VerificationResult::Valid);
+        assert_eq!(
+            attestation.checks_root,
+            committee_checks_root(
+                &graph_id,
+                &receipt.receipt_id,
+                &receipt.trace_root,
+                &receipt.output_roots
+            )
+        );
+    }
 
     #[test]
     fn cpu_reference_miner_role_executes_tensor_op_jobs() {
