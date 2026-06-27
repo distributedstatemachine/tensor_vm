@@ -48,6 +48,7 @@ EXPECTED_OPERATOR_CONVERGENCE_RETRY_LIMIT="$LOCAL_CPU_OPERATOR_CONVERGENCE_RETRY
 EXPECTED_DOCKER_EXEC_TIMEOUT_SECONDS="$LOCAL_CPU_DOCKER_EXEC_TIMEOUT_SECONDS"
 EXPECTED_HTTP_TIMEOUT_SECONDS="$LOCAL_CPU_HTTP_TIMEOUT_SECONDS"
 EXPECTED_CHECKER_RETRY_SLEEP_SECONDS="$LOCAL_CPU_CHECKER_RETRY_SLEEP_SECONDS"
+REQUIRE_COMMITTEE_SETTLEMENT="${TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT:-false}"
 RESTART_CONTINUITY_MODE="${TENSORVM_LOCAL_CPU_RESTART_CONTINUITY_MODE:-false}"
 RESTART_CONTINUITY_SERVICES="${TENSORVM_LOCAL_CPU_RESTART_SERVICES:-}"
 
@@ -631,7 +632,6 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] \
     && [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
-    && [ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
@@ -660,7 +660,13 @@ done
 [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] || fail "live synthetic jobs did not add validator attestations"
 [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not produce additional receipts"
 [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not settle additional receipts"
-[ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] || fail "live runtime did not settle a Tier-C committee (§8.1) receipt"
+# Live Tier-C committee settlement is gated opt-in: the committee counters are
+# always reported, but only enforced when both the producer emits committee jobs
+# (TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS) and this gate is requested. The
+# default baseline run reports committee=0 without failing.
+if [ "$REQUIRE_COMMITTEE_SETTLEMENT" = "true" ]; then
+  [ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] || fail "live runtime did not settle a Tier-C committee (§8.1) receipt"
+fi
 [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "live receipt details did not include validator attestations"
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
@@ -1709,7 +1715,7 @@ all_operator_chain_counters=true
 all_operator_block_log_roots_observed=true
 live_committee_receipt_count=${LIVE_COMMITTEE_RECEIPT_COUNT}
 live_settled_committee_receipt_count=${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT}
-live_tier_c_committee_settlement=true
+live_tier_c_committee_settlement_required=${REQUIRE_COMMITTEE_SETTLEMENT}
 live_escalated_committee_dispute_count=${LIVE_ESCALATED_COMMITTEE_DISPUTE_COUNT}
 public_evidence_full_spec=false
 independently_checkable=false

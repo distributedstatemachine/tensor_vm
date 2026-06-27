@@ -5,8 +5,14 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 246 (next): live interprocess Tier-C committee-settlement + fraud-proof
-  evidence across real node processes. Iteration 245 (Tier-C verification-ladder thread + producer plateau
+- Active feature: Iteration 246 (in progress): live interprocess Tier-C committee-settlement evidence.
+  The committee job source, opt-in flag, committee evidence counters in the explorer overview / service
+  status / checker, and the overview-serializer fix all landed and the **baseline local-cpu gate is green
+  with committee jobs off**. BLOCKER: enabling committee jobs
+  (`TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS=true`) stalls the producer role loop at ~15 jobs
+  (height frozen ~4) and the committee-input tensor is not served interprocess
+  (`role_validator_remote_tensor_fetch successes=1 / failures=771`, `artifact_missing_receipts=27`);
+  committee receipts never settle. Iteration 245 (Tier-C verification-ladder thread + producer plateau
   fix) is complete and pushed.
 - Current status: v0 work follows the 2026-06-23 owner scope decision (live verified drand + local A100
   CUDA in scope; 7-day external public-run roadmap). Two threads are live: (1) the CUDA graph-op coverage
@@ -20,12 +26,17 @@ archive commit anchors only.
   (committee-trust, not exact-verified). This is v0-legitimate (§8.1 is v0) but must be documented per §14
   as committee-trust, not Tier-A/B exact security. Exact verifiers/soundness bounds for transcendentals
   remain roadmap (§4.8).
-- Current blockers: none gating v0. Former blockers "7-day external run" and "deployed full VRF
-  construction" are reclassified to roadmap per the 2026-06-23 scope decision.
-- Next action: wire an opt-in live Tier-C committee job into the synthetic producer plus a malicious-miner
-  fault-injection mode, add checker assertions for live committee settlement and a live §8.2 Tier-C
-  dispute, and capture the cross-process evidence (the goal.md readiness gate). Continue CUDA multi-output
-  graph-op coverage as the parallel thread.
+- Current blockers (none gating v0; this is post-v0 live-evidence hardening): the live Tier-C committee
+  path stalls interprocess. tvmd emits no stdout/stderr in the container, so the producer role-loop
+  stall + committee-input DA failure cannot be located without adding role-loop logging. In-process
+  committee settlement + Tier-C fraud-proof tests pass; the gap is purely the live libp2p path. Former
+  blockers "7-day external run" and "deployed full VRF construction" remain roadmap.
+- Next action: add role-loop / producer logging (tvmd currently logs nothing to stdout) to locate the
+  committee-round producer stall and the committee-input tensor-serving failure; verify the committee
+  input tensor is announced/served to assigned miners and validators the same way exact-graph inputs are.
+  Then re-enable `TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS` + the checker's
+  `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT` gate and capture the evidence. The §8.2 malicious-miner
+  fault-injection dispute follows once §8.1 live settlement is green.
 
 ## Readiness Matrix
 
@@ -42,7 +53,7 @@ archive commit anchors only.
 | §8.1 Tier-C redundancy + committee verification | Implemented (Iter 245) | Committee verifier core + seed-independent agreement root, `Committee` op-admission policy + committee execution path, settlement gate with delayed settlement/escalation on disagreement, audit verifies committee agreement root, honest-majority calibration, miner role produces Tier-C committee receipts (commits `94b9fff`,`ba395dd`,`f2b524b`,`57135ec`,`19da56b`) | Prove live across real processes (Iter 246) |
 | §8.2 Tier-C interactive fraud proofs | Implemented (Iter 245) | Trace-bisection referee re-executes Tier-C ops via `validate_for_committee`, runtime challenger auto-opens Tier-C disputes, §8.1→§8.2 escalation routing, full dispute test (open→isolate→referee→slash) (commits `000481f`,`326c4c3`) | Prove live dispute across real processes (Iter 246) |
 | Fixed-point transcendental references | Implemented (Iter 245), committee-admitted | Canonical Q32 `exp`/`log`/`sqrt`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax` + composed `layer_norm`/`rmsnorm`, CPU + bit-exact CUDA, conformance vectors, exhaustive s=16 accuracy proof, Fixed32 `mean` round-half-even fix (commits `b3b8984`,`3a48598`,`5ff941f`) | Exact verifiers/soundness bounds remain roadmap (§4.8); keep §14 committee-trust framing |
-| Live interprocess Tier-C evidence | In progress (Iter 246) | Producer plateau fixed (monotonic nonce, commit `5050b61`) so production is continuous; Tier-C committee/fraud-proof chain machinery + tests exist | Wire opt-in live Tier-C job + fault injection + checker assertions; Docker run |
+| Live interprocess Tier-C evidence | In progress (Iter 246), blocked on live path | Committee job source + opt-in flag + committee counters in overview/status/checker landed (commits `a704ece`,`dfa7b7c`,`86ca385`); baseline gate green with committee off. Enabling committee jobs stalls the producer role loop (~15 jobs) and committee-input tensor DA fails interprocess | Add role-loop logging to locate the stall/DA failure; fix committee-input serving; then enable the opt-in gate and capture evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
 | CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/squeeze/unsqueeze/slice/tril/triu/concat/stack/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `crates/tensor_vm/kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
@@ -84,6 +95,38 @@ Out of scope: exact transcendental verifiers/soundness bounds (roadmap §4.8), r
 consensus/finality changes, 7-day external public-run evidence.
 
 ## Recent Iterations
+
+### Iteration 246 (in progress): Live Tier-C Committee Evidence — machinery landed, live path blocked
+
+Landed the opt-in live Tier-C committee evidence machinery and kept the baseline gate green; the live
+committee settlement itself is blocked on an interprocess bug.
+
+- `a704ece` Opt-in committee synthetic job source: `next_job_with_nonce_committee` (4-slot rotation keeps
+  the exact graph_execution slot; slot 3 emits a Tier-C `gelu` committee graph),
+  `committee_graph_execution_graph/inputs`, `synthetic_graph_and_inputs_for(graph_id)`,
+  `ChainProfile.committee_synthetic_jobs`, env `TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS`, producer
+  wiring.
+- `dfa7b7c` Committee evidence counters: `Chain::committee_receipt_count /
+  settled_committee_receipt_count / escalated_committee_dispute_count`, exposed in the explorer overview,
+  service status, and harness summary; checker reads them. Fixed a pre-existing needless_range_loop lint.
+- `86ca385` Fixed `ExplorerSummary::to_json` (a hand-written serializer) to actually emit the committee
+  counters — without it the overview omitted the fields and the `set -e` checker died silently on the
+  failed command substitution.
+- Gate restore (this commit): committee jobs are OFF by default in compose and the checker's committee
+  settlement assertion is gated behind `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT` (default false),
+  so the baseline local-cpu gate is green (verified: height 15, 55 graph receipts, checker exit 0).
+
+BLOCKER (documented, not gating v0): with committee jobs enabled the producer role loop freezes at ~15
+jobs (height ~4) and the committee-input tensor is not served interprocess (validator remote tensor fetch
+1 success / 771 failures, 27 artifact-missing receipts), so committee receipts never settle. tvmd writes
+nothing to stdout/stderr in the container, so the stall/DA failure needs role-loop logging to locate.
+In-process committee settlement (`tier_c_receipt_settles_only_on_committee_agreement`) and Tier-C
+fraud-proof (`trace_bisection_referee_resolves_tier_c_committee_dispute`) tests pass; the gap is purely
+the live libp2p path.
+
+Validation: `cargo test -p tensor_vm --lib` 598 pass, `cargo test -p tensor_vm_explorer --lib` pass,
+`cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --check` clean, compose test
+pass; baseline Docker checker exit 0 with committee off.
 
 ### Iteration 245: Tier-C Verification Ladder + Producer Plateau Fix
 
