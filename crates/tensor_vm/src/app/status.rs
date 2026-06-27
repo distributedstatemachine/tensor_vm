@@ -257,6 +257,15 @@ pub fn service_status(data_dir: &str) -> std::result::Result<String, String> {
         "settled_receipt_count",
         chain.state().settled_receipts().len(),
     );
+    report.field("committee_receipt_count", chain.committee_receipt_count());
+    report.field(
+        "settled_committee_receipt_count",
+        chain.settled_committee_receipt_count(),
+    );
+    report.field(
+        "escalated_committee_dispute_count",
+        chain.escalated_committee_dispute_count(),
+    );
     report.field(
         "data_unavailable_receipt_count",
         chain.state().data_unavailable_receipts().len(),

@@ -4202,8 +4202,8 @@ mod tests {
             let mean = vals.iter().sum::<f64>() / 4.0;
             let var = vals.iter().map(|v| (v - mean).powi(2)).sum::<f64>() / 4.0;
             let std = (var + eps).sqrt();
-            for i in 0..4 {
-                let expected = (vals[i] - mean) / std;
+            for (i, &val) in vals.iter().enumerate() {
+                let expected = (val - mean) / std;
                 let actual =
                     crate::tensor::signed_elem_to_i128(out.as_slice()[row * 4 + i]) as f64 / one;
                 assert!(

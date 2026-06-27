@@ -211,6 +211,7 @@ services:
       TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS: "1000"
       TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER: "true"
       TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER: "true"
+      TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS: "true"
     volumes:
       - validator-00-data:/var/lib/tensorvm
 

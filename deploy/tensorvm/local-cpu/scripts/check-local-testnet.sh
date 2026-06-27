@@ -603,6 +603,9 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_ATTESTATION_COUNT=$(json_summary_number attestation_count "$LIVE_OVERVIEW")
   LIVE_RECEIPT_COUNT=$(json_summary_number receipt_count "$LIVE_OVERVIEW")
   LIVE_SETTLED_RECEIPT_COUNT=$(json_summary_number settled_receipt_count "$LIVE_OVERVIEW")
+  LIVE_COMMITTEE_RECEIPT_COUNT=$(json_summary_number committee_receipt_count "$LIVE_OVERVIEW")
+  LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT=$(json_summary_number settled_committee_receipt_count "$LIVE_OVERVIEW")
+  LIVE_ESCALATED_COMMITTEE_DISPUTE_COUNT=$(json_summary_number escalated_committee_dispute_count "$LIVE_OVERVIEW")
   LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_summary_number pending_receipt_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_summary_number pending_proposer_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_summary_number pending_challenge_reward_count "$LIVE_OVERVIEW")
@@ -628,6 +631,7 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
     && [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] \
     && [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
+    && [ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] \
     && [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] \
     && [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
     && [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] \
@@ -656,6 +660,7 @@ done
 [ "${LIVE_ATTESTATION_COUNT:-0}" -gt "$SEED_ATTESTATION_COUNT" ] || fail "live synthetic jobs did not add validator attestations"
 [ "${LIVE_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not produce additional receipts"
 [ "${LIVE_SETTLED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "synthetic jobs did not settle additional receipts"
+[ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] || fail "live runtime did not settle a Tier-C committee (§8.1) receipt"
 [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "live receipt details did not include validator attestations"
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
 [ "${LIVE_LINEAR_TRAINING_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed LinearTrainingStep receipts"
@@ -1702,6 +1707,10 @@ all_operator_p2p_target_head_observed=true
 all_operator_p2p_latest_head_observed=true
 all_operator_chain_counters=true
 all_operator_block_log_roots_observed=true
+live_committee_receipt_count=${LIVE_COMMITTEE_RECEIPT_COUNT}
+live_settled_committee_receipt_count=${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT}
+live_tier_c_committee_settlement=true
+live_escalated_committee_dispute_count=${LIVE_ESCALATED_COMMITTEE_DISPUTE_COUNT}
 public_evidence_full_spec=false
 independently_checkable=false
 STATUS

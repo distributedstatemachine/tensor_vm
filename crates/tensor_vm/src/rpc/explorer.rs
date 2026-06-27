@@ -29,6 +29,9 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         attestation_count: chain.state().attestations().values().map(Vec::len).sum(),
         receipt_count: chain.state().receipts().len(),
         settled_receipt_count: chain.state().settled_receipts().len(),
+        committee_receipt_count: chain.committee_receipt_count(),
+        settled_committee_receipt_count: chain.settled_committee_receipt_count(),
+        escalated_committee_dispute_count: chain.escalated_committee_dispute_count(),
         data_unavailable_receipt_count: chain.state().data_unavailable_receipts().len(),
         data_unavailability_slash_count: chain.state().data_unavailability_slashes().len(),
         data_unavailability_slashed_amount_total: chain

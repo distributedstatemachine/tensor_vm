@@ -616,6 +616,43 @@ pub fn committee_distinct_agreement_roots(chain: &Chain, receipt_id: &Hash) -> u
     roots.len()
 }
 
+impl Chain {
+    /// §8.1 evidence: total receipts that take the Tier-C committee path (graph
+    /// receipts whose registered body requires committee verification).
+    pub fn committee_receipt_count(&self) -> usize {
+        self.state
+            .receipts
+            .values()
+            .filter(|receipt| settlement::receipt_requires_committee(self, receipt))
+            .count()
+    }
+
+    /// §8.1 evidence: committee-path receipts that have settled on honest-majority
+    /// agreement over the deterministic result root.
+    pub fn settled_committee_receipt_count(&self) -> usize {
+        self.state
+            .receipts
+            .iter()
+            .filter(|(receipt_id, receipt)| {
+                self.state.settled_receipts.contains(*receipt_id)
+                    && settlement::receipt_requires_committee(self, receipt)
+            })
+            .count()
+    }
+
+    /// §8.1→§8.2 evidence: committee receipts whose settlement was delayed because
+    /// the committee genuinely disagreed (>= 2 distinct roots) and was escalated to
+    /// a fraud proof.
+    pub fn escalated_committee_dispute_count(&self) -> usize {
+        self.state
+            .redundant_settlement_delays
+            .values()
+            .filter(|record| record.conflicting_quorum_receipts >= 2)
+            .filter(|record| record.reason.contains("escalated to fraud proof"))
+            .count()
+    }
+}
+
 pub fn submit_validator_audit_report(
     chain: &mut Chain,
     report: ValidatorAuditReport,
