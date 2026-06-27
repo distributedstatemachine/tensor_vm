@@ -274,7 +274,10 @@ pub fn validator_remote_program_response(
     let Ok(graph) = TensorGraph::from_canonical_json_bytes(&bytes) else {
         return ValidatorRemoteProgramResponse::Invalid;
     };
-    let Ok(graph_id) = graph.validate_for_consensus() else {
+    // Admit consensus (Tier-A/B) and §8.1 committee (Tier-C reference) graph
+    // bodies; otherwise the committee graph body can never propagate to peers via
+    // fetch and only the producer ever holds it, starving committee verification.
+    let Ok(graph_id) = graph.validate_for_committee() else {
         return ValidatorRemoteProgramResponse::Invalid;
     };
     if graph_id != requested_graph_id || graph.canonical_json().as_bytes() != bytes.as_slice() {
@@ -330,7 +333,9 @@ fn validator_receipt_required_remote_roots(node: &RpcNode, receipt: &ReceiptStat
 fn graph_from_program_body(node: &RpcNode, graph_id: &Hash) -> Option<TensorGraph> {
     let bytes = node.chain.state().program_body(graph_id)?;
     let graph = TensorGraph::from_canonical_json_bytes(bytes).ok()?;
-    if graph.validate_for_consensus().ok()? != *graph_id {
+    // Admit Tier-C committee graphs so committee receipts' required roots and
+    // const blobs are resolved on the live fetch path.
+    if graph.validate_for_committee().ok()? != *graph_id {
         return None;
     }
     Some(graph)

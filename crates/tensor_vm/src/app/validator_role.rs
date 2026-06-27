@@ -621,7 +621,9 @@ fn graph_const_blobs_from_node(
 fn graph_from_program_body(node: &RpcNode, graph_id: &Hash) -> Option<TensorGraph> {
     let bytes = node.chain.state().program_body(graph_id)?;
     let graph = TensorGraph::from_canonical_json_bytes(bytes).ok()?;
-    if graph.validate_for_consensus().ok()? != *graph_id {
+    // Admit Tier-C committee graphs so this node can reconstruct, serve, and
+    // re-execute committee receipts on the live path.
+    if graph.validate_for_committee().ok()? != *graph_id {
         return None;
     }
     Some(graph)
