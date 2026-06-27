@@ -26,16 +26,22 @@ archive commit anchors only.
   (committee-trust, not exact-verified). This is v0-legitimate (§8.1 is v0) but must be documented per §14
   as committee-trust, not Tier-A/B exact security. Exact verifiers/soundness bounds for transcendentals
   remain roadmap (§4.8).
-- Current blockers (none gating v0; this is post-v0 live-evidence hardening): the live Tier-C committee
-  path stalls interprocess. tvmd emits no stdout/stderr in the container, so the producer role-loop
-  stall + committee-input DA failure cannot be located without adding role-loop logging. In-process
-  committee settlement + Tier-C fraud-proof tests pass; the gap is purely the live libp2p path. Former
-  blockers "7-day external run" and "deployed full VRF construction" remain roadmap.
-- Next action: add role-loop / producer logging (tvmd currently logs nothing to stdout) to locate the
-  committee-round producer stall and the committee-input tensor-serving failure; verify the committee
-  input tensor is announced/served to assigned miners and validators the same way exact-graph inputs are.
-  Then re-enable `TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS` + the checker's
-  `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT` gate and capture the evidence. The §8.2 malicious-miner
+- Current blockers (none gating v0; post-v0 live-evidence hardening): live Tier-C committee receipts do
+  not settle interprocess. FIXED one root cause (`d173f1d`): the app-layer libp2p fetch/serve helpers
+  (`validator_remote_program_response`, `graph_from_program_body` x2) used `validate_for_consensus`, which
+  rejected Tier-C graph bodies on fetch so the gelu body never propagated. After the fix the producer no
+  longer stalls and the chain advances with committee jobs on, but validators still report
+  `artifact_ready=0 / artifact_missing≈33` and committee receipts stay unsettled (settled count plateaus
+  while receipts climb) — i.e. there is at least one more interprocess committee artifact-propagation gap.
+  tvmd emits no stdout/stderr, so the exact failing root + peer response needs tracing to locate.
+  In-process committee settlement + Tier-C fraud-proof tests pass; the gap is purely the live libp2p path.
+- Next action: add temporary targeted tracing (or a status counter) in the validator fetch loop
+  (`fetch_missing_tensor_roots`) to record which committee root fails and why the peer responds Missing
+  (does the producer/miner actually hold + serve the committee input/output root?). Confirm assigned
+  miners fetch the committee input and serve the committee output; confirm validators fetch the committee
+  body before computing required roots. Then re-enable
+  `TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS` + the checker's
+  `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT` gate and capture evidence. §8.2 malicious-miner
   fault-injection dispute follows once §8.1 live settlement is green.
 
 ## Readiness Matrix
@@ -53,7 +59,7 @@ archive commit anchors only.
 | §8.1 Tier-C redundancy + committee verification | Implemented (Iter 245) | Committee verifier core + seed-independent agreement root, `Committee` op-admission policy + committee execution path, settlement gate with delayed settlement/escalation on disagreement, audit verifies committee agreement root, honest-majority calibration, miner role produces Tier-C committee receipts (commits `94b9fff`,`ba395dd`,`f2b524b`,`57135ec`,`19da56b`) | Prove live across real processes (Iter 246) |
 | §8.2 Tier-C interactive fraud proofs | Implemented (Iter 245) | Trace-bisection referee re-executes Tier-C ops via `validate_for_committee`, runtime challenger auto-opens Tier-C disputes, §8.1→§8.2 escalation routing, full dispute test (open→isolate→referee→slash) (commits `000481f`,`326c4c3`) | Prove live dispute across real processes (Iter 246) |
 | Fixed-point transcendental references | Implemented (Iter 245), committee-admitted | Canonical Q32 `exp`/`log`/`sqrt`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax` + composed `layer_norm`/`rmsnorm`, CPU + bit-exact CUDA, conformance vectors, exhaustive s=16 accuracy proof, Fixed32 `mean` round-half-even fix (commits `b3b8984`,`3a48598`,`5ff941f`) | Exact verifiers/soundness bounds remain roadmap (§4.8); keep §14 committee-trust framing |
-| Live interprocess Tier-C evidence | In progress (Iter 246), blocked on live path | Committee job source + opt-in flag + committee counters in overview/status/checker landed (commits `a704ece`,`dfa7b7c`,`86ca385`); baseline gate green with committee off. Enabling committee jobs stalls the producer role loop (~15 jobs) and committee-input tensor DA fails interprocess | Add role-loop logging to locate the stall/DA failure; fix committee-input serving; then enable the opt-in gate and capture evidence |
+| Live interprocess Tier-C evidence | In progress (Iter 246), 1 of N live bugs fixed | Committee job source + opt-in flag + committee counters in overview/status/checker landed (`a704ece`,`dfa7b7c`,`86ca385`); baseline gate green with committee off. Fixed the fetch/serve `validate_for_consensus` rejection of committee bodies (`d173f1d`): producer no longer stalls and the chain advances with committee on, but committee receipts still do not settle (validators `artifact_missing≈33`) — at least one more artifact-propagation gap | Trace the validator fetch loop to find the failing committee root + peer Missing reason; fix; then enable the opt-in gate and capture evidence |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
 | CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/squeeze/unsqueeze/slice/tril/triu/concat/stack/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `crates/tensor_vm/kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
@@ -116,13 +122,19 @@ committee settlement itself is blocked on an interprocess bug.
   settlement assertion is gated behind `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT` (default false),
   so the baseline local-cpu gate is green (verified: height 15, 55 graph receipts, checker exit 0).
 
-BLOCKER (documented, not gating v0): with committee jobs enabled the producer role loop freezes at ~15
-jobs (height ~4) and the committee-input tensor is not served interprocess (validator remote tensor fetch
-1 success / 771 failures, 27 artifact-missing receipts), so committee receipts never settle. tvmd writes
-nothing to stdout/stderr in the container, so the stall/DA failure needs role-loop logging to locate.
-In-process committee settlement (`tier_c_receipt_settles_only_on_committee_agreement`) and Tier-C
-fraud-proof (`trace_bisection_referee_resolves_tier_c_committee_dispute`) tests pass; the gap is purely
-the live libp2p path.
+Live-path debugging (commit `d173f1d`): found and fixed one root cause — the app-layer libp2p
+fetch/serve helpers (`validator_remote_program_response`, `graph_from_program_body` in validator_fetch +
+validator_role) still validated graph bodies with `validate_for_consensus`, which rejects Tier-C
+(canonical-reference) graphs, so the committee gelu body could never propagate via fetch (only the
+producer held it). After the fix the producer no longer stalls (earlier "height 4 / job_count 15" was
+this body-fetch rejection cascading) and the chain advances with committee jobs on. However committee
+receipts still do NOT settle live: both validators report `artifact_ready=0 / artifact_missing≈33` and
+the settled count plateaus while receipts climb, so at least one more interprocess committee
+artifact-propagation gap remains. tvmd emits nothing to stdout/stderr, so locating the remaining failure
+needs targeted tracing in the validator fetch loop. In-process committee settlement
+(`tier_c_receipt_settles_only_on_committee_agreement`) and Tier-C fraud-proof
+(`trace_bisection_referee_resolves_tier_c_committee_dispute`) tests pass; the gap is purely the live
+libp2p path.
 
 Validation: `cargo test -p tensor_vm --lib` 598 pass, `cargo test -p tensor_vm_explorer --lib` pass,
 `cargo clippy --workspace --all-targets -- -D warnings` clean, `cargo fmt --check` clean, compose test
