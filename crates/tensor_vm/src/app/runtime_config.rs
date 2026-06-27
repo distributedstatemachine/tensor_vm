@@ -55,6 +55,7 @@ pub(super) fn runtime_chain_profile() -> std::result::Result<ChainProfile, Strin
     let mut profile = chain_profile_from_label(&label)?;
     if matches!(profile.network, crate::profile::ChainNetwork::Local) {
         profile.chain_params.proposer_cooldown_blocks = runtime_local_proposer_cooldown_blocks();
+        profile.committee_synthetic_jobs = runtime_local_committee_synthetic_jobs();
     }
     Ok(profile)
 }
@@ -217,6 +218,10 @@ fn runtime_local_validator_block_proposer_delay_blocks() -> u64 {
         .unwrap_or(0)
 }
 
+fn runtime_local_committee_synthetic_jobs() -> bool {
+    runtime_bool_env("TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS")
+}
+
 fn runtime_local_proposer_cooldown_blocks() -> u64 {
     std::env::var("TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS")
         .ok()
@@ -238,6 +243,7 @@ mod tests {
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER",
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
         "TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS",
+        "TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS",
         "TENSORVM_BOOTSTRAP_PEERS",
     ];
 

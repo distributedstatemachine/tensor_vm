@@ -172,6 +172,91 @@ impl SyntheticLocalJobSource {
         )
     }
 
+    /// Monotonic-nonce production that additionally interleaves a Tier-C committee
+    /// graph job (a `gelu` graph that `requires_committee_verification`). Used only
+    /// when the producer opts into live Tier-C committee evidence. The exact-graph
+    /// slot is preserved so the existing `graph_execution` receipt floor still
+    /// flows; the committee slot adds Tier-C committee receipts on a 1-in-4 cadence.
+    pub fn next_job_with_nonce_committee(&mut self, chain: &Chain, nonce: u64) -> Option<JobState> {
+        match nonce % 4 {
+            0 => Some(JobState::TensorOp(self.matmul_job_for_nonce(chain, nonce))),
+            1 => Some(JobState::LinearTrainingStep(
+                self.linear_job_for_nonce(chain, nonce),
+            )),
+            2 => Some(JobState::GraphExecution(
+                self.graph_job_for_nonce(chain, nonce),
+            )),
+            _ => Some(JobState::GraphExecution(
+                self.committee_graph_job_for_nonce(chain, nonce),
+            )),
+        }
+    }
+
+    fn committee_graph_job_for_nonce(&self, chain: &Chain, nonce: u64) -> GraphJob {
+        let graph = Self::committee_graph_execution_graph();
+        let inputs = Self::committee_graph_execution_inputs();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        GraphJob::new(
+            nonce,
+            graph.graph_id(),
+            input_roots,
+            BTreeMap::new(),
+            Self::synthetic_deadline(chain),
+            1,
+            12,
+        )
+    }
+
+    /// A Tier-C committee graph (`gelu`): committee-admissible and
+    /// `requires_committee_verification`, so live miner/validator processes
+    /// exercise the §8.1 committee path and §8.2 Tier-C disputes.
+    pub fn committee_graph_execution_graph() -> TensorGraph {
+        TensorGraph {
+            ir_version: 1,
+            inputs: vec![TensorSpec {
+                name: "x".to_owned(),
+                shape: vec![2, 2],
+                dtype: DType::Fixed32,
+                scale: 16,
+            }],
+            params: Vec::new(),
+            ops: vec![OpNode {
+                id: 0,
+                op: "gelu".to_owned(),
+                args: vec![IrRef::Input {
+                    name: "x".to_owned(),
+                }],
+                kwargs: BTreeMap::new(),
+                out: vec![TensorSpec {
+                    name: "y".to_owned(),
+                    shape: vec![2, 2],
+                    dtype: DType::Fixed32,
+                    scale: 16,
+                }],
+            }],
+            outputs: vec![GraphOutput {
+                name: "y".to_owned(),
+                value: IrRef::Op { id: 0, idx: 0 },
+            }],
+        }
+    }
+
+    pub fn committee_graph_execution_inputs() -> BTreeMap<String, Tensor> {
+        BTreeMap::from([(
+            "x".to_owned(),
+            Tensor::from_vec_with_scale(
+                vec![2, 2],
+                DType::Fixed32,
+                16,
+                vec![0, 32768, 65536, 98304],
+            )
+            .expect("static committee graph input x must be valid"),
+        )])
+    }
+
     pub fn graph_execution_graph() -> TensorGraph {
         TensorGraph {
             ir_version: 1,
@@ -223,6 +308,24 @@ impl SyntheticLocalJobSource {
                     .expect("static synthetic graph input b must be valid"),
             ),
         ])
+    }
+
+    /// Resolve the canonical graph body + inputs for a synthetic GraphExecution
+    /// job by its `graph_id`, covering both the exact Tier-B graph and the Tier-C
+    /// committee graph. The live producer uses this to register the matching
+    /// program body and inputs regardless of which synthetic graph was emitted.
+    pub fn synthetic_graph_and_inputs_for(
+        graph_id: Hash,
+    ) -> Option<(TensorGraph, BTreeMap<String, Tensor>)> {
+        let exact = Self::graph_execution_graph();
+        if exact.graph_id() == graph_id {
+            return Some((exact, Self::graph_execution_inputs()));
+        }
+        let committee = Self::committee_graph_execution_graph();
+        if committee.graph_id() == graph_id {
+            return Some((committee, Self::committee_graph_execution_inputs()));
+        }
+        None
     }
 
     pub fn linear_training_weights() -> Tensor {
@@ -470,6 +573,54 @@ mod tests {
         for (name, tensor) in inputs {
             assert_eq!(job.input_roots.get(&name), Some(&tensor.commitment_root()));
         }
+    }
+
+    #[test]
+    fn committee_rotation_emits_tier_c_committee_graph_on_fourth_slot() {
+        let beacon = hash_bytes(b"test", &[b"committee-graph-source"]);
+        let mut chain = Chain::new(beacon);
+        chain.set_receipt_submission_window_for_testing(13);
+        let mut source = SyntheticLocalJobSource::new(JobScheduler::with_small_shape((2, 3, 4)));
+
+        // Slot 2 stays the exact Tier-B graph so the existing graph_execution
+        // receipt floor still flows; slot 3 is the Tier-C committee graph.
+        let exact_id = SyntheticLocalJobSource::graph_execution_graph()
+            .validate_for_consensus()
+            .unwrap();
+        let committee_graph = SyntheticLocalJobSource::committee_graph_execution_graph();
+        let committee_id = committee_graph.validate_for_committee().unwrap();
+        assert!(committee_graph.requires_committee_verification());
+
+        let Some(JobState::GraphExecution(exact_job)) =
+            source.next_job_with_nonce_committee(&chain, 2)
+        else {
+            panic!("slot 2 must be the exact graph job");
+        };
+        assert_eq!(exact_job.graph_id, exact_id);
+
+        let Some(JobState::GraphExecution(committee_job)) =
+            source.next_job_with_nonce_committee(&chain, 3)
+        else {
+            panic!("slot 3 must be the Tier-C committee graph job");
+        };
+        assert_eq!(committee_job.graph_id, committee_id);
+        assert_eq!(committee_job.epoch, 3);
+        for (name, tensor) in SyntheticLocalJobSource::committee_graph_execution_inputs() {
+            assert_eq!(
+                committee_job.input_roots.get(&name),
+                Some(&tensor.commitment_root())
+            );
+        }
+
+        // Non-graph slots are unchanged from the standard monotonic rotation.
+        assert!(matches!(
+            source.next_job_with_nonce_committee(&chain, 0),
+            Some(JobState::TensorOp(_))
+        ));
+        assert!(matches!(
+            source.next_job_with_nonce_committee(&chain, 1),
+            Some(JobState::LinearTrainingStep(_))
+        ));
     }
 
     #[test]

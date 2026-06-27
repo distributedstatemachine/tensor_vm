@@ -200,8 +200,14 @@ pub fn produce_and_publish_synthetic_job_with_store(
     // the chain height, so the producer keeps minting distinct jobs every round and
     // the work pipeline does not stall when the head is briefly static.
     let production_nonce = server.gateway().node.chain.state().jobs().len() as u64;
-    let Some(job) = job_source.next_job_with_nonce(&server.gateway().node.chain, production_nonce)
-    else {
+    let next_job = if profile.committee_synthetic_jobs {
+        // Opt-in: interleave a Tier-C committee graph so live processes exercise
+        // §8.1 committee settlement and §8.2 Tier-C disputes.
+        job_source.next_job_with_nonce_committee(&server.gateway().node.chain, production_nonce)
+    } else {
+        job_source.next_job_with_nonce(&server.gateway().node.chain, production_nonce)
+    };
+    let Some(job) = next_job else {
         return Ok(None);
     };
     let job_id = job.job_id();
@@ -219,11 +225,10 @@ pub fn produce_and_publish_synthetic_job_with_store(
         }
     }
     if let JobState::GraphExecution(job) = &job {
-        let graph = SyntheticLocalJobSource::graph_execution_graph();
-        if graph.graph_id() != job.graph_id {
-            return Err("synthetic graph job does not match configured graph body".to_owned());
-        }
-        let inputs = SyntheticLocalJobSource::graph_execution_inputs();
+        let (graph, inputs) = SyntheticLocalJobSource::synthetic_graph_and_inputs_for(job.graph_id)
+            .ok_or_else(|| {
+                "synthetic graph job does not match a configured graph body".to_owned()
+            })?;
         {
             let node = &mut server.gateway_mut().node;
             node.chain

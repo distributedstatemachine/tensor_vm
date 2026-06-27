@@ -40,6 +40,11 @@ pub struct ChainProfile {
     pub synthetic_job_scheduler: Option<JobScheduler>,
     pub public_evidence_required: bool,
     pub service_exposure: ServiceExposure,
+    /// Opt-in: the live synthetic producer interleaves a Tier-C committee
+    /// (`gelu`) graph job so real node processes exercise the §8.1 committee
+    /// settlement path and §8.2 Tier-C disputes. Off by default; only the
+    /// local-cpu evidence run enables it.
+    pub committee_synthetic_jobs: bool,
 }
 
 impl ChainProfile {
@@ -73,6 +78,7 @@ impl ChainProfile {
             synthetic_job_scheduler: Some(JobScheduler::with_small_shape((8, 8, 8))),
             public_evidence_required: false,
             service_exposure: ServiceExposure::LoopbackOnly,
+            committee_synthetic_jobs: false,
         }
     }
 
