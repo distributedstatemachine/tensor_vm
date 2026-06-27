@@ -41,7 +41,7 @@ pub struct ExplorerSummary {
 impl ExplorerSummary {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"model_step_total\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
+            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"model_step_total\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"committee_receipt_count\":{},\"settled_committee_receipt_count\":{},\"escalated_committee_dispute_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
             self.height,
             self.epoch,
             self.block_count,
@@ -53,6 +53,9 @@ impl ExplorerSummary {
             self.attestation_count,
             self.receipt_count,
             self.settled_receipt_count,
+            self.committee_receipt_count,
+            self.settled_committee_receipt_count,
+            self.escalated_committee_dispute_count,
             self.data_unavailable_receipt_count,
             self.data_unavailability_slash_count,
             self.data_unavailability_slashed_amount_total,
