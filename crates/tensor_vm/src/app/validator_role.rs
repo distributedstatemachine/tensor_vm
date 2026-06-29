@@ -587,9 +587,18 @@ fn role_receipt_bundle_from_local_tensors(
             for (name, root) in &job.input_roots {
                 inputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
             }
+            // Verification re-executes the graph from its inputs and compares the
+            // recomputed roots against the receipt's claimed output roots, so the
+            // miner's output *tensors* are never needed to attest. Tier-C committee
+            // outputs are served only by the few miners that computed them, so
+            // requiring them here would block the validator from ever attesting a
+            // committee receipt. Only fetch outputs for strict Tier-A/B graphs
+            // (where they are reliably available) and skip them for committee ones.
             let mut outputs = BTreeMap::new();
-            for (name, root) in &receipt.output_roots {
-                outputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
+            if !graph.requires_committee_verification() {
+                for (name, root) in &receipt.output_roots {
+                    outputs.insert(name.clone(), node.tensor_by_commitment_root(root)?.clone());
+                }
             }
             let const_blobs = graph_const_blobs_from_node(node, &graph)?;
             Some(RoleReceiptBundle {
