@@ -169,15 +169,23 @@ fn fetch_missing_tensor_roots(
     if missing_roots.is_empty() {
         return Ok(());
     }
-    let peers = p2p_service.connected_peer_ids();
-    if peers.is_empty() {
-        report.failures = missing_roots.len();
-        return Ok(());
-    }
     for root in missing_roots {
+        // Content routing: ask directly-connected peers first (fast path), then
+        // discover additional holders for this commitment root via the Kademlia
+        // DHT provider records (works even when the holder is not a direct peer).
+        let mut candidates = p2p_service.connected_peer_ids();
+        for provider in p2p_service.find_providers(root, Duration::from_secs(2)) {
+            if !candidates.contains(&provider) {
+                candidates.push(provider);
+            }
+        }
+        if candidates.is_empty() {
+            report.failures = report.failures.saturating_add(1);
+            continue;
+        }
         let mut fetched = false;
         let mut failed_response_recorded = false;
-        for peer in &peers {
+        for peer in &candidates {
             report.attempts = report.attempts.saturating_add(1);
             let response = p2p_service.request_response(
                 *peer,

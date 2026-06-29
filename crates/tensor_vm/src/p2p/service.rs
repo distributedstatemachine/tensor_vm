@@ -371,10 +371,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                         .behaviour_mut()
                         .kademlia
                         .get_providers(libp2p::kad::RecordKey::new(&command.key));
-                    pending_provider_queries.insert(
-                        query_id,
-                        (command.response_tx, std::collections::HashSet::new()),
-                    );
+                    pending_provider_queries.insert(query_id, command.response_tx);
                 }
                 while let Ok(command) = request_rx.try_recv() {
                     if request_response_protocol_for_message(&command.request)

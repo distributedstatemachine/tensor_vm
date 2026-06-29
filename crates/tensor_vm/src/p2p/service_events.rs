@@ -5,7 +5,7 @@ use crate::types::Hash;
 use libp2p::kad::QueryId;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
+use std::collections::{BTreeMap, HashMap, VecDeque};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, mpsc};
 
@@ -37,10 +37,8 @@ pub(super) struct ServiceEventMetrics<'a> {
     pub(super) observed_message_tx: &'a mpsc::Sender<P2pMessage>,
 }
 
-/// Accumulates providers discovered for an in-flight `get_providers` query until
-/// the query's final step, then replies to the waiting `find_providers` caller.
-pub(super) type PendingProviderQueries =
-    HashMap<QueryId, (mpsc::SyncSender<Vec<PeerId>>, HashSet<PeerId>)>;
+/// Maps an in-flight `get_providers` query to the waiting `find_providers` caller.
+pub(super) type PendingProviderQueries = HashMap<QueryId, mpsc::SyncSender<Vec<PeerId>>>;
 
 pub(super) fn handle_swarm_event(
     event: SwarmEvent<TensorVmNetworkBehaviourEvent>,
@@ -244,13 +242,18 @@ fn handle_get_providers_progress(
     result: std::result::Result<libp2p::kad::GetProvidersOk, libp2p::kad::GetProvidersError>,
     last: bool,
 ) {
-    if let Some((_, found)) = pending_provider_queries.get_mut(&id)
-        && let Ok(libp2p::kad::GetProvidersOk::FoundProviders { providers, .. }) = &result
+    // Reply as soon as any holder is found (fast path for the validator fetch
+    // loop); if the query finishes without finding a provider, reply empty.
+    if let Ok(libp2p::kad::GetProvidersOk::FoundProviders { providers, .. }) = &result
+        && !providers.is_empty()
     {
-        found.extend(providers.iter().copied());
+        if let Some(response_tx) = pending_provider_queries.remove(&id) {
+            let _ = response_tx.send(providers.iter().copied().collect());
+        }
+        return;
     }
-    if last && let Some((response_tx, found)) = pending_provider_queries.remove(&id) {
-        let _ = response_tx.send(found.into_iter().collect());
+    if last && let Some(response_tx) = pending_provider_queries.remove(&id) {
+        let _ = response_tx.send(Vec::new());
     }
 }
 
