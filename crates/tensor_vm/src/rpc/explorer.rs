@@ -32,6 +32,8 @@ pub(super) fn explorer_summary(chain: &Chain) -> ExplorerSummary {
         committee_receipt_count: chain.committee_receipt_count(),
         settled_committee_receipt_count: chain.settled_committee_receipt_count(),
         escalated_committee_dispute_count: chain.escalated_committee_dispute_count(),
+        trace_bisection_challenge_count: chain.state().trace_bisection_challenges().len(),
+        invalid_output_slash_count: chain.state().invalid_output_slashes().len(),
         data_unavailable_receipt_count: chain.state().data_unavailable_receipts().len(),
         data_unavailability_slash_count: chain.state().data_unavailability_slashes().len(),
         data_unavailability_slashed_amount_total: chain

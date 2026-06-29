@@ -56,6 +56,7 @@ pub(super) fn runtime_chain_profile() -> std::result::Result<ChainProfile, Strin
     if matches!(profile.network, crate::profile::ChainNetwork::Local) {
         profile.chain_params.proposer_cooldown_blocks = runtime_local_proposer_cooldown_blocks();
         profile.committee_synthetic_jobs = runtime_local_committee_synthetic_jobs();
+        profile.malicious_committee_miner = runtime_local_malicious_committee_miner();
     }
     Ok(profile)
 }
@@ -222,6 +223,10 @@ fn runtime_local_committee_synthetic_jobs() -> bool {
     runtime_bool_env("TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS")
 }
 
+fn runtime_local_malicious_committee_miner() -> bool {
+    runtime_bool_env("TENSORVM_LOCAL_CPU_MALICIOUS_COMMITTEE_MINER")
+}
+
 fn runtime_local_proposer_cooldown_blocks() -> u64 {
     std::env::var("TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS")
         .ok()
@@ -244,6 +249,7 @@ mod tests {
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
         "TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS",
         "TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS",
+        "TENSORVM_LOCAL_CPU_MALICIOUS_COMMITTEE_MINER",
         "TENSORVM_BOOTSTRAP_PEERS",
     ];
 

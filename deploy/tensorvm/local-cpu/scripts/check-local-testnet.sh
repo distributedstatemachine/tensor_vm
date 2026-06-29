@@ -54,6 +54,9 @@ if [ "$REQUIRE_COMMITTEE_SETTLEMENT" = "true" ]; then
 else
   COMMITTEE_SETTLEMENT_FLOOR=0
 fi
+# Opt-in §8.2 live-dispute gate: only when a malicious-miner scenario is run do we
+# require a live Tier-C trace-bisection dispute that opened and resolved with a slash.
+REQUIRE_COMMITTEE_DISPUTE="${TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_DISPUTE:-false}"
 RESTART_CONTINUITY_MODE="${TENSORVM_LOCAL_CPU_RESTART_CONTINUITY_MODE:-false}"
 RESTART_CONTINUITY_SERVICES="${TENSORVM_LOCAL_CPU_RESTART_SERVICES:-}"
 
@@ -612,6 +615,8 @@ while [ "$attempt" -lt "$EXPECTED_CHECKER_RETRY_LIMIT" ]; do
   LIVE_COMMITTEE_RECEIPT_COUNT=$(json_summary_number committee_receipt_count "$LIVE_OVERVIEW")
   LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT=$(json_summary_number settled_committee_receipt_count "$LIVE_OVERVIEW")
   LIVE_ESCALATED_COMMITTEE_DISPUTE_COUNT=$(json_summary_number escalated_committee_dispute_count "$LIVE_OVERVIEW")
+  LIVE_TRACE_BISECTION_CHALLENGE_COUNT=$(json_summary_number trace_bisection_challenge_count "$LIVE_OVERVIEW")
+  LIVE_INVALID_OUTPUT_SLASH_COUNT=$(json_summary_number invalid_output_slash_count "$LIVE_OVERVIEW")
   LIVE_PENDING_RECEIPT_REWARD_COUNT=$(json_summary_number pending_receipt_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_PROPOSER_REWARD_COUNT=$(json_summary_number pending_proposer_reward_count "$LIVE_OVERVIEW")
   LIVE_PENDING_CHALLENGE_REWARD_COUNT=$(json_summary_number pending_challenge_reward_count "$LIVE_OVERVIEW")
@@ -672,6 +677,10 @@ done
 # default baseline run reports committee=0 without failing.
 if [ "$REQUIRE_COMMITTEE_SETTLEMENT" = "true" ]; then
   [ "${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT:-0}" -gt 0 ] || fail "live runtime did not settle a Tier-C committee (§8.1) receipt"
+fi
+if [ "$REQUIRE_COMMITTEE_DISPUTE" = "true" ]; then
+  [ "${LIVE_TRACE_BISECTION_CHALLENGE_COUNT:-0}" -gt 0 ] || fail "live runtime did not open a Tier-C (§8.2) trace-bisection dispute against the malicious miner"
+  [ "${LIVE_INVALID_OUTPUT_SLASH_COUNT:-0}" -gt 0 ] || fail "live Tier-C (§8.2) dispute did not resolve with an invalid-output slash"
 fi
 [ "${LIVE_ATTESTED_RECEIPT_COUNT:-0}" -gt "$EXPECTED_SETTLED_RECEIPTS" ] || fail "live receipt details did not include validator attestations"
 [ "${LIVE_TENSOR_OP_RECEIPT_COUNT:-0}" -gt "$EXPECTED_LIVE_PRIMITIVE_RECEIPT_FLOOR" ] || fail "live receipt details did not include post-seed TensorOp receipts"
@@ -1723,6 +1732,9 @@ live_committee_receipt_count=${LIVE_COMMITTEE_RECEIPT_COUNT}
 live_settled_committee_receipt_count=${LIVE_SETTLED_COMMITTEE_RECEIPT_COUNT}
 live_tier_c_committee_settlement_required=${REQUIRE_COMMITTEE_SETTLEMENT}
 live_escalated_committee_dispute_count=${LIVE_ESCALATED_COMMITTEE_DISPUTE_COUNT}
+live_trace_bisection_challenge_count=${LIVE_TRACE_BISECTION_CHALLENGE_COUNT}
+live_invalid_output_slash_count=${LIVE_INVALID_OUTPUT_SLASH_COUNT}
+live_tier_c_committee_dispute_required=${REQUIRE_COMMITTEE_DISPUTE}
 public_evidence_full_spec=false
 independently_checkable=false
 STATUS

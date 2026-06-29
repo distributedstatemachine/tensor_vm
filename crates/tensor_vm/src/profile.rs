@@ -45,6 +45,12 @@ pub struct ChainProfile {
     /// settlement path and §8.2 Tier-C disputes. Off by default; only the
     /// local-cpu evidence run enables it.
     pub committee_synthetic_jobs: bool,
+    /// Fault injection (opt-in, NEVER on by default): this node's miner role
+    /// submits a deliberately non-canonical Tier-C committee receipt (correct
+    /// inputs + claimed outputs, but a tampered op trace) so honest challengers
+    /// open a live §8.2 trace-bisection dispute that slashes it. Used only to
+    /// produce live Tier-C fraud-proof evidence.
+    pub malicious_committee_miner: bool,
 }
 
 impl ChainProfile {
@@ -79,6 +85,7 @@ impl ChainProfile {
             public_evidence_required: false,
             service_exposure: ServiceExposure::LoopbackOnly,
             committee_synthetic_jobs: false,
+            malicious_committee_miner: false,
         }
     }
 

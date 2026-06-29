@@ -22,6 +22,8 @@ pub struct ExplorerSummary {
     pub committee_receipt_count: usize,
     pub settled_committee_receipt_count: usize,
     pub escalated_committee_dispute_count: usize,
+    pub trace_bisection_challenge_count: usize,
+    pub invalid_output_slash_count: usize,
     pub data_unavailable_receipt_count: usize,
     pub data_unavailability_slash_count: usize,
     pub data_unavailability_slashed_amount_total: u64,
@@ -41,7 +43,7 @@ pub struct ExplorerSummary {
 impl ExplorerSummary {
     pub fn to_json(&self) -> String {
         format!(
-            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"model_step_total\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"committee_receipt_count\":{},\"settled_committee_receipt_count\":{},\"escalated_committee_dispute_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
+            "{{\"height\":{},\"epoch\":{},\"block_count\":{},\"miner_count\":{},\"validator_count\":{},\"job_count\":{},\"model_count\":{},\"model_step_total\":{},\"attestation_count\":{},\"receipt_count\":{},\"settled_receipt_count\":{},\"committee_receipt_count\":{},\"settled_committee_receipt_count\":{},\"escalated_committee_dispute_count\":{},\"trace_bisection_challenge_count\":{},\"invalid_output_slash_count\":{},\"data_unavailable_receipt_count\":{},\"data_unavailability_slash_count\":{},\"data_unavailability_slashed_amount_total\":{},\"validator_audit_assignment_count\":{},\"validator_audit_result_count\":{},\"validator_audit_slash_count\":{},\"validator_audit_slashed_amount_total\":{},\"finalized_block_count\":{},\"treasury_balance\":{},\"pending_receipt_reward_count\":{},\"pending_proposer_reward_count\":{},\"pending_challenge_reward_count\":{},\"pending_credit_reward_count\":{},\"total_reward_balance\":{}}}",
             self.height,
             self.epoch,
             self.block_count,
@@ -56,6 +58,8 @@ impl ExplorerSummary {
             self.committee_receipt_count,
             self.settled_committee_receipt_count,
             self.escalated_committee_dispute_count,
+            self.trace_bisection_challenge_count,
+            self.invalid_output_slash_count,
             self.data_unavailable_receipt_count,
             self.data_unavailability_slash_count,
             self.data_unavailability_slashed_amount_total,
@@ -883,6 +887,8 @@ mod tests {
             committee_receipt_count: 0,
             settled_committee_receipt_count: 0,
             escalated_committee_dispute_count: 0,
+            trace_bisection_challenge_count: 0,
+            invalid_output_slash_count: 0,
             data_unavailable_receipt_count: 1,
             data_unavailability_slash_count: 1,
             data_unavailability_slashed_amount_total: 10,

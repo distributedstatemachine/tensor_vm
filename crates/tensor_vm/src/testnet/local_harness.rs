@@ -387,6 +387,8 @@ impl LocalTestnet {
             committee_receipt_count: self.chain.committee_receipt_count(),
             settled_committee_receipt_count: self.chain.settled_committee_receipt_count(),
             escalated_committee_dispute_count: self.chain.escalated_committee_dispute_count(),
+            trace_bisection_challenge_count: state.trace_bisection_challenges().len(),
+            invalid_output_slash_count: state.invalid_output_slashes().len(),
             data_unavailable_receipt_count: state.data_unavailable_receipts().len(),
             data_unavailability_slash_count: state.data_unavailability_slashes().len(),
             data_unavailability_slashed_amount_total: state

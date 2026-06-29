@@ -2,12 +2,19 @@ use std::collections::{BTreeMap, BTreeSet};
 
 use crate::{
     Chain, ChainCommand, ChainEngine, JobScheduler, JobState, NodeRuntimeState, NodeStore,
-    RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
+    ReceiptState, RpcHttpServer, RpcNode, Tensor, TensorGraph, TensorVmLibp2pService,
+    api::P2pMessage,
+    encode_tensor_payload,
     error::TvmError,
     hash::hex,
-    roles::{GraphJobExecution, execute_graph_job_with_backend, execute_job_with_backend},
+    jobs::GraphReceipt,
+    merkle::merkle_root,
+    roles::{
+        GraphJobExecution, RoleReceiptArtifacts, RoleReceiptBundle, execute_graph_job_with_backend,
+        execute_job_with_backend,
+    },
     runtime::{BackendKind, CpuReferenceBackend, GpuMinerBackend},
-    types::{Address, Hash, parse_hash_hex},
+    types::{Address, Hash, hash_bytes, parse_hash_hex},
 };
 
 use super::{
@@ -61,7 +68,7 @@ pub fn submit_miner_role_receipt(
     miner: Address,
     job_id: Hash,
 ) -> std::result::Result<Option<MinerRoleReceiptSubmission>, String> {
-    submit_miner_role_receipt_with_device(node, miner, job_id, "cpu")
+    submit_miner_role_receipt_with_device(node, miner, job_id, "cpu", false)
 }
 
 pub fn submit_miner_role_receipt_with_device(
@@ -69,6 +76,7 @@ pub fn submit_miner_role_receipt_with_device(
     miner: Address,
     job_id: Hash,
     device: &str,
+    malicious_committee_miner: bool,
 ) -> std::result::Result<Option<MinerRoleReceiptSubmission>, String> {
     if !node.chain.state().miners().contains_key(&miner) {
         return Ok(None);
@@ -83,8 +91,14 @@ pub fn submit_miner_role_receipt_with_device(
     let Some(job) = node.chain.state().jobs().get(&job_id).cloned() else {
         return Ok(None);
     };
-    let (bundle, backend_kind) =
-        execute_miner_role_job_with_device(node, miner, &job, job_id, device)?;
+    let (bundle, backend_kind) = execute_miner_role_job_with_device(
+        node,
+        miner,
+        &job,
+        job_id,
+        device,
+        malicious_committee_miner,
+    )?;
     if bundle.receipt.job_id() != job_id || bundle.receipt.miner() != miner {
         return Err("miner role produced receipt for the wrong job or miner".to_owned());
     }
@@ -123,8 +137,18 @@ fn execute_miner_role_job_with_device(
     job: &JobState,
     job_id: Hash,
     device: &str,
+    malicious_committee_miner: bool,
 ) -> std::result::Result<(crate::RoleReceiptBundle, BackendKind), String> {
     let device = device.trim();
+    // Fault injection: a malicious miner submits a non-canonical Tier-C committee
+    // receipt (honest inputs + claimed outputs, tampered op trace) so honest
+    // challengers open a live §8.2 trace-bisection dispute that slashes it.
+    if malicious_committee_miner
+        && device == "cpu"
+        && let Some(result) = try_malicious_committee_bundle(node, miner, job, job_id)?
+    {
+        return Ok(result);
+    }
     let result = match job {
         JobState::GraphExecution(graph_job) if device == "cpu" || device.starts_with("cuda:") => {
             let graph = graph_from_program_body(node, &graph_job.graph_id)?;
@@ -210,6 +234,74 @@ fn execute_miner_role_job_with_device(
         }
     };
     result.map_err(|error| format!("miner role failed to execute job {}: {error}", hex(&job_id)))
+}
+
+/// Fault-injection bundle: for a Tier-C committee graph job, compute the honest
+/// execution but commit a tampered op trace (a wrong op output root + recomputed
+/// trace root) while keeping the honest claimed output roots. The receipt is thus
+/// internally a lie — its trace disagrees with a faithful re-execution — so an
+/// honest challenger opens a §8.2 trace-bisection dispute, the referee re-executes
+/// the isolated op on-chain, and this miner is slashed. The honest output tensors
+/// are still served so challengers can detect the disagreement.
+fn try_malicious_committee_bundle(
+    node: &RpcNode,
+    miner: Address,
+    job: &JobState,
+    job_id: Hash,
+) -> std::result::Result<Option<(RoleReceiptBundle, BackendKind)>, String> {
+    let JobState::GraphExecution(graph_job) = job else {
+        return Ok(None);
+    };
+    let graph = graph_from_program_body(node, &graph_job.graph_id)?;
+    if !graph.requires_committee_verification() {
+        return Ok(None);
+    }
+    let mut inputs = BTreeMap::new();
+    for (name, root) in &graph_job.input_roots {
+        let Some(tensor) = node.tensor_by_commitment_root(root).cloned() else {
+            return Ok(None);
+        };
+        inputs.insert(name.clone(), tensor);
+    }
+    let const_blobs = graph_const_blobs_from_node(node, &graph)?;
+    let execution = graph_job
+        .committee_ir_execution_with_const_blobs(&graph, &inputs, &const_blobs)
+        .map_err(|error| {
+            format!(
+                "malicious miner failed to execute committee job {}: {error}",
+                hex(&job_id)
+            )
+        })?;
+    if execution.op_traces.is_empty() {
+        return Ok(None);
+    }
+    let honest_output_roots = execution
+        .outputs
+        .iter()
+        .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+        .collect();
+    let mut tampered = execution.clone();
+    let bad_op_output_root = hash_bytes(b"tensor-vm-malicious-committee-miner-v1", &[&job_id]);
+    tampered.op_traces[0].output_roots = vec![bad_op_output_root];
+    tampered.trace_root = merkle_root(&tampered.trace_leaves());
+    let receipt = GraphReceipt::from_roots(
+        graph_job,
+        miner,
+        honest_output_roots,
+        tampered.trace_root,
+        node.chain.state().height(),
+        1,
+    );
+    let bundle = RoleReceiptBundle {
+        receipt: ReceiptState::GraphExecution(receipt),
+        artifacts: RoleReceiptArtifacts::GraphExecution {
+            graph,
+            inputs,
+            const_blobs,
+            outputs: execution.outputs,
+        },
+    };
+    Ok(Some((bundle, BackendKind::CpuReference)))
 }
 
 fn graph_const_blobs_from_node(
@@ -327,6 +419,7 @@ pub fn tick_miner_role_work_once(
             miner,
             job_id,
             config.miner_device.as_deref().unwrap_or("cpu"),
+            config.node.profile.malicious_committee_miner,
         )? {
             publish_new_chain_announcements(
                 p2p_service,
@@ -342,6 +435,18 @@ pub fn tick_miner_role_work_once(
             );
             for tensor in submission.served_tensors {
                 persist_runtime_tensor(store, &server.gateway().node.chain, &tensor)?;
+                // Announce served output/input tensors over the gossip mesh (verified
+                // by commitment root on receipt) so committee validators and honest
+                // challengers can re-execute and detect a bad-trace receipt without a
+                // direct request/response to this miner.
+                p2p_service
+                    .publish_gossip(P2pMessage::NewJobInputTensorPayload {
+                        commitment_root: tensor.commitment_root(),
+                        payload: encode_tensor_payload(&tensor),
+                    })
+                    .map_err(|error| {
+                        format!("failed to publish miner served tensor gossip: {error}")
+                    })?;
                 p2p_service.register_tensor(tensor);
             }
             let observation = miner_role_work_observation(&server.gateway().node.chain, miner);
@@ -363,4 +468,88 @@ pub fn tick_miner_role_work_once(
         status_changed = true;
     }
     Ok(status_changed)
+}
+
+#[cfg(test)]
+mod malicious_tests {
+    use super::*;
+    use crate::types::address;
+    use crate::{ChainParams, jobs::GraphJob, scheduler::SyntheticLocalJobSource};
+    use crate::{chain::Chain, verify::FreivaldsParams};
+
+    #[test]
+    fn malicious_committee_miner_submits_a_disputable_tier_c_receipt() {
+        // A malicious miner's Tier-C committee receipt must claim the honest
+        // output roots but commit a tampered trace, so an honest re-execution
+        // disagrees on the trace root (the trigger for a §8.2 dispute) — while a
+        // normal (honest) miner produces the canonical trace.
+        let params = ChainParams {
+            replication_factor: 1,
+            agreement_quorum: 1,
+            freivalds: FreivaldsParams {
+                validators_per_job: 1,
+                minimum_validators: 1,
+                ..FreivaldsParams::default()
+            },
+            ..ChainParams::default()
+        };
+        let miner = address(b"malicious-committee-miner");
+        let mut chain = Chain::with_params(params, hash_bytes(b"test", &[b"malicious-committee"]));
+        chain
+            .apply_command(ChainCommand::RegisterMiner {
+                address: miner,
+                stake: chain.params().miner_min_stake,
+            })
+            .unwrap();
+        chain.set_position_for_testing(2, 0);
+
+        let graph = SyntheticLocalJobSource::committee_graph_execution_graph();
+        let graph_id = graph.validate_for_committee().unwrap();
+        let inputs = SyntheticLocalJobSource::committee_graph_execution_inputs();
+        let input_roots = inputs
+            .iter()
+            .map(|(name, tensor)| (name.clone(), tensor.commitment_root()))
+            .collect();
+        let job = GraphJob::new(0, graph_id, input_roots, BTreeMap::new(), 10, 1, 4);
+        chain
+            .apply_command(ChainCommand::RegisterProgramBody {
+                graph_id,
+                bytes: graph.canonical_json().into_bytes(),
+            })
+            .unwrap();
+        chain
+            .apply_command(ChainCommand::SubmitJob(JobState::GraphExecution(
+                job.clone(),
+            )))
+            .unwrap();
+        let mut node = RpcNode::new(chain);
+        for tensor in inputs.values() {
+            node.insert_tensor(tensor.clone());
+        }
+
+        let honest_trace_root = job
+            .committee_ir_execution_with_const_blobs(&graph, &inputs, &BTreeMap::new())
+            .unwrap()
+            .trace_root;
+
+        submit_miner_role_receipt_with_device(&mut node, miner, job.job_id, "cpu", true)
+            .unwrap()
+            .expect("malicious miner should still submit a (lying) committee receipt");
+
+        let ReceiptState::GraphExecution(receipt) = node
+            .chain
+            .state()
+            .receipts()
+            .values()
+            .next()
+            .expect("malicious committee receipt must be stored")
+            .clone()
+        else {
+            panic!("expected a graph execution receipt");
+        };
+        // Honest claimed inputs/outputs (so it is accepted and detectable) ...
+        assert_eq!(receipt.input_roots, job.input_roots);
+        // ... but a tampered trace that disagrees with a faithful re-execution.
+        assert_ne!(receipt.trace_root, honest_trace_root);
+    }
 }

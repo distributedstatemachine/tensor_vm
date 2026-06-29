@@ -598,8 +598,9 @@ fn miner_role_cuda_device_selection_reaches_gpu_backend_without_cuda_feature() {
             .unwrap();
         let mut node = RpcNode::with_faucet(chain, Faucet::new(1_000_000, 100));
 
-        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
-            .expect_err("default build must route cuda selection to backend failure");
+        let error =
+            submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0", false)
+                .expect_err("default build must route cuda selection to backend failure");
 
         assert!(error.contains("cuda kernels not compiled"));
         assert!(node.chain.state().receipts().is_empty());
@@ -642,8 +643,9 @@ fn miner_role_graph_cuda_device_selection_reaches_gpu_backend_without_cuda_featu
             node.insert_tensor(tensor);
         }
 
-        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
-            .expect_err("default build must route cuda graph selection to backend failure");
+        let error =
+            submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0", false)
+                .expect_err("default build must route cuda graph selection to backend failure");
 
         assert!(error.contains("cuda kernels not compiled"));
         assert!(node.chain.state().receipts().is_empty());
@@ -690,10 +692,11 @@ fn miner_role_supported_multi_op_graph_cuda_device_selection_reaches_gpu_backend
             node.insert_tensor(tensor);
         }
 
-        let error = submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0")
-            .expect_err(
-                "default build must route supported cuda graph selection to backend failure",
-            );
+        let error =
+            submit_miner_role_receipt_with_device(&mut node, miner, job_id, "cuda:0", false)
+                .expect_err(
+                    "default build must route supported cuda graph selection to backend failure",
+                );
 
         assert!(error.contains("cuda kernels not compiled"));
         assert!(node.chain.state().receipts().is_empty());
@@ -730,7 +733,7 @@ fn miner_role_submits_tensor_op_with_configured_cuda_backend() {
         .unwrap()
         .expect("cpu role should submit receipt");
     let cuda_submission =
-        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0", false)
             .unwrap()
             .expect("cuda role should submit receipt");
 
@@ -803,7 +806,7 @@ fn miner_role_submits_graph_execution_with_configured_cuda_backend() {
         .unwrap()
         .expect("cpu role should submit graph receipt");
     let cuda_submission =
-        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0", false)
             .unwrap()
             .expect("cuda role should submit graph receipt");
 
@@ -893,7 +896,7 @@ fn miner_role_submits_supported_multi_op_graph_execution_with_configured_cuda_ba
         .unwrap()
         .expect("cpu role should submit supported graph receipt");
     let cuda_submission =
-        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0", false)
             .unwrap()
             .expect("cuda role should submit supported graph receipt");
 
@@ -960,7 +963,7 @@ fn miner_role_submits_linear_step_with_configured_cuda_backend() {
         .unwrap()
         .expect("cpu role should submit receipt");
     let cuda_submission =
-        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0")
+        submit_miner_role_receipt_with_device(&mut cuda_node, miner, job_id, "cuda:0", false)
             .unwrap()
             .expect("cuda role should submit receipt");
 
