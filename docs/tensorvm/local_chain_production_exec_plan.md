@@ -6,7 +6,8 @@ archive commit anchors only.
 ## Current State
 
 - Active feature: Iteration 248 COMPLETE — content-routed tensor DA (functional Kademlia DHT + provider
-  records) implemented, tested, and integrated into the validator fetch with no regression. Iteration 247
+  records) implemented, tested, integrated, and validated live with the interim gossip OFF (pure-DHT
+  committee settlement). Iteration 247
   COMPLETE — live interprocess Tier-C §8.2 interactive fraud proof proven
   (opt-in malicious-miner caught + slashed via live trace-bisection). Iteration 246 COMPLETE — live
   interprocess Tier-C §8.1 committee settlement is proven and is now a standing local-cpu gate. With committee jobs on by default, the checker passes with
@@ -28,15 +29,15 @@ archive commit anchors only.
 - Current blockers (none gating v0): both live Tier-C milestones are proven — §8.1 committee settlement
   (standing gate) and §8.2 interactive fraud proof (opt-in malicious-miner scenario). Former blockers
   "7-day external run" and "deployed full VRF construction" remain roadmap.
-- Content-routed DA (Iter 248): the Kademlia DHT is now functional (server mode + identify-fed routing
-  table) and tensors are advertised/discovered via provider records (`start_providing` /
-  `find_providers`), wired into the validator fetch as a content-routed path alongside direct peers.
-  Proven by an integration test (advertise → discover → pull → verify across two nodes) and a live
-  no-regression run (committee gate still green). The interim gossip-relay remains as belt-and-suspenders.
-- Next action: gate/remove the interim tensor gossip and validate pure-DHT committee settlement on the
-  full 15-node mesh (DHT propagation timing vs committee deadlines may need tuning) to complete the
-  replacement. Then continue CUDA multi-output graph-op coverage. The transcendental exact-verification
-  (vs committee-trust) for §4.8 and the 7-day external run remain roadmap.
+- Content-routed DA (Iter 248): COMPLETE. The Kademlia DHT is functional (server mode + identify-fed
+  routing table + periodic bootstrap), tensors are advertised/discovered via provider records, and the
+  validator fetch is content-routed. The interim gossip-relay is now OFF by default
+  (`TENSORVM_LOCAL_CPU_INTERIM_TENSOR_GOSSIP=false`, behind a flag as a fallback) and pure-DHT committee
+  settlement was validated live on the 15-node mesh (checker EXIT=0, committee settlement required, all
+  operators converged). Content routing replaces the gossip-relay.
+- Next action: continue CUDA multi-output graph-op coverage. Optionally delete the now-fallback gossip
+  path entirely. The transcendental exact-verification (vs committee-trust) for §4.8 and the 7-day
+  external run remain roadmap.
 
 ## Readiness Matrix
 
@@ -54,7 +55,7 @@ archive commit anchors only.
 | §8.2 Tier-C interactive fraud proofs | Implemented (Iter 245) | Trace-bisection referee re-executes Tier-C ops via `validate_for_committee`, runtime challenger auto-opens Tier-C disputes, §8.1→§8.2 escalation routing, full dispute test (open→isolate→referee→slash) (commits `000481f`,`326c4c3`) | Prove live dispute across real processes (Iter 246) |
 | Fixed-point transcendental references | Implemented (Iter 245), committee-admitted | Canonical Q32 `exp`/`log`/`sqrt`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax` + composed `layer_norm`/`rmsnorm`, CPU + bit-exact CUDA, conformance vectors, exhaustive s=16 accuracy proof, Fixed32 `mean` round-half-even fix (commits `b3b8984`,`3a48598`,`5ff941f`) | Exact verifiers/soundness bounds remain roadmap (§4.8); keep §14 committee-trust framing |
 | Live interprocess Tier-C §8.1 committee settlement | DONE (Iter 246), standing gate | Committee jobs on by default; checker requires committee settlement and passes — all committee receipts settle live across 15 processes, all operators converge, 0 escalations. Fixes: committee body fetch/serve (`d173f1d`), committee output over-fetch (`427650e`), gossip-announce of job input tensors + tensor-codec scale preservation (`9197ead`), validator attests committee receipts without the output tensor (`01050ba`) | Keep as standing gate |
-| Content-routed tensor DA (Kademlia provider records) | Implemented (Iter 248) | Functional DHT (server mode + identify routing), tensors advertised/discovered via provider records (`start_providing`/`find_providers`), wired into the validator fetch; integration test advertise→discover→pull→verify; live no-regression run (commits `b5ed1d7`,`76d3539`) | Gate/remove the interim gossip and validate pure-DHT committee settlement on the full mesh |
+| Content-routed tensor DA (Kademlia provider records) | DONE (Iter 248) | Functional DHT (server mode + identify routing + periodic bootstrap), tensors advertised/discovered via provider records, content-routed validator fetch; integration test advertise→discover→pull→verify; interim gossip OFF by default and pure-DHT committee settlement validated live (checker EXIT=0). Commits `b5ed1d7`,`76d3539`,`512e8a5` | Optionally delete the fallback gossip path |
 | Live interprocess Tier-C §8.2 interactive fraud proof | DONE (Iter 247), opt-in scenario | Opt-in malicious-miner mode (`379ee9a`) submits a non-canonical Tier-C committee receipt; honest challengers open a live trace-bisection dispute and the referee re-executes the isolated op → invalid-output slash. Verified live with the dispute gate: 80 trace-bisection challenges opened, 7 invalid-output slashes, while §8.1 honest committee receipts kept settling; checker EXIT=0 with both gates required | Optionally add to CI as a chaos run |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
@@ -110,8 +111,11 @@ plumbed back through the threaded channel model, replying on the first holder fo
 verifies by commitment root. Integration test `libp2p_service_discovers_tensor_providers_via_content_routing`
 proves advertise → discover → pull → verify across two nodes with no fixtures; a live local-cpu run
 confirmed no regression to committee settlement (checker EXIT=0). Commits `b5ed1d7` (DHT + provider
-records) and `76d3539` (fetch wiring). The interim gossip-relay stays as belt-and-suspenders until
-pure-DHT settlement is validated on the full mesh. 601 lib tests pass, workspace clippy + fmt clean.
+records) and `76d3539` (fetch wiring). Then (`512e8a5`) the interim gossip was turned OFF by default
+(behind `TENSORVM_LOCAL_CPU_INTERIM_TENSOR_GOSSIP`, kept as a fallback) and a periodic
+`kademlia.bootstrap()` was added; pure-DHT committee settlement was validated live on the 15-node mesh
+(checker EXIT=0, committee settlement required, all operators converged) — content routing replaces the
+gossip-relay. 601 lib tests pass, workspace clippy + fmt clean.
 
 ### Iteration 247 (COMPLETE): Live Interprocess Tier-C §8.2 Interactive Fraud Proof
 
