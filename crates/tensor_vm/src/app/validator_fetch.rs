@@ -309,9 +309,24 @@ fn validator_receipt_required_remote_roots(node: &RpcNode, receipt: &ReceiptStat
             roots.push(receipt.weight_root_after);
         }
         ReceiptState::GraphExecution(receipt) => {
+            // Verification re-executes the graph from its inputs (+ const blobs)
+            // and compares the recomputed roots against the receipt's claimed
+            // output roots, which are already in the receipt body — the output
+            // *tensors* are never needed to verify. Committee (Tier-C) receipts'
+            // outputs are only served by the few miners that computed them, while
+            // the input is reliably served by the producer, so fetching outputs
+            // for committee receipts blocks settlement for no verification gain.
+            // Tier-A/B graph receipts keep fetching outputs (unchanged baseline).
             roots.extend(receipt.input_roots.values().copied());
-            roots.extend(receipt.output_roots.values().copied());
-            if let Some(graph) = graph_from_program_body(node, &receipt.graph_id)
+            let graph = graph_from_program_body(node, &receipt.graph_id);
+            let committee = graph
+                .as_ref()
+                .map(|graph| graph.requires_committee_verification())
+                .unwrap_or(false);
+            if !committee {
+                roots.extend(receipt.output_roots.values().copied());
+            }
+            if let Some(graph) = graph.as_ref()
                 && let Ok(const_blobs) = graph.const_blob_specs()
             {
                 roots.extend(
