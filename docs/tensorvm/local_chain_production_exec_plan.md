@@ -5,8 +5,9 @@ archive commit anchors only.
 
 ## Current State
 
-- Active feature: Iteration 246 COMPLETE — live interprocess Tier-C §8.1 committee settlement is proven
-  and is now a standing local-cpu gate. With committee jobs on by default, the checker passes with
+- Active feature: Iteration 247 COMPLETE — live interprocess Tier-C §8.2 interactive fraud proof proven
+  (opt-in malicious-miner caught + slashed via live trace-bisection). Iteration 246 COMPLETE — live
+  interprocess Tier-C §8.1 committee settlement is proven and is now a standing local-cpu gate. With committee jobs on by default, the checker passes with
   committee settlement required: all committee receipts settle (e.g. `live_settled_committee_receipt_count`
   equal to `live_committee_receipt_count`, 0 escalations), all operators converge. Iteration 245 (Tier-C
   verification-ladder thread + producer plateau fix) is complete and pushed.
@@ -22,15 +23,12 @@ archive commit anchors only.
   (committee-trust, not exact-verified). This is v0-legitimate (§8.1 is v0) but must be documented per §14
   as committee-trust, not Tier-A/B exact security. Exact verifiers/soundness bounds for transcendentals
   remain roadmap (§4.8).
-- Current blockers (none gating v0): live Tier-C §8.1 committee settlement is solved (see Iteration 246
-  record). The §8.2 malicious-miner fault-injection live dispute is the next live-evidence item (in-process
-  Tier-C fraud-proof tests already pass). Former blockers "7-day external run" and "deployed full VRF
-  construction" remain roadmap.
-- Next action: implement the §8.2 live dispute — an opt-in malicious-miner mode that submits a
-  non-canonical Tier-C committee root, triggering committee disagreement → §8.1→§8.2 escalation → live
-  trace-bisection dispute (open → bisect → referee → slash + challenger reward) across real processes, with
-  a checker assertion on `escalated_committee_dispute_count` / dispute resolution. Continue CUDA
-  multi-output graph-op coverage as the parallel thread.
+- Current blockers (none gating v0): both live Tier-C milestones are proven — §8.1 committee settlement
+  (standing gate) and §8.2 interactive fraud proof (opt-in malicious-miner scenario). Former blockers
+  "7-day external run" and "deployed full VRF construction" remain roadmap.
+- Next action: continue CUDA multi-output graph-op coverage (parallel thread). Optionally fold the §8.2
+  malicious-miner dispute scenario into CI as a separate chaos run. The transcendental exact-verification
+  (vs committee-trust) for §4.8 remains roadmap.
 
 ## Readiness Matrix
 
@@ -47,7 +45,8 @@ archive commit anchors only.
 | §8.1 Tier-C redundancy + committee verification | Implemented (Iter 245) | Committee verifier core + seed-independent agreement root, `Committee` op-admission policy + committee execution path, settlement gate with delayed settlement/escalation on disagreement, audit verifies committee agreement root, honest-majority calibration, miner role produces Tier-C committee receipts (commits `94b9fff`,`ba395dd`,`f2b524b`,`57135ec`,`19da56b`) | Prove live across real processes (Iter 246) |
 | §8.2 Tier-C interactive fraud proofs | Implemented (Iter 245) | Trace-bisection referee re-executes Tier-C ops via `validate_for_committee`, runtime challenger auto-opens Tier-C disputes, §8.1→§8.2 escalation routing, full dispute test (open→isolate→referee→slash) (commits `000481f`,`326c4c3`) | Prove live dispute across real processes (Iter 246) |
 | Fixed-point transcendental references | Implemented (Iter 245), committee-admitted | Canonical Q32 `exp`/`log`/`sqrt`/`sigmoid`/`tanh`/`silu`/`gelu`/`softmax` + composed `layer_norm`/`rmsnorm`, CPU + bit-exact CUDA, conformance vectors, exhaustive s=16 accuracy proof, Fixed32 `mean` round-half-even fix (commits `b3b8984`,`3a48598`,`5ff941f`) | Exact verifiers/soundness bounds remain roadmap (§4.8); keep §14 committee-trust framing |
-| Live interprocess Tier-C §8.1 committee settlement | DONE (Iter 246), standing gate | Committee jobs on by default; checker requires committee settlement and passes — all committee receipts settle live across 15 processes, all operators converge, 0 escalations. Fixes: committee body fetch/serve (`d173f1d`), committee output over-fetch (`427650e`), gossip-announce of job input tensors + tensor-codec scale preservation (`9197ead`), validator attests committee receipts without the output tensor (`01050ba`) | Add §8.2 live malicious-miner dispute evidence |
+| Live interprocess Tier-C §8.1 committee settlement | DONE (Iter 246), standing gate | Committee jobs on by default; checker requires committee settlement and passes — all committee receipts settle live across 15 processes, all operators converge, 0 escalations. Fixes: committee body fetch/serve (`d173f1d`), committee output over-fetch (`427650e`), gossip-announce of job input tensors + tensor-codec scale preservation (`9197ead`), validator attests committee receipts without the output tensor (`01050ba`) | Keep as standing gate |
+| Live interprocess Tier-C §8.2 interactive fraud proof | DONE (Iter 247), opt-in scenario | Opt-in malicious-miner mode (`379ee9a`) submits a non-canonical Tier-C committee receipt; honest challengers open a live trace-bisection dispute and the referee re-executes the isolated op → invalid-output slash. Verified live with the dispute gate: 80 trace-bisection challenges opened, 7 invalid-output slashes, while §8.1 honest committee receipts kept settling; checker EXIT=0 with both gates required | Optionally add to CI as a chaos run |
 | Randomness commit/reveal (drand beacon) | Partial | Receipt anchors, validator reveal keys/proofs, verified local/public drand, chain-owned epoch windows, reward-release reveal gates | Make verified drand binding the live consensus randomness source; bespoke per-validator VRF is roadmap |
 | Economics and slashing invariant | Partial | Delayed rewards, claim-owned spendability, delayed TensorWork activation, invalid-output/data-unavailability/audit/block-check/trace-bisection slashing and delayed bounties, calibration evidence, and chain-owned verifier bandwidth estimates | Add deployed-run detection measurements and remaining fraud paths |
 | CUDA miner/runtime + conformance | Partial local A100 evidence | CUDA matmul/add/sub/mul/div/clamp/sum/mean/reshape/squeeze/unsqueeze/slice/tril/triu/concat/stack/broadcast/relu/identity/neg/abs/sign/eq/gt/lt/ge/le/where/scalar_mul/transpose kernels exist in `crates/tensor_vm/kernels/cuda/field_matmul.cu`; native CUDA-feature runtime and miner-role tests pass for current TensorOp, LinearTrainingStep, local synthetic GraphExecution, and supported multi-op field GraphExecution | Continue kernels/conformance for remaining admitted exact ops without CPU fallback |
@@ -89,6 +88,24 @@ Out of scope: exact transcendental verifiers/soundness bounds (roadmap §4.8), r
 consensus/finality changes, 7-day external public-run evidence.
 
 ## Recent Iterations
+
+### Iteration 247 (COMPLETE): Live Interprocess Tier-C §8.2 Interactive Fraud Proof
+
+A malicious miner is now caught and slashed live by the interactive fraud proof. Opt-in fault injection
+(`TENSORVM_LOCAL_CPU_MALICIOUS_COMMITTEE_MINER`, off by default) makes a miner submit a non-canonical
+Tier-C committee receipt — honest inputs and claimed output roots, but a tampered op trace
+(`try_malicious_committee_bundle`). Honest miners gossip their served output tensors so committee
+validators / challengers can re-execute and detect the disagreement; the runtime challenger opens a live
+trace-bisection dispute (open → bisect → referee re-execution of the isolated op → invalid-output slash).
+Exposed `trace_bisection_challenge_count` + `invalid_output_slash_count` in the overview and added an
+opt-in checker gate `TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_DISPUTE`.
+
+Live evidence (one malicious miner among honest ones, both gates required): checker EXIT=0 with
+`live_trace_bisection_challenge_count=80`, `live_invalid_output_slash_count=7`, while §8.1 honest committee
+receipts kept settling (`live_settled_committee_receipt_count` advancing) and all operators converged
+(height 64). So §8.1 honest-majority settlement and §8.2 1-of-N fraud-proof slashing run simultaneously on
+real processes. Commit `379ee9a`; regression test `malicious_committee_miner_submits_a_disputable_tier_c_receipt`;
+601 lib + workspace tests pass, clippy + fmt clean.
 
 ### Iteration 246 (COMPLETE): Live Interprocess Tier-C §8.1 Committee Settlement
 
