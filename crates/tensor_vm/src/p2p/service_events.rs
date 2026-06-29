@@ -2,9 +2,10 @@ use crate::api::P2pMessage;
 use crate::ir::IrTraceOpening;
 use crate::tensor::Tensor;
 use crate::types::Hash;
+use libp2p::kad::QueryId;
 use libp2p::swarm::SwarmEvent;
 use libp2p::{PeerId, Swarm};
-use std::collections::{BTreeMap, HashMap, VecDeque};
+use std::collections::{BTreeMap, HashMap, HashSet, VecDeque};
 use std::sync::atomic::{AtomicU64, AtomicUsize, Ordering};
 use std::sync::{Mutex, mpsc};
 
@@ -36,6 +37,11 @@ pub(super) struct ServiceEventMetrics<'a> {
     pub(super) observed_message_tx: &'a mpsc::Sender<P2pMessage>,
 }
 
+/// Accumulates providers discovered for an in-flight `get_providers` query until
+/// the query's final step, then replies to the waiting `find_providers` caller.
+pub(super) type PendingProviderQueries =
+    HashMap<QueryId, (mpsc::SyncSender<Vec<PeerId>>, HashSet<PeerId>)>;
+
 pub(super) fn handle_swarm_event(
     event: SwarmEvent<TensorVmNetworkBehaviourEvent>,
     peer_connections: &mut HashMap<PeerId, usize>,
@@ -44,6 +50,7 @@ pub(super) fn handle_swarm_event(
         PendingRequestKey,
         mpsc::SyncSender<std::result::Result<P2pMessage, &'static str>>,
     >,
+    pending_provider_queries: &mut PendingProviderQueries,
     swarm: &mut Swarm<TensorVmNetworkBehaviour>,
 ) {
     match event {
@@ -204,7 +211,46 @@ pub(super) fn handle_swarm_event(
                 swarm,
             );
         }
+        SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::Identify(
+            libp2p::identify::Event::Received { peer_id, info, .. },
+        )) => {
+            // Feed identified peers' listen addresses into the Kademlia routing
+            // table so the DHT fills out beyond the static bootstrap set and can
+            // route provider-record queries.
+            for address in info.listen_addrs {
+                swarm
+                    .behaviour_mut()
+                    .kademlia
+                    .add_address(&peer_id, address);
+            }
+        }
+        SwarmEvent::Behaviour(TensorVmNetworkBehaviourEvent::Kademlia(
+            libp2p::kad::Event::OutboundQueryProgressed {
+                id,
+                result: libp2p::kad::QueryResult::GetProviders(result),
+                step,
+                ..
+            },
+        )) => {
+            handle_get_providers_progress(pending_provider_queries, id, result, step.last);
+        }
         _ => {}
+    }
+}
+
+fn handle_get_providers_progress(
+    pending_provider_queries: &mut PendingProviderQueries,
+    id: QueryId,
+    result: std::result::Result<libp2p::kad::GetProvidersOk, libp2p::kad::GetProvidersError>,
+    last: bool,
+) {
+    if let Some((_, found)) = pending_provider_queries.get_mut(&id)
+        && let Ok(libp2p::kad::GetProvidersOk::FoundProviders { providers, .. }) = &result
+    {
+        found.extend(providers.iter().copied());
+    }
+    if last && let Some((response_tx, found)) = pending_provider_queries.remove(&id) {
+        let _ = response_tx.send(found.into_iter().collect());
     }
 }
 

@@ -52,6 +52,8 @@ pub struct TensorVmLibp2pService {
     observed_message_rx: Mutex<mpsc::Receiver<P2pMessage>>,
     publish_tx: mpsc::Sender<P2pMessage>,
     request_tx: mpsc::Sender<RequestResponseCommand>,
+    provide_tx: mpsc::Sender<Hash>,
+    find_providers_tx: mpsc::Sender<FindProvidersCommand>,
     stop: Arc<AtomicBool>,
     worker: Option<thread::JoinHandle<()>>,
 }
@@ -160,9 +162,32 @@ impl TensorVmLibp2pService {
     }
 
     pub fn register_tensor(&self, tensor: Tensor) {
+        let commitment_root = tensor.commitment_root();
         if let Ok(mut tensors) = self.tensor_store.lock() {
             tensors.insert(tensor.tensor_id(), tensor);
         }
+        // Advertise a DHT provider record keyed on the content-address (commitment
+        // root) so any node can discover us as a holder via content routing,
+        // independent of the direct-peer mesh.
+        let _ = self.provide_tx.send(commitment_root);
+    }
+
+    /// Content routing: discover peers advertising a provider record for a tensor
+    /// commitment root via the Kademlia DHT. Returns the providers found before
+    /// the query completes or `timeout` elapses.
+    pub fn find_providers(&self, commitment_root: Hash, timeout: Duration) -> Vec<PeerId> {
+        let (response_tx, response_rx) = mpsc::sync_channel(1);
+        if self
+            .find_providers_tx
+            .send(FindProvidersCommand {
+                key: commitment_root,
+                response_tx,
+            })
+            .is_err()
+        {
+            return Vec::new();
+        }
+        response_rx.recv_timeout(timeout).unwrap_or_default()
     }
 
     pub fn register_program(&self, program_hash: Hash, bytes: Vec<u8>) {
@@ -220,6 +245,13 @@ impl Drop for TensorVmLibp2pService {
     }
 }
 
+/// A content-routing request: discover, via the Kademlia DHT, which peers
+/// advertise a provider record for a tensor commitment root.
+struct FindProvidersCommand {
+    key: Hash,
+    response_tx: mpsc::SyncSender<Vec<PeerId>>,
+}
+
 pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<TensorVmLibp2pService> {
     let (ready_tx, ready_rx) = mpsc::sync_channel(1);
     let stop = Arc::new(AtomicBool::new(false));
@@ -262,6 +294,8 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
     let worker_trace_opening_store = Arc::clone(&trace_opening_store);
     let (publish_tx, publish_rx) = mpsc::channel();
     let (request_tx, request_rx) = mpsc::channel::<RequestResponseCommand>();
+    let (provide_tx, provide_rx) = mpsc::channel::<Hash>();
+    let (find_providers_tx, find_providers_rx) = mpsc::channel::<FindProvidersCommand>();
     let (observed_message_tx, observed_message_rx) = mpsc::channel();
     let runtime = tokio::runtime::Builder::new_current_thread()
         .enable_io()
@@ -316,12 +350,31 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                 observed_message_tx: &observed_message_tx,
             };
             let mut pending_requests = HashMap::new();
+            let mut pending_provider_queries = super::service_events::PendingProviderQueries::new();
 
             while !worker_stop.load(Ordering::Relaxed) {
                 while let Ok(message) = publish_rx.try_recv() {
                     if let Ok((topic, payload)) = encode_gossipsub_message(&message) {
                         let _ = node.swarm.behaviour_mut().gossipsub.publish(topic, payload);
                     }
+                }
+                while let Ok(commitment_root) = provide_rx.try_recv() {
+                    let _ = node
+                        .swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .start_providing(libp2p::kad::RecordKey::new(&commitment_root));
+                }
+                while let Ok(command) = find_providers_rx.try_recv() {
+                    let query_id = node
+                        .swarm
+                        .behaviour_mut()
+                        .kademlia
+                        .get_providers(libp2p::kad::RecordKey::new(&command.key));
+                    pending_provider_queries.insert(
+                        query_id,
+                        (command.response_tx, std::collections::HashSet::new()),
+                    );
                 }
                 while let Ok(command) = request_rx.try_recv() {
                     if request_response_protocol_for_message(&command.request)
@@ -359,6 +412,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                         &mut peer_connections,
                         &event_metrics,
                         &mut pending_requests,
+                        &mut pending_provider_queries,
                         &mut node.swarm,
                     );
                 }
@@ -401,6 +455,8 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
             observed_message_rx: Mutex::new(observed_message_rx),
             publish_tx,
             request_tx,
+            provide_tx,
+            find_providers_tx,
             stop,
             worker: Some(worker),
         }),
@@ -464,6 +520,66 @@ mod tests {
         .unwrap();
 
         wait_for_connected_services(&service_a, &service_b);
+    }
+
+    #[test]
+    fn libp2p_service_discovers_tensor_providers_via_content_routing() {
+        // Content routing: a holder advertises a DHT provider record for a tensor
+        // commitment root on register_tensor, and another node discovers it via a
+        // Kademlia get_providers query — no direct-peer enumeration or fixtures.
+        let port = free_tcp_port();
+        let tensor =
+            Tensor::from_vec(vec![2, 2], DType::FieldElement, vec![21, 22, 23, 24]).unwrap();
+        let commitment_root = tensor.commitment_root();
+        let service_a = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec![format!("/ip4/127.0.0.1/tcp/{port}")],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-content-routing-a"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+        service_a.register_tensor(tensor.clone());
+        let bootstrap_address = format!("/ip4/127.0.0.1/tcp/{port}/p2p/{}", service_a.peer_id());
+        let service_b = spawn_libp2p_service(Libp2pControlPlaneConfig {
+            listen_addresses: vec!["/ip4/127.0.0.1/tcp/0".to_owned()],
+            bootstrap_addresses: vec![bootstrap_address],
+            identity_seed: Some(hash_bytes(b"test", &[b"libp2p-content-routing-b"])),
+            ..Libp2pControlPlaneConfig::default()
+        })
+        .unwrap();
+
+        wait_for_connected_services(&service_a, &service_b);
+
+        // The provider record may take a few query rounds to become routable.
+        let mut providers = Vec::new();
+        for _ in 0..40 {
+            providers = service_b.find_providers(commitment_root, Duration::from_secs(3));
+            if providers.contains(&service_a.peer_id()) {
+                break;
+            }
+            std::thread::sleep(Duration::from_millis(250));
+        }
+        assert!(
+            providers.contains(&service_a.peer_id()),
+            "content routing did not surface the tensor provider via the DHT"
+        );
+
+        // And the discovered provider actually serves the verified tensor.
+        let response = service_b
+            .request_response(
+                service_a.peer_id(),
+                P2pMessage::RequestTensorByCommitmentRoot { commitment_root },
+                Duration::from_secs(5),
+            )
+            .unwrap();
+        let P2pMessage::TensorByCommitmentRootResponse {
+            commitment_root: response_root,
+            payload: Some(payload),
+        } = response
+        else {
+            panic!("expected tensor-by-root response from the discovered provider");
+        };
+        assert_eq!(response_root, commitment_root);
+        assert_eq!(decode_tensor_payload(&payload).unwrap(), tensor);
     }
 
     #[test]

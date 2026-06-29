@@ -52,6 +52,14 @@ pub fn build_libp2p_node(config: &Libp2pControlPlaneConfig) -> TvmResult<TensorV
         })
         .build();
 
+    // Run Kademlia as a DHT server so this node stores and serves provider
+    // records (content routing for tensor commitment roots), rather than the
+    // default client mode which only issues queries.
+    swarm
+        .behaviour_mut()
+        .kademlia
+        .set_mode(Some(libp2p::kad::Mode::Server));
+
     for address in &config.listen_addresses {
         swarm
             .listen_on(parse_multiaddr(address)?)
