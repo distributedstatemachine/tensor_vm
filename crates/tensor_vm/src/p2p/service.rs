@@ -324,6 +324,7 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                 .filter_map(|address| parse_multiaddr(address).ok())
                 .collect::<Vec<_>>();
             let mut next_bootstrap_dial = Instant::now() + Duration::from_millis(250);
+            let mut next_kad_bootstrap = Instant::now() + Duration::from_secs(2);
             let mut peer_connections = HashMap::new();
             let event_metrics = ServiceEventMetrics {
                 connected_peer_count: worker_connected_peer_count.as_ref(),
@@ -421,6 +422,12 @@ pub fn spawn_libp2p_service(config: Libp2pControlPlaneConfig) -> TvmResult<Tenso
                         let _ = node.swarm.dial(address.clone());
                     }
                     next_bootstrap_dial = Instant::now() + Duration::from_secs(1);
+                }
+                // Periodically refresh the Kademlia routing table so provider-record
+                // queries route reliably across the full mesh (content-routed DA).
+                if Instant::now() >= next_kad_bootstrap {
+                    let _ = node.swarm.behaviour_mut().kademlia.bootstrap();
+                    next_kad_bootstrap = Instant::now() + Duration::from_secs(10);
                 }
             }
         });

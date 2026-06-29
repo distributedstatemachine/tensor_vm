@@ -289,18 +289,22 @@ pub fn produce_and_publish_synthetic_job_with_store(
                     persist_runtime_tensor(store, &node.chain, tensor)?;
                 }
                 node.insert_tensor(tensor.clone());
+                // register_tensor advertises a Kademlia provider record (content
+                // routing) so any node can discover this producer as a holder.
                 p2p_service.register_tensor(tensor.clone());
-                // Announce the input over the gossip mesh so it relays multi-hop to
-                // every node that must execute or verify the job, instead of being
-                // reachable only by a direct request/response to this producer.
-                p2p_service
-                    .publish_gossip(P2pMessage::NewJobInputTensorPayload {
-                        commitment_root: tensor.commitment_root(),
-                        payload: encode_tensor_payload(tensor),
-                    })
-                    .map_err(|error| {
-                        format!("failed to publish job input tensor gossip: {error}")
-                    })?;
+                // Interim belt-and-suspenders: also gossip-relay the input so it
+                // reaches nodes multi-hop while content routing is the canonical
+                // path. Disabled once pure-DHT availability is validated.
+                if profile.interim_tensor_gossip {
+                    p2p_service
+                        .publish_gossip(P2pMessage::NewJobInputTensorPayload {
+                            commitment_root: tensor.commitment_root(),
+                            payload: encode_tensor_payload(tensor),
+                        })
+                        .map_err(|error| {
+                            format!("failed to publish job input tensor gossip: {error}")
+                        })?;
+                }
             }
         }
     }

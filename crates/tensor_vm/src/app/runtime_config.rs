@@ -56,6 +56,7 @@ pub(super) fn runtime_chain_profile() -> std::result::Result<ChainProfile, Strin
     if matches!(profile.network, crate::profile::ChainNetwork::Local) {
         profile.chain_params.proposer_cooldown_blocks = runtime_local_proposer_cooldown_blocks();
         profile.committee_synthetic_jobs = runtime_local_committee_synthetic_jobs();
+        profile.interim_tensor_gossip = runtime_local_interim_tensor_gossip();
         profile.malicious_committee_miner = runtime_local_malicious_committee_miner();
     }
     Ok(profile)
@@ -186,6 +187,13 @@ fn runtime_bool_env(name: &str) -> bool {
     }
 }
 
+fn runtime_bool_env_default_true(name: &str) -> bool {
+    match std::env::var(name) {
+        Ok(value) => !matches!(value.as_str(), "0" | "false" | "FALSE" | "no" | "NO"),
+        Err(_) => true,
+    }
+}
+
 pub(crate) fn runtime_bootstrap_addresses() -> std::result::Result<Vec<String>, String> {
     let Some(value) = std::env::var("TENSORVM_BOOTSTRAP_PEERS")
         .ok()
@@ -223,6 +231,10 @@ fn runtime_local_committee_synthetic_jobs() -> bool {
     runtime_bool_env("TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS")
 }
 
+fn runtime_local_interim_tensor_gossip() -> bool {
+    runtime_bool_env_default_true("TENSORVM_LOCAL_CPU_INTERIM_TENSOR_GOSSIP")
+}
+
 fn runtime_local_malicious_committee_miner() -> bool {
     runtime_bool_env("TENSORVM_LOCAL_CPU_MALICIOUS_COMMITTEE_MINER")
 }
@@ -249,6 +261,7 @@ mod tests {
         "TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER_DELAY_BLOCKS",
         "TENSORVM_LOCAL_CPU_PROPOSER_COOLDOWN_BLOCKS",
         "TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS",
+        "TENSORVM_LOCAL_CPU_INTERIM_TENSOR_GOSSIP",
         "TENSORVM_LOCAL_CPU_MALICIOUS_COMMITTEE_MINER",
         "TENSORVM_BOOTSTRAP_PEERS",
     ];

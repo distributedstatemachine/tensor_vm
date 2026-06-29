@@ -45,6 +45,12 @@ pub struct ChainProfile {
     /// settlement path and §8.2 Tier-C disputes. Off by default; only the
     /// local-cpu evidence run enables it.
     pub committee_synthetic_jobs: bool,
+    /// Interim belt-and-suspenders: gossip-relay job input/output tensors over the
+    /// mesh in addition to advertising them via Kademlia provider records. Content
+    /// routing (provider records + `find_providers`) is the canonical path; this
+    /// stays on until pure-DHT availability is validated on the full mesh, then can
+    /// be turned off to rely solely on content routing.
+    pub interim_tensor_gossip: bool,
     /// Fault injection (opt-in, NEVER on by default): this node's miner role
     /// submits a deliberately non-canonical Tier-C committee receipt (correct
     /// inputs + claimed outputs, but a tampered op trace) so honest challengers
@@ -85,6 +91,7 @@ impl ChainProfile {
             public_evidence_required: false,
             service_exposure: ServiceExposure::LoopbackOnly,
             committee_synthetic_jobs: false,
+            interim_tensor_gossip: true,
             malicious_committee_miner: false,
         }
     }

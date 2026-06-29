@@ -433,20 +433,24 @@ pub fn tick_miner_role_work_once(
                 submission.receipts_submitted,
                 submission.tensors_inserted,
             );
+            let interim_tensor_gossip = config.node.profile.interim_tensor_gossip;
             for tensor in submission.served_tensors {
                 persist_runtime_tensor(store, &server.gateway().node.chain, &tensor)?;
-                // Announce served output/input tensors over the gossip mesh (verified
-                // by commitment root on receipt) so committee validators and honest
-                // challengers can re-execute and detect a bad-trace receipt without a
-                // direct request/response to this miner.
-                p2p_service
-                    .publish_gossip(P2pMessage::NewJobInputTensorPayload {
-                        commitment_root: tensor.commitment_root(),
-                        payload: encode_tensor_payload(&tensor),
-                    })
-                    .map_err(|error| {
-                        format!("failed to publish miner served tensor gossip: {error}")
-                    })?;
+                // Interim belt-and-suspenders: gossip-relay served tensors so
+                // committee validators / challengers can detect a bad-trace receipt
+                // multi-hop. Content routing (register_tensor's provider record
+                // below) is the canonical path; disabled once pure-DHT is validated.
+                if interim_tensor_gossip {
+                    p2p_service
+                        .publish_gossip(P2pMessage::NewJobInputTensorPayload {
+                            commitment_root: tensor.commitment_root(),
+                            payload: encode_tensor_payload(&tensor),
+                        })
+                        .map_err(|error| {
+                            format!("failed to publish miner served tensor gossip: {error}")
+                        })?;
+                }
+                // Advertise a Kademlia provider record for content routing.
                 p2p_service.register_tensor(tensor);
             }
             let observation = miner_role_work_observation(&server.gateway().node.chain, miner);
