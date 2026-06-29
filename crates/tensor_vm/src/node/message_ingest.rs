@@ -198,6 +198,11 @@ pub fn ingest_network_messages<C: NetworkEventContext + ?Sized>(
                     }
                 }
             }
+            P2pMessage::NewJobInputTensorPayload { .. } => {
+                // Job input tensors are applied at the runtime ingest layer (the
+                // node + p2p tensor store), not in chain state. Counted as an
+                // event by the loop header; nothing to apply against the chain.
+            }
             P2pMessage::NewReceipt(receipt_id) => {
                 ingested.receipts = ingested.receipts.saturating_add(1);
                 if receipt_id == [0; 32] {

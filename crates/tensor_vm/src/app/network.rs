@@ -5,9 +5,10 @@ use crate::{
     api::P2pMessage,
     chain::{ExternalRandomnessBeaconProof, TraceBisectionStatus},
     challenge::{TraceBisectionExpectation, TraceBisectionOpen, TraceBisectionRound},
-    decode_job_payload, encode_attestation_payload, encode_block_payload_with_selected_receipts,
-    encode_block_vote_payload, encode_external_randomness_beacon_payload, encode_job_payload,
-    encode_receipt_payload, encode_validator_audit_report_payload,
+    decode_job_payload, decode_tensor_payload, encode_attestation_payload,
+    encode_block_payload_with_selected_receipts, encode_block_vote_payload,
+    encode_external_randomness_beacon_payload, encode_job_payload, encode_receipt_payload,
+    encode_tensor_payload, encode_validator_audit_report_payload,
     encode_validator_vrf_reveal_payload,
     ir::{IrExecution, IrExecutionInputs, IrOpRefereeWitness},
     jobs::{GraphJob, GraphReceipt},
@@ -36,7 +37,22 @@ pub fn ingest_network_events(
     local_producer: bool,
     pending_payloads: &mut PendingNetworkPayloads,
 ) -> std::result::Result<NetworkEventIngest, String> {
-    let messages = p2p_service.drain_observed_messages();
+    let drained = p2p_service.drain_observed_messages();
+    // Job input tensors arrive over the gossip mesh (multi-hop relay), not the
+    // pull-only direct-peer request/response path. Apply them at the runtime
+    // layer (node + p2p tensor store) after verifying each against its
+    // commitment root, then pass the remaining chain events to the chain ingest.
+    let mut messages = Vec::with_capacity(drained.len());
+    for message in drained {
+        if let P2pMessage::NewJobInputTensorPayload {
+            commitment_root,
+            payload,
+        } = &message
+        {
+            apply_job_input_tensor_announcement(server, p2p_service, *commitment_root, payload);
+        }
+        messages.push(message);
+    }
     let mut context = RuntimeNetworkEventContext { server };
     let mut ingested =
         ingest_network_messages(&mut context, messages, local_producer, pending_payloads)?;
@@ -46,6 +62,37 @@ pub fn ingest_network_events(
         ingested.accumulate(retry);
     }
     Ok(ingested)
+}
+
+/// Verify a gossip-announced job input tensor against its commitment root and,
+/// if valid and not already held, store it in the node + p2p tensor store so this
+/// node can execute (miner) or re-execute/verify (committee validator) the job and
+/// re-serve the tensor. Gossipsub relays the announcement multi-hop on its own.
+fn apply_job_input_tensor_announcement(
+    server: &mut RpcHttpServer,
+    p2p_service: &TensorVmLibp2pService,
+    commitment_root: Hash,
+    payload: &[u8],
+) -> bool {
+    let node = &mut server.gateway_mut().node;
+    if node.contains_tensor_commitment_root(&commitment_root) {
+        return false;
+    }
+    let Some(tensor) = decode_verified_job_input_tensor(commitment_root, payload) else {
+        return false;
+    };
+    node.insert_tensor(tensor.clone());
+    p2p_service.register_tensor(tensor);
+    true
+}
+
+/// Decode a gossip-announced job input tensor only if it decodes and its
+/// commitment root matches the announced root (content-address verification);
+/// otherwise reject it so a peer cannot inject a tensor under a root it does not
+/// hash to.
+fn decode_verified_job_input_tensor(commitment_root: Hash, payload: &[u8]) -> Option<Tensor> {
+    let tensor = decode_tensor_payload(payload).ok()?;
+    (tensor.commitment_root() == commitment_root).then_some(tensor)
 }
 
 struct RuntimeNetworkEventContext<'a> {
@@ -243,6 +290,17 @@ pub fn produce_and_publish_synthetic_job_with_store(
                 }
                 node.insert_tensor(tensor.clone());
                 p2p_service.register_tensor(tensor.clone());
+                // Announce the input over the gossip mesh so it relays multi-hop to
+                // every node that must execute or verify the job, instead of being
+                // reachable only by a direct request/response to this producer.
+                p2p_service
+                    .publish_gossip(P2pMessage::NewJobInputTensorPayload {
+                        commitment_root: tensor.commitment_root(),
+                        payload: encode_tensor_payload(tensor),
+                    })
+                    .map_err(|error| {
+                        format!("failed to publish job input tensor gossip: {error}")
+                    })?;
             }
         }
     }
@@ -1191,6 +1249,38 @@ mod tests {
         node.chain
             .apply_command(ChainCommand::SubmitTraceBisectionExpectation(expectation))
             .unwrap();
+    }
+
+    #[test]
+    fn job_input_tensor_announcement_accepts_matching_root_and_rejects_mismatch() {
+        let tensor = SyntheticLocalJobSource::committee_graph_execution_inputs()
+            .into_values()
+            .next()
+            .expect("committee graph has an input tensor");
+        let root = tensor.commitment_root();
+        let payload = encode_tensor_payload(&tensor);
+
+        // Honest announcement: payload hashes to the announced root.
+        let decoded = decode_verified_job_input_tensor(root, &payload)
+            .expect("a payload matching its commitment root must be accepted");
+        assert_eq!(decoded, tensor);
+
+        // A peer cannot bind this payload to a different (lied-about) root.
+        let wrong_root = hash_bytes(b"test", &[b"not-the-real-root"]);
+        assert!(decode_verified_job_input_tensor(wrong_root, &payload).is_none());
+
+        // Garbage payloads are rejected outright.
+        assert!(decode_verified_job_input_tensor(root, &[0xff, 0x00, 0x13]).is_none());
+
+        // The announcement gossip rides the Jobs topic (multi-hop relay), not the
+        // pull-only direct-peer request/response path.
+        assert_eq!(
+            crate::p2p::gossip_topic_for_message(&P2pMessage::NewJobInputTensorPayload {
+                commitment_root: root,
+                payload,
+            }),
+            Some(crate::p2p::GossipTopic::Jobs)
+        );
     }
 
     #[test]

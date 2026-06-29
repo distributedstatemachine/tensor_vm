@@ -70,6 +70,15 @@ pub enum P2pMessage {
         job_id: Hash,
         payload: Vec<u8>,
     },
+    /// Gossip-announced availability of a job input tensor. Unlike the pull-only
+    /// `RequestTensorByCommitmentRoot` request/response (direct peers only), this
+    /// rides the gossip mesh so a job's inputs relay multi-hop to every node that
+    /// must execute (miners) or re-execute/verify (committee validators) the job.
+    /// Receivers verify the tensor against `commitment_root` before storing it.
+    NewJobInputTensorPayload {
+        commitment_root: Hash,
+        payload: Vec<u8>,
+    },
     NewReceipt(Hash),
     NewReceiptPayload {
         receipt_id: Hash,

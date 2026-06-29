@@ -48,7 +48,7 @@ const TRACE_BISECTION_EXPECTATION_PAYLOAD_MAX_LEN: usize =
     32 + 32 + 32 + 32 + 8 + 8 + 8 + 8 + MAX_TRACE_BISECTION_EXPECTED_ROOTS * 32 + 8 + 8 + 8 + 32;
 const MAX_TRACE_REFEREE_INPUT_VALUES: usize = 16;
 const TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN: usize =
-    8 + MAX_TENSOR_SHAPE_DIMS * 8 + 1 + 8 + MAX_TENSOR_VALUES * 8;
+    8 + MAX_TENSOR_SHAPE_DIMS * 8 + 1 + 8 + 8 + MAX_TENSOR_VALUES * 8;
 const TRACE_BISECTION_REFEREE_PAYLOAD_MAX_LEN: usize =
     8 + 8 + MAX_TRACE_REFEREE_INPUT_VALUES * (1 + TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN);
 const MAX_WIRE_BYTES: usize = 16 * 1024 * 1024;
@@ -127,7 +127,9 @@ pub fn gossip_topic_for_message(message: &P2pMessage) -> Option<GossipTopic> {
         | P2pMessage::NewTraceBisectionExpectationPayload { .. }
         | P2pMessage::NewTraceBisectionRoundPayload { .. }
         | P2pMessage::NewTraceBisectionRefereePayload { .. } => Some(GossipTopic::Blocks),
-        P2pMessage::NewJob(_) | P2pMessage::NewJobPayload { .. } => Some(GossipTopic::Jobs),
+        P2pMessage::NewJob(_)
+        | P2pMessage::NewJobPayload { .. }
+        | P2pMessage::NewJobInputTensorPayload { .. } => Some(GossipTopic::Jobs),
         P2pMessage::NewReceipt(_) | P2pMessage::NewReceiptPayload { .. } => {
             Some(GossipTopic::Receipts)
         }
@@ -187,6 +189,7 @@ pub fn request_response_protocol_for_message(
         | P2pMessage::NewTraceBisectionRefereePayload { .. }
         | P2pMessage::NewJob(_)
         | P2pMessage::NewJobPayload { .. }
+        | P2pMessage::NewJobInputTensorPayload { .. }
         | P2pMessage::NewReceipt(_)
         | P2pMessage::NewReceiptPayload { .. }
         | P2pMessage::NewAttestation(_)
@@ -367,6 +370,14 @@ pub fn encode_message(message: &P2pMessage) -> Vec<u8> {
         P2pMessage::NewJobPayload { job_id, payload } => {
             out.push(13);
             write_hash(&mut out, job_id);
+            write_bytes(&mut out, payload);
+        }
+        P2pMessage::NewJobInputTensorPayload {
+            commitment_root,
+            payload,
+        } => {
+            out.push(35);
+            write_hash(&mut out, commitment_root);
             write_bytes(&mut out, payload);
         }
         P2pMessage::NewReceipt(hash) => {
@@ -743,6 +754,10 @@ pub fn decode_message(input: &[u8]) -> TvmResult<P2pMessage> {
             job_id: reader.read_hash()?,
             payload: reader.read_bytes()?,
         },
+        35 => P2pMessage::NewJobInputTensorPayload {
+            commitment_root: reader.read_hash()?,
+            payload: reader.read_bytes_with_max(TRACE_REFEREE_TENSOR_PAYLOAD_MAX_LEN)?,
+        },
         3 => P2pMessage::NewReceipt(reader.read_hash()?),
         14 => P2pMessage::NewReceiptPayload {
             receipt_id: reader.read_hash()?,
@@ -999,6 +1014,10 @@ pub fn encode_tensor_payload(tensor: &Tensor) -> Vec<u8> {
     let mut out = Vec::new();
     write_usize_vec(&mut out, tensor.shape());
     out.push(tensor.dtype().tag());
+    // Preserve the fixed-point scale: it is part of the tensor's commitment root,
+    // so dropping it (decoding as scale 0) corrupts the root of any scaled
+    // (e.g. Fixed32) tensor and makes it fail content-address verification.
+    write_u64(&mut out, tensor.scale() as u64);
     write_u64(&mut out, tensor.as_slice().len() as u64);
     for value in tensor.as_slice() {
         write_u64(&mut out, *value);
@@ -1010,6 +1029,7 @@ pub fn decode_tensor_payload(input: &[u8]) -> TvmResult<Tensor> {
     let mut reader = Reader::new(input);
     let shape = read_usize_vec(&mut reader, MAX_TENSOR_SHAPE_DIMS)?;
     let dtype = dtype_from_tag(reader.read_u8()?)?;
+    let scale = reader.read_u64()? as i64;
     let len = read_usize(&mut reader)?;
     if len > MAX_TENSOR_VALUES {
         return Err(TvmError::InvalidReceipt("tensor payload too large"));
@@ -1021,7 +1041,7 @@ pub fn decode_tensor_payload(input: &[u8]) -> TvmResult<Tensor> {
     if !reader.is_done() {
         return Err(TvmError::InvalidReceipt("trailing tensor payload bytes"));
     }
-    Tensor::from_vec(shape, dtype, values)
+    Tensor::from_vec_with_scale(shape, dtype, scale, values)
 }
 
 pub fn encode_trace_opening_payload(opening: &IrTraceOpening) -> Vec<u8> {
@@ -1981,6 +2001,10 @@ mod tests {
             P2pMessage::NewJobPayload {
                 job_id: job.job_id(),
                 payload: encode_job_payload(&job),
+            },
+            P2pMessage::NewJobInputTensorPayload {
+                commitment_root: h,
+                payload: vec![4, 5, 6, 7],
             },
             P2pMessage::NewReceipt(h),
             P2pMessage::NewReceiptPayload {
