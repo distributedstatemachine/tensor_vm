@@ -211,12 +211,13 @@ services:
       TENSORVM_LOCAL_CPU_BLOCK_INTERVAL_MS: "1000"
       TENSORVM_LOCAL_CPU_SYNTHETIC_JOB_PRODUCER: "true"
       TENSORVM_LOCAL_CPU_VALIDATOR_BLOCK_PROPOSER: "true"
-      # Live Tier-C committee evidence is opt-in. It is OFF by default until the
-      # interprocess committee-input data-availability / producer-role-loop stall
-      # (see exec plan blocker) is resolved; enabling it currently halts the
-      # producer at ~15 jobs. Set to "true" only with the checker's
-      # TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT gate when debugging.
-      TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS: "false"
+      # Live Tier-C committee evidence: the producer interleaves a Tier-C (gelu)
+      # committee graph job so real processes exercise §8.1 committee settlement.
+      # Inputs propagate over the gossip mesh (NewJobInputTensorPayload) and are
+      # verified by commitment root; committee receipts settle on honest-majority
+      # agreement. The checker enforces settlement via
+      # TENSORVM_LOCAL_CPU_REQUIRE_COMMITTEE_SETTLEMENT (default true).
+      TENSORVM_LOCAL_CPU_COMMITTEE_SYNTHETIC_JOBS: "true"
     volumes:
       - validator-00-data:/var/lib/tensorvm
 
